@@ -1,0 +1,284 @@
+<?php
+// Sales / Billing - list + new bill (company-wise GST/non-GST, serials, credit)
+require_once __DIR__ . '/includes/init.php';
+require_perm('sales.view');
+$u = current_user();
+
+$action = get('action', 'list');
+
+// ---------- save new bill ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
+    require_perm('sales.add');
+    $company = row('SELECT * FROM companies WHERE id = ?', [(int)post('company_id')]);
+    $loc_id = (int)post('location_id') ?: $u['location_id'];
+    $item_ids = post('item_id', []);
+    $qtys = post('qty', []);
+    $prices = post('price', []);
+    $taxes = post('tax_rate', []);
+    $serialSel = post('serial_sel', []);
+
+    $rows = [];
+    foreach ($item_ids as $i => $iid) {
+        $iid = (int)$iid;
+        $qty = (float)($qtys[$i] ?? 0);
+        if (!$iid || $qty <= 0) continue;
+        $price = (float)($prices[$i] ?? 0);
+        $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
+        $rows[] = ['item_id' => $iid, 'qty' => $qty, 'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $i + 1];
+    }
+    if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=new'); }
+
+    $subtotal = array_sum(array_column($rows, 'total'));
+    $discount = (float)post('discount');
+    $tax = 0;
+    foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
+    $total = $subtotal - $discount + $tax;
+    $paid = min((float)post('paid'), $total);
+    $credit_days = (int)post('credit_days');
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        q('INSERT INTO sales (company_id, party_id, customer_name, customer_mobile, location_id, sale_date, price_type,
+           credit_days, due_date, subtotal, discount, tax_amount, total, paid, payment_mode, status, notes, created_by, share_token)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [$company['id'], (int)post('party_id') ?: null, post('customer_name'), post('customer_mobile'), $loc_id,
+           post('sale_date', today()), post('price_type', 'retail'), $credit_days,
+           $credit_days ? date('Y-m-d', strtotime(post('sale_date', today()) . " +$credit_days days")) : null,
+           $subtotal, $discount, $tax, $total, $paid, post('payment_mode', 'cash'),
+           payment_status($total, $paid), post('notes'), $u['id'], share_token()]);
+        $sale_id = insert_id();
+        $invoice_no = $company['invoice_prefix'] . '-' . date('y') . '-' . str_pad($sale_id, 5, '0', STR_PAD_LEFT);
+        q('UPDATE sales SET invoice_no = ? WHERE id = ?', [$invoice_no, $sale_id]);
+
+        foreach ($rows as $r) {
+            $item = row('SELECT * FROM items WHERE id = ?', [$r['item_id']]);
+            $serials = array_values(array_filter(array_map('trim', (array)($serialSel[$r['n']] ?? []))));
+            if ($item['serial_tracked'] && count($serials) != $r['qty']) {
+                throw new Exception("Select {$r['qty']} serial number(s) for {$item['name']}.");
+            }
+            q('INSERT INTO sale_items (sale_id, item_id, qty, price, tax_rate, total, serials) VALUES (?,?,?,?,?,?,?)',
+              [$sale_id, $r['item_id'], $r['qty'], $r['price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null]);
+
+            if (stock_qty($r['item_id'], $loc_id) < $r['qty']) {
+                throw new Exception("Not enough stock of {$item['name']} at this location.");
+            }
+            adjust_stock($r['item_id'], $loc_id, -$r['qty'], 'sale', $sale_id, $invoice_no);
+
+            foreach ($serials as $sn) {
+                $expiry = $item['warranty_months'] > 0
+                    ? date('Y-m-d', strtotime(post('sale_date', today()) . ' +' . $item['warranty_months'] . ' months'))
+                    : null;
+                $upd = q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL, warranty_expiry=?
+                          WHERE item_id=? AND serial_no=? AND status='in_stock' AND location_id=?",
+                         [$sale_id, $expiry, $r['item_id'], $sn, $loc_id]);
+                if ($upd->rowCount() === 0) throw new Exception("Serial $sn is not available in stock.");
+            }
+        }
+        if ((int)post('estimate_id')) {
+            q("UPDATE estimates SET status='converted', converted_sale_id=? WHERE id=? AND status='open'",
+              [$sale_id, (int)post('estimate_id')]);
+        }
+        $pdo->commit();
+        log_activity('sale_add', "$invoice_no total $total");
+        flash("Bill $invoice_no saved.");
+        redirect('sale_view.php?id=' . $sale_id);
+    } catch (Exception $ex) {
+        $pdo->rollBack();
+        flash('Error: ' . $ex->getMessage(), 'error');
+        redirect('sales.php?action=new');
+    }
+}
+
+// ---------- delete ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('sales.delete');
+    $sid = (int)post('id');
+    $sale = row('SELECT * FROM sales WHERE id = ?', [$sid]);
+    if ($sale) {
+        $pdo = db();
+        $pdo->beginTransaction();
+        foreach (all('SELECT * FROM sale_items WHERE sale_id = ?', [$sid]) as $si) {
+            adjust_stock($si['item_id'], $sale['location_id'], (float)$si['qty'], 'sale_delete', $sid);
+            if ($si['serials']) {
+                foreach (explode(',', $si['serials']) as $sn) {
+                    q("UPDATE item_serials SET status='in_stock', sale_id=NULL, location_id=?, warranty_expiry=NULL
+                       WHERE item_id=? AND serial_no=?", [$sale['location_id'], $si['item_id'], trim($sn)]);
+                }
+            }
+        }
+        q('DELETE FROM sale_items WHERE sale_id = ?', [$sid]);
+        q('DELETE FROM sales WHERE id = ?', [$sid]);
+        $pdo->commit();
+        log_activity('sale_delete', $sale['invoice_no']);
+        flash('Bill deleted and stock restored.');
+    }
+    redirect('sales.php');
+}
+
+$companies = all('SELECT * FROM companies WHERE is_active = 1 ORDER BY id');
+$locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
+$terms = all('SELECT * FROM credit_terms ORDER BY days');
+
+// ---------- new bill form ----------
+if ($action === 'new') {
+    require_perm('sales.add');
+    $parties = all("SELECT id, name, mobile, credit_days FROM parties WHERE is_active = 1 AND type IN ('customer','both') ORDER BY name");
+    // prefill from estimate (convert to bill)
+    $est = null; $estItems = [];
+    if ((int)get('from_estimate')) {
+        $est = row("SELECT * FROM estimates WHERE id = ? AND status = 'open'", [(int)get('from_estimate')]);
+        if ($est) $estItems = all('SELECT ei.*, i.name, i.serial_tracked FROM estimate_items ei JOIN items i ON i.id = ei.item_id WHERE ei.estimate_id = ?', [$est['id']]);
+    }
+    $page_title = 'New Bill';
+    include __DIR__ . '/includes/header.php';
+    ?>
+    <?php if ($est): ?><div class="flash flash-info">Converting estimate <?= e($est['estimate_no']) ?> — serial-tracked items માટે serial ફરી select કરવા પડશે.</div><?php endif; ?>
+    <form method="post" id="billForm">
+      <?= csrf_field() ?>
+      <input type="hidden" name="do" value="save">
+      <?php if ($est): ?><input type="hidden" name="estimate_id" value="<?= $est['id'] ?>"><?php endif; ?>
+      <div class="card">
+        <div class="form-row cols-4">
+          <div><label>Firm / Company</label>
+            <select name="company_id" id="company_id">
+              <?php foreach ($companies as $c): ?>
+              <option value="<?= $c['id'] ?>" data-gst="<?= $c['is_gst'] ?>"><?= e($c['name']) ?><?= $c['is_gst'] ? ' (GST)' : '' ?></option>
+              <?php endforeach; ?>
+            </select></div>
+          <div><label>Location</label>
+            <select name="location_id" id="location_id">
+              <?php foreach ($locations as $l): ?>
+              <option value="<?= $l['id'] ?>" <?= $l['id'] == $u['location_id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option>
+              <?php endforeach; ?>
+            </select></div>
+          <div><label>Date</label><input type="date" name="sale_date" value="<?= today() ?>"></div>
+          <div><label>Price type</label>
+            <select name="price_type" id="price_type"><option value="retail">Retail</option><option value="b2b">B2B</option></select></div>
+        </div>
+        <div class="form-row cols-4">
+          <div><label>Party (optional)</label>
+            <select name="party_id" id="party_id">
+              <option value="">-- Walk-in customer --</option>
+              <?php foreach ($parties as $p): ?>
+              <option value="<?= $p['id'] ?>" data-mobile="<?= e($p['mobile']) ?>" data-credit="<?= $p['credit_days'] ?>"><?= e($p['name']) ?></option>
+              <?php endforeach; ?>
+            </select></div>
+          <div><label>Customer name</label><input type="text" name="customer_name" id="customer_name"></div>
+          <div><label>Customer mobile (WhatsApp)</label><input type="tel" name="customer_mobile" id="customer_mobile"></div>
+          <div><label>Credit term</label>
+            <select name="credit_days" id="credit_days">
+              <?php foreach ($terms as $t): ?><option value="<?= $t['days'] ?>"><?= e($t['label']) ?></option><?php endforeach; ?>
+            </select></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Items</h3>
+        <div class="bill-items" id="billItems"></div>
+        <button type="button" class="btn btn-outline btn-sm" id="addRowBtn">+ Add item</button>
+      </div>
+
+      <div class="card">
+        <div class="form-row cols-3">
+          <div><label>Discount (₹)</label><input type="number" step="any" name="discount" id="discount" value="0"></div>
+          <div><label>Paid now (₹) <a href="javascript:payFull()" style="font-weight:normal">[full]</a></label><input type="number" step="any" name="paid" id="paid" value="0"></div>
+          <div><label>Payment mode</label>
+            <select name="payment_mode"><option>cash</option><option>upi</option><option>card</option><option>bank</option><option>credit</option></select></div>
+        </div>
+        <div class="field"><label>Notes</label><input type="text" name="notes"></div>
+        <div class="bill-totals">
+          <div class="t-line"><span>Subtotal</span><span>₹ <span id="t_sub">0.00</span></span></div>
+          <div class="t-line"><span>GST</span><span>₹ <span id="t_tax">0.00</span></span></div>
+          <div class="t-line t-grand"><span>Total</span><span>₹ <span id="t_grand">0.00</span></span></div>
+          <div class="t-line"><span>Balance due</span><span>₹ <span id="t_due">0.00</span></span></div>
+        </div>
+        <button class="btn btn-block mt" type="submit">💾 Save Bill</button>
+      </div>
+    </form>
+    <script>
+      Bill.init({mode: 'sale', serials: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1});
+      <?php if ($est && $estItems): ?>
+      // prefill rows from estimate
+      (function () {
+        var pre = <?= json_encode(array_map(fn($x) => [
+            'id' => (int)$x['item_id'], 'name' => $x['name'], 'qty' => (float)$x['qty'],
+            'price' => (float)$x['price'], 'tax' => (float)$x['tax_rate'],
+        ], $estItems)) ?>;
+        document.getElementById('customer_name').value = <?= json_encode($est['customer_name']) ?>;
+        document.getElementById('customer_mobile').value = <?= json_encode($est['customer_mobile']) ?>;
+        <?php if ($est['party_id']): ?>document.getElementById('party_id').value = '<?= (int)$est['party_id'] ?>';<?php endif; ?>
+        document.getElementById('discount').value = '<?= (float)$est['discount'] ?>';
+        pre.forEach(function (it, idx) {
+          if (idx > 0) Bill.addRow();
+          var rows = document.querySelectorAll('#billItems .bill-row');
+          var div = rows[rows.length - 1];
+          div.querySelector('.i-search').value = it.name;
+          div.querySelector('.i-id').value = it.id;
+          div.querySelector('.i-tax').value = it.tax;
+          div.querySelector('.i-qty').value = it.qty;
+          div.querySelector('.i-price').value = it.price;
+          Bill.rowTotal(div);
+        });
+      })();
+      <?php endif; ?>
+      document.getElementById('company_id').addEventListener('change', function () {
+        Bill.cfg.gst = this.options[this.selectedIndex].dataset.gst == 1;
+        Bill.totals();
+      });
+      document.getElementById('party_id').addEventListener('change', function () {
+        var o = this.options[this.selectedIndex];
+        if (this.value) {
+          document.getElementById('customer_name').value = o.textContent.trim();
+          document.getElementById('customer_mobile').value = o.dataset.mobile || '';
+          document.getElementById('credit_days').value = o.dataset.credit || 0;
+        }
+      });
+    </script>
+    <?php
+    include __DIR__ . '/includes/footer.php';
+    exit;
+}
+
+// ---------- list ----------
+list($scope, $params) = own_scope('sales', 's.created_by');
+$from = get('from', date('Y-m-01'));
+$to = get('to', today());
+$sales = all("SELECT s.*, c.name AS company_name, u2.name AS staff_name
+              FROM sales s
+              JOIN companies c ON c.id = s.company_id
+              JOIN users u2 ON u2.id = s.created_by
+              WHERE s.sale_date BETWEEN ? AND ? $scope
+              ORDER BY s.id DESC LIMIT 500", array_merge([$from, $to], $params));
+$sumTotal = array_sum(array_column($sales, 'total'));
+$page_title = 'Sales / Billing';
+include __DIR__ . '/includes/header.php';
+?>
+<div class="page-actions">
+  <?php if (can('sales.add')): ?><a class="btn" href="sales.php?action=new">+ New Bill</a><?php endif; ?>
+</div>
+<form method="get" class="filterbar">
+  <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>
+  <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>
+  <button class="btn btn-sm" type="submit">Filter</button>
+</form>
+<div class="list-count"><?= count($sales) ?> bills · Total ₹<?= money($sumTotal) ?></div>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Firm</th><th class="num">Total</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  <?php foreach ($sales as $s): ?>
+    <tr>
+      <td><a href="sale_view.php?id=<?= $s['id'] ?>"><strong><?= e($s['invoice_no']) ?></strong></a><br><span class="muted"><?= e($s['staff_name']) ?></span></td>
+      <td><?= dmy($s['sale_date']) ?></td>
+      <td><?= e($s['customer_name'] ?: 'Walk-in') ?><br><span class="muted"><?= e($s['customer_mobile']) ?></span></td>
+      <td><?= e($s['company_name']) ?></td>
+      <td class="num">₹<?= money($s['total']) ?></td>
+      <td><?= status_badge($s['status']) ?></td>
+      <td><a class="btn btn-sm btn-outline" href="sale_view.php?id=<?= $s['id'] ?>">View</a></td>
+    </tr>
+  <?php endforeach; ?>
+  </tbody>
+</table>
+</div>
+<?php include __DIR__ . '/includes/footer.php'; ?>

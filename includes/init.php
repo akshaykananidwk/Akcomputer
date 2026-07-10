@@ -1,0 +1,32 @@
+<?php
+// Bootstrap - include this at the top of every page
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
+ini_set('display_errors', '0');
+
+$configFile = dirname(__DIR__) . '/config.php';
+if (!file_exists($configFile)) {
+    header('Location: install/');
+    exit;
+}
+require_once $configFile;
+
+date_default_timezone_set(defined('APP_TZ') ? APP_TZ : 'Asia/Kolkata');
+
+session_name('akcsess');
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
+session_start();
+
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/whatsapp.php';
+
+csrf_check();
+
+function base_url($path = '') {
+    $base = defined('BASE_URL') && BASE_URL ? BASE_URL : (
+        (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http') . '://' .
+        ($_SERVER['HTTP_HOST'] ?? 'localhost') . rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/\\')
+    );
+    return rtrim($base, '/') . ($path ? '/' . ltrim($path, '/') : '');
+}

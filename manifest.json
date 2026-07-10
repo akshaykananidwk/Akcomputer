@@ -1,0 +1,15 @@
+{
+  "name": "AK Computer Manager",
+  "short_name": "AK Computer",
+  "description": "Multi-location billing, stock, repair and warranty management",
+  "start_url": "index.php",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#1a56db",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
