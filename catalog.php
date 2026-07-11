@@ -6,6 +6,8 @@ $items = all('SELECT i.*, c.name cat_name FROM items i
               LEFT JOIN categories c ON c.id = i.category_id
               WHERE i.is_active = 1 AND i.show_on_website = 1 ORDER BY c.name, i.name');
 $app_name = setting('app_name', 'AK Computer');
+$waShop = wa_normalize_number(setting('wa_shop_number'));
+if (strlen($waShop) < 12) $waShop = '';
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -40,11 +42,21 @@ $app_name = setting('app_name', 'AK Computer');
         <div class="cname"><?= e($it['name']) ?></div>
         <?php if ($it['brand']): ?><div class="muted"><?= e($it['brand']) ?> <?= e($it['model']) ?></div><?php endif; ?>
         <div class="cprice">₹<?= money($it['selling_price']) ?></div>
+        <?php if ($waShop): ?>
+        <a class="btn btn-wa btn-sm" style="width:100%;margin-top:8px"
+           href="https://wa.me/<?= e($waShop) ?>?text=<?= rawurlencode('Hello! Mane aa product joie che: ' . $it['name'] . ' (₹' . money($it['selling_price']) . ')') ?>"
+           target="_blank" rel="noopener">📲 Order on WhatsApp</a>
+        <?php endif; ?>
       </div>
     </div>
   <?php endforeach; ?>
   <?php if (!$items): ?><p class="muted">No products listed yet.</p><?php endif; ?>
   </div>
+  <?php if (current_user() && can('items.edit')): $hidden = (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 0'); ?>
+    <?php if ($hidden): ?>
+    <p class="muted" style="text-align:center;margin-top:16px">ℹ️ (Admin note: <?= $hidden ?> items website પર OFF છે — Items page પર 🌐 button થી ON કરો. આ note customers ને નથી દેખાતી જ્યારે logout હોય.)</p>
+    <?php endif; ?>
+  <?php endif; ?>
 </div>
 <script>
 document.getElementById('cFilter').addEventListener('input', function () {

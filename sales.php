@@ -57,8 +57,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             if ($item['serial_tracked'] && count($serials) != $r['qty']) {
                 throw new Exception("Select {$r['qty']} serial number(s) for {$item['name']}.");
             }
-            q('INSERT INTO sale_items (sale_id, item_id, qty, price, tax_rate, total, serials) VALUES (?,?,?,?,?,?,?)',
-              [$sale_id, $r['item_id'], $r['qty'], $r['price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null]);
+            q('INSERT INTO sale_items (sale_id, item_id, qty, price, cost_price, tax_rate, total, serials) VALUES (?,?,?,?,?,?,?,?)',
+              [$sale_id, $r['item_id'], $r['qty'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null]);
 
             if (stock_qty($r['item_id'], $loc_id) < $r['qty']) {
                 throw new Exception("Not enough stock of {$item['name']} at this location.");
@@ -78,6 +78,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if ((int)post('estimate_id')) {
             q("UPDATE estimates SET status='converted', converted_sale_id=? WHERE id=? AND status='open'",
               [$sale_id, (int)post('estimate_id')]);
+        }
+        if ((int)post('challan_id')) {
+            q("UPDATE challans SET status='converted', converted_sale_id=? WHERE id=? AND status='open'",
+              [$sale_id, (int)post('challan_id')]);
         }
         $pdo->commit();
         log_activity('sale_add', "$invoice_no total $total");
@@ -124,20 +128,29 @@ $terms = all('SELECT * FROM credit_terms ORDER BY days');
 if ($action === 'new') {
     require_perm('sales.add');
     $parties = all("SELECT id, name, mobile, credit_days FROM parties WHERE is_active = 1 AND type IN ('customer','both') ORDER BY name");
-    // prefill from estimate (convert to bill)
-    $est = null; $estItems = [];
+    // prefill from estimate or delivery challan (convert to bill)
+    $est = null; $estItems = []; $chal = null;
     if ((int)get('from_estimate')) {
         $est = row("SELECT * FROM estimates WHERE id = ? AND status = 'open'", [(int)get('from_estimate')]);
         if ($est) $estItems = all('SELECT ei.*, i.name, i.serial_tracked FROM estimate_items ei JOIN items i ON i.id = ei.item_id WHERE ei.estimate_id = ?', [$est['id']]);
+    } elseif ((int)get('from_challan')) {
+        $chal = row("SELECT * FROM challans WHERE id = ? AND status = 'open'", [(int)get('from_challan')]);
+        if ($chal) {
+            $estItems = all('SELECT ci.item_id, ci.qty, ci.price, i.tax_rate, i.name FROM challan_items ci JOIN items i ON i.id = ci.item_id WHERE ci.challan_id = ?', [$chal['id']]);
+            // reuse estimate prefill vars
+            $est = ['id' => 0, 'estimate_no' => $chal['challan_no'], 'customer_name' => $chal['customer_name'],
+                    'customer_mobile' => $chal['customer_mobile'], 'party_id' => $chal['party_id'], 'discount' => 0];
+        }
     }
     $page_title = 'New Bill';
     include __DIR__ . '/includes/header.php';
     ?>
-    <?php if ($est): ?><div class="flash flash-info">Converting estimate <?= e($est['estimate_no']) ?> — serial-tracked items માટે serial ફરી select કરવા પડશે.</div><?php endif; ?>
+    <?php if ($est): ?><div class="flash flash-info">Converting <?= e($est['estimate_no']) ?> — serial-tracked items માટે serial ફરી select કરવા પડશે.</div><?php endif; ?>
     <form method="post" id="billForm">
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="save">
-      <?php if ($est): ?><input type="hidden" name="estimate_id" value="<?= $est['id'] ?>"><?php endif; ?>
+      <?php if ($est && $est['id']): ?><input type="hidden" name="estimate_id" value="<?= $est['id'] ?>"><?php endif; ?>
+      <?php if ($chal): ?><input type="hidden" name="challan_id" value="<?= $chal['id'] ?>"><?php endif; ?>
       <div class="card">
         <div class="form-row cols-4">
           <div><label>Firm / Company</label>

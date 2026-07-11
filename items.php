@@ -50,6 +50,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('Item deactivated.');
         redirect('items.php');
     }
+    if (post('do') === 'toggle_web') {
+        require_perm('items.edit');
+        q('UPDATE items SET show_on_website = 1 - show_on_website WHERE id = ?', [(int)post('id')]);
+        $on = val('SELECT show_on_website FROM items WHERE id = ?', [(int)post('id')]);
+        flash($on ? 'Item હવે website પર દેખાશે ✔' : 'Item website પરથી હટાવી.');
+        redirect('items.php');
+    }
 }
 
 $cats = all('SELECT * FROM categories ORDER BY name');
@@ -150,11 +157,16 @@ include __DIR__ . '/includes/header.php';
       <td class="num"><?= (float)$it['total_stock'] ?> <?= e($it['unit']) ?></td>
       <td>
         <?php if ($it['serial_tracked']): ?><span class="badge badge-info">SN</span><?php endif; ?>
-        <?php if ($it['show_on_website']): ?><span class="badge badge-ok">WEB</span><?php endif; ?>
         <?php if ($it['min_stock'] > 0 && $it['total_stock'] < $it['min_stock']): ?><span class="badge badge-bad">LOW</span><?php endif; ?>
       </td>
-      <td>
-        <?php if (can('items.edit')): ?><a class="btn btn-sm btn-outline" href="items.php?action=edit&id=<?= $it['id'] ?>">Edit</a><?php endif; ?>
+      <td style="white-space:nowrap">
+        <?php if (can('items.edit')): ?>
+        <form method="post" style="display:inline"><?= csrf_field() ?>
+          <input type="hidden" name="do" value="toggle_web"><input type="hidden" name="id" value="<?= $it['id'] ?>">
+          <button class="btn btn-sm <?= $it['show_on_website'] ? 'btn-success' : 'btn-muted' ?>" type="submit" title="Website પર બતાવવું on/off">🌐 <?= $it['show_on_website'] ? 'ON' : 'OFF' ?></button>
+        </form>
+        <a class="btn btn-sm btn-outline" href="items.php?action=edit&id=<?= $it['id'] ?>">Edit</a>
+        <?php elseif ($it['show_on_website']): ?><span class="badge badge-ok">WEB</span><?php endif; ?>
       </td>
     </tr>
   <?php endforeach; ?>

@@ -19,6 +19,8 @@ $nav = [
     ['repairs.view', 'repairs.php', '🛠️', 'Repair Jobs'],
     ['warranty.view', 'warranty.php', '🛡️', 'Warranty'],
     ['payments.view', 'payments.php', '💰', 'Payments'],
+    ['expenses.view', 'expenses.php', '🧾', 'Expenses'],
+    ['challans.view', 'challans.php', '🚚', 'Challans'],
     ['reports.view', 'reports.php', '📈', 'Reports'],
     ['users.view', 'users.php', '🧑‍💼', 'Staff Users'],
     ['roles.view', 'roles.php', '🔑', 'Roles'],

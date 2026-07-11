@@ -10,12 +10,15 @@ $page_title = 'Reports';
 include __DIR__ . '/includes/header.php';
 
 $tabs = [
-    'daily' => '📅 Daily Sales', 'sales' => '🧾 Sales', 'purchase' => '📦 Purchase',
-    'gst' => '🧮 GST', 'profit' => '💹 Profit', 'staff' => '🎒 Staff Stock',
+    'daily' => '📅 Daily Sales', 'sales' => '🧾 Sales', 'party_sales' => '👥 Party Sales',
+    'purchase' => '📦 Purchase', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
+    'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Profit',
+    'bill_profit' => '🧮 Bill Profit', 'staff' => '🎒 Staff Stock',
     'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'low' => '⚠️ Low Stock',
 ];
 if (!can('reports.gst')) unset($tabs['gst']);
-if (!can('reports.profit')) unset($tabs['profit']);
+if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); }
+if (!can('expenses.view')) unset($tabs['expense']);
 ?>
 <div class="page-actions" style="overflow-x:auto;flex-wrap:nowrap">
 <?php foreach ($tabs as $k => $label): ?>
@@ -28,7 +31,25 @@ if (!can('reports.profit')) unset($tabs['profit']);
   <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>
   <button class="btn btn-sm" type="submit">Apply</button>
   <button class="btn btn-sm btn-outline no-print" type="button" onclick="window.print()">🖨️ Print</button>
+  <button class="btn btn-sm btn-outline no-print" type="button" onclick="exportCsv()">⬇ Excel/CSV</button>
 </form>
+<script>
+function exportCsv() {
+  var rows = [];
+  document.querySelectorAll('.content table tr').forEach(function (tr) {
+    var cells = [];
+    tr.querySelectorAll('th,td').forEach(function (c) {
+      cells.push('"' + c.innerText.trim().replace(/"/g, '""') + '"');
+    });
+    if (cells.length) rows.push(cells.join(','));
+  });
+  var blob = new Blob(["﻿" + rows.join('\n')], {type: 'text/csv;charset=utf-8'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'report-<?= e($r) ?>-<?= e($from) ?>-to-<?= e($to) ?>.csv';
+  a.click();
+}
+</script>
 
 <?php
 // ---------------- daily sales ----------------
@@ -111,6 +132,105 @@ if ($r === 'profit' && can('reports.profit')) {
     foreach ($rows as $x) echo '<tr><td>' . e($x['name']) . '</td><td class="num">' . (float)$x['qty'] . '</td><td class="num">' . money($x['revenue']) . '</td><td class="num">' . money($x['cost']) . '</td><td class="num">' . money($x['revenue'] - $x['cost']) . '</td></tr>';
     echo '</tbody></table></div>';
     echo '<p class="muted">Cost = current item purchase price × qty (estimate).</p>';
+}
+
+// ---------------- party-wise sales ----------------
+if ($r === 'party_sales') {
+    $rows = all("SELECT COALESCE(p.name, CONCAT(s.customer_name, ' (walk-in)'), 'Walk-in') pname,
+                 COUNT(*) bills, SUM(s.total) total, SUM(s.paid) paid
+                 FROM sales s LEFT JOIN parties p ON p.id = s.party_id
+                 WHERE s.sale_date BETWEEN ? AND ?
+                 GROUP BY COALESCE(CONCAT('p', s.party_id), s.customer_name) ORDER BY total DESC", [$from, $to]);
+    echo '<div class="table-wrap"><table><thead><tr><th>Customer / Party</th><th class="num">Bills</th><th class="num">Total ₹</th><th class="num">Paid ₹</th><th class="num">Due ₹</th></tr></thead><tbody>';
+    foreach ($rows as $x) echo '<tr><td>' . e($x['pname']) . '</td><td class="num">' . $x['bills'] . '</td><td class="num">' . money($x['total']) . '</td><td class="num">' . money($x['paid']) . '</td><td class="num">' . money($x['total'] - $x['paid']) . '</td></tr>';
+    echo '</tbody></table></div>';
+}
+
+// ---------------- stock report (qty + value, location-wise) ----------------
+if ($r === 'stockval' && can('reports.profit')) {
+    $locs = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
+    $stockMap = [];
+    foreach (all('SELECT * FROM stock') as $s) $stockMap[$s['item_id']][$s['location_id']] = (float)$s['qty'];
+    $staffHeld = [];
+    foreach (all('SELECT item_id, SUM(qty) q FROM staff_stock GROUP BY item_id') as $s) $staffHeld[$s['item_id']] = (float)$s['q'];
+    $items = all('SELECT * FROM items WHERE is_active = 1 ORDER BY name');
+    $grandQty = 0; $grandVal = 0; $grandSale = 0;
+    echo '<div class="table-wrap"><table><thead><tr><th>Item</th>';
+    foreach ($locs as $l) echo '<th class="num">' . e($l['code']) . '</th>';
+    echo '<th class="num">Staff</th><th class="num">Total Qty</th><th class="num">Value (purchase) ₹</th><th class="num">Value (selling) ₹</th></tr></thead><tbody>';
+    foreach ($items as $it) {
+        $rowQty = $staffHeld[$it['id']] ?? 0;
+        echo '<tr><td>' . e($it['name']) . '</td>';
+        foreach ($locs as $l) {
+            $qv = $stockMap[$it['id']][$l['id']] ?? 0;
+            $rowQty += $qv;
+            echo '<td class="num">' . ($qv ?: '·') . '</td>';
+        }
+        $val = $rowQty * (float)$it['purchase_price'];
+        $sval = $rowQty * (float)$it['selling_price'];
+        $grandQty += $rowQty; $grandVal += $val; $grandSale += $sval;
+        echo '<td class="num">' . (($staffHeld[$it['id']] ?? 0) ?: '·') . '</td>';
+        echo '<td class="num"><strong>' . $rowQty . '</strong> ' . e($it['unit']) . '</td>';
+        echo '<td class="num">' . money($val) . '</td><td class="num">' . money($sval) . '</td></tr>';
+    }
+    echo '</tbody></table></div>';
+    echo '<div class="grid-stats">';
+    echo '<div class="stat"><div class="stat-label">કુલ સ્ટોક રોકાણ (purchase ભાવે)</div><div class="stat-value">₹' . money($grandVal) . '</div></div>';
+    echo '<div class="stat s-ok"><div class="stat-label">સ્ટોક ની બજાર કિંમત (selling ભાવે)</div><div class="stat-value">₹' . money($grandSale) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">શક્ય નફો stock પર</div><div class="stat-value">₹' . money($grandSale - $grandVal) . '</div></div>';
+    echo '</div>';
+}
+
+// ---------------- cashbook (day-wise in/out) ----------------
+if ($r === 'cashbook') {
+    $in = [];
+    foreach (all("SELECT pay_date d, SUM(amount) a, mode FROM payments WHERE direction='in' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode", [$from, $to]) as $x)
+        $in[] = ['d' => $x['d'], 'desc' => 'Party receipt (' . $x['mode'] . ')', 'in' => $x['a'], 'out' => 0];
+    foreach (all("SELECT sale_date d, SUM(paid) a FROM sales WHERE party_id IS NULL AND paid > 0 AND sale_date BETWEEN ? AND ? GROUP BY sale_date", [$from, $to]) as $x)
+        $in[] = ['d' => $x['d'], 'desc' => 'Walk-in sales collection', 'in' => $x['a'], 'out' => 0];
+    foreach (all("SELECT pay_date d, SUM(amount) a, mode FROM payments WHERE direction='out' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode", [$from, $to]) as $x)
+        $in[] = ['d' => $x['d'], 'desc' => 'Supplier payment (' . $x['mode'] . ')', 'in' => 0, 'out' => $x['a']];
+    if (can('expenses.view')) {
+        foreach (all("SELECT exp_date d, SUM(amount) a FROM expenses WHERE exp_date BETWEEN ? AND ? GROUP BY exp_date", [$from, $to]) as $x)
+            $in[] = ['d' => $x['d'], 'desc' => 'Expenses', 'in' => 0, 'out' => $x['a']];
+    }
+    usort($in, fn($a, $b) => strcmp($a['d'], $b['d']));
+    $bal = 0;
+    echo '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th class="num">In ₹</th><th class="num">Out ₹</th><th class="num">Running</th></tr></thead><tbody>';
+    foreach ($in as $x) {
+        $bal += $x['in'] - $x['out'];
+        echo '<tr><td>' . dmy($x['d']) . '</td><td>' . e($x['desc']) . '</td><td class="num">' . ($x['in'] ? money($x['in']) : '') . '</td><td class="num">' . ($x['out'] ? money($x['out']) : '') . '</td><td class="num">' . money($bal) . '</td></tr>';
+    }
+    if (!$in) echo '<tr><td colspan="5" class="muted">No entries in this period.</td></tr>';
+    echo '</tbody></table></div>';
+    echo '<p class="muted">Note: party વાળા sales bills ની વસૂલી "Party receipt" માં ગણાય છે; walk-in ની અલગ.</p>';
+}
+
+// ---------------- expense report ----------------
+if ($r === 'expense' && can('expenses.view')) {
+    $rows = all('SELECT category, COUNT(*) cnt, SUM(amount) total FROM expenses WHERE exp_date BETWEEN ? AND ? GROUP BY category ORDER BY total DESC', [$from, $to]);
+    echo '<div class="table-wrap"><table><thead><tr><th>Category</th><th class="num">Entries</th><th class="num">Total ₹</th></tr></thead><tbody>';
+    foreach ($rows as $x) echo '<tr><td>' . e($x['category']) . '</td><td class="num">' . $x['cnt'] . '</td><td class="num">' . money($x['total']) . '</td></tr>';
+    echo '<tr><td><strong>Total</strong></td><td></td><td class="num"><strong>' . money(array_sum(array_column($rows, 'total'))) . '</strong></td></tr>';
+    echo '</tbody></table></div>';
+}
+
+// ---------------- bill-wise profit ----------------
+if ($r === 'bill_profit' && can('reports.profit')) {
+    $rows = all("SELECT s.id, s.invoice_no, s.sale_date, s.customer_name, s.total,
+                 SUM(si.total) rev, SUM(si.qty * IF(si.cost_price > 0, si.cost_price, i.purchase_price)) cost
+                 FROM sales s JOIN sale_items si ON si.sale_id = s.id JOIN items i ON i.id = si.item_id
+                 WHERE s.sale_date BETWEEN ? AND ? GROUP BY s.id ORDER BY s.id DESC", [$from, $to]);
+    echo '<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th class="num">Bill ₹</th><th class="num">Cost ₹</th><th class="num">Profit ₹</th><th class="num">Margin %</th></tr></thead><tbody>';
+    $tp = 0;
+    foreach ($rows as $x) {
+        $pf = $x['rev'] - $x['cost']; $tp += $pf;
+        $mg = $x['rev'] > 0 ? round($pf / $x['rev'] * 100, 1) : 0;
+        echo '<tr><td><a href="sale_view.php?id=' . $x['id'] . '">' . e($x['invoice_no']) . '</a></td><td>' . dmy($x['sale_date']) . '</td><td>' . e($x['customer_name'] ?: 'Walk-in') . '</td><td class="num">' . money($x['total']) . '</td><td class="num">' . money($x['cost']) . '</td><td class="num" style="color:' . ($pf >= 0 ? 'var(--ok)' : 'var(--bad)') . '">' . money($pf) . '</td><td class="num">' . $mg . '%</td></tr>';
+    }
+    echo '<tr><td colspan="5"><strong>Total profit</strong></td><td class="num"><strong>' . money($tp) . '</strong></td><td></td></tr>';
+    echo '</tbody></table></div>';
+    echo '<p class="muted">Cost = bill વખતનો purchase ભાવ (item દીઠ સાચવેલો). જૂના bills માટે હાલનો purchase ભાવ વપરાય છે.</p>';
 }
 
 // ---------------- staff stock ----------------

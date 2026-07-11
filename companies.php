@@ -6,14 +6,23 @@ require_perm('companies.view');
 $id = (int)get('id');
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm($id ? 'companies.edit' : 'companies.add');
+    $logo = post('old_logo');
+    if (!empty($_FILES['logo']['tmp_name'])) {
+        $ext = strtolower(pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION));
+        if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'svg'])) {
+            if (!is_dir(__DIR__ . '/uploads')) mkdir(__DIR__ . '/uploads', 0755, true);
+            $logo = 'uploads/logo_' . time() . '.' . $ext;
+            move_uploaded_file($_FILES['logo']['tmp_name'], __DIR__ . '/' . $logo);
+        }
+    }
     $data = [post('name'), post('gstin'), post('is_gst') ? 1 : 0, post('address'), post('phone'),
-             post('email'), strtoupper(post('invoice_prefix', 'INV')), post('terms'), post('is_active') ? 1 : 0];
+             post('email'), strtoupper(post('invoice_prefix', 'INV')), post('terms'), $logo, post('is_active') ? 1 : 0];
     if ($id) {
-        q('UPDATE companies SET name=?, gstin=?, is_gst=?, address=?, phone=?, email=?, invoice_prefix=?, terms=?, is_active=? WHERE id=?',
+        q('UPDATE companies SET name=?, gstin=?, is_gst=?, address=?, phone=?, email=?, invoice_prefix=?, terms=?, logo=?, is_active=? WHERE id=?',
           array_merge($data, [$id]));
         flash('Company updated.');
     } else {
-        q('INSERT INTO companies (name, gstin, is_gst, address, phone, email, invoice_prefix, terms, is_active) VALUES (?,?,?,?,?,?,?,?,?)', $data);
+        q('INSERT INTO companies (name, gstin, is_gst, address, phone, email, invoice_prefix, terms, logo, is_active) VALUES (?,?,?,?,?,?,?,?,?,?)', $data);
         flash('Company added.');
     }
     log_activity('company_save', post('name'));
@@ -28,9 +37,10 @@ include __DIR__ . '/includes/header.php';
 <div class="card">
   <h2><?= $co ? 'Edit Firm' : 'Add Firm' ?></h2>
   <p class="muted mb">બે firm રાખી શકો — એક GST વાળી, એક વગરની. Bill બનાવતી વખતે firm select થાય અને invoice series અલગ ચાલે.</p>
-  <form method="post">
+  <form method="post" enctype="multipart/form-data">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save">
+    <input type="hidden" name="old_logo" value="<?= e($co['logo'] ?? '') ?>">
     <div class="form-row cols-3">
       <div><label>Firm name *</label><input type="text" name="name" value="<?= e($co['name'] ?? '') ?>" required></div>
       <div><label>GSTIN</label><input type="text" name="gstin" value="<?= e($co['gstin'] ?? '') ?>"></div>
@@ -42,6 +52,10 @@ include __DIR__ . '/includes/header.php';
       <div><label>Email</label><input type="email" name="email" value="<?= e($co['email'] ?? '') ?>"></div>
     </div>
     <div class="field"><label>Invoice footer terms</label><textarea name="terms" rows="2" placeholder="Goods once sold..."><?= e($co['terms'] ?? '') ?></textarea></div>
+    <div class="form-row cols-2">
+      <div><label>Logo (invoice પર દેખાશે)</label><input type="file" name="logo" accept="image/*"></div>
+      <?php if (!empty($co['logo'])): ?><div><img src="<?= e($co['logo']) ?>" alt="logo" style="max-height:60px"></div><?php endif; ?>
+    </div>
     <div class="form-row cols-2">
       <label class="check-inline"><input type="checkbox" name="is_gst" value="1" <?= !empty($co['is_gst']) ? 'checked' : '' ?>> GST billing (tax invoice)</label>
       <label class="check-inline"><input type="checkbox" name="is_active" value="1" <?= ($co === null || $co['is_active']) ? 'checked' : '' ?>> Active</label>

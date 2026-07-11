@@ -24,6 +24,8 @@ function permission_catalog() {
         'repairs' => ['view', 'add', 'edit', 'delete'],
         'warranty' => ['view', 'add', 'edit', 'delete'],
         'payments' => ['view', 'add', 'delete'],
+        'expenses' => ['view', 'add', 'delete'],
+        'challans' => ['view', 'add', 'edit'],
         'reports' => ['view', 'profit', 'gst'],
         'users' => ['view', 'add', 'edit', 'delete'],
         'roles' => ['view', 'add', 'edit', 'delete'],
@@ -39,7 +41,8 @@ function permission_labels() {
         'sales_return' => 'Sales Return', 'purchases' => 'Purchase', 'purchase_return' => 'Purchase Return',
         'items' => 'Items', 'parties' => 'Parties (Customer/Supplier)', 'stock' => 'Stock',
         'handover' => 'Stock Handover', 'tasks' => 'Field Tasks', 'repairs' => 'Repair Jobs',
-        'warranty' => 'Warranty Claims', 'payments' => 'Payments / Ledger', 'reports' => 'Reports',
+        'warranty' => 'Warranty Claims', 'payments' => 'Payments / Ledger',
+        'expenses' => 'Expenses', 'challans' => 'Delivery Challans', 'reports' => 'Reports',
         'users' => 'Staff Users', 'roles' => 'Roles', 'locations' => 'Locations',
         'companies' => 'Companies / Firms', 'settings' => 'Settings',
     ];

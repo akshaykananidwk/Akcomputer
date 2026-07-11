@@ -91,6 +91,10 @@ var Bill = {
     var inp = div.querySelector('.i-search');
     var res = div.querySelector('.isearch-results');
     var t = null;
+    // barcode scanner sends Enter - don't submit the form, just search
+    inp.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); }
+    });
     inp.addEventListener('input', function () {
       div.querySelector('.i-id').value = '';
       clearTimeout(t);
@@ -100,6 +104,11 @@ var Bill = {
         fetch('ajax.php?a=item_search&q=' + encodeURIComponent(qy) + '&loc=' + (self.cfg.locSel ? document.getElementById(self.cfg.locSel).value : ''))
           .then(function (r) { return r.json(); })
           .then(function (items) {
+            // barcode scan: exact barcode match -> auto-pick instantly
+            if (items.length === 1 && items[0].barcode && items[0].barcode === qy) {
+              self.pickItem(div, items[0]);
+              return;
+            }
             res.innerHTML = '';
             items.forEach(function (it) {
               var d = document.createElement('div');

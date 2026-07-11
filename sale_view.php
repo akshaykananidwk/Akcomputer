@@ -4,7 +4,7 @@ require_once __DIR__ . '/includes/init.php';
 
 $id = (int)get('id');
 $token = get('token');
-$sale = $id ? row('SELECT s.*, c.name company_name, c.gstin, c.is_gst, c.address c_address, c.phone c_phone, c.terms c_terms,
+$sale = $id ? row('SELECT s.*, c.name company_name, c.gstin, c.is_gst, c.address c_address, c.phone c_phone, c.terms c_terms, c.logo c_logo,
                    l.name loc_name, l.city loc_city, u2.name staff_name, p.name party_name, p.gstin party_gstin, p.address party_address
                    FROM sales s
                    JOIN companies c ON c.id = s.company_id
@@ -95,6 +95,7 @@ $due = $sale['total'] - $sale['paid'];
 <div class="inv-paper card">
   <div class="inv-head">
     <div class="inv-firm">
+      <?php if (!empty($sale['c_logo'])): ?><img src="<?= e($sale['c_logo']) ?>" alt="" style="max-height:56px;margin-bottom:6px"><br><?php endif; ?>
       <h1><?= e($sale['company_name']) ?></h1>
       <div class="muted"><?= e($sale['c_address']) ?> <?= e($sale['loc_name']) ?>, <?= e($sale['loc_city']) ?><br>
       <?= $sale['c_phone'] ? 'Ph: ' . e($sale['c_phone']) : '' ?>
