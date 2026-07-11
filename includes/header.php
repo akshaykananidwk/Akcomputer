@@ -27,6 +27,11 @@ $_navMenu = [
         ['purchase_return.php', 'Purchase Return', 'purchase_return.view', 'purchase_return.php?action=new', 'purchase_return.add'],
     ]],
     ['link', 'expenses.php', '💸', 'Expenses', 'expenses.view'],
+    ['group', 'cashbank', '🏦', 'Cash & Bank', [
+        ['cash_bank.php', 'Cash & Bank Overview', 'payments.view', null, null],
+        ['bank_accounts.php', 'Bank Accounts', 'settings.view', 'bank_accounts.php', 'settings.edit'],
+        ['payment_methods.php', 'Payment Methods', 'settings.view', 'payment_methods.php', 'settings.edit'],
+    ]],
     ['group', 'godown', '🏬', 'Stock / Godown', [
         ['handover.php', 'Handover / Transfer', 'handover.view', 'handover.php?action=new', 'handover.add'],
         ['my_stock.php', 'My Stock', null, null, null],
@@ -138,7 +143,8 @@ function nav_visible_items($items) {
         ['sales.php?action=new', '🧾', 'New Bill', 'sales.add'],
         ['estimates.php?action=new', '📋', 'Estimate', 'estimates.add'],
         ['purchases.php?action=new', '📦', 'Purchase', 'purchases.add'],
-        ['payments.php', '💰', 'Payment', 'payments.add'],
+        ['payments.php?action=new&dir=in', '⬇️', 'Payment In', 'payments.add'],
+        ['payments.php?action=new&dir=out', '⬆️', 'Payment Out', 'payments.add'],
         ['expenses.php', '💸', 'Expense', 'expenses.add'],
         ['repairs.php?action=new', '🛠️', 'Repair Job', 'repairs.add'],
         ['tasks.php?action=new', '🔧', 'Task', 'tasks.add'],

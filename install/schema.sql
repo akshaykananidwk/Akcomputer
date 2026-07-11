@@ -185,6 +185,10 @@ CREATE TABLE IF NOT EXISTS purchases (
   total DECIMAL(12,2) NOT NULL DEFAULT 0,
   paid DECIMAL(12,2) NOT NULL DEFAULT 0,
   status ENUM('due','partial','paid') NOT NULL DEFAULT 'due',
+  discount_type ENUM('amount','percent') NOT NULL DEFAULT 'amount',
+  discount_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+  bank_account_id INT DEFAULT NULL,
+  payment_method_id INT DEFAULT NULL,
   notes VARCHAR(255) DEFAULT '',
   created_by INT NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -244,6 +248,10 @@ CREATE TABLE IF NOT EXISTS sales (
   status ENUM('due','partial','paid') NOT NULL DEFAULT 'paid',
   is_cancelled TINYINT(1) NOT NULL DEFAULT 0,
   last_reminder DATE DEFAULT NULL,
+  discount_type ENUM('amount','percent') NOT NULL DEFAULT 'amount',
+  discount_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+  bank_account_id INT DEFAULT NULL,
+  payment_method_id INT DEFAULT NULL,
   notes VARCHAR(255) DEFAULT '',
   created_by INT NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -473,7 +481,9 @@ CREATE TABLE IF NOT EXISTS warranty_claims (
 -- ---------- Party payments (receipts / payments ledger) ----------
 CREATE TABLE IF NOT EXISTS payments (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  party_id INT NOT NULL,
+  party_id INT DEFAULT NULL,
+  bank_account_id INT DEFAULT NULL,
+  payment_method_id INT DEFAULT NULL,
   direction ENUM('in','out') NOT NULL,
   amount DECIMAL(12,2) NOT NULL,
   mode VARCHAR(20) NOT NULL DEFAULT 'cash',
@@ -493,6 +503,8 @@ CREATE TABLE IF NOT EXISTS expenses (
   category VARCHAR(80) NOT NULL DEFAULT 'General',
   amount DECIMAL(12,2) NOT NULL,
   mode VARCHAR(20) NOT NULL DEFAULT 'cash',
+  bank_account_id INT DEFAULT NULL,
+  payment_method_id INT DEFAULT NULL,
   notes VARCHAR(255) DEFAULT '',
   location_id INT NOT NULL,
   created_by INT NOT NULL,
@@ -540,6 +552,34 @@ CREATE TABLE IF NOT EXISTS web_orders (
   total DECIMAL(12,2) NOT NULL DEFAULT 0,
   status ENUM('new','contacted','completed','cancelled') NOT NULL DEFAULT 'new',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------- Bank accounts ----------
+CREATE TABLE IF NOT EXISTS bank_accounts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  account_name VARCHAR(120) NOT NULL,
+  bank_name VARCHAR(120) NOT NULL,
+  account_number VARCHAR(40) DEFAULT '',
+  ifsc VARCHAR(20) DEFAULT '',
+  branch VARCHAR(120) DEFAULT '',
+  upi_id VARCHAR(80) DEFAULT '',
+  opening_balance DECIMAL(12,2) NOT NULL DEFAULT 0,
+  is_default TINYINT(1) NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------- Payment methods ----------
+CREATE TABLE IF NOT EXISTS payment_methods (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(30) NOT NULL,
+  name VARCHAR(60) NOT NULL,
+  type ENUM('cash','bank','other') NOT NULL DEFAULT 'other',
+  bank_account_id INT DEFAULT NULL,
+  is_system TINYINT(1) NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  sort_order INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_pm_code (code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------- Activity log ----------

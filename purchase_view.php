@@ -15,9 +15,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' && can('paymen
     if ($amt > 0) {
         q('UPDATE purchases SET paid = paid + ?, status = ? WHERE id = ?',
           [$amt, payment_status($p['total'], $p['paid'] + $amt), $id]);
-        q('INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?)',
-          [$p['party_id'], 'out', $amt, post('mode', 'cash'), 'purchase', $id, today(), 'Against bill ' . $p['bill_no'], current_user()['id']]);
+        q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, ref_type, ref_id, pay_date, notes, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?)',
+          [$p['party_id'], 'out', $amt, post('mode', 'cash'), (int)post('bank_account_id') ?: null, 'purchase', $id, today(), 'Against bill ' . $p['bill_no'], current_user()['id']]);
         flash('Payment recorded.');
     }
     redirect('purchase_view.php?id=' . $id);
@@ -69,14 +69,18 @@ include __DIR__ . '/includes/header.php';
     <?php if ($due > 0.009): ?><div class="t-line"><span><strong>Due</strong></span><span><strong>₹<?= money($due) ?></strong></span></div><?php endif; ?>
   </div>
 </div>
-<?php if ($due > 0.009 && can('payments.add')): ?>
+<?php if ($due > 0.009 && can('payments.add')):
+  $pms = active_payment_methods(); $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name'); ?>
 <div class="card no-print">
   <h3>Pay supplier</h3>
   <form method="post" class="filterbar">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="pay">
     <div><input type="number" step="any" name="amount" value="<?= money($due) ?>"></div>
-    <div><select name="mode"><option>cash</option><option>upi</option><option>bank</option><option>cheque</option></select></div>
+    <div><select name="mode" id="pv2_mode" onchange="document.getElementById('pv2_bank').style.display=this.selectedOptions[0].dataset.type==='bank'?'':'none'">
+      <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
+    </select></div>
+    <div id="pv2_bank" style="display:none"><select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?></option><?php endforeach; ?></select></div>
     <button class="btn btn-success btn-sm" type="submit">Pay</button>
   </form>
 </div>

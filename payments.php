@@ -60,8 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
 
         $notes = trim(post('notes'));
         if ($allocNotes) $notes = trim($notes . ' [' . implode(', ', $allocNotes) . ']');
-        q('INSERT INTO payments (party_id, direction, amount, mode, pay_date, notes, created_by) VALUES (?,?,?,?,?,?,?)',
-          [$party_id, $dir, $amount, post('mode', 'cash'), post('pay_date', today()), $notes, $u['id']]);
+        q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, pay_date, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
+          [$party_id, $dir, $amount, post('mode', 'cash'), (int)post('bank_account_id') ?: null, (int)post('payment_method_id') ?: null,
+           post('pay_date', today()), $notes, $u['id']]);
         $pid = insert_id();
         $pdo->commit();
         log_activity('payment_add', "P-$pid party={$party['name']} $dir $amount");
@@ -114,7 +115,23 @@ if ($action === 'new') {
     $dir = get('dir') === 'out' ? 'out' : 'in';
     $presetParty = (int)get('party');
     $types = $dir === 'in' ? "('customer','both')" : "('supplier','both','service_center')";
-    $parties = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 AND type IN $types ORDER BY name");
+    // only parties with a PENDING balance in this direction (You'll Get for
+    // in / You'll Give for out) - keeps the dropdown short and on-topic,
+    // like the reference app; a preset party from a "Receive"/"Pay" link is
+    // always included even if its balance happens to be zero right now
+    $balExpr = "(p.opening_balance
+        + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id AND is_cancelled = 0), 0)
+        - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = p.id), 0)
+        - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = p.id), 0)
+        + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = p.id), 0)
+        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'in'), 0)
+        + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'out'), 0))";
+    $balCond = $dir === 'in' ? "$balExpr > 0.009" : "$balExpr < -0.009";
+    $parties = all("SELECT p.id, p.name, p.mobile, $balExpr AS balance FROM parties p
+                    WHERE p.is_active = 1 AND p.type IN $types AND ($balCond OR p.id = ?)
+                    ORDER BY name", [$presetParty]);
+    $pms = active_payment_methods();
+    $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
     $page_title = $dir === 'in' ? 'Payment-In (વસૂલી)' : 'Payment-Out (ચુકવણી)';
     include __DIR__ . '/includes/header.php';
     ?>
@@ -123,23 +140,28 @@ if ($action === 'new') {
       <input type="hidden" name="do" value="save_payment">
       <input type="hidden" name="direction" value="<?= $dir ?>">
       <div class="card">
+        <?php if (!$parties): ?><div class="flash flash-info">🎉 કોઈ party <?= $dir === 'in' ? 'લેવાના' : 'દેવાના' ?> બાકી નથી. છતાં payment નોંધવું હોય તો નીચે party ઉમેરો/શોધો.</div><?php endif; ?>
         <div class="form-row cols-3">
-          <div><label><?= $dir === 'in' ? 'Customer / Party *' : 'Supplier / Party *' ?></label>
+          <div><label><?= $dir === 'in' ? 'Customer / Party *' : 'Supplier / Party *' ?> <span class="muted" style="font-weight:normal">(બાકી હોય એ જ)</span></label>
             <select name="party_id" id="party_id" required>
               <option value="">-- select party --</option>
               <?php foreach ($parties as $p): ?>
-              <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?></option>
+              <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?> (₹<?= money(abs($p['balance'])) ?>)</option>
               <?php endforeach; ?>
             </select>
             <p class="muted mt" id="balInfo"></p>
           </div>
           <div><label>Date</label><input type="date" name="pay_date" value="<?= today() ?>"></div>
           <div><label>Mode</label>
-            <select name="mode"><option>cash</option><option>upi</option><option>bank</option><option>card</option><option>cheque</option></select></div>
+            <select name="mode" id="pay_mode" onchange="pmChange()">
+              <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
+            </select></div>
         </div>
-        <div class="form-row cols-2">
+        <div class="form-row cols-3">
           <div><label><?= $dir === 'in' ? 'Received amount (₹) *' : 'Paid amount (₹) *' ?></label>
             <input type="number" step="any" min="0.01" name="amount" id="pay_amount" required></div>
+          <div id="bankAccBox" style="display:none"><label>Bank Account</label>
+            <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?></select></div>
           <div><label>Notes</label><input type="text" name="notes"></div>
         </div>
         <?php if ($dir === 'in'): ?>
@@ -157,6 +179,11 @@ if ($action === 'new') {
     </form>
     <script>
     var DIR = '<?= $dir ?>';
+    function pmChange() {
+      var sel = document.getElementById('pay_mode');
+      document.getElementById('bankAccBox').style.display = sel.options[sel.selectedIndex].dataset.type === 'bank' ? '' : 'none';
+    }
+    window.pmChange = pmChange;
     function loadBills() {
       var pid = document.getElementById('party_id').value;
       var box = document.getElementById('billList');
@@ -201,7 +228,7 @@ if ($action === 'new') {
 // ---------- list ----------
 $parties = all('SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name');
 $recent = all('SELECT p.*, pt.name party_name, u2.name by_name FROM payments p
-               JOIN parties pt ON pt.id = p.party_id JOIN users u2 ON u2.id = p.created_by
+               LEFT JOIN parties pt ON pt.id = p.party_id JOIN users u2 ON u2.id = p.created_by
                ORDER BY p.id DESC LIMIT 100');
 $dueSales = all("SELECT s.*, c.name company_name FROM sales s JOIN companies c ON c.id = s.company_id
                  WHERE s.status <> 'paid' AND s.is_cancelled = 0 ORDER BY s.due_date IS NULL, s.due_date LIMIT 100");
@@ -271,7 +298,7 @@ include __DIR__ . '/includes/header.php';
       <tr>
         <td>P-<?= str_pad($pm['id'], 5, '0', STR_PAD_LEFT) ?></td>
         <td><?= dmy($pm['pay_date']) ?></td>
-        <td><a href="parties.php?action=ledger&id=<?= $pm['party_id'] ?>"><?= e($pm['party_name']) ?></a></td>
+        <td><?= $pm['party_id'] ? '<a href="parties.php?action=ledger&id=' . $pm['party_id'] . '">' . e($pm['party_name']) . '</a>' : '<span class="muted">Walk-in</span>' ?></td>
         <td><?= $pm['direction'] === 'in' ? '<span class="badge badge-ok">IN</span>' : '<span class="badge badge-bad">OUT</span>' ?></td>
         <td class="num">₹<?= money($pm['amount']) ?></td>
         <td><?= e($pm['mode']) ?></td>

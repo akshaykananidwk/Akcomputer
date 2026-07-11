@@ -77,11 +77,10 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' &&
     if ($amt > 0) {
         q('UPDATE sales SET paid = paid + ?, status = ? WHERE id = ?',
           [$amt, payment_status($sale['total'], $sale['paid'] + $amt), $id]);
-        if ($sale['party_id']) {
-            q('INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
-               VALUES (?,?,?,?,?,?,?,?,?)',
-              [$sale['party_id'], 'in', $amt, post('mode', 'cash'), 'sale', $id, today(), 'Against ' . $sale['invoice_no'], current_user()['id']]);
-        }
+        q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+          [$sale['party_id'] ?: null, 'in', $amt, post('mode', 'cash'), (int)post('bank_account_id') ?: null,
+           (int)post('payment_method_id') ?: null, 'sale', $id, today(), 'Against ' . $sale['invoice_no'], current_user()['id']]);
         flash('Payment of ₹' . money($amt) . ' recorded.');
     }
     redirect('sale_view.php?id=' . $id);
@@ -120,14 +119,21 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
   </form>
   <?php endif; ?>
 </div>
-<?php if ($due > 0.009 && can('payments.add')): ?>
+<?php if ($due > 0.009 && can('payments.add')):
+  $pms = active_payment_methods();
+  $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name'); ?>
 <div class="card no-print">
   <h3>Record payment (due ₹<?= money($due) ?>)</h3>
   <form method="post" class="filterbar">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="pay">
     <div><input type="number" step="any" name="amount" value="<?= money($due) ?>" max="<?= $due ?>"></div>
-    <div><select name="mode"><option>cash</option><option>upi</option><option>card</option><option>bank</option></select></div>
+    <div><select name="mode" id="pv_mode" onchange="document.getElementById('pv_bank').style.display=this.selectedOptions[0].dataset.type==='bank'?'':'none'">
+      <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-id="<?= $pm['id'] ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
+    </select></div>
+    <div id="pv_bank" style="<?= ($pms[0]['type'] ?? '') === 'bank' ? '' : 'display:none' ?>">
+      <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?></option><?php endforeach; ?></select>
+    </div>
     <button class="btn btn-success btn-sm" type="submit">Receive</button>
   </form>
 </div>
@@ -175,7 +181,11 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
   </div>
   <div class="bill-totals">
     <div class="t-line"><span>Subtotal</span><span>₹<?= money($sale['subtotal']) ?></span></div>
-    <?php if ($sale['discount'] > 0): ?><div class="t-line"><span>Discount</span><span>- ₹<?= money($sale['discount']) ?></span></div><?php endif; ?>
+    <?php if ($sale['discount'] > 0):
+        $dLabel = (!empty($sale['discount_type']) && $sale['discount_type'] === 'percent' && $sale['discount_pct'] > 0)
+            ? 'Discount (' . rtrim(rtrim(number_format($sale['discount_pct'], 2), '0'), '.') . '%)' : 'Discount'; ?>
+    <div class="t-line"><span><?= e($dLabel) ?></span><span>- ₹<?= money($sale['discount']) ?></span></div>
+    <?php endif; ?>
     <?php if ($sale['is_gst']): ?>
     <div class="t-line"><span>CGST</span><span>₹<?= money($sale['tax_amount'] / 2) ?></span></div>
     <div class="t-line"><span>SGST</span><span>₹<?= money($sale['tax_amount'] / 2) ?></span></div>
@@ -204,6 +214,28 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
         <td class="num"><?= money($tx) ?></td></tr>
       <?php endforeach; ?></tbody>
     </table>
+  </div>
+  <?php endif; ?>
+
+  <?php
+  $bankAcc = default_bank_account();
+  $qrWeb = invoice_qr_web_path($sale);
+  if ($bankAcc || $qrWeb): ?>
+  <div class="mt" style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;border-top:1px dashed var(--border);padding-top:12px">
+    <?php if ($bankAcc): ?>
+    <div style="font-size:12.5px">
+      <strong>Pay via Bank Transfer:</strong><br>
+      <?= e($bankAcc['account_name']) ?> - <?= e($bankAcc['bank_name']) ?><br>
+      A/C No: <?= e($bankAcc['account_number']) ?> &nbsp; IFSC: <?= e($bankAcc['ifsc']) ?>
+      <?= $bankAcc['branch'] ? '<br>Branch: ' . e($bankAcc['branch']) : '' ?>
+    </div>
+    <?php endif; ?>
+    <?php if ($qrWeb): ?>
+    <div style="text-align:center">
+      <img src="<?= e($qrWeb) ?>" alt="Scan to pay" style="width:110px;height:110px;border:1px solid var(--border);border-radius:8px">
+      <div class="muted" style="font-size:10.5px">Scan & Pay ₹<?= money($sale['total']) ?></div>
+    </div>
+    <?php endif; ?>
   </div>
   <?php endif; ?>
 

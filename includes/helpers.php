@@ -175,6 +175,55 @@ function invoice_theme_class() {
     return 'invt-' . $n . ' ' . $themes[$n][1];
 }
 
+// ---------- Bank accounts / payment methods / QR ----------
+function default_bank_account() {
+    static $b = false;
+    if ($b === false) $b = row('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1');
+    return $b;
+}
+function active_payment_methods() {
+    static $l = null;
+    if ($l === null) $l = all('SELECT * FROM payment_methods WHERE is_active = 1 ORDER BY sort_order, id');
+    return $l;
+}
+function upi_uri($vpa, $payee, $amount, $note) {
+    return 'upi://pay?pa=' . rawurlencode($vpa) . '&pn=' . rawurlencode($payee) .
+           '&am=' . number_format((float)$amount, 2, '.', '') . '&cu=INR&tn=' . rawurlencode($note);
+}
+/** Fetch (and cache) a QR PNG for arbitrary data via a public QR API. Returns a local file path or null. */
+function qr_png_path($data) {
+    if (!$data) return null;
+    $dir = dirname(__DIR__) . '/uploads/qrcache';
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $path = $dir . '/' . md5($data) . '.png';
+    if (is_file($path) && filesize($path) > 0) return $path;
+    if (!function_exists('curl_init')) return null;
+    $url = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=' . urlencode($data);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_SSL_VERIFYPEER => true]);
+    $png = curl_exec($ch);
+    $ok = $png !== false && curl_getinfo($ch, CURLINFO_HTTP_CODE) == 200 && substr($png, 1, 3) === 'PNG';
+    curl_close($ch);
+    if (!$ok) return null;
+    file_put_contents($path, $png);
+    return $path;
+}
+/** Relative web path (for <img src>) of the QR for this sale, or null if unavailable. */
+function invoice_qr_web_path($sale) {
+    $bank = default_bank_account();
+    if (!$bank || !$bank['upi_id']) return null;
+    $p = qr_png_path(upi_uri($bank['upi_id'], $bank['account_name'], $sale['total'], $sale['invoice_no']));
+    if (!$p) return null;
+    return 'uploads/qrcache/' . basename($p);
+}
+function invoice_theme_accent_rgb() {
+    $n = (int)setting('invoice_theme', '1');
+    $themes = invoice_themes();
+    $hex = ltrim($themes[$n][2] ?? '#1a56db', '#');
+    if (strlen($hex) !== 6) $hex = '1a56db';
+    return [hexdec(substr($hex, 0, 2)) / 255, hexdec(substr($hex, 2, 2)) / 255, hexdec(substr($hex, 4, 2)) / 255];
+}
+
 // ---------- Misc ----------
 function share_token() { return bin2hex(random_bytes(16)); }
 

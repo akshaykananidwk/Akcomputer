@@ -31,24 +31,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=new'); }
 
     $subtotal = array_sum(array_column($rows, 'total'));
-    $discount = (float)post('discount');
+    $discType = post('discount_type') === 'percent' ? 'percent' : 'amount';
+    $discRaw = (float)post('discount_val');
+    $discount = $discType === 'percent' ? round($subtotal * $discRaw / 100, 2) : min($discRaw, $subtotal);
+    $discPct = $discType === 'percent' ? $discRaw : 0;
     $tax = 0;
     foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
     $total = $subtotal - $discount + $tax;
     $paid = post('payment_mode') === 'credit' ? 0 : min((float)post('paid'), $total);
     $credit_days = (int)post('credit_days');
+    $bankAccId = (int)post('bank_account_id') ?: null;
+    $pmId = (int)post('payment_method_id') ?: null;
 
     $pdo = db();
     $pdo->beginTransaction();
     try {
         q('INSERT INTO sales (company_id, party_id, customer_name, customer_mobile, location_id, sale_date, price_type,
-           credit_days, due_date, subtotal, discount, tax_amount, total, paid, payment_mode, status, notes, created_by, share_token)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+           credit_days, due_date, subtotal, discount, discount_type, discount_pct, tax_amount, total, paid, payment_mode,
+           bank_account_id, payment_method_id, status, notes, created_by, share_token)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
           [$company['id'], (int)post('party_id') ?: null, post('customer_name'), post('customer_mobile'), $loc_id,
            post('sale_date', today()), post('price_type', 'retail'), $credit_days,
            $credit_days ? date('Y-m-d', strtotime(post('sale_date', today()) . " +$credit_days days")) : null,
-           $subtotal, $discount, $tax, $total, $paid, post('payment_mode', 'cash'),
-           payment_status($total, $paid), post('notes'), $u['id'], share_token()]);
+           $subtotal, $discount, $discType, $discPct, $tax, $total, $paid, post('payment_mode', 'cash'),
+           $bankAccId, $pmId, payment_status($total, $paid), post('notes'), $u['id'], share_token()]);
         $sale_id = insert_id();
         $invoice_no = $company['invoice_prefix'] . '-' . date('y') . '-' . str_pad($sale_id, 5, '0', STR_PAD_LEFT);
         q('UPDATE sales SET invoice_no = ? WHERE id = ?', [$invoice_no, $sale_id]);
@@ -84,11 +90,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                 if ($upd->rowCount() === 0) throw new Exception("Serial $sn is not available in stock.");
             }
         }
-        // post initial payment to the party ledger so the balance is always right
-        if ($paid > 0 && (int)post('party_id')) {
-            q('INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
-               VALUES (?,?,?,?,?,?,?,?,?)',
-              [(int)post('party_id'), 'in', $paid, post('payment_mode', 'cash'), 'sale', $sale_id,
+        // post initial payment to the party ledger (and to cash/bank books -
+        // always recorded, even for walk-in sales with no party, so "Cash in
+        // Hand" and bank account balances stay accurate)
+        if ($paid > 0) {
+            q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+              [(int)post('party_id') ?: null, 'in', $paid, post('payment_mode', 'cash'), $bankAccId, $pmId, 'sale', $sale_id,
                post('sale_date', today()), 'With bill ' . $invoice_no, $u['id']]);
         }
         if ((int)post('estimate_id')) {
@@ -223,11 +231,29 @@ if ($action === 'new') {
       </div>
 
       <div class="card">
-        <div class="form-row cols-3">
-          <div><label>Discount (₹)</label><input type="number" step="any" name="discount" id="discount" value="0"></div>
+        <?php $pms = active_payment_methods(); $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name'); ?>
+        <div class="form-row cols-4">
+          <div><label>Discount</label>
+            <div style="display:flex;gap:6px">
+              <input type="number" step="any" id="discount_val" name="discount_val" value="0" oninput="Bill.totals()" style="flex:1">
+              <div class="cc-toggle" style="flex-shrink:0">
+                <button type="button" id="discAmt" class="on-cash" onclick="setDiscType('amount')">₹</button>
+                <button type="button" id="discPct" onclick="setDiscType('percent')">%</button>
+              </div>
+            </div>
+            <input type="hidden" name="discount" id="discount" value="0">
+            <input type="hidden" name="discount_type" id="discount_type" value="amount">
+          </div>
           <div><label>Paid now (₹) <a href="javascript:payFull()" style="font-weight:normal">[full]</a></label><input type="number" step="any" name="paid" id="paid" value="0"></div>
           <div><label>Payment mode</label>
-            <select name="payment_mode"><option>cash</option><option>upi</option><option>card</option><option>bank</option><option>credit</option></select></div>
+            <select name="payment_mode" id="payment_mode" onchange="pmChange()">
+              <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
+              <option value="credit">Credit / Udhar</option>
+            </select></div>
+          <div id="bankAccBox" style="display:none"><label>Bank Account</label>
+            <select name="bank_account_id">
+              <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
+            </select></div>
         </div>
         <div class="field"><label>Notes</label><input type="text" name="notes"></div>
         <div class="bill-totals">
@@ -254,7 +280,7 @@ if ($action === 'new') {
         document.getElementById('customer_name').value = <?= json_encode($est['customer_name']) ?>;
         document.getElementById('customer_mobile').value = <?= json_encode($est['customer_mobile']) ?>;
         <?php if ($est['party_id']): ?>document.getElementById('party_id').value = '<?= (int)$est['party_id'] ?>';<?php endif; ?>
-        document.getElementById('discount').value = '<?= (float)$est['discount'] ?>';
+        document.getElementById('discount_val').value = '<?= (float)$est['discount'] ?>';
         pre.forEach(function (it, idx) {
           if (idx > 0) Bill.addRow();
           var rows = document.querySelectorAll('#billItems .bill-row');
@@ -277,10 +303,27 @@ if ($action === 'new') {
         ccMode = m;
         document.getElementById('ccCash').className = m === 'cash' ? 'on-cash' : '';
         document.getElementById('ccCredit').className = m === 'credit' ? 'on-credit' : '';
-        if (m === 'cash') { payFull(); document.querySelector('select[name=payment_mode]').value = 'cash'; }
-        else { document.getElementById('paid').value = 0; document.querySelector('select[name=payment_mode]').value = 'credit'; Bill.totals(); }
+        var sel = document.getElementById('payment_mode');
+        if (m === 'cash') { payFull(); if (sel.value === 'credit') sel.value = 'cash'; }
+        else { document.getElementById('paid').value = 0; sel.value = 'credit'; Bill.totals(); }
+        pmChange();
       }
       window.setCC = setCC;
+      function pmChange() {
+        var sel = document.getElementById('payment_mode');
+        var opt = sel.options[sel.selectedIndex];
+        document.getElementById('bankAccBox').style.display = opt.dataset.type === 'bank' ? '' : 'none';
+        if (sel.value === 'credit' && ccMode !== 'credit') setCC('credit');
+        else if (sel.value !== 'credit' && ccMode === 'credit') setCC('cash');
+      }
+      window.pmChange = pmChange;
+      function setDiscType(t) {
+        document.getElementById('discount_type').value = t;
+        document.getElementById('discAmt').className = t === 'amount' ? 'on-cash' : '';
+        document.getElementById('discPct').className = t === 'percent' ? 'on-cash' : '';
+        Bill.totals();
+      }
+      window.setDiscType = setDiscType;
       // cash mode: paid follows total automatically
       var _origTotals = Bill.totals.bind(Bill);
       Bill.totals = function () {

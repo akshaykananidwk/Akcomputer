@@ -78,6 +78,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('INSERT INTO credit_terms (days, label) VALUES (?, ?)')->execute($ct);
             }
 
+            // payment methods
+            foreach ([
+                ['cash','Cash','cash',1,1], ['upi','UPI','other',1,2], ['card','Card','other',1,3],
+                ['bank','Bank Transfer','bank',1,4], ['cheque','Cheque','other',1,5], ['credit','Credit / Udhar','other',1,6],
+            ] as $pm) {
+                $pdo->prepare('INSERT INTO payment_methods (code, name, type, is_system, sort_order) VALUES (?,?,?,?,?)')->execute($pm);
+            }
+
             // settings
             $set = $pdo->prepare('INSERT INTO settings (name, value) VALUES (?, ?)');
             foreach ([

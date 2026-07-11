@@ -30,21 +30,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $subtotal = array_sum(array_column($rows, 'total'));
     $tax = 0;
     foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
-    $discount = (float)post('discount');
+    $discType = post('discount_type') === 'percent' ? 'percent' : 'amount';
+    $discRaw = (float)post('discount_val');
+    $discount = $discType === 'percent' ? round($subtotal * $discRaw / 100, 2) : min($discRaw, $subtotal);
+    $discPct = $discType === 'percent' ? $discRaw : 0;
     $total = $subtotal - $discount + $tax;
     $paid = min((float)post('paid'), $total);
     $credit_days = (int)post('credit_days');
     $pdate = post('purchase_date', today());
+    $bankAccId = (int)post('bank_account_id') ?: null;
+    $pmId = (int)post('payment_method_id') ?: null;
 
     $pdo = db();
     $pdo->beginTransaction();
     try {
         q('INSERT INTO purchases (company_id, bill_no, party_id, location_id, purchase_date, credit_days, due_date,
-           subtotal, discount, tax_amount, total, paid, status, notes, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+           subtotal, discount, discount_type, discount_pct, tax_amount, total, paid, payment_method_id, bank_account_id, status, notes, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
           [(int)post('company_id', 1), post('bill_no'), $party_id, $loc_id, $pdate, $credit_days,
            $credit_days ? date('Y-m-d', strtotime("$pdate +$credit_days days")) : null,
-           $subtotal, $discount, $tax, $total, $paid, payment_status($total, $paid), post('notes'), $u['id']]);
+           $subtotal, $discount, $discType, $discPct, $tax, $total, $paid, $pmId, $bankAccId, payment_status($total, $paid), post('notes'), $u['id']]);
         $pid = insert_id();
 
         foreach ($rows as $r) {
@@ -70,9 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         }
 
         if ($paid > 0) {
-            q('INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
-               VALUES (?,?,?,?,?,?,?,?,?)',
-              [$party_id, 'out', $paid, post('payment_mode', 'cash'), 'purchase', $pid, $pdate, 'Against purchase bill ' . post('bill_no'), $u['id']]);
+            q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+              [$party_id, 'out', $paid, post('payment_mode', 'cash'), $bankAccId, $pmId, 'purchase', $pid, $pdate, 'Against purchase bill ' . post('bill_no'), $u['id']]);
         }
         $pdo->commit();
         log_activity('purchase_add', "#$pid total $total");
@@ -136,11 +141,28 @@ if ($action === 'new') {
       </div>
 
       <div class="card">
-        <div class="form-row cols-3">
-          <div><label>Discount (₹)</label><input type="number" step="any" name="discount" id="discount" value="0"></div>
+        <?php $pms = active_payment_methods(); $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name'); ?>
+        <div class="form-row cols-4">
+          <div><label>Discount</label>
+            <div style="display:flex;gap:6px">
+              <input type="number" step="any" id="discount_val" name="discount_val" value="0" oninput="Bill.totals()" style="flex:1">
+              <div class="cc-toggle" style="flex-shrink:0">
+                <button type="button" id="discAmt" class="on-cash" onclick="setDiscType('amount')">₹</button>
+                <button type="button" id="discPct" onclick="setDiscType('percent')">%</button>
+              </div>
+            </div>
+            <input type="hidden" name="discount" id="discount" value="0">
+            <input type="hidden" name="discount_type" id="discount_type" value="amount">
+          </div>
           <div><label>Paid now (₹)</label><input type="number" step="any" name="paid" id="paid" value="0"></div>
           <div><label>Payment mode</label>
-            <select name="payment_mode"><option>cash</option><option>upi</option><option>bank</option><option>cheque</option></select></div>
+            <select name="payment_mode" id="payment_mode" onchange="pmChange()">
+              <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
+            </select></div>
+          <div id="bankAccBox" style="display:none"><label>Bank Account</label>
+            <select name="bank_account_id">
+              <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
+            </select></div>
         </div>
         <div class="field"><label>Notes</label><input type="text" name="notes"></div>
         <div class="bill-totals">
@@ -164,6 +186,19 @@ if ($action === 'new') {
     </div>
     <script>
       Bill.init({mode: 'purchase', serials: true, locSel: 'location_id', gst: true});
+      function pmChange() {
+        var sel = document.getElementById('payment_mode');
+        var opt = sel.options[sel.selectedIndex];
+        document.getElementById('bankAccBox').style.display = opt.dataset.type === 'bank' ? '' : 'none';
+      }
+      window.pmChange = pmChange;
+      function setDiscType(t) {
+        document.getElementById('discount_type').value = t;
+        document.getElementById('discAmt').className = t === 'amount' ? 'on-cash' : '';
+        document.getElementById('discPct').className = t === 'percent' ? 'on-cash' : '';
+        Bill.totals();
+      }
+      window.setDiscType = setDiscType;
       function quickParty() {
         var fd = new FormData();
         fd.append('csrf', document.querySelector('input[name=csrf]').value);

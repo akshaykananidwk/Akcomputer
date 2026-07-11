@@ -265,7 +265,19 @@ var Bill = {
       sub += line;
       if (gst) tax += line * tr / 100;
     });
-    var disc = parseFloat((document.getElementById('discount') || {}).value) || 0;
+    // discount: percent-aware when the ₹/% toggle markup is present on the page,
+    // otherwise fall back to reading #discount as a plain rupee amount
+    var discType = document.getElementById('discount_type');
+    var discValInp = document.getElementById('discount_val');
+    var discHidden = document.getElementById('discount');
+    var disc = 0;
+    if (discType && discValInp && discHidden) {
+      var raw = parseFloat(discValInp.value) || 0;
+      disc = discType.value === 'percent' ? (sub * raw / 100) : raw;
+      discHidden.value = disc.toFixed(2);
+    } else {
+      disc = parseFloat((discHidden || {}).value) || 0;
+    }
     var total = sub - disc + tax;
     var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v.toFixed(2); };
     set('t_sub', sub); set('t_tax', tax); set('t_grand', total);
