@@ -5,7 +5,7 @@ $app_name = setting('app_name', 'AK Computer');
 
 // Menu: link => [href, icon, label, perm]
 // group => [id, icon, label, items[]] ; item = [href, label, perm, plus_href, plus_perm]
-$menu = [
+$_navMenu = [
     ['link', 'index.php', '🏠', 'Dashboard', 'dashboard.view'],
     ['group', 'parties', '👥', 'Parties', [
         ['parties.php', 'All Parties', 'parties.view', 'parties.php?action=new', 'parties.add'],
@@ -51,7 +51,7 @@ $menu = [
     ['link', 'settings.php', '⚙️', 'Settings', 'settings.view'],
 ];
 
-$current = basename($_SERVER['SCRIPT_NAME']);
+$_navCur = basename($_SERVER['SCRIPT_NAME']);
 
 function nav_visible_items($items) {
     $out = [];
@@ -95,26 +95,26 @@ function nav_visible_items($items) {
     </div>
   </div>
   <div class="sidebar-links">
-  <?php foreach ($menu as $m): ?>
-    <?php if ($m[0] === 'link'):
-        if ($m[4] !== null && !can($m[4])) continue; ?>
-      <a href="<?= $m[1] ?>" class="nav-link <?= $current === $m[1] ? 'active' : '' ?>"><span class="nav-ico"><?= $m[2] ?></span><?= $m[3] ?></a>
+  <?php foreach ($_navMenu as $_nm): ?>
+    <?php if ($_nm[0] === 'link'):
+        if ($_nm[4] !== null && !can($_nm[4])) continue; ?>
+      <a href="<?= $_nm[1] ?>" class="nav-link <?= $_navCur === $_nm[1] ? 'active' : '' ?>"><span class="nav-ico"><?= $_nm[2] ?></span><?= $_nm[3] ?></a>
     <?php else:
-        $items = nav_visible_items($m[4]);
-        if (!$items) continue;
-        $groupActive = false;
-        foreach ($items as $it) if (basename(parse_url($it[0], PHP_URL_PATH)) === $current) $groupActive = true;
+        $_navItems = nav_visible_items($_nm[4]);
+        if (!$_navItems) continue;
+        $_navOpen = false;
+        foreach ($_navItems as $_ni) if (basename(parse_url($_ni[0], PHP_URL_PATH)) === $_navCur) $_navOpen = true;
     ?>
-      <div class="nav-group <?= $groupActive ? 'open' : '' ?>" data-group="<?= $m[1] ?>">
-        <button type="button" class="nav-group-head <?= $groupActive ? 'active' : '' ?>">
-          <span class="nav-ico"><?= $m[2] ?></span><?= $m[3] ?><span class="nav-chev">▾</span>
+      <div class="nav-group <?= $_navOpen ? 'open' : '' ?>" data-group="<?= $_nm[1] ?>">
+        <button type="button" class="nav-group-head <?= $_navOpen ? 'active' : '' ?>">
+          <span class="nav-ico"><?= $_nm[2] ?></span><?= $_nm[3] ?><span class="nav-chev">▾</span>
         </button>
         <div class="nav-sub">
-        <?php foreach ($items as $it): ?>
+        <?php foreach ($_navItems as $_ni): ?>
           <div class="nav-sub-row">
-            <a href="<?= $it[0] ?>" class="<?= basename(parse_url($it[0], PHP_URL_PATH)) === $current ? 'active' : '' ?>"><?= $it[1] ?></a>
-            <?php if ($it[3] && ($it[4] === null || can($it[4]))): ?>
-              <a href="<?= $it[3] ?>" class="nav-plus" title="Add new">＋</a>
+            <a href="<?= $_ni[0] ?>" class="<?= basename(parse_url($_ni[0], PHP_URL_PATH)) === $_navCur ? 'active' : '' ?>"><?= $_ni[1] ?></a>
+            <?php if ($_ni[3] && ($_ni[4] === null || can($_ni[4]))): ?>
+              <a href="<?= $_ni[3] ?>" class="nav-plus" title="Add new">＋</a>
             <?php endif; ?>
           </div>
         <?php endforeach; ?>
@@ -133,7 +133,7 @@ function nav_visible_items($items) {
   <h3>ઝડપી કામ</h3>
   <div class="sheet-grid">
     <?php
-    $quick = [
+    $_navQuick = [
         ['sales.php?action=new', '🧾', 'New Bill', 'sales.add'],
         ['estimates.php?action=new', '📋', 'Estimate', 'estimates.add'],
         ['purchases.php?action=new', '📦', 'Purchase', 'purchases.add'],
@@ -147,13 +147,14 @@ function nav_visible_items($items) {
         ['items.php?action=new', '🖥️', 'Item', 'items.add'],
         ['sales_return.php?action=new', '↩️', 'Sale Return', 'sales_return.add'],
     ];
-    foreach ($quick as $qk): if (!can($qk[3])) continue; ?>
-    <a href="<?= $qk[0] ?>" class="sheet-item"><span><?= $qk[1] ?></span><?= $qk[2] ?></a>
+    foreach ($_navQuick as $_nq): if (!can($_nq[3])) continue; ?>
+    <a href="<?= $_nq[0] ?>" class="sheet-item"><span><?= $_nq[1] ?></span><?= $_nq[2] ?></a>
     <?php endforeach; ?>
   </div>
 </div>
 <?php endif; ?>
 <script src="assets/app.js?v=3"></script>
+<?php unset($_navMenu, $_navItems, $_navQuick, $_nm, $_ni, $_nq, $_navOpen); ?>
 <main class="content<?= $u ? '' : ' content-full' ?>">
 <?php foreach (get_flashes() as $f): ?>
   <div class="flash flash-<?= e($f['type']) ?>"><?= e($f['msg']) ?></div>
