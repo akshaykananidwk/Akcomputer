@@ -15,6 +15,8 @@ $_navMenu = [
         ['items.php', 'All Items', 'items.view', 'items.php?action=new', 'items.add'],
         ['items_import.php', 'Import Excel/CSV', 'items.add', null, null],
         ['stock.php', 'Stock Levels', 'stock.view', null, null],
+        ['barcode_labels.php', 'Barcode Label Printing', 'items.view', null, null],
+        ['batches.php', 'Batch / Expiry Tracking', 'batches.view', 'batches.php?action=new', 'batches.add'],
     ]],
     ['group', 'sale', '🧾', 'Sale', [
         ['sales.php', 'Sale Invoices', 'sales.view', 'sales.php?action=new', 'sales.add'],

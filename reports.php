@@ -409,15 +409,41 @@ if ($r === 'tech_sla') {
     echo '</tbody></table></div>';
 }
 
-// ---------------- low stock ----------------
+// ---------------- low stock / auto purchase suggestion ----------------
 if ($r === 'low') {
-    $rows = all('SELECT i.name, i.min_stock, i.unit, COALESCE(SUM(s.qty),0) q FROM items i
-                 LEFT JOIN stock s ON s.item_id = i.id
-                 WHERE i.is_active = 1 AND i.min_stock > 0 GROUP BY i.id HAVING q < i.min_stock ORDER BY q');
-    echo '<div class="table-wrap"><table><thead><tr><th>Item</th><th class="num">In stock</th><th class="num">Min level</th><th class="num">To order</th></tr></thead><tbody>';
-    foreach ($rows as $x) echo '<tr><td>' . e($x['name']) . '</td><td class="num">' . (float)$x['q'] . '</td><td class="num">' . (float)$x['min_stock'] . '</td><td class="num"><strong>' . ((float)$x['min_stock'] - (float)$x['q']) . ' ' . e($x['unit']) . '</strong></td></tr>';
-    if (!$rows) echo '<tr><td colspan="4" class="muted">Nothing below minimum. 🎉</td></tr>';
+    $rows = all("SELECT i.id, i.name, i.min_stock, i.unit, i.tax_rate, i.purchase_price, COALESCE(SUM(s.qty),0) q,
+                 (SELECT pt.name FROM purchases pu JOIN purchase_items pi2 ON pi2.purchase_id = pu.id
+                  JOIN parties pt ON pt.id = pu.party_id WHERE pi2.item_id = i.id AND pu.is_cancelled = 0
+                  ORDER BY pu.purchase_date DESC, pu.id DESC LIMIT 1) last_supplier
+                 FROM items i LEFT JOIN stock s ON s.item_id = i.id
+                 WHERE i.is_active = 1 AND i.min_stock > 0 GROUP BY i.id HAVING q < i.min_stock ORDER BY q");
+    $canReorder = can('purchases.add') && $rows;
+    if ($canReorder) echo '<p class="muted mb">Item(s) પસંદ કરીને નીચે "🛒 Create Purchase for Selected" દબાવો - New Purchase form માં item/qty આપોઆપ ભરાઈને ખૂલશે, party ફક્ત તમારે પસંદ કરવાની.</p>';
+    echo '<div class="table-wrap"><table><thead><tr>' . ($canReorder ? '<th></th>' : '') . '<th>Item</th><th class="num">In stock</th><th class="num">Min level</th><th class="num">To order</th><th>Last Supplier</th></tr></thead><tbody>';
+    foreach ($rows as $x) {
+        $toOrder = max((float)$x['min_stock'] * 2 - (float)$x['q'], (float)$x['min_stock']);
+        echo '<tr>';
+        if ($canReorder) echo '<td><input type="checkbox" class="reorder-cb" data-id="' . $x['id'] . '" data-name="' . e($x['name']) . '" data-qty="' . $toOrder . '" data-tax="' . (float)$x['tax_rate'] . '" data-price="' . (float)$x['purchase_price'] . '"></td>';
+        echo '<td>' . e($x['name']) . '</td><td class="num">' . (float)$x['q'] . '</td><td class="num">' . (float)$x['min_stock'] . '</td>'
+           . '<td class="num"><strong>' . $toOrder . ' ' . e($x['unit']) . '</strong></td>'
+           . '<td>' . ($x['last_supplier'] ? e($x['last_supplier']) : '<span class="muted">-</span>') . '</td></tr>';
+    }
+    if (!$rows) echo '<tr><td colspan="5" class="muted">Nothing below minimum. 🎉</td></tr>';
     echo '</tbody></table></div>';
+    if ($canReorder) {
+        echo '<button type="button" class="btn mt" onclick="buildReorder()">🛒 Create Purchase for Selected</button>';
+        echo '<script>
+        function buildReorder() {
+          var items = [];
+          document.querySelectorAll(".reorder-cb:checked").forEach(function (cb) {
+            items.push({id: cb.dataset.id, name: cb.dataset.name, qty: cb.dataset.qty, tax: cb.dataset.tax, price: cb.dataset.price});
+          });
+          if (!items.length) { alert("ઓછામાં ઓછો એક item પસંદ કરો."); return; }
+          sessionStorage.setItem("reorderItems", JSON.stringify(items));
+          location = "purchases.php?action=new&reorder=1";
+        }
+        </script>';
+    }
 }
 ?>
 <?php include __DIR__ . '/includes/footer.php'; ?>

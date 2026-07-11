@@ -29,6 +29,7 @@ function permission_catalog() {
         'weborders' => ['view', 'edit'],
         'amc' => ['view', 'add', 'edit', 'delete'],
         'sites' => ['view', 'add', 'edit', 'delete'],
+        'batches' => ['view', 'add', 'edit', 'delete'],
         'reports' => ['view', 'profit', 'gst'],
         'users' => ['view', 'add', 'edit', 'delete'],
         'roles' => ['view', 'add', 'edit', 'delete'],
@@ -47,7 +48,7 @@ function permission_labels() {
         'warranty' => 'Warranty Claims', 'payments' => 'Payments / Ledger',
         'expenses' => 'Expenses', 'challans' => 'Delivery Challans',
         'weborders' => 'Website Orders', 'amc' => 'AMC / Recurring Billing',
-        'sites' => 'Customer Sites / DVR-NVR Vault', 'reports' => 'Reports',
+        'sites' => 'Customer Sites / DVR-NVR Vault', 'batches' => 'Batch / Expiry Tracking', 'reports' => 'Reports',
         'users' => 'Staff Users', 'roles' => 'Roles', 'locations' => 'Locations',
         'companies' => 'Companies / Firms', 'settings' => 'Settings',
     ];

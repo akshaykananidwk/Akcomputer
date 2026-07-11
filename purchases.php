@@ -355,6 +355,28 @@ if ($action === 'new' || $action === 'edit') {
         Bill.cfg.gst = this.options[this.selectedIndex].dataset.gst == 1;
         Bill.totals();
       });
+      <?php if (!$isEdit && get('reorder')): ?>
+      // prefill rows from a "🛒 Create Purchase for Selected" reorder suggestion (Reports > Low Stock)
+      (function () {
+        var raw = sessionStorage.getItem('reorderItems');
+        if (!raw) return;
+        sessionStorage.removeItem('reorderItems');
+        var items = JSON.parse(raw);
+        items.forEach(function (it, idx) {
+          if (idx > 0) Bill.addRow();
+          var rows = document.querySelectorAll('#billItems .bill-row');
+          var div = rows[rows.length - 1];
+          div.querySelector('.i-search').value = it.name;
+          div.querySelector('.i-id').value = it.id;
+          div.querySelector('.i-tax').value = it.tax;
+          div.querySelector('.i-qty').value = it.qty;
+          div.querySelector('.i-price').value = it.price;
+          div.querySelector('.i-extra').innerHTML = '<input type="hidden" name="serials[]" value="">';
+          Bill.rowTotal(div);
+        });
+        Bill.totals();
+      })();
+      <?php endif; ?>
       <?php if ($isEdit): ?>
       // prefill rows from the existing purchase being edited
       (function () {
