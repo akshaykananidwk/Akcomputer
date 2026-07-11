@@ -1,5 +1,5 @@
 <?php
-// Dashboard
+// Business Dashboard (Vyapar-style)
 require_once __DIR__ . '/includes/init.php';
 require_perm('dashboard.view');
 $u = current_user();
@@ -10,62 +10,127 @@ list($saleScope, $saleParams) = own_scope('sales');
 $todaySales = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM sales WHERE sale_date = ? $saleScope", array_merge([$today], $saleParams));
 $monthSales = row("SELECT COALESCE(SUM(total),0) t FROM sales WHERE sale_date >= ? $saleScope", array_merge([date('Y-m-01')], $saleParams));
 
-$stats = [];
-$stats[] = ['Today Sales', '₹' . money($todaySales['t']), 's-ok'];
-$stats[] = ['Today Bills', $todaySales['c'], ''];
-$stats[] = ['This Month', '₹' . money($monthSales['t']), ''];
+$canMoney = can('payments.view');
+$recv = $canMoney ? (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid'") : 0;
+$paybl = $canMoney ? (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid'") : 0;
 
-if (can('purchases.view')) {
-    $todayPur = val('SELECT COALESCE(SUM(total),0) FROM purchases WHERE purchase_date = ?', [$today]);
-    $stats[] = ['Today Purchase', '₹' . money($todayPur), 's-warn'];
+// last 6 months sales for chart
+$chart = [];
+for ($i = 5; $i >= 0; $i--) {
+    $mStart = date('Y-m-01', strtotime("-$i months"));
+    $mEnd = date('Y-m-t', strtotime($mStart));
+    $chart[] = [
+        'label' => date('M', strtotime($mStart)),
+        'val' => (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE sale_date BETWEEN ? AND ? $saleScope",
+                            array_merge([$mStart, $mEnd], $saleParams)),
+    ];
 }
-if (can('payments.view')) {
-    $recv = val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid'");
-    $paybl = val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid'");
-    $stats[] = ['To Receive', '₹' . money($recv), 's-ok'];
-    $stats[] = ['To Pay', '₹' . money($paybl), 's-bad'];
-}
-if (can('repairs.view')) {
-    $openRepairs = val("SELECT COUNT(*) FROM repairs WHERE status NOT IN ('delivered','returned_unrepaired')");
-    $stats[] = ['Open Repairs', $openRepairs, 's-warn'];
-}
-if (can('warranty.view')) {
-    $openClaims = val("SELECT COUNT(*) FROM warranty_claims WHERE status NOT IN ('delivered','rejected')");
-    $stats[] = ['Open Claims', $openClaims, 's-warn'];
+$maxVal = max(1, max(array_column($chart, 'val')));
+
+// inventory summary
+$invCard = null;
+if (can('stock.view')) {
+    $invCard = [
+        'items' => (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1'),
+        'low' => (int)val('SELECT COUNT(*) FROM (SELECT i.id, i.min_stock, COALESCE(SUM(s.qty),0) q FROM items i LEFT JOIN stock s ON s.item_id = i.id
+                           WHERE i.is_active = 1 AND i.min_stock > 0 GROUP BY i.id, i.min_stock HAVING q < i.min_stock) x'),
+        'value' => can('reports.profit')
+            ? (float)val('SELECT COALESCE(SUM(sq.q * i.purchase_price),0) FROM
+                          (SELECT item_id, SUM(qty) q FROM (SELECT item_id, qty FROM stock UNION ALL SELECT item_id, qty FROM staff_stock) z GROUP BY item_id) sq
+                          JOIN items i ON i.id = sq.item_id')
+            : null,
+    ];
 }
 
-// my pending tasks (field staff)
+$openRepairs = can('repairs.view') ? (int)val("SELECT COUNT(*) FROM repairs WHERE status NOT IN ('delivered','returned_unrepaired')") : null;
+$openClaims = can('warranty.view') ? (int)val("SELECT COUNT(*) FROM warranty_claims WHERE status NOT IN ('delivered','rejected')") : null;
+$openEst = can('estimates.view') ? row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM estimates WHERE status = 'open'") : null;
+
 $myTasks = all("SELECT * FROM tasks WHERE assigned_to = ? AND status IN ('assigned','started') ORDER BY scheduled_date LIMIT 5", [$u['id']]);
-// my held stock
 $myStock = all('SELECT ss.qty, i.name, i.unit FROM staff_stock ss JOIN items i ON i.id = ss.item_id WHERE ss.user_id = ? AND ss.qty > 0', [$u['id']]);
-// pending handovers for me
-$myHandovers = val("SELECT COUNT(*) FROM handovers WHERE staff_id = ? AND status = 'pending' AND type = 'issue'", [$u['id']]);
-// low stock (managers)
-$lowStock = can('stock.view')
-    ? all('SELECT i.name, i.min_stock, COALESCE(SUM(s.qty),0) q FROM items i LEFT JOIN stock s ON s.item_id = i.id
-           WHERE i.is_active = 1 AND i.min_stock > 0 GROUP BY i.id HAVING q < i.min_stock ORDER BY q LIMIT 8')
-    : [];
+$myHandovers = (int)val("SELECT COUNT(*) FROM handovers WHERE staff_id = ? AND status = 'pending' AND type = 'issue'", [$u['id']]);
 
 $page_title = 'Dashboard';
 include __DIR__ . '/includes/header.php';
 ?>
-<div class="grid-stats">
-<?php foreach ($stats as $s): ?>
-  <div class="stat <?= $s[2] ?>"><div class="stat-label"><?= e($s[0]) ?></div><div class="stat-value"><?= $s[1] ?></div></div>
-<?php endforeach; ?>
+<?php if ($canMoney): ?>
+<div class="duo-cards">
+  <a class="duo-card duo-get" href="payments.php"><div class="duo-label">લેવાના (To Receive)</div><div class="duo-value">₹ <?= money($recv) ?></div></a>
+  <a class="duo-card duo-give" href="payments.php"><div class="duo-label">દેવાના (To Pay)</div><div class="duo-value">₹ <?= money($paybl) ?></div></a>
 </div>
+<?php endif; ?>
 
-<div class="page-actions">
-  <?php if (can('sales.add')): ?><a class="btn" href="sales.php?action=new">+ New Bill</a><?php endif; ?>
-  <?php if (can('repairs.add')): ?><a class="btn btn-outline" href="repairs.php?action=new">+ Repair Job</a><?php endif; ?>
-  <?php if (can('purchases.add')): ?><a class="btn btn-outline" href="purchases.php?action=new">+ Purchase</a><?php endif; ?>
+<div class="tile-grid">
+  <?php if (can('sales.view')): ?><a class="tile" href="sales.php"><span>🧾</span>Sale List</a><?php endif; ?>
+  <?php if (can('purchases.view')): ?><a class="tile" href="purchases.php"><span>📦</span>Purchase List</a><?php endif; ?>
+  <?php if (can('items.view')): ?><a class="tile" href="items.php"><span>🖥️</span>Stock Items</a><?php endif; ?>
+  <?php if (can('parties.view')): ?><a class="tile" href="parties.php"><span>👥</span>Parties</a><?php endif; ?>
+  <?php if (!can('sales.view') && can('tasks.view')): ?><a class="tile" href="tasks.php"><span>🔧</span>My Tasks</a><?php endif; ?>
+  <?php if (!can('purchases.view')): ?><a class="tile" href="my_stock.php"><span>🎒</span>My Stock</a><?php endif; ?>
 </div>
 
 <?php if ($myHandovers): ?>
-<div class="flash flash-info">🤝 You have <?= $myHandovers ?> pending stock handover(s). <a href="my_stock.php">Accept with OTP →</a></div>
+<div class="flash flash-info">🤝 તમારા માટે <?= $myHandovers ?> stock handover pending છે. <a href="my_stock.php">OTP થી Accept કરો →</a></div>
+<?php endif; ?>
+
+<?php if (can('sales.view')): ?>
+<div class="card">
+  <h2>📈 Sale Overview (છેલ્લા 6 મહિના)</h2>
+  <p class="muted">આ મહિને: <strong>₹<?= money($monthSales['t']) ?></strong> · આજે: <strong>₹<?= money($todaySales['t']) ?></strong> (<?= (int)$todaySales['c'] ?> bills)</p>
+  <div class="chart-wrap">
+    <svg viewBox="0 0 600 220" preserveAspectRatio="xMidYMid meet">
+      <?php
+      $w = 600; $h = 220; $padL = 10; $padR = 10; $padT = 24; $padB = 34;
+      $iw = ($w - $padL - $padR) / (count($chart) - 1 ?: 1);
+      $pts = [];
+      foreach ($chart as $ci => $cv) {
+          $x = $padL + $ci * $iw;
+          $y = $padT + ($h - $padT - $padB) * (1 - $cv['val'] / $maxVal);
+          $pts[] = [$x, $y, $cv];
+      }
+      $poly = implode(' ', array_map(fn($p) => round($p[0], 1) . ',' . round($p[1], 1), $pts));
+      $area = "$padL," . ($h - $padB) . " $poly " . round(end($pts)[0], 1) . ',' . ($h - $padB);
+      ?>
+      <polygon points="<?= $area ?>" fill="rgba(26,86,219,.12)"/>
+      <polyline points="<?= $poly ?>" fill="none" stroke="#1a56db" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+      <?php foreach ($pts as $p): ?>
+        <circle cx="<?= round($p[0], 1) ?>" cy="<?= round($p[1], 1) ?>" r="4.5" fill="#1a56db"/>
+        <text x="<?= round($p[0], 1) ?>" y="<?= $h - 12 ?>" text-anchor="middle" font-size="13" fill="#64748b"><?= $p[2]['label'] ?></text>
+        <?php if ($p[2]['val'] > 0): ?>
+        <text x="<?= round($p[0], 1) ?>" y="<?= round($p[1], 1) - 10 ?>" text-anchor="middle" font-size="11" fill="#334155"><?= $p[2]['val'] >= 100000 ? round($p[2]['val'] / 100000, 1) . 'L' : ($p[2]['val'] >= 1000 ? round($p[2]['val'] / 1000, 1) . 'k' : round($p[2]['val'])) ?></text>
+        <?php endif; ?>
+      <?php endforeach; ?>
+    </svg>
+  </div>
+</div>
 <?php endif; ?>
 
 <div class="grid-2">
+<?php if ($invCard): ?>
+<div class="card">
+  <h2>📊 Inventory</h2>
+  <div class="grid-stats" style="margin-bottom:0">
+    <?php if ($invCard['value'] !== null): ?>
+    <div class="stat s-ok"><div class="stat-label">Stock Value</div><div class="stat-value">₹<?= money($invCard['value']) ?></div></div>
+    <?php endif; ?>
+    <div class="stat"><div class="stat-label">No. of Items</div><div class="stat-value"><?= $invCard['items'] ?></div></div>
+    <div class="stat <?= $invCard['low'] ? 's-bad' : '' ?>"><div class="stat-label">Low Stock Items</div><div class="stat-value"><?= $invCard['low'] ?></div></div>
+  </div>
+  <p class="mt"><a href="reports.php?r=low">Low stock જુઓ →</a></p>
+</div>
+<?php endif; ?>
+
+<?php if ($openRepairs !== null || $openEst): ?>
+<div class="card">
+  <h2>🗂️ Open Transactions</h2>
+  <table class="table-sm">
+    <?php if ($openEst && $openEst['c']): ?><tr><td>Open Estimates</td><td class="num"><?= $openEst['c'] ?> (₹<?= money($openEst['t']) ?>)</td></tr><?php endif; ?>
+    <?php if ($openRepairs !== null): ?><tr><td>Open Repair Jobs</td><td class="num"><a href="repairs.php"><?= $openRepairs ?></a></td></tr><?php endif; ?>
+    <?php if ($openClaims !== null): ?><tr><td>Open Warranty Claims</td><td class="num"><a href="warranty.php"><?= $openClaims ?></a></td></tr><?php endif; ?>
+  </table>
+</div>
+<?php endif; ?>
+
 <?php if ($myTasks): ?>
 <div class="card">
   <h2>🔧 My Pending Tasks</h2>
@@ -86,17 +151,6 @@ include __DIR__ . '/includes/header.php';
     <?php endforeach; ?>
   </table>
   <p class="mt"><a href="my_stock.php">Full details →</a></p>
-</div>
-<?php endif; ?>
-
-<?php if ($lowStock): ?>
-<div class="card">
-  <h2>⚠️ Low Stock Alert</h2>
-  <table class="table-sm">
-    <?php foreach ($lowStock as $s): ?>
-    <tr><td><?= e($s['name']) ?></td><td class="num"><?= (float)$s['q'] ?> / min <?= (float)$s['min_stock'] ?></td></tr>
-    <?php endforeach; ?>
-  </table>
 </div>
 <?php endif; ?>
 </div>

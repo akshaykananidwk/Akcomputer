@@ -120,23 +120,49 @@ if ($action === 'ledger' && $id) {
     exit;
 }
 
-// ---- list ----
-$parties = all("SELECT * FROM parties WHERE is_active = 1 ORDER BY name");
+// ---- list (with live balance: + = you'll get, - = you'll give) ----
+$parties = all("SELECT p.*,
+    (p.opening_balance
+     + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id), 0)
+     - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = p.id), 0)
+     - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = p.id), 0)
+     + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = p.id), 0)
+     - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'in'), 0)
+     + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'out'), 0)
+    ) AS balance
+    FROM parties p WHERE p.is_active = 1 ORDER BY p.name");
+$totGet = 0; $totGive = 0;
+foreach ($parties as $p) {
+    if ($p['balance'] > 0.009) $totGet += $p['balance'];
+    elseif ($p['balance'] < -0.009) $totGive += -$p['balance'];
+}
 $page_title = 'Parties';
 include __DIR__ . '/includes/header.php';
 ?>
+<div class="duo-cards">
+  <div class="duo-card duo-get"><div class="duo-label">લેવાના (You'll Get)</div><div class="duo-value">₹ <?= money($totGet) ?></div></div>
+  <div class="duo-card duo-give"><div class="duo-label">દેવાના (You'll Give)</div><div class="duo-value">₹ <?= money($totGive) ?></div></div>
+</div>
 <div class="page-actions">
   <?php if (can('parties.add')): ?><a class="btn" href="parties.php?action=new">+ New Party</a><?php endif; ?>
 </div>
 <div class="searchbox"><input type="text" id="pFilter" placeholder="🔍 Search parties..."></div>
 <div class="table-wrap">
 <table id="pTable">
-  <thead><tr><th>Name</th><th>Type</th><th>Mobile</th><th>City</th><th>Credit</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th class="num">Balance</th><th>Mobile</th><th>City</th><th>Credit</th><th></th></tr></thead>
   <tbody>
   <?php foreach ($parties as $p): ?>
     <tr>
-      <td><strong><?= e($p['name']) ?></strong><?= $p['gstin'] ? '<br><span class="muted">' . e($p['gstin']) . '</span>' : '' ?></td>
-      <td><?= e($p['type']) ?></td>
+      <td><strong><?= e($p['name']) ?></strong> <span class="muted">(<?= e($p['type']) ?>)</span><?= $p['gstin'] ? '<br><span class="muted">' . e($p['gstin']) . '</span>' : '' ?></td>
+      <td class="num">
+        <?php if ($p['balance'] > 0.009): ?>
+          <span class="bal-get">₹<?= money($p['balance']) ?><span class="bal-sub">You'll Get</span></span>
+        <?php elseif ($p['balance'] < -0.009): ?>
+          <span class="bal-give">₹<?= money(-$p['balance']) ?><span class="bal-sub">You'll Give</span></span>
+        <?php else: ?>
+          <span class="muted">₹0.00</span>
+        <?php endif; ?>
+      </td>
       <td><a href="tel:<?= e($p['mobile']) ?>"><?= e($p['mobile']) ?></a></td>
       <td><?= e($p['city']) ?></td>
       <td><?= (int)$p['credit_days'] ?> days</td>

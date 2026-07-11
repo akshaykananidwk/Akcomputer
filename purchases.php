@@ -191,9 +191,14 @@ $purchases = all("SELECT p.*, pt.name party_name FROM purchases p
                   JOIN parties pt ON pt.id = p.party_id
                   WHERE p.purchase_date BETWEEN ? AND ? $scope
                   ORDER BY p.id DESC LIMIT 500", array_merge([$from, $to], $params));
+$sumDueP = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases p WHERE p.status <> 'paid' " . $scope, $params);
 $page_title = 'Purchases';
 include __DIR__ . '/includes/header.php';
 ?>
+<div class="duo-cards">
+  <div class="duo-card" style="background:#e0f2fe"><div class="duo-label" style="color:#075985">Total Purchase (period)</div><div class="duo-value" style="color:#0369a1">₹ <?= money(array_sum(array_column($purchases, 'total'))) ?></div></div>
+  <div class="duo-card duo-give"><div class="duo-label">Balance Due</div><div class="duo-value">₹ <?= money($sumDueP) ?></div></div>
+</div>
 <div class="page-actions">
   <?php if (can('purchases.add')): ?><a class="btn" href="purchases.php?action=new">+ New Purchase</a><?php endif; ?>
 </div>

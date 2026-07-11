@@ -264,9 +264,14 @@ $sales = all("SELECT s.*, c.name AS company_name, u2.name AS staff_name
               WHERE s.sale_date BETWEEN ? AND ? $scope
               ORDER BY s.id DESC LIMIT 500", array_merge([$from, $to], $params));
 $sumTotal = array_sum(array_column($sales, 'total'));
+$sumDue = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales s WHERE s.status <> 'paid' " . str_replace('s.created_by', 'created_by', $scope), $params);
 $page_title = 'Sales / Billing';
 include __DIR__ . '/includes/header.php';
 ?>
+<div class="duo-cards">
+  <div class="duo-card" style="background:#e0f2fe"><div class="duo-label" style="color:#075985">Total Sale (period)</div><div class="duo-value" style="color:#0369a1">₹ <?= money($sumTotal) ?></div></div>
+  <div class="duo-card duo-give"><div class="duo-label">Balance Due</div><div class="duo-value">₹ <?= money($sumDue) ?></div></div>
+</div>
 <div class="page-actions">
   <?php if (can('sales.add')): ?><a class="btn" href="sales.php?action=new">+ New Bill</a><?php endif; ?>
 </div>

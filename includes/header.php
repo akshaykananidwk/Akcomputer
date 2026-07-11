@@ -3,33 +3,62 @@ $u = current_user();
 $page_title = $page_title ?? 'AK Computer';
 $app_name = setting('app_name', 'AK Computer');
 
-$nav = [
-    ['dashboard.view', 'index.php', '🏠', 'Dashboard'],
-    ['sales.view', 'sales.php', '🧾', 'Sales / Billing'],
-    ['estimates.view', 'estimates.php', '📋', 'Estimates'],
-    ['sales_return.view', 'sales_return.php', '↩️', 'Sales Return'],
-    ['purchases.view', 'purchases.php', '📦', 'Purchase'],
-    ['purchase_return.view', 'purchase_return.php', '↪️', 'Purchase Return'],
-    ['items.view', 'items.php', '🖥️', 'Items'],
-    ['parties.view', 'parties.php', '👥', 'Parties'],
-    ['stock.view', 'stock.php', '📊', 'Stock'],
-    ['handover.view', 'handover.php', '🤝', 'Handover'],
-    [null, 'my_stock.php', '🎒', 'My Stock'],
-    ['tasks.view', 'tasks.php', '🔧', 'Field Tasks'],
-    ['repairs.view', 'repairs.php', '🛠️', 'Repair Jobs'],
-    ['warranty.view', 'warranty.php', '🛡️', 'Warranty'],
-    ['payments.view', 'payments.php', '💰', 'Payments'],
-    ['expenses.view', 'expenses.php', '🧾', 'Expenses'],
-    ['challans.view', 'challans.php', '🚚', 'Challans'],
-    ['reports.view', 'reports.php', '📈', 'Reports'],
-    ['users.view', 'users.php', '🧑‍💼', 'Staff Users'],
-    ['roles.view', 'roles.php', '🔑', 'Roles'],
-    ['locations.view', 'locations.php', '🏪', 'Locations'],
-    ['companies.view', 'companies.php', '🏢', 'Companies'],
-    ['settings.view', 'settings.php', '⚙️', 'Settings'],
-    [null, 'catalog.php', '🌐', 'Website (Catalog)'],
+// Menu: link => [href, icon, label, perm]
+// group => [id, icon, label, items[]] ; item = [href, label, perm, plus_href, plus_perm]
+$menu = [
+    ['link', 'index.php', '🏠', 'Dashboard', 'dashboard.view'],
+    ['group', 'parties', '👥', 'Parties', [
+        ['parties.php', 'All Parties', 'parties.view', 'parties.php?action=new', 'parties.add'],
+        ['payments.php', 'Party Payments', 'payments.view', null, null],
+    ]],
+    ['group', 'items', '🖥️', 'Items', [
+        ['items.php', 'All Items', 'items.view', 'items.php?action=new', 'items.add'],
+        ['stock.php', 'Stock Levels', 'stock.view', null, null],
+    ]],
+    ['group', 'sale', '🧾', 'Sale', [
+        ['sales.php', 'Sale Invoices', 'sales.view', 'sales.php?action=new', 'sales.add'],
+        ['estimates.php', 'Estimate / Quotation', 'estimates.view', 'estimates.php?action=new', 'estimates.add'],
+        ['sales_return.php', 'Sale Return', 'sales_return.view', 'sales_return.php?action=new', 'sales_return.add'],
+        ['challans.php', 'Delivery Challan', 'challans.view', 'challans.php?action=new', 'challans.add'],
+    ]],
+    ['group', 'purchase', '📦', 'Purchase', [
+        ['purchases.php', 'Purchase Bills', 'purchases.view', 'purchases.php?action=new', 'purchases.add'],
+        ['purchase_return.php', 'Purchase Return', 'purchase_return.view', 'purchase_return.php?action=new', 'purchase_return.add'],
+    ]],
+    ['link', 'expenses.php', '💸', 'Expenses', 'expenses.view'],
+    ['group', 'godown', '🏬', 'Stock / Godown', [
+        ['handover.php', 'Handover / Transfer', 'handover.view', 'handover.php?action=new', 'handover.add'],
+        ['my_stock.php', 'My Stock', null, null, null],
+        ['stock.php', 'Location Stock', 'stock.view', null, null],
+    ]],
+    ['group', 'service', '🛠️', 'Repair & Service', [
+        ['repairs.php', 'Repair Jobs', 'repairs.view', 'repairs.php?action=new', 'repairs.add'],
+        ['tasks.php', 'Field Tasks', 'tasks.view', 'tasks.php?action=new', 'tasks.add'],
+        ['warranty.php', 'Warranty Claims', 'warranty.view', 'warranty.php?action=new', 'warranty.add'],
+    ]],
+    ['link', 'reports.php', '📈', 'Reports', 'reports.view'],
+    ['group', 'store', '🌐', 'My Online Store', [
+        ['catalog.php', 'View Website', null, null, null],
+        ['items.php', 'Website Items (🌐 ON/OFF)', 'items.view', null, null],
+    ]],
+    ['group', 'admin', '🧑‍💼', 'Staff & Company', [
+        ['users.php', 'Staff Users', 'users.view', 'users.php?action=new', 'users.add'],
+        ['roles.php', 'Roles / Permissions', 'roles.view', 'roles.php?action=new', 'roles.add'],
+        ['locations.php', 'Locations', 'locations.view', null, null],
+        ['companies.php', 'Companies / Firms', 'companies.view', null, null],
+    ]],
+    ['link', 'settings.php', '⚙️', 'Settings', 'settings.view'],
 ];
+
 $current = basename($_SERVER['SCRIPT_NAME']);
+
+function nav_visible_items($items) {
+    $out = [];
+    foreach ($items as $it) {
+        if ($it[2] === null || can($it[2])) $out[] = $it;
+    }
+    return $out;
+}
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -43,7 +72,7 @@ $current = basename($_SERVER['SCRIPT_NAME']);
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon-192.png">
 <title><?= e($page_title) ?> - <?= e($app_name) ?></title>
-<link rel="stylesheet" href="assets/style.css?v=1">
+<link rel="stylesheet" href="assets/style.css?v=3">
 </head>
 <body>
 <?php if ($u): ?>
@@ -58,17 +87,72 @@ $current = basename($_SERVER['SCRIPT_NAME']);
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 <nav class="sidebar" id="sidebar">
   <div class="sidebar-head">
-    <div class="sidebar-appname"><?= e($app_name) ?></div>
-    <div class="sidebar-username"><?= e($u['name']) ?> · <?= e($u['role_name']) ?></div>
+    <div class="sidebar-avatar">🏪</div>
+    <div>
+      <div class="sidebar-appname"><?= e($app_name) ?></div>
+      <div class="sidebar-username"><?= e($u['name']) ?> · <?= e($u['role_name']) ?><br><?= e($u['location_name']) ?></div>
+    </div>
   </div>
   <div class="sidebar-links">
-  <?php foreach ($nav as $n): if ($n[0] !== null && !can($n[0])) continue; ?>
-    <a href="<?= $n[1] ?>" class="<?= $current === $n[1] ? 'active' : '' ?>"><span class="nav-ico"><?= $n[2] ?></span><?= $n[3] ?></a>
+  <?php foreach ($menu as $m): ?>
+    <?php if ($m[0] === 'link'):
+        if ($m[4] !== null && !can($m[4])) continue; ?>
+      <a href="<?= $m[1] ?>" class="nav-link <?= $current === $m[1] ? 'active' : '' ?>"><span class="nav-ico"><?= $m[2] ?></span><?= $m[3] ?></a>
+    <?php else:
+        $items = nav_visible_items($m[4]);
+        if (!$items) continue;
+        $groupActive = false;
+        foreach ($items as $it) if (basename(parse_url($it[0], PHP_URL_PATH)) === $current) $groupActive = true;
+    ?>
+      <div class="nav-group <?= $groupActive ? 'open' : '' ?>" data-group="<?= $m[1] ?>">
+        <button type="button" class="nav-group-head <?= $groupActive ? 'active' : '' ?>">
+          <span class="nav-ico"><?= $m[2] ?></span><?= $m[3] ?><span class="nav-chev">▾</span>
+        </button>
+        <div class="nav-sub">
+        <?php foreach ($items as $it): ?>
+          <div class="nav-sub-row">
+            <a href="<?= $it[0] ?>" class="<?= basename(parse_url($it[0], PHP_URL_PATH)) === $current ? 'active' : '' ?>"><?= $it[1] ?></a>
+            <?php if ($it[3] && ($it[4] === null || can($it[4]))): ?>
+              <a href="<?= $it[3] ?>" class="nav-plus" title="Add new">＋</a>
+            <?php endif; ?>
+          </div>
+        <?php endforeach; ?>
+        </div>
+      </div>
+    <?php endif; ?>
   <?php endforeach; ?>
   </div>
+  <div class="sidebar-foot">v<?= e(setting('app_version', '2.2.0')) ?></div>
 </nav>
+
+<!-- quick action sheet (center + button) -->
+<div class="sheet-overlay" id="sheetOverlay"></div>
+<div class="action-sheet" id="actionSheet">
+  <div class="sheet-handle"></div>
+  <h3>ઝડપી કામ</h3>
+  <div class="sheet-grid">
+    <?php
+    $quick = [
+        ['sales.php?action=new', '🧾', 'New Bill', 'sales.add'],
+        ['estimates.php?action=new', '📋', 'Estimate', 'estimates.add'],
+        ['purchases.php?action=new', '📦', 'Purchase', 'purchases.add'],
+        ['payments.php', '💰', 'Payment', 'payments.add'],
+        ['expenses.php', '💸', 'Expense', 'expenses.add'],
+        ['repairs.php?action=new', '🛠️', 'Repair Job', 'repairs.add'],
+        ['tasks.php?action=new', '🔧', 'Task', 'tasks.add'],
+        ['handover.php?action=new', '🤝', 'Handover', 'handover.add'],
+        ['challans.php?action=new', '🚚', 'Challan', 'challans.add'],
+        ['parties.php?action=new', '👥', 'Party', 'parties.add'],
+        ['items.php?action=new', '🖥️', 'Item', 'items.add'],
+        ['sales_return.php?action=new', '↩️', 'Sale Return', 'sales_return.add'],
+    ];
+    foreach ($quick as $qk): if (!can($qk[3])) continue; ?>
+    <a href="<?= $qk[0] ?>" class="sheet-item"><span><?= $qk[1] ?></span><?= $qk[2] ?></a>
+    <?php endforeach; ?>
+  </div>
+</div>
 <?php endif; ?>
-<script src="assets/app.js?v=2"></script>
+<script src="assets/app.js?v=3"></script>
 <main class="content<?= $u ? '' : ' content-full' ?>">
 <?php foreach (get_flashes() as $f): ?>
   <div class="flash flash-<?= e($f['type']) ?>"><?= e($f['msg']) ?></div>

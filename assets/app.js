@@ -15,6 +15,40 @@ if (menuBtn) {
   });
 }
 
+// ----- sidebar accordion groups (remember open state) -----
+document.querySelectorAll('.nav-group-head').forEach(function (head) {
+  head.addEventListener('click', function () {
+    var g = head.parentElement;
+    g.classList.toggle('open');
+    try {
+      var open = [];
+      document.querySelectorAll('.nav-group.open').forEach(function (x) { open.push(x.dataset.group); });
+      localStorage.setItem('navOpen', JSON.stringify(open));
+    } catch (e) {}
+  });
+});
+try {
+  (JSON.parse(localStorage.getItem('navOpen') || '[]')).forEach(function (id) {
+    var g = document.querySelector('.nav-group[data-group="' + id + '"]');
+    if (g) g.classList.add('open');
+  });
+} catch (e) {}
+
+// ----- quick action sheet (center + button lives in the footer,
+// so bind via delegation - it doesn't exist when this file loads) -----
+document.addEventListener('click', function (ev) {
+  var sheet = document.getElementById('actionSheet');
+  var sheetOverlay = document.getElementById('sheetOverlay');
+  if (!sheet) return;
+  if (ev.target.closest('#fabBtn')) {
+    sheet.classList.toggle('open');
+    sheetOverlay.classList.toggle('show');
+  } else if (ev.target === sheetOverlay) {
+    sheet.classList.remove('open');
+    sheetOverlay.classList.remove('show');
+  }
+});
+
 // ----- generic client-side table filter -----
 function tableFilter(inputId, tableId) {
   var inp = document.getElementById(inputId), tbl = document.getElementById(tableId);
