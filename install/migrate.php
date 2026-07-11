@@ -10,9 +10,10 @@
 // This page re-runs schema.sql (fully idempotent - every statement is
 // CREATE TABLE IF NOT EXISTS) plus every install/upgrade_v*.sql in order,
 // and treats "already exists" errors (duplicate column/table/key) as
-// success instead of failure, so it is always safe to click "Update
-// Database Now" after uploading new files - whether it's the first time
-// or the tenth time. No SQL file needs to be picked by hand ever again.
+// success instead of failure. It runs automatically the moment this page
+// is opened (no button to click) - just bookmark this link and open it
+// after every file upload. Existing data is never touched; it only adds
+// whatever tables/columns are missing. Safe to open any number of times.
 require_once __DIR__ . '/../includes/init.php';
 require_perm('settings.edit');
 
@@ -45,23 +46,22 @@ function run_migration_file($label, $sql, &$log) {
     return [$applied, $already, $failed];
 }
 
-$result = null;
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'run') {
-    $log = [];
-    $totals = ['applied' => 0, 'already' => 0, 'failed' => 0];
-    $files = ['schema.sql' => file_get_contents(__DIR__ . '/schema.sql')];
-    $upgradeFiles = glob(__DIR__ . '/upgrade_v*.sql');
-    natsort($upgradeFiles);
-    foreach ($upgradeFiles as $f) $files[basename($f)] = file_get_contents($f);
+// Runs automatically on every visit to this page (GET or POST) - opening
+// the link IS the action, nothing to click.
+$log = [];
+$totals = ['applied' => 0, 'already' => 0, 'failed' => 0];
+$files = ['schema.sql' => file_get_contents(__DIR__ . '/schema.sql')];
+$upgradeFiles = glob(__DIR__ . '/upgrade_v*.sql');
+natsort($upgradeFiles);
+foreach ($upgradeFiles as $f) $files[basename($f)] = file_get_contents($f);
 
-    foreach ($files as $label => $sql) {
-        list($a, $al, $f) = run_migration_file($label, $sql, $log);
-        $totals['applied'] += $a; $totals['already'] += $al; $totals['failed'] += $f;
-    }
-    set_setting('db_last_migrated', date('Y-m-d H:i:s'));
-    log_activity('db_migrate', "applied={$totals['applied']} already={$totals['already']} failed={$totals['failed']}");
-    $result = ['totals' => $totals, 'log' => $log];
+foreach ($files as $label => $sql) {
+    list($a, $al, $f) = run_migration_file($label, $sql, $log);
+    $totals['applied'] += $a; $totals['already'] += $al; $totals['failed'] += $f;
 }
+set_setting('db_last_migrated', date('Y-m-d H:i:s'));
+log_activity('db_migrate', "applied={$totals['applied']} already={$totals['already']} failed={$totals['failed']}");
+$result = ['totals' => $totals, 'log' => $log];
 
 // live status: which tables/columns from recent versions actually exist
 function schema_check() {
@@ -103,21 +103,11 @@ $page_title = 'Database Update';
 include __DIR__ . '/../includes/header.php';
 ?>
 <div class="card">
-  <h2>🔄 Database Update</h2>
-  <p class="muted mb">Server પર નવી files upload કરો પછી અહીં "Update Database Now" દબાવવાનું — code ને જોઈતા બધા tables/columns આપોઆપ ઉમેરાઈ જશે. પહેલેથી હોય એ છોડી દેશે, ફરીથી ક્લિક કરવામાં પણ કંઈ નુકસાન નથી (safe to click multiple times).</p>
-  <?php if (setting('db_last_migrated')): ?><p class="muted mb">Last run: <?= e(setting('db_last_migrated')) ?></p><?php endif; ?>
-  <form method="post">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="run">
-    <button class="btn btn-block" type="submit">⚡ Update Database Now</button>
-  </form>
-</div>
-
-<?php if ($result): ?>
-<div class="card">
-  <h2><?= $result['totals']['failed'] ? '⚠️ થોડું ધ્યાન આપવા જેવું' : '✅ Database Up To Date' ?></h2>
+  <h2><?= $result['totals']['failed'] ? '⚠️ થોડું ધ્યાન આપવા જેવું' : '✅ Database Update થઈ ગયું' ?></h2>
+  <p class="muted mb">આ link ખોલો એટલે આપોઆપ ડેટાબેસ update થઈ જાય — કંઈ ક્લિક કરવાની જરૂર નથી. જૂનો ડેટા (bills, parties, stock — બધું) જેમનું તેમ રહે છે, ફક્ત code ને જોઈતા નવા tables/columns જ ઉમેરાય છે. Server પર files upload કર્યા પછી આ link ફરી ખોલી લેવાની — ગમે એટલી વાર ખોલવામાં કંઈ નુકસાન નથી.</p>
+  <p class="muted mb">Last run: <?= e(setting('db_last_migrated')) ?></p>
   <div class="grid-stats" style="margin-bottom:0">
-    <div class="stat s-ok"><div class="stat-label">નવું લાગુ થયું</div><div class="stat-value"><?= $result['totals']['applied'] ?></div></div>
+    <div class="stat s-ok"><div class="stat-label">લાગુ થયું</div><div class="stat-value"><?= $result['totals']['applied'] ?></div></div>
     <div class="stat"><div class="stat-label">પહેલેથી હતું</div><div class="stat-value"><?= $result['totals']['already'] ?></div></div>
     <div class="stat <?= $result['totals']['failed'] ? 's-bad' : '' ?>"><div class="stat-label">Failed</div><div class="stat-value"><?= $result['totals']['failed'] ?></div></div>
   </div>
@@ -129,8 +119,8 @@ include __DIR__ . '/../includes/header.php';
     <?php endforeach; ?></tbody>
   </table>
   <?php endif; ?>
+  <a class="btn btn-outline mt" href="<?= e($_SERVER['REQUEST_URI']) ?>">🔄 ફરી ચેક કરો</a>
 </div>
-<?php endif; ?>
 
 <div class="card">
   <h2><?= $allOk ? '✅' : '⚠️' ?> Schema Status (live check)</h2>
@@ -140,6 +130,6 @@ include __DIR__ . '/../includes/header.php';
     <tr><td><?= e($label) ?></td><td class="right"><?= $ok ? '<span class="badge badge-ok">✓ છે</span>' : '<span class="badge badge-bad">✗ ખૂટે છે</span>' ?></td></tr>
     <?php endforeach; ?>
   </table>
-  <?php if (!$allOk): ?><p class="flash flash-error mt">ઉપર "Update Database Now" દબાવો — ખૂટતી વસ્તુ આપોઆપ ઉમેરાઈ જશે.</p><?php endif; ?>
+  <?php if (!$allOk): ?><p class="flash flash-error mt">આ page હમણાં જ auto-update run કરી ચૂક્યું છે છતાં ઉપર કંઈ ✗ ખૂટે છે દેખાય છે — ઉપર "Failed" table માં error જુઓ, અથવા "🔄 ફરી ચેક કરો" દબાવો.</p><?php endif; ?>
 </div>
 <?php include __DIR__ . '/../includes/footer.php'; ?>

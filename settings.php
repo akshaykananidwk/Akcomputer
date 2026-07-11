@@ -238,8 +238,8 @@ include __DIR__ . '/includes/header.php';
 
 <div class="card">
   <h3>🛠️ Database Update <span class="badge badge-warn">Files FTP/cPanel થી upload કર્યા હોય તો</span></h3>
-  <p class="muted mb">જો files સીધી server પર (FTP / cPanel File Manager થી) upload કરી હોય — "Apply Update" વાળી નીચેની રીતથી નહીં — તો database એ નવી files ને અનુરૂપ update કરવાનું ભૂલાઈ શકે, અને pages બરાબર ના ચાલે. Files upload કર્યા પછી હંમેશા આ button દબાવો, safe છે ગમે એટલી વાર દબાવવામાં:</p>
-  <a class="btn btn-outline" href="install/migrate.php">⚡ Database Update Tool ખોલો</a>
+  <p class="muted mb">જો files સીધી server પર (FTP / cPanel File Manager થી) upload કરી હોય — "Apply Update" વાળી નીચેની રીતથી નહીં — તો database એ નવી files ને અનુરૂપ update કરવાનું ભૂલાઈ શકે, અને pages બરાબર ના ચાલે. નીચેની link ખોલો એટલે <strong>આપોઆપ</strong> database update થઈ જાય — કંઈ ક્લિક/button નહીં, ફક્ત link ખોલવાની. જૂનો ડેટા (bills, parties, બધું) સચવાય જ છે, ફક્ત ખૂટતું ઉમેરાય છે. આ link save/bookmark કરી રાખો — Files upload કર્યા પછી હંમેશા આ ખોલી લેવાની, ગમે એટલી વાર ખોલવામાં કંઈ નુકસાન નથી:</p>
+  <a class="btn btn-outline" href="install/migrate.php" target="_blank">⚡ Database Update Link ખોલો</a>
 </div>
 
 <div class="card">
