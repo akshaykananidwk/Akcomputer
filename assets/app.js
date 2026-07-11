@@ -278,9 +278,10 @@ var Bill = {
     } else {
       disc = parseFloat((discHidden || {}).value) || 0;
     }
-    var total = sub - disc + tax;
+    var shipping = parseFloat((document.getElementById('shipping') || {}).value) || 0;
+    var total = sub - disc + tax + shipping;
     var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v.toFixed(2); };
-    set('t_sub', sub); set('t_tax', tax); set('t_grand', total);
+    set('t_sub', sub); set('t_tax', tax); set('t_ship', shipping); set('t_grand', total);
     var due = document.getElementById('t_due');
     if (due) {
       var paid = parseFloat((document.getElementById('paid') || {}).value) || 0;

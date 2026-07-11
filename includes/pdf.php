@@ -254,6 +254,11 @@ function invoice_pdf($sale, $items) {
         $pdf->text_right($R, $y, 10, 'Rs ' . money($sale['tax_amount'] / 2));
         $y += 14;
     }
+    if (!empty($sale['shipping']) && $sale['shipping'] > 0) {
+        $pdf->text($tx, $y, 10, 'Shipping');
+        $pdf->text_right($R, $y, 10, 'Rs ' . money($sale['shipping']));
+        $y += 14;
+    }
     $pdf->line($tx, $y - 8, $R, $y - 8, 1.1);
     $pdf->text($tx, $y + 4, 12, 'TOTAL', 'B');
     $pdf->text_right($R, $y + 4, 12, 'Rs ' . money($sale['total']), 'B');

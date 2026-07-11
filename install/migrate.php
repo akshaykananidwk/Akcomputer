@@ -75,6 +75,8 @@ function schema_check() {
         'sales.last_reminder' => "SHOW COLUMNS FROM sales LIKE 'last_reminder'",
         'purchases.discount_type' => "SHOW COLUMNS FROM purchases LIKE 'discount_type'",
         'purchases.is_cancelled' => "SHOW COLUMNS FROM purchases LIKE 'is_cancelled'",
+        'sales.shipping' => "SHOW COLUMNS FROM sales LIKE 'shipping'",
+        'purchases.shipping' => "SHOW COLUMNS FROM purchases LIKE 'shipping'",
         'payments.party_id nullable' => "SHOW COLUMNS FROM payments LIKE 'party_id'",
         'payments.bank_account_id' => "SHOW COLUMNS FROM payments LIKE 'bank_account_id'",
         'expenses.bank_account_id' => "SHOW COLUMNS FROM expenses LIKE 'bank_account_id'",

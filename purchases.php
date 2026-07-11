@@ -34,7 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $discRaw = (float)post('discount_val');
     $discount = $discType === 'percent' ? round($subtotal * $discRaw / 100, 2) : min($discRaw, $subtotal);
     $discPct = $discType === 'percent' ? $discRaw : 0;
-    $total = $subtotal - $discount + $tax;
+    $shipping = max(0, (float)post('shipping'));
+    $total = $subtotal - $discount + $tax + $shipping;
     $paid = min((float)post('paid'), $total);
     $credit_days = (int)post('credit_days');
     $pdate = post('purchase_date', today());
@@ -45,11 +46,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $pdo->beginTransaction();
     try {
         q('INSERT INTO purchases (company_id, bill_no, party_id, location_id, purchase_date, credit_days, due_date,
-           subtotal, discount, discount_type, discount_pct, tax_amount, total, paid, payment_method_id, bank_account_id, status, notes, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+           subtotal, discount, discount_type, discount_pct, tax_amount, shipping, total, paid, payment_method_id, bank_account_id, status, notes, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
           [(int)post('company_id', 1), post('bill_no'), $party_id, $loc_id, $pdate, $credit_days,
            $credit_days ? date('Y-m-d', strtotime("$pdate +$credit_days days")) : null,
-           $subtotal, $discount, $discType, $discPct, $tax, $total, $paid, $pmId, $bankAccId, payment_status($total, $paid), post('notes'), $u['id']]);
+           $subtotal, $discount, $discType, $discPct, $tax, $shipping, $total, $paid, $pmId, $bankAccId, payment_status($total, $paid), post('notes'), $u['id']]);
         $pid = insert_id();
 
         foreach ($rows as $r) {
@@ -126,19 +127,130 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     redirect('purchases.php');
 }
 
+// ---------- edit existing purchase ----------
+// Payment history untouched (paid only ever capped down to the new total).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
+    require_perm('purchases.edit');
+    $pid = (int)post('id');
+    $purchase = row('SELECT * FROM purchases WHERE id = ?', [$pid]);
+    if (!$purchase) { flash('Purchase not found.', 'error'); redirect('purchases.php'); }
+    if ($purchase['is_cancelled']) { flash('Cancelled bill ને edit કરી શકાય નહીં.', 'error'); redirect('purchase_view.php?id=' . $pid); }
+
+    $moved = (int)val("SELECT COUNT(*) FROM item_serials WHERE purchase_id = ? AND status <> 'in_stock'", [$pid]);
+    if ($moved > 0) {
+        flash('આ bill ના કેટલાક serial numbers પહેલેથી sold/issued/returned થઈ ગયા છે, એટલે edit કરી શકાય એમ નથી.', 'error');
+        redirect('purchase_view.php?id=' . $pid);
+    }
+
+    $loc_id = (int)post('location_id') ?: $u['location_id'];
+    $party_id = (int)post('party_id');
+    $item_ids = post('item_id', []);
+    $qtys = post('qty', []);
+    $prices = post('price', []);
+    $taxes = post('tax_rate', []);
+    $serials_in = post('serials', []);
+
+    $rows = [];
+    foreach ($item_ids as $i => $iid) {
+        $iid = (int)$iid;
+        $qty = (float)($qtys[$i] ?? 0);
+        if (!$iid || $qty <= 0) { continue; }
+        $rows[] = ['item_id' => $iid, 'qty' => $qty, 'price' => (float)($prices[$i] ?? 0),
+                   'tax_rate' => (float)($taxes[$i] ?? 0), 'total' => $qty * (float)($prices[$i] ?? 0),
+                   'serials' => trim((string)($serials_in[$i] ?? ''))];
+    }
+    if (!$rows || !$party_id) { flash('Party and at least one item required.', 'error'); redirect('purchases.php?action=edit&id=' . $pid); }
+
+    $subtotal = array_sum(array_column($rows, 'total'));
+    $tax = 0;
+    foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
+    $discType = post('discount_type') === 'percent' ? 'percent' : 'amount';
+    $discRaw = (float)post('discount_val');
+    $discount = $discType === 'percent' ? round($subtotal * $discRaw / 100, 2) : min($discRaw, $subtotal);
+    $discPct = $discType === 'percent' ? $discRaw : 0;
+    $shipping = max(0, (float)post('shipping'));
+    $total = $subtotal - $discount + $tax + $shipping;
+    $paid = min((float)$purchase['paid'], $total);
+    $credit_days = (int)post('credit_days');
+    $pdate = post('purchase_date', $purchase['purchase_date']);
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        foreach (all('SELECT * FROM purchase_items WHERE purchase_id = ?', [$pid]) as $oi) {
+            adjust_stock($oi['item_id'], $purchase['location_id'], -(float)$oi['qty'], 'purchase_edit', $pid);
+        }
+        q('DELETE FROM item_serials WHERE purchase_id = ?', [$pid]);
+        q('DELETE FROM purchase_items WHERE purchase_id = ?', [$pid]);
+
+        foreach ($rows as $r) {
+            $item = row('SELECT * FROM items WHERE id = ?', [$r['item_id']]);
+            q('INSERT INTO purchase_items (purchase_id, item_id, qty, price, tax_rate, total) VALUES (?,?,?,?,?,?)',
+              [$pid, $r['item_id'], $r['qty'], $r['price'], $r['tax_rate'], $r['total']]);
+            adjust_stock($r['item_id'], $loc_id, $r['qty'], 'purchase_edit', $pid, post('bill_no'));
+
+            if ($item['serial_tracked']) {
+                $sns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $r['serials']))));
+                if (count($sns) != $r['qty']) throw new Exception("Enter {$r['qty']} serial number(s) for {$item['name']} (one per line).");
+                foreach ($sns as $sn) {
+                    q("INSERT INTO item_serials (item_id, serial_no, location_id, status, purchase_id, warranty_months)
+                       VALUES (?,?,?,'in_stock',?,?)", [$r['item_id'], $sn, $loc_id, $pid, $item['warranty_months']]);
+                }
+            }
+        }
+        foreach ($rows as $r) {
+            q('UPDATE items SET purchase_price = ? WHERE id = ?', [$r['price'], $r['item_id']]);
+            q('UPDATE items SET selling_price = ROUND(purchase_price * (1 + margin_pct / 100), 2)
+               WHERE id = ? AND margin_pct > 0', [$r['item_id']]);
+        }
+
+        q('UPDATE purchases SET company_id=?, bill_no=?, party_id=?, location_id=?, purchase_date=?, credit_days=?, due_date=?,
+           subtotal=?, discount=?, discount_type=?, discount_pct=?, tax_amount=?, shipping=?, total=?, paid=?, status=?, notes=? WHERE id=?',
+          [(int)post('company_id', 1), post('bill_no'), $party_id, $loc_id, $pdate, $credit_days,
+           $credit_days ? date('Y-m-d', strtotime("$pdate +$credit_days days")) : null,
+           $subtotal, $discount, $discType, $discPct, $tax, $shipping, $total, $paid, payment_status($total, $paid), post('notes'), $pid]);
+
+        $pdo->commit();
+        log_activity('purchase_edit', ($purchase['bill_no'] ?: "#$pid") . " total $total");
+        flash('Purchase bill update થઈ ગયું.');
+        redirect('purchase_view.php?id=' . $pid);
+    } catch (Exception $ex) {
+        $pdo->rollBack();
+        flash('Error: ' . $ex->getMessage(), 'error');
+        redirect('purchases.php?action=edit&id=' . $pid);
+    }
+}
+
 $locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
 $terms = all('SELECT * FROM credit_terms ORDER BY days');
 $companies = all('SELECT * FROM companies WHERE is_active = 1 ORDER BY id');
 
-if ($action === 'new') {
-    require_perm('purchases.add');
+if ($action === 'new' || $action === 'edit') {
+    $isEdit = $action === 'edit';
+    require_perm($isEdit ? 'purchases.edit' : 'purchases.add');
+    $editPurchase = null; $editItems = [];
+    if ($isEdit) {
+        $editPurchase = row('SELECT * FROM purchases WHERE id = ?', [(int)get('id')]);
+        if (!$editPurchase) die('Purchase not found.');
+        if (!can('purchases.all') && $editPurchase['created_by'] != $u['id']) die('Access denied.');
+        if ($editPurchase['is_cancelled']) { flash('Cancelled bill ને edit કરી શકાય નહીં.', 'error'); redirect('purchase_view.php?id=' . $editPurchase['id']); }
+        $editItems = all('SELECT pi.*, i.name, i.serial_tracked FROM purchase_items pi JOIN items i ON i.id = pi.item_id WHERE pi.purchase_id = ?', [$editPurchase['id']]);
+        foreach ($editItems as &$_ei) {
+            if ($_ei['serial_tracked']) {
+                $_ei['serial_list'] = implode("\n", array_column(all('SELECT serial_no FROM item_serials WHERE purchase_id = ? AND item_id = ?', [$editPurchase['id'], $_ei['item_id']]), 'serial_no'));
+            }
+        }
+        unset($_ei);
+    }
     $parties = all("SELECT id, name, credit_days FROM parties WHERE is_active = 1 AND type IN ('supplier','both') ORDER BY name");
-    $page_title = 'New Purchase';
+    $page_title = $isEdit ? 'Edit Purchase #' . $editPurchase['id'] : 'New Purchase';
     include __DIR__ . '/includes/header.php';
     ?>
+    <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serial_tracked'])): ?><div class="flash flash-info">Serial-tracked items ના serial numbers pre-filled છે - જરૂર હોય તો બદલી શકો છો.</div><?php endif; ?>
     <form method="post">
       <?= csrf_field() ?>
-      <input type="hidden" name="do" value="save">
+      <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">
+      <?php if ($isEdit): ?><input type="hidden" name="id" value="<?= $editPurchase['id'] ?>"><?php endif; ?>
       <div class="card">
         <div class="form-row cols-4">
           <div><label>Supplier party *</label>
@@ -151,9 +263,9 @@ if ($action === 'new') {
             <p class="muted mt"><a href="#" onclick="document.getElementById('qpModal').style.display='block';return false">+ Add new party</a></p>
           </div>
           <div><label>Firm / Company</label>
-            <select name="company_id"><?php foreach ($companies as $c): ?><option value="<?= $c['id'] ?>"><?= e($c['name']) ?></option><?php endforeach; ?></select></div>
-          <div><label>Supplier bill no.</label><input type="text" name="bill_no"></div>
-          <div><label>Date</label><input type="date" name="purchase_date" value="<?= today() ?>"></div>
+            <select name="company_id" id="company_id"><?php foreach ($companies as $c): ?><option value="<?= $c['id'] ?>"><?= e($c['name']) ?></option><?php endforeach; ?></select></div>
+          <div><label>Supplier bill no.</label><input type="text" name="bill_no" id="bill_no" value="<?= $isEdit ? e($editPurchase['bill_no']) : '' ?>"></div>
+          <div><label>Date</label><input type="date" name="purchase_date" id="purchase_date" value="<?= $isEdit ? e($editPurchase['purchase_date']) : today() ?>"></div>
         </div>
         <div class="form-row cols-2">
           <div><label>Stock into location</label>
@@ -190,6 +302,10 @@ if ($action === 'new') {
             <input type="hidden" name="discount" id="discount" value="0">
             <input type="hidden" name="discount_type" id="discount_type" value="amount">
           </div>
+          <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= $isEdit ? money($editPurchase['shipping']) : '0' ?>" oninput="Bill.totals()"></div>
+          <?php if ($isEdit): ?>
+          <div><label>Already paid</label><input type="text" value="₹<?= money($editPurchase['paid']) ?> (edit થી બદલાશે નહીં)" disabled></div>
+          <?php else: ?>
           <div><label>Paid now (₹)</label><input type="number" step="any" name="paid" id="paid" value="0"></div>
           <div><label>Payment mode</label>
             <select name="payment_mode" id="payment_mode" onchange="pmChange()">
@@ -199,14 +315,23 @@ if ($action === 'new') {
             <select name="bank_account_id">
               <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
             </select></div>
+          <?php endif; ?>
         </div>
-        <div class="field"><label>Notes</label><input type="text" name="notes"></div>
+        <div class="field"><label>Notes</label><input type="text" name="notes" value="<?= $isEdit ? e($editPurchase['notes']) : '' ?>"></div>
         <div class="bill-totals">
           <div class="t-line"><span>Subtotal</span><span>₹ <span id="t_sub">0.00</span></span></div>
           <div class="t-line"><span>GST</span><span>₹ <span id="t_tax">0.00</span></span></div>
+          <div class="t-line"><span>Shipping</span><span>₹ <span id="t_ship">0.00</span></span></div>
           <div class="t-line t-grand"><span>Total</span><span>₹ <span id="t_grand">0.00</span></span></div>
         </div>
+        <?php if ($isEdit): ?>
+        <div class="form-row cols-2 mt">
+          <a class="btn btn-outline" href="purchase_view.php?id=<?= $editPurchase['id'] ?>">Cancel</a>
+          <button class="btn" type="submit">💾 Update Purchase</button>
+        </div>
+        <?php else: ?>
         <button class="btn btn-block mt" type="submit">💾 Save Purchase</button>
+        <?php endif; ?>
       </div>
     </form>
 
@@ -222,6 +347,42 @@ if ($action === 'new') {
     </div>
     <script>
       Bill.init({mode: 'purchase', serials: true, locSel: 'location_id', gst: true});
+      <?php if ($isEdit): ?>
+      // prefill rows from the existing purchase being edited
+      (function () {
+        var pre = <?= json_encode(array_map(fn($x) => [
+            'id' => (int)$x['item_id'], 'name' => $x['name'], 'qty' => (float)$x['qty'],
+            'price' => (float)$x['price'], 'tax' => (float)$x['tax_rate'],
+            'serialTracked' => (int)$x['serial_tracked'], 'serials' => $x['serial_list'] ?? '',
+        ], $editItems)) ?>;
+        document.getElementById('company_id').value = '<?= (int)$editPurchase['company_id'] ?>';
+        document.getElementById('party_id').value = '<?= (int)$editPurchase['party_id'] ?>';
+        document.getElementById('credit_days').value = '<?= (int)$editPurchase['credit_days'] ?>';
+        document.getElementById('discount_type').value = <?= json_encode($editPurchase['discount_type']) ?>;
+        document.getElementById('discount_val').value = '<?= $editPurchase['discount_type'] === 'percent' ? (float)$editPurchase['discount_pct'] : (float)$editPurchase['discount'] ?>';
+        document.getElementById('discAmt').className = <?= json_encode($editPurchase['discount_type']) ?> === 'amount' ? 'on-cash' : '';
+        document.getElementById('discPct').className = <?= json_encode($editPurchase['discount_type']) ?> === 'percent' ? 'on-cash' : '';
+        pre.forEach(function (it, idx) {
+          if (idx > 0) Bill.addRow();
+          var rows = document.querySelectorAll('#billItems .bill-row');
+          var div = rows[rows.length - 1];
+          div.querySelector('.i-search').value = it.name;
+          div.querySelector('.i-id').value = it.id;
+          div.querySelector('.i-tax').value = it.tax;
+          div.querySelector('.i-qty').value = it.qty;
+          div.querySelector('.i-price').value = it.price;
+          var extra = div.querySelector('.i-extra');
+          if (it.serialTracked) {
+            extra.innerHTML = '<label class="mt">Serial numbers (one per line, count = qty)</label><textarea name="serials[]" rows="2"></textarea>';
+            extra.querySelector('textarea').value = it.serials;
+          } else {
+            extra.innerHTML = '<input type="hidden" name="serials[]" value="">';
+          }
+          Bill.rowTotal(div);
+        });
+        Bill.totals();
+      })();
+      <?php endif; ?>
       function pmChange() {
         var sel = document.getElementById('payment_mode');
         var opt = sel.options[sel.selectedIndex];

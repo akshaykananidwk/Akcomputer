@@ -106,6 +106,9 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
     <button class="btn btn-outline" type="submit">⭐ Review Invite</button></form>
   <?php endif; ?>
   <a class="btn btn-outline" href="sales.php">← Back</a>
+  <?php if (can('sales.edit') && !$sale['is_cancelled']): ?>
+  <a class="btn btn-outline" href="sales.php?action=edit&id=<?= $id ?>">✏️ Edit</a>
+  <?php endif; ?>
   <?php if (can('sales.delete')): ?>
   <?php if (!$sale['is_cancelled']): ?>
   <form method="post" action="sales.php" onsubmit="return confirm('Invoice CANCEL કરવું? (Record રહેશે, stock પાછો આવશે)')" style="display:inline">
@@ -189,6 +192,9 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
     <?php if ($sale['is_gst']): ?>
     <div class="t-line"><span>CGST</span><span>₹<?= money($sale['tax_amount'] / 2) ?></span></div>
     <div class="t-line"><span>SGST</span><span>₹<?= money($sale['tax_amount'] / 2) ?></span></div>
+    <?php endif; ?>
+    <?php if ($sale['shipping'] > 0): ?>
+    <div class="t-line"><span>Shipping</span><span>₹<?= money($sale['shipping']) ?></span></div>
     <?php endif; ?>
     <div class="t-line t-grand"><span>Total</span><span>₹<?= money($sale['total']) ?></span></div>
     <div class="t-line"><span>Paid (<?= e($sale['payment_mode']) ?>)</span><span>₹<?= money($sale['paid']) ?></span></div>

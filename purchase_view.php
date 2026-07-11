@@ -33,6 +33,9 @@ include __DIR__ . '/includes/header.php';
 <div class="page-actions no-print">
   <button class="btn" onclick="window.print()">🖨️ Print</button>
   <a class="btn btn-outline" href="purchases.php">← Back</a>
+  <?php if (can('purchases.edit') && !$p['is_cancelled']): ?>
+  <a class="btn btn-outline" href="purchases.php?action=edit&id=<?= $id ?>">✏️ Edit</a>
+  <?php endif; ?>
   <?php if (can('purchases.delete')): ?>
   <?php if (!$p['is_cancelled']): ?>
   <form method="post" action="purchases.php" onsubmit="return confirm('Purchase bill CANCEL કરવું? (Record રહેશે, stock ઓછો થશે)')" style="display:inline">
@@ -77,6 +80,7 @@ include __DIR__ . '/includes/header.php';
     <div class="t-line"><span>Subtotal</span><span>₹<?= money($p['subtotal']) ?></span></div>
     <?php if ($p['discount'] > 0): ?><div class="t-line"><span>Discount</span><span>- ₹<?= money($p['discount']) ?></span></div><?php endif; ?>
     <div class="t-line"><span>GST</span><span>₹<?= money($p['tax_amount']) ?></span></div>
+    <?php if ($p['shipping'] > 0): ?><div class="t-line"><span>Shipping</span><span>₹<?= money($p['shipping']) ?></span></div><?php endif; ?>
     <div class="t-line t-grand"><span>Total</span><span>₹<?= money($p['total']) ?></span></div>
     <div class="t-line"><span>Paid</span><span>₹<?= money($p['paid']) ?></span></div>
     <?php if ($due > 0.009): ?><div class="t-line"><span><strong>Due</strong></span><span><strong>₹<?= money($due) ?></strong></span></div><?php endif; ?>
