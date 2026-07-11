@@ -6,17 +6,6 @@ require_perm('payments.view');
 $u = current_user();
 $action = get('action', 'list');
 
-function party_balance($party_id) {
-    return (float)val("SELECT p.opening_balance
-        + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id AND is_cancelled = 0), 0)
-        - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = p.id), 0)
-        - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = p.id), 0)
-        + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = p.id), 0)
-        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'in'), 0)
-        + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'out'), 0)
-        FROM parties p WHERE p.id = ?", [$party_id]);
-}
-
 // ---------- save payment (with optional bill allocation) ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
     require_perm('payments.add');
@@ -115,21 +104,17 @@ if ($action === 'new') {
     $dir = get('dir') === 'out' ? 'out' : 'in';
     $presetParty = (int)get('party');
     $types = $dir === 'in' ? "('customer','both')" : "('supplier','both','service_center')";
-    // only parties with a PENDING balance in this direction (You'll Get for
-    // in / You'll Give for out) - keeps the dropdown short and on-topic,
-    // like the reference app; a preset party from a "Receive"/"Pay" link is
-    // always included even if its balance happens to be zero right now
-    $balExpr = "(p.opening_balance
-        + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id AND is_cancelled = 0), 0)
-        - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = p.id), 0)
-        - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = p.id), 0)
-        + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = p.id), 0)
-        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'in'), 0)
-        + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'out'), 0))";
-    $balCond = $dir === 'in' ? "$balExpr > 0.009" : "$balExpr < -0.009";
+    // ALL active parties of the right type are selectable - not just those
+    // with a due, because a party can be receiving/paying an ADVANCE with
+    // no bill against it yet. Parties with a pending balance in this
+    // direction are just sorted to the top so the common case stays fast.
+    $balExpr = party_balance_expr('p');
+    $pendingFirst = $dir === 'in' ? "($balExpr > 0.009) DESC, $balExpr DESC" : "($balExpr < -0.009) DESC, $balExpr ASC";
     $parties = all("SELECT p.id, p.name, p.mobile, $balExpr AS balance FROM parties p
-                    WHERE p.is_active = 1 AND p.type IN $types AND ($balCond OR p.id = ?)
-                    ORDER BY name", [$presetParty]);
+                    WHERE p.is_active = 1 AND p.type IN $types
+                    ORDER BY $pendingFirst, p.name");
+    $pendingCount = count(array_filter($parties, fn($p) => $dir === 'in' ? $p['balance'] > 0.009 : $p['balance'] < -0.009));
+    $wDue = $dir === 'in' ? walkin_due() : 0;
     $pms = active_payment_methods();
     $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
     $page_title = $dir === 'in' ? 'Payment-In (વસૂલી)' : 'Payment-Out (ચુકવણી)';
@@ -140,14 +125,23 @@ if ($action === 'new') {
       <input type="hidden" name="do" value="save_payment">
       <input type="hidden" name="direction" value="<?= $dir ?>">
       <div class="card">
-        <?php if (!$parties): ?><div class="flash flash-info">🎉 કોઈ party <?= $dir === 'in' ? 'લેવાના' : 'દેવાના' ?> બાકી નથી. છતાં payment નોંધવું હોય તો નીચે party ઉમેરો/શોધો.</div><?php endif; ?>
+        <?php if ($pendingCount === 0): ?>
+        <div class="flash flash-info">ℹ️ કોઈ party <?= $dir === 'in' ? 'લેવાના' : 'દેવાના' ?> બાકી નથી — છતાં નીચેથી ગમે તે party પસંદ કરી <strong>advance payment</strong> નોંધી શકો છો.</div>
+        <?php endif; ?>
+        <?php if ($wDue > 0.009): ?>
+        <div class="flash flash-info">ℹ️ Walk-in (party વગરના) bills માં ₹<?= money($wDue) ?> બાકી છે — એ અહીં નહીં, સીધું એ bill ખોલીને collect કરો (Sale List માંથી).</div>
+        <?php endif; ?>
         <div class="form-row cols-3">
-          <div><label><?= $dir === 'in' ? 'Customer / Party *' : 'Supplier / Party *' ?> <span class="muted" style="font-weight:normal">(બાકી હોય એ જ)</span></label>
+          <div><label><?= $dir === 'in' ? 'Customer / Party *' : 'Supplier / Party *' ?></label>
             <select name="party_id" id="party_id" required>
               <option value="">-- select party --</option>
-              <?php foreach ($parties as $p): ?>
-              <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?> (₹<?= money(abs($p['balance'])) ?>)</option>
+              <?php if ($pendingCount): ?><optgroup label="<?= $dir === 'in' ? 'લેવાના બાકી' : 'દેવાના બાકી' ?>"><?php endif; ?>
+              <?php $inGroup = true; foreach ($parties as $p):
+                $pending = $dir === 'in' ? $p['balance'] > 0.009 : $p['balance'] < -0.009;
+                if ($inGroup && $pendingCount && !$pending) { echo '</optgroup><optgroup label="બીજી બધી parties">'; $inGroup = false; } ?>
+              <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?><?= abs($p['balance']) > 0.009 ? ' (₹' . money(abs($p['balance'])) . ($p['balance'] > 0 ? ' લેવાના' : ' દેવાના') . ')' : '' ?></option>
               <?php endforeach; ?>
+              <?php if ($pendingCount): ?></optgroup><?php endif; ?>
             </select>
             <p class="muted mt" id="balInfo"></p>
           </div>

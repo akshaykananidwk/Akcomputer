@@ -175,6 +175,32 @@ function invoice_theme_class() {
     return 'invt-' . $n . ' ' . $themes[$n][1];
 }
 
+// ---------- Party running-account balance (single source of truth) ----------
+// Positive = party owes shop ("લેવાના" / You'll Get). Negative = shop owes
+// party ("દેવાના" / You'll Give) - this also covers customer ADVANCES: a
+// payment received with no bill against it simply pushes the balance
+// negative, exactly like a real khata/ledger book. Used everywhere (party
+// list, party ledger, Payment-In/Out, dashboard) so the numbers never
+// disagree with each other.
+function party_balance_expr($alias = 'p') {
+    return "($alias.opening_balance
+        + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = $alias.id AND is_cancelled = 0), 0)
+        - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = $alias.id), 0)
+        - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = $alias.id), 0)
+        + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = $alias.id), 0)
+        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'in'), 0)
+        + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'out'), 0))";
+}
+function party_balance($party_id) {
+    return (float)val('SELECT ' . party_balance_expr('p') . ' FROM parties p WHERE p.id = ?', [$party_id]);
+}
+/** Unpaid amount on walk-in bills (no party attached) - can't be collected
+ *  via Payment-In (there's no party to pick); shown separately so totals
+ *  stay honest instead of silently disagreeing across pages. */
+function walkin_due() {
+    return (float)val("SELECT COALESCE(SUM(total - paid), 0) FROM sales WHERE party_id IS NULL AND status <> 'paid' AND is_cancelled = 0");
+}
+
 // ---------- Bank accounts / payment methods / QR ----------
 function default_bank_account() {
     static $b = false;

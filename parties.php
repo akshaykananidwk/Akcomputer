@@ -177,16 +177,8 @@ if ($action === 'ledger' && $id) {
 }
 
 // ---- list (with live balance: + = you'll get, - = you'll give) ----
-$parties = all("SELECT p.*,
-    (p.opening_balance
-     + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id AND is_cancelled = 0), 0)
-     - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = p.id), 0)
-     - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = p.id), 0)
-     + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = p.id), 0)
-     - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'in'), 0)
-     + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'out'), 0)
-    ) AS balance
-    FROM parties p WHERE p.is_active = 1 ORDER BY p.name");
+$parties = all('SELECT p.*, ' . party_balance_expr('p') . ' AS balance
+    FROM parties p WHERE p.is_active = 1 ORDER BY p.name');
 $totGet = 0; $totGive = 0;
 foreach ($parties as $p) {
     if ($p['balance'] > 0.009) $totGet += $p['balance'];

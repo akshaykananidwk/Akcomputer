@@ -10,9 +10,16 @@ list($saleScope, $saleParams) = own_scope('sales');
 $todaySales = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date = ? $saleScope", array_merge([$today], $saleParams));
 $monthSales = row("SELECT COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date >= ? $saleScope", array_merge([date('Y-m-01')], $saleParams));
 
+// Same party-ledger formula as Parties list / Payment-In-Out, so this
+// number never disagrees with what those pages show (it used to be a
+// separate per-invoice sum that quietly drifted out of sync).
 $canMoney = can('payments.view');
-$recv = $canMoney ? (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid' AND is_cancelled = 0") : 0;
-$paybl = $canMoney ? (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid'") : 0;
+$recv = 0; $paybl = 0; $walkinDue = 0;
+if ($canMoney) {
+    $bals = all('SELECT ' . party_balance_expr('p') . ' AS bal FROM parties p WHERE p.is_active = 1');
+    foreach ($bals as $b) { if ($b['bal'] > 0.009) $recv += $b['bal']; elseif ($b['bal'] < -0.009) $paybl += -$b['bal']; }
+    $walkinDue = walkin_due();
+}
 
 // last 6 months sales for chart
 $chart = [];
@@ -55,9 +62,12 @@ include __DIR__ . '/includes/header.php';
 ?>
 <?php if ($canMoney): ?>
 <div class="duo-cards">
-  <a class="duo-card duo-get" href="payments.php"><div class="duo-label">લેવાના (To Receive)</div><div class="duo-value">₹ <?= money($recv) ?></div></a>
-  <a class="duo-card duo-give" href="payments.php"><div class="duo-label">દેવાના (To Pay)</div><div class="duo-value">₹ <?= money($paybl) ?></div></a>
+  <a class="duo-card duo-get" href="payments.php?action=new&dir=in"><div class="duo-label">લેવાના (To Receive)</div><div class="duo-value">₹ <?= money($recv) ?></div></a>
+  <a class="duo-card duo-give" href="payments.php?action=new&dir=out"><div class="duo-label">દેવાના (To Pay)</div><div class="duo-value">₹ <?= money($paybl) ?></div></a>
 </div>
+<?php if ($walkinDue > 0.009): ?>
+<p class="muted mt" style="margin-top:-6px;margin-bottom:14px">+ ₹<?= money($walkinDue) ?> walk-in bills માં બાકી (party વગર - Sale List માંથી સીધું collect કરો)</p>
+<?php endif; ?>
 <?php endif; ?>
 
 <div class="tile-grid">

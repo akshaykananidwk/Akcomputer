@@ -50,14 +50,7 @@ if ($a === 'party_bills' && can('payments.view')) {
     // unpaid bills of a party (for payment linking) + live balance
     $party_id = (int)get('party_id');
     $dir = get('dir') === 'out' ? 'out' : 'in';
-    $balance = (float)val("SELECT p.opening_balance
-        + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id AND is_cancelled = 0), 0)
-        - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = p.id), 0)
-        - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = p.id), 0)
-        + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = p.id), 0)
-        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'in'), 0)
-        + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'out'), 0)
-        FROM parties p WHERE p.id = ?", [$party_id]);
+    $balance = (float)val('SELECT ' . party_balance_expr('p') . ' FROM parties p WHERE p.id = ?', [$party_id]);
     if ($dir === 'in') {
         $bills = all("SELECT id, invoice_no no, sale_date d, total - paid due FROM sales
                       WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0 ORDER BY sale_date, id", [$party_id]);
