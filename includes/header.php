@@ -39,6 +39,7 @@ $menu = [
     ['link', 'reports.php', '📈', 'Reports', 'reports.view'],
     ['group', 'store', '🌐', 'My Online Store', [
         ['catalog.php', 'View Website', null, null, null],
+        ['web_orders.php', 'Website Orders', 'weborders.view', null, null],
         ['items.php', 'Website Items (🌐 ON/OFF)', 'items.view', null, null],
     ]],
     ['group', 'admin', '🧑‍💼', 'Staff & Company', [

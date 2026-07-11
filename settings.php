@@ -32,8 +32,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         set_setting($k, post($k));
     }
     set_setting('login_otp', post('login_otp') ? '1' : '0');
+    set_setting('allow_negative_stock', post('allow_negative_stock') ? '1' : '0');
     log_activity('settings_save');
     flash('Settings saved.');
+    redirect('settings.php');
+}
+
+// ---- WhatsApp message templates ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'templates') {
+    require_perm('settings.edit');
+    foreach (array_keys(wa_template_defaults()) as $k) {
+        set_setting('wa_tpl_' . $k, post('tpl_' . $k));
+    }
+    log_activity('wa_templates_save');
+    flash('Message templates saved.');
     redirect('settings.php');
 }
 
@@ -110,7 +122,24 @@ include __DIR__ . '/includes/header.php';
         <input type="tel" name="wa_shop_number" value="<?= e(setting('wa_shop_number')) ?>" placeholder="91XXXXXXXXXX"></div>
     </div>
     <label class="check-inline mb"><input type="checkbox" name="login_otp" value="1" <?= setting('login_otp') === '1' ? 'checked' : '' ?>> Login પર WhatsApp OTP ફરજિયાત (2-step)</label>
+    <label class="check-inline mb"><input type="checkbox" name="allow_negative_stock" value="1" <?= setting('allow_negative_stock', '1') === '1' ? 'checked' : '' ?>> Purchase વગર sale કરવા દેવું (negative stock allowed)</label>
     <button class="btn" type="submit">Save Settings</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>💬 WhatsApp Message Templates</h3>
+  <p class="muted mb">દરેક message તમારી રીતે લખો. Variables જેમ છે એમ જ રાખવા — મોકલતી વખતે સાચી value થી બદલાઈ જશે. ખાલી છોડો તો default વપરાશે.</p>
+  <form method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="templates">
+    <?php foreach (wa_template_defaults() as $k => $def): ?>
+    <div class="field">
+      <label><?= e($def[2]) ?> <span class="muted" style="font-weight:normal">— variables: <code><?= e($def[1]) ?></code></span></label>
+      <textarea name="tpl_<?= $k ?>" rows="3" placeholder="<?= e($def[0]) ?>"><?= e(setting('wa_tpl_' . $k)) ?></textarea>
+    </div>
+    <?php endforeach; ?>
+    <button class="btn" type="submit">Save Templates</button>
   </form>
 </div>
 

@@ -20,15 +20,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
            status=?, received_date=?, sent_date=?, sent_courier=?, sent_tracking=?, back_date=?, back_courier=?,
            back_tracking=?, delivered_date=?, replacement_serial=?, notes=? WHERE id=?', array_merge($data, [$id]));
         flash('Claim updated.');
+
+        // replacement serial chain: old serial -> 'replaced', new serial added
+        // to the database keeping the same sale/warranty so history stays linked
+        $repl = trim(post('replacement_serial'));
+        $origSn = trim(post('serial_no'));
+        if ($repl !== '' && $origSn !== '' && $repl !== $origSn) {
+            $old = row('SELECT * FROM item_serials WHERE serial_no = ? ORDER BY id DESC LIMIT 1', [$origSn]);
+            if ($old && !row('SELECT id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$old['item_id'], $repl])) {
+                q("INSERT INTO item_serials (item_id, serial_no, status, purchase_id, sale_id, warranty_months, warranty_expiry)
+                   VALUES (?,?,?,?,?,?,?)",
+                  [$old['item_id'], $repl, $old['status'] === 'sold' || $old['status'] === 'claim' ? 'sold' : 'in_stock',
+                   $old['purchase_id'], $old['sale_id'], $old['warranty_months'], $old['warranty_expiry']]);
+                q("UPDATE item_serials SET status = 'replaced' WHERE id = ?", [$old['id']]);
+                flash("Replacement serial $repl database માં ઉમેરાયો (જૂનો $origSn 'replaced' થયો).", 'info');
+            }
+        }
+
         if (post('notify') && post('customer_mobile')) {
             $stMsg = ['sent' => 'has been sent to the company for warranty.',
                       'received_back' => 'is back from the company - ready for pickup ✅',
                       'delivered' => 'has been delivered. Thank you!',
                       'rejected' => 'was rejected by the company. Please contact us.'];
             if (isset($stMsg[post('status')])) {
-                send_whatsapp(post('customer_mobile'),
-                    '*' . setting('app_name', 'AK Computer') . "*\nYour warranty claim " . post('claim_no') .
-                    ' (SN: ' . post('serial_no') . ') ' . $stMsg[post('status')]);
+                send_whatsapp(post('customer_mobile'), wa_template('warranty_status', [
+                    'claim_no' => post('claim_no'), 'serial' => post('serial_no'),
+                    'status_line' => $stMsg[post('status')],
+                ]));
             }
         }
     } else {
@@ -44,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     redirect('warranty.php?action=edit&id=' . $id);
 }
 
-$suppliers = all("SELECT id, name FROM parties WHERE is_active = 1 AND type IN ('supplier','both') ORDER BY name");
+$suppliers = all("SELECT id, name, type FROM parties WHERE is_active = 1 AND type IN ('supplier','both','service_center') ORDER BY name");
 $itemsList = all('SELECT id, name FROM items WHERE is_active = 1 ORDER BY name');
 
 if ($action === 'new' || $action === 'edit') {
@@ -78,9 +96,9 @@ if ($action === 'new' || $action === 'edit') {
             <?php foreach ($itemsList as $it): ?><option value="<?= $it['id'] ?>" <?= ($c['item_id'] ?? '') == $it['id'] ? 'selected' : '' ?>><?= e($it['name']) ?></option><?php endforeach; ?>
             </select></div>
           <div><label>Serial no *</label><input type="text" name="serial_no" value="<?= e($c['serial_no'] ?? get('sn')) ?>" required></div>
-          <div><label>Company / Supplier</label>
+          <div><label>Company / Supplier / Service Center</label>
             <select name="party_id"><option value="">-- select --</option>
-            <?php foreach ($suppliers as $s): ?><option value="<?= $s['id'] ?>" <?= ($c['party_id'] ?? '') == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option><?php endforeach; ?>
+            <?php foreach ($suppliers as $s): ?><option value="<?= $s['id'] ?>" <?= ($c['party_id'] ?? '') == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?><?= $s['type'] === 'service_center' ? ' (Service Center)' : '' ?></option><?php endforeach; ?>
             </select></div>
         </div>
         <div class="form-row cols-3">
@@ -129,9 +147,19 @@ if ($action === 'new' || $action === 'edit') {
               ? (d.warranty_expiry >= new Date().toISOString().slice(0, 10)
                  ? '🟢 IN WARRANTY till ' + d.warranty_expiry : '🔴 Warranty EXPIRED on ' + d.warranty_expiry)
               : '⚪ No warranty date recorded';
-            el.innerHTML = '<strong>' + d.item_name + '</strong> · status: ' + d.status +
+            var h = '<strong>' + d.item_name + '</strong> · status: ' + d.status +
               (d.invoice_no ? ' · sold on ' + d.sale_date + ' (' + d.invoice_no + ') to ' + (d.customer_name || '-') : '') +
               '<br>' + w;
+            if (d.purchase_party) h += '<br>📥 Purchased from: ' + d.purchase_party;
+            if (d.history && d.history.length) {
+              h += '<br><strong>History:</strong>';
+              d.history.forEach(function (c) {
+                h += '<br>• ' + c.claim_no + ' [' + c.status + '] ' + (c.company ? '→ ' + c.company : '') +
+                     (c.sent_date ? ' (sent ' + c.sent_date + (c.back_date ? ', back ' + c.back_date : '') + ')' : '') +
+                     (c.replacement_serial ? ' · replaced by SN: ' + c.replacement_serial : '');
+              });
+            }
+            el.innerHTML = h;
           });
       }
       <?php if (get('sn')): ?>snLookup();<?php endif; ?>

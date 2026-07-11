@@ -26,6 +26,7 @@ function permission_catalog() {
         'payments' => ['view', 'add', 'delete'],
         'expenses' => ['view', 'add', 'delete'],
         'challans' => ['view', 'add', 'edit'],
+        'weborders' => ['view', 'edit'],
         'reports' => ['view', 'profit', 'gst'],
         'users' => ['view', 'add', 'edit', 'delete'],
         'roles' => ['view', 'add', 'edit', 'delete'],
@@ -42,7 +43,8 @@ function permission_labels() {
         'items' => 'Items', 'parties' => 'Parties (Customer/Supplier)', 'stock' => 'Stock',
         'handover' => 'Stock Handover', 'tasks' => 'Field Tasks', 'repairs' => 'Repair Jobs',
         'warranty' => 'Warranty Claims', 'payments' => 'Payments / Ledger',
-        'expenses' => 'Expenses', 'challans' => 'Delivery Challans', 'reports' => 'Reports',
+        'expenses' => 'Expenses', 'challans' => 'Delivery Challans',
+        'weborders' => 'Website Orders', 'reports' => 'Reports',
         'users' => 'Staff Users', 'roles' => 'Roles', 'locations' => 'Locations',
         'companies' => 'Companies / Firms', 'settings' => 'Settings',
     ];

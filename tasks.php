@@ -16,9 +16,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     q('UPDATE tasks SET task_no = ? WHERE id = ?', [doc_no('TSK', $tid), $tid]);
     $staff = row('SELECT * FROM users WHERE id = ?', [(int)post('assigned_to')]);
     if ($staff && $staff['mobile']) {
-        send_whatsapp($staff['mobile'], '*' . setting('app_name', 'AK Computer') . "*\nNew task " . doc_no('TSK', $tid) .
-            "\nCustomer: " . post('customer_name') . ' (' . post('customer_mobile') . ")\nAddress: " . post('address') .
-            "\nWork: " . post('description'));
+        send_whatsapp($staff['mobile'], wa_template('task', [
+            'task_no' => doc_no('TSK', $tid), 'customer' => post('customer_name'),
+            'mobile' => post('customer_mobile'), 'address' => post('address'), 'work' => post('description'),
+        ]));
     }
     log_activity('task_add', doc_no('TSK', $tid));
     flash('Task assigned' . ($staff && $staff['mobile'] ? ' & sent on WhatsApp.' : '.'));

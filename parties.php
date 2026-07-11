@@ -40,8 +40,8 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Name *</label><input type="text" name="name" value="<?= e($p['name'] ?? '') ?>" required></div>
           <div><label>Type</label>
             <select name="type">
-              <?php foreach (['customer', 'supplier', 'both'] as $t): ?>
-              <option value="<?= $t ?>" <?= ($p['type'] ?? 'customer') === $t ? 'selected' : '' ?>><?= ucfirst($t) ?></option>
+              <?php foreach (['customer' => 'Customer', 'supplier' => 'Supplier', 'both' => 'Both', 'service_center' => 'Service Center'] as $t => $tl): ?>
+              <option value="<?= $t ?>" <?= ($p['type'] ?? 'customer') === $t ? 'selected' : '' ?>><?= $tl ?></option>
               <?php endforeach; ?>
             </select></div>
         </div>
@@ -71,6 +71,22 @@ if ($action === 'new' || $action === 'edit') {
     <?php
     include __DIR__ . '/includes/footer.php';
     exit;
+}
+
+// ---------- send ledger on WhatsApp ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_ledger') {
+    $p = row('SELECT * FROM parties WHERE id = ?', [(int)post('id')]);
+    $mobile = post('mobile') ?: ($p['mobile'] ?? '');
+    if ($p && $mobile) {
+        $lines = post('lines');
+        $bal = (float)post('balance');
+        $balTxt = ($bal >= 0 ? '₹' . money($bal) . ' લેવાના' : '₹' . money(-$bal) . ' દેવાના');
+        $ok = send_whatsapp($mobile, wa_template('ledger', ['party' => $p['name'], 'lines' => $lines, 'balance' => $balTxt]));
+        flash($ok ? 'Ledger WhatsApp પર મોકલ્યું.' : 'WhatsApp send fail - API settings ચકાસો.', $ok ? 'success' : 'error');
+    } else {
+        flash('Mobile number નથી.', 'error');
+    }
+    redirect('parties.php?action=ledger&id=' . (int)post('id'));
 }
 
 if ($action === 'ledger' && $id) {
@@ -114,7 +130,33 @@ if ($action === 'ledger' && $id) {
         </tbody>
       </table>
     </div>
-    <div class="card"><strong>Closing balance: ₹<?= money($bal) ?> <?= $bal >= 0 ? '(to receive)' : '(to pay)' ?></strong></div>
+    <div class="card"><strong>Closing balance: ₹<?= money(abs($bal)) ?> <?= $bal >= 0 ? '(લેવાના / to receive)' : '(દેવાના / to pay)' ?></strong></div>
+    <div class="card no-print">
+      <div class="page-actions" style="margin:0">
+        <?php if (can('payments.add')): ?>
+        <a class="btn btn-success" href="payments.php?action=new&dir=in&party=<?= $p['id'] ?>">⬇ Receive Payment</a>
+        <a class="btn btn-danger" href="payments.php?action=new&dir=out&party=<?= $p['id'] ?>">⬆ Pay</a>
+        <?php endif; ?>
+        <button class="btn btn-outline" onclick="window.print()">🖨️ Print</button>
+        <form method="post" style="display:inline-flex;gap:6px">
+          <?= csrf_field() ?>
+          <input type="hidden" name="do" value="wa_ledger">
+          <input type="hidden" name="id" value="<?= $p['id'] ?>">
+          <input type="hidden" name="balance" value="<?= $bal ?>">
+          <?php
+          // last 10 entries as text lines for WhatsApp
+          $waLines = '';
+          foreach (array_slice($entries, -10) as $en) {
+              $waLines .= dmy($en['date']) . ' ' . $en['desc'] . ': ' .
+                          ($en['dr'] ? '₹' . money($en['dr']) . ' (bill)' : '₹' . money($en['cr']) . ' (jama)') . "\n";
+          }
+          ?>
+          <input type="hidden" name="lines" value="<?= e(trim($waLines)) ?>">
+          <input type="tel" name="mobile" value="<?= e($p['mobile']) ?>" placeholder="WhatsApp no." style="width:140px">
+          <button class="btn btn-wa" type="submit">📲 Ledger WhatsApp</button>
+        </form>
+      </div>
+    </div>
     <?php
     include __DIR__ . '/includes/footer.php';
     exit;

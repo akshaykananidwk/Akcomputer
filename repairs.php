@@ -27,9 +27,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             $stMsg = ['ready' => 'is READY for pickup ✅', 'delivered' => 'has been delivered. Thank you!',
                       'outsourced' => 'has been sent for specialist repair.', 'in_progress' => 'is under repair.'];
             if (isset($stMsg[post('status')])) {
-                send_whatsapp(post('customer_mobile'),
-                    '*' . setting('app_name', 'AK Computer') . "*\nYour repair job " . post('job_no') .
-                    ' (' . post('device_type') . ') ' . $stMsg[post('status')]);
+                send_whatsapp(post('customer_mobile'), wa_template('repair_status', [
+                    'job_no' => post('job_no'), 'device' => post('device_type'),
+                    'status_line' => $stMsg[post('status')],
+                ]));
             }
         }
     } else {
@@ -41,10 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $id = insert_id();
         q('UPDATE repairs SET job_no = ? WHERE id = ?', [doc_no('JOB', $id), $id]);
         if (post('customer_mobile')) {
-            send_whatsapp(post('customer_mobile'),
-                '*' . setting('app_name', 'AK Computer') . "*\nRepair job received: *" . doc_no('JOB', $id) . "*\n" .
-                'Device: ' . post('device_type') . ' ' . post('brand_model') . "\nProblem: " . post('problem') .
-                "\nWe will update you on WhatsApp. 🙏");
+            send_whatsapp(post('customer_mobile'), wa_template('repair_received', [
+                'job_no' => doc_no('JOB', $id), 'device' => trim(post('device_type') . ' ' . post('brand_model')),
+                'problem' => post('problem'), 'customer' => post('customer_name'),
+            ]));
         }
         flash('Job sheet ' . doc_no('JOB', $id) . ' created.');
     }

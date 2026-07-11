@@ -61,9 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $pdo->commit();
 
         if ($type === 'issue' && $staff && $staff['mobile']) {
-            send_whatsapp($staff['mobile'],
-                '*' . setting('app_name', 'AK Computer') . "*\nStock handover " . doc_no('HO', $hid) .
-                " is ready for you.\nAccept it in your panel with OTP: *$otp*\nDo not share this OTP.");
+            send_whatsapp($staff['mobile'], wa_template('handover', ['handover_no' => doc_no('HO', $hid), 'otp' => $otp]));
         }
         log_activity('handover_add', doc_no('HO', $hid) . " type=$type");
         flash('Handover created' . ($type === 'issue' ? ' - OTP sent on staff WhatsApp.' : '.'));

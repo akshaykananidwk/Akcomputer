@@ -28,14 +28,18 @@ $items = all('SELECT si.*, i.name, i.unit, i.hsn FROM sale_items si JOIN items i
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
     $mobile = post('mobile') ?: $sale['customer_mobile'];
     $link = base_url('sale_view.php?id=' . $id . '&token=' . $sale['share_token']);
-    $msg = '*' . $sale['company_name'] . "*\n"
-         . "Invoice: *{$sale['invoice_no']}*\nDate: " . dmy($sale['sale_date']) . "\n"
-         . "Amount: *₹" . money($sale['total']) . "*\n";
-    if ($sale['total'] - $sale['paid'] > 0.009) $msg .= 'Balance due: ₹' . money($sale['total'] - $sale['paid']) . "\n";
-    $msg .= "\nView/download your bill:\n$link\n\nThank you for your business! 🙏";
-    if ($mobile && send_whatsapp($mobile, $msg)) {
+    $pdfUrl = base_url('sale_pdf.php?id=' . $id . '&token=' . $sale['share_token']);
+    $due = $sale['total'] - $sale['paid'];
+    $msg = wa_template('bill', [
+        'firm' => $sale['company_name'], 'invoice_no' => $sale['invoice_no'], 'date' => dmy($sale['sale_date']),
+        'total' => money($sale['total']),
+        'due_line' => $due > 0.009 ? 'Balance due: ₹' . money($due) : 'Paid ✔',
+        'link' => $link, 'customer' => $sale['customer_name'],
+    ]);
+    // bill goes as a PDF document with the message as caption
+    if ($mobile && send_whatsapp($mobile, $msg, $pdfUrl)) {
         log_activity('sale_whatsapp', $sale['invoice_no'] . ' to ' . $mobile);
-        flash('Bill sent on WhatsApp to ' . $mobile);
+        flash('Bill (PDF) sent on WhatsApp to ' . $mobile);
     } else {
         flash('WhatsApp send failed. Check number & API settings.', 'error');
     }
@@ -64,7 +68,8 @@ $due = $sale['total'] - $sale['paid'];
 ?>
 <?php if (!$public): ?>
 <div class="page-actions no-print">
-  <button class="btn" onclick="window.print()">🖨️ Print / PDF</button>
+  <button class="btn" onclick="window.print()">🖨️ Print</button>
+  <a class="btn btn-outline" href="sale_pdf.php?id=<?= $id ?>" target="_blank">📄 PDF</a>
   <form method="post" style="display:inline-flex;gap:6px">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="whatsapp">

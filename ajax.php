@@ -46,15 +46,49 @@ if ($a === 'party_add' && can('parties.add') && $_SERVER['REQUEST_METHOD'] === '
     exit;
 }
 
+if ($a === 'party_bills' && can('payments.view')) {
+    // unpaid bills of a party (for payment linking) + live balance
+    $party_id = (int)get('party_id');
+    $dir = get('dir') === 'out' ? 'out' : 'in';
+    $balance = (float)val("SELECT p.opening_balance
+        + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id), 0)
+        - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = p.id), 0)
+        - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = p.id), 0)
+        + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = p.id), 0)
+        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'in'), 0)
+        + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'out'), 0)
+        FROM parties p WHERE p.id = ?", [$party_id]);
+    if ($dir === 'in') {
+        $bills = all("SELECT id, invoice_no no, sale_date d, total - paid due FROM sales
+                      WHERE party_id = ? AND status <> 'paid' ORDER BY sale_date, id", [$party_id]);
+    } else {
+        $bills = all("SELECT id, IF(bill_no = '', CONCAT('#', id), bill_no) no, purchase_date d, total - paid due FROM purchases
+                      WHERE party_id = ? AND status <> 'paid' ORDER BY purchase_date, id", [$party_id]);
+    }
+    echo json_encode(['balance' => round($balance, 2), 'bills' => array_map(fn($b) => [
+        'id' => (int)$b['id'], 'no' => $b['no'], 'date' => dmy($b['d']), 'due' => round((float)$b['due'], 2),
+    ], $bills)]);
+    exit;
+}
+
 if ($a === 'serial_lookup') {
-    // warranty check by serial number
+    // warranty check by serial number + full history chain
     $sn = get('sn');
     $r = row("SELECT isr.*, i.name AS item_name, s.invoice_no, s.sale_date, s.customer_name, s.customer_mobile
               FROM item_serials isr
               JOIN items i ON i.id = isr.item_id
               LEFT JOIN sales s ON s.id = isr.sale_id
               WHERE isr.serial_no = ? ORDER BY isr.id DESC LIMIT 1", [$sn]);
-    echo json_encode($r ?: ['error' => 'Serial not found']);
+    if (!$r) { echo json_encode(['error' => 'Serial not found']); exit; }
+    // purchase source
+    $r['purchase_party'] = $r['purchase_id']
+        ? val('SELECT pt.name FROM purchases pu JOIN parties pt ON pt.id = pu.party_id WHERE pu.id = ?', [$r['purchase_id']])
+        : null;
+    // warranty claim history (this serial as original OR as replacement)
+    $r['history'] = all("SELECT w.claim_no, w.status, w.serial_no, w.replacement_serial, w.sent_date, w.back_date,
+                         pt.name company FROM warranty_claims w LEFT JOIN parties pt ON pt.id = w.party_id
+                         WHERE w.serial_no = ? OR w.replacement_serial = ? ORDER BY w.id", [$sn, $sn]);
+    echo json_encode($r);
     exit;
 }
 

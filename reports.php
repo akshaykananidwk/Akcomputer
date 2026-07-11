@@ -10,6 +10,7 @@ $page_title = 'Reports';
 include __DIR__ . '/includes/header.php';
 
 $tabs = [
+    'business' => '🏢 Business Report',
     'daily' => '📅 Daily Sales', 'sales' => '🧾 Sales', 'party_sales' => '👥 Party Sales',
     'purchase' => '📦 Purchase', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
     'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Profit',
@@ -17,8 +18,9 @@ $tabs = [
     'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'low' => '⚠️ Low Stock',
 ];
 if (!can('reports.gst')) unset($tabs['gst']);
-if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); }
+if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); }
 if (!can('expenses.view')) unset($tabs['expense']);
+if ($r === 'business' && !can('reports.profit')) $r = 'daily';
 ?>
 <div class="page-actions" style="overflow-x:auto;flex-wrap:nowrap">
 <?php foreach ($tabs as $k => $label): ?>
@@ -52,6 +54,64 @@ function exportCsv() {
 </script>
 
 <?php
+// ---------------- business report (P&L) ----------------
+if ($r === 'business' && can('reports.profit')) {
+    $sales = (float)val('SELECT COALESCE(SUM(total),0) FROM sales WHERE sale_date BETWEEN ? AND ?', [$from, $to]);
+    $salesRet = (float)val('SELECT COALESCE(SUM(total),0) FROM sales_returns WHERE return_date BETWEEN ? AND ?', [$from, $to]);
+    $cogs = (float)val('SELECT COALESCE(SUM(si.qty * IF(si.cost_price > 0, si.cost_price, i.purchase_price)),0)
+                        FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
+                        WHERE s.sale_date BETWEEN ? AND ?', [$from, $to]);
+    $purch = (float)val('SELECT COALESCE(SUM(total),0) FROM purchases WHERE purchase_date BETWEEN ? AND ?', [$from, $to]);
+    $purchRet = (float)val('SELECT COALESCE(SUM(total),0) FROM purchase_returns WHERE return_date BETWEEN ? AND ?', [$from, $to]);
+    $svc = (float)val('SELECT COALESCE(SUM(service_charge),0) FROM tasks WHERE status = "completed" AND DATE(end_time) BETWEEN ? AND ?', [$from, $to]);
+    $repairIncome = (float)val('SELECT COALESCE(SUM(final_charge),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$from, $to]);
+    $repairCost = (float)val('SELECT COALESCE(SUM(outsource_cost),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$from, $to]);
+    $exp = (float)val('SELECT COALESCE(SUM(amount),0) FROM expenses WHERE exp_date BETWEEN ? AND ?', [$from, $to]);
+    $recv = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid'");
+    $paybl = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid'");
+    $stockVal = (float)val('SELECT COALESCE(SUM(sq.q * i.purchase_price),0) FROM
+                            (SELECT item_id, SUM(qty) q FROM (SELECT item_id, qty FROM stock UNION ALL SELECT item_id, qty FROM staff_stock) z GROUP BY item_id) sq
+                            JOIN items i ON i.id = sq.item_id');
+    $netSales = $sales - $salesRet;
+    $gross = $netSales - $cogs;
+    $serviceProfit = $svc + $repairIncome - $repairCost;
+    $net = $gross + $serviceProfit - $exp;
+
+    echo '<div class="grid-stats">';
+    echo '<div class="stat"><div class="stat-label">Net Sales</div><div class="stat-value">₹' . money($netSales) . '</div></div>';
+    echo '<div class="stat s-ok"><div class="stat-label">Gross Profit (items)</div><div class="stat-value">₹' . money($gross) . '</div></div>';
+    echo '<div class="stat s-ok"><div class="stat-label">Service + Repair</div><div class="stat-value">₹' . money($serviceProfit) . '</div></div>';
+    echo '<div class="stat ' . ($net >= 0 ? 's-ok' : 's-bad') . '"><div class="stat-label">NET PROFIT</div><div class="stat-value">₹' . money($net) . '</div></div>';
+    echo '</div>';
+
+    echo '<div class="card"><h2>Profit & Loss (' . dmy($from) . ' → ' . dmy($to) . ')</h2>';
+    echo '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><tbody>';
+    $rows = [
+        ['Sales', $sales, ''], ['Less: Sales Returns', -$salesRet, ''],
+        ['Net Sales', $netSales, 'B'],
+        ['Less: Cost of goods sold', -$cogs, ''],
+        ['Gross Profit', $gross, 'B'],
+        ['Add: Service charges (tasks)', $svc, ''],
+        ['Add: Repair income', $repairIncome, ''], ['Less: Repair outsource cost', -$repairCost, ''],
+        ['Less: Expenses', -$exp, ''],
+        ['NET PROFIT', $net, 'B'],
+    ];
+    foreach ($rows as $x) {
+        $b = $x[2] === 'B';
+        echo '<tr' . ($b ? ' style="border-top:2px solid var(--text)"' : '') . '><td>' . ($b ? '<strong>' : '') . e($x[0]) . ($b ? '</strong>' : '') .
+             '</td><td class="num" style="color:' . ($x[1] < 0 ? 'var(--bad)' : 'inherit') . '">' . ($b ? '<strong>' : '') .
+             money($x[1]) . ($b ? '</strong>' : '') . '</td></tr>';
+    }
+    echo '</tbody></table></div></div>';
+
+    echo '<div class="grid-stats">';
+    echo '<div class="stat"><div class="stat-label">Purchases (period)</div><div class="stat-value">₹' . money($purch - $purchRet) . '</div></div>';
+    echo '<div class="stat s-ok"><div class="stat-label">To Receive</div><div class="stat-value">₹' . money($recv) . '</div></div>';
+    echo '<div class="stat s-bad"><div class="stat-label">To Pay</div><div class="stat-value">₹' . money($paybl) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">Stock Value (today)</div><div class="stat-value">₹' . money($stockVal) . '</div></div>';
+    echo '</div>';
+}
+
 // ---------------- daily sales ----------------
 if ($r === 'daily') {
     $rows = all('SELECT sale_date d, COUNT(*) bills, SUM(total) total, SUM(paid) paid FROM sales

@@ -51,16 +51,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $invoice_no = $company['invoice_prefix'] . '-' . date('y') . '-' . str_pad($sale_id, 5, '0', STR_PAD_LEFT);
         q('UPDATE sales SET invoice_no = ? WHERE id = ?', [$invoice_no, $sale_id]);
 
+        $allowNeg = setting('allow_negative_stock', '1') === '1';
         foreach ($rows as $r) {
             $item = row('SELECT * FROM items WHERE id = ?', [$r['item_id']]);
             $serials = array_values(array_filter(array_map('trim', (array)($serialSel[$r['n']] ?? []))));
-            if ($item['serial_tracked'] && count($serials) != $r['qty']) {
-                throw new Exception("Select {$r['qty']} serial number(s) for {$item['name']}.");
+            // serial items: serials must match qty, except when selling without
+            // stock (advance billing) - then bill passes with no serials selected
+            if ($item['serial_tracked'] && count($serials) > 0 && count($serials) != $r['qty']) {
+                throw new Exception("Select {$r['qty']} serial number(s) for {$item['name']} (or none for advance billing).");
+            }
+            if ($item['serial_tracked'] && !$serials && !$allowNeg) {
+                throw new Exception("Select serial number(s) for {$item['name']}.");
             }
             q('INSERT INTO sale_items (sale_id, item_id, qty, price, cost_price, tax_rate, total, serials) VALUES (?,?,?,?,?,?,?,?)',
               [$sale_id, $r['item_id'], $r['qty'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null]);
 
-            if (stock_qty($r['item_id'], $loc_id) < $r['qty']) {
+            if (!$allowNeg && stock_qty($r['item_id'], $loc_id) < $r['qty']) {
                 throw new Exception("Not enough stock of {$item['name']} at this location.");
             }
             adjust_stock($r['item_id'], $loc_id, -$r['qty'], 'sale', $sale_id, $invoice_no);
@@ -74,6 +80,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                          [$sale_id, $expiry, $r['item_id'], $sn, $loc_id]);
                 if ($upd->rowCount() === 0) throw new Exception("Serial $sn is not available in stock.");
             }
+        }
+        // post initial payment to the party ledger so the balance is always right
+        if ($paid > 0 && (int)post('party_id')) {
+            q('INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?)',
+              [(int)post('party_id'), 'in', $paid, post('payment_mode', 'cash'), 'sale', $sale_id,
+               post('sale_date', today()), 'With bill ' . $invoice_no, $u['id']]);
         }
         if ((int)post('estimate_id')) {
             q("UPDATE estimates SET status='converted', converted_sale_id=? WHERE id=? AND status='open'",
@@ -112,6 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
             }
         }
         q('DELETE FROM sale_items WHERE sale_id = ?', [$sid]);
+        q("DELETE FROM payments WHERE ref_type = 'sale' AND ref_id = ?", [$sid]);
         q('DELETE FROM sales WHERE id = ?', [$sid]);
         $pdo->commit();
         log_activity('sale_delete', $sale['invoice_no']);

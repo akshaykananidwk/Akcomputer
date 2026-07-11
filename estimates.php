@@ -46,9 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
     $mobile = post('mobile') ?: $est['customer_mobile'];
     if ($est && $mobile) {
         $eitems = all('SELECT ei.*, i.name FROM estimate_items ei JOIN items i ON i.id = ei.item_id WHERE ei.estimate_id = ?', [$est['id']]);
-        $msg = '*' . $est['company_name'] . "*\nEstimate: *{$est['estimate_no']}*\n";
-        foreach ($eitems as $it) $msg .= '- ' . $it['name'] . ' x' . (float)$it['qty'] . ' = ₹' . money($it['total']) . "\n";
-        $msg .= "*Total: ₹" . money($est['total']) . "*\nValid for 7 days. Reply to confirm order. 🙏";
+        $itemsTxt = '';
+        foreach ($eitems as $it) $itemsTxt .= '- ' . $it['name'] . ' x' . (float)$it['qty'] . ' = ₹' . money($it['total']) . "\n";
+        $msg = wa_template('estimate', ['firm' => $est['company_name'], 'estimate_no' => $est['estimate_no'],
+                                        'items' => trim($itemsTxt), 'total' => money($est['total'])]);
         send_whatsapp($mobile, $msg) ? flash('Estimate sent on WhatsApp.') : flash('WhatsApp send failed.', 'error');
     }
     redirect('estimates.php?action=view&id=' . (int)post('id'));

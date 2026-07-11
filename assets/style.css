@@ -259,11 +259,16 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .inv-table { min-width: 0; font-size: 13.5px; }
 .no-print { }
 @media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   body { background: #fff; }
-  .topbar, .sidebar, .bottomnav, .no-print, .flash, .sidebar-overlay { display: none !important; }
-  .content { padding: 0; max-width: 100%; }
+  .topbar, .sidebar, .bottomnav, .no-print, .flash, .sidebar-overlay,
+  .action-sheet, .sheet-overlay, .fab-center { display: none !important; }
+  .content, .content:not(.content-full) { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
   .inv-paper { box-shadow: none; padding: 0; max-width: 100%; }
   .card { box-shadow: none; }
+  .table-wrap { overflow: visible !important; box-shadow: none; }
+  table { min-width: 0 !important; }
+  .inv-band .inv-head, .inv-grad .inv-head { margin: 0 0 14px; }
 }
 
 /* ---------- Desktop layout: docked sidebar, no bottom nav ---------- */

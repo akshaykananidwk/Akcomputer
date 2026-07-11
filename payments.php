@@ -1,30 +1,99 @@
 <?php
-// Payments ledger: receipts (in) and payments (out) + outstanding with WhatsApp reminder
+// Payments: Vyapar-style Payment-In / Payment-Out with bill linking,
+// party balance display, ledger posting and WhatsApp receipt.
 require_once __DIR__ . '/includes/init.php';
 require_perm('payments.view');
 $u = current_user();
+$action = get('action', 'list');
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
-    require_perm('payments.add');
-    $party_id = (int)post('party_id');
-    $amt = (float)post('amount');
-    if ($party_id && $amt > 0) {
-        q('INSERT INTO payments (party_id, direction, amount, mode, pay_date, notes, created_by) VALUES (?,?,?,?,?,?,?)',
-          [$party_id, post('direction', 'in'), $amt, post('mode', 'cash'), post('pay_date', today()), post('notes'), $u['id']]);
-        log_activity('payment_add', "party=$party_id " . post('direction') . " $amt");
-        flash('Payment recorded.');
-    }
-    redirect('payments.php');
+function party_balance($party_id) {
+    return (float)val("SELECT p.opening_balance
+        + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id), 0)
+        - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = p.id), 0)
+        - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = p.id), 0)
+        + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = p.id), 0)
+        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'in'), 0)
+        + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = p.id AND direction = 'out'), 0)
+        FROM parties p WHERE p.id = ?", [$party_id]);
 }
 
+// ---------- save payment (with optional bill allocation) ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
+    require_perm('payments.add');
+    $party_id = (int)post('party_id');
+    $dir = post('direction') === 'out' ? 'out' : 'in';
+    $amount = (float)post('amount');
+    $party = row('SELECT * FROM parties WHERE id = ?', [$party_id]);
+    if (!$party || $amount <= 0) { flash('Party and amount required.', 'error'); redirect('payments.php?action=new&dir=' . $dir); }
+
+    $allocIds = post('alloc_id', []);
+    $allocAmts = post('alloc_amt', []);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $allocated = 0;
+        $allocNotes = [];
+        foreach ($allocIds as $i => $bid) {
+            $bid = (int)$bid;
+            $amt = round((float)($allocAmts[$i] ?? 0), 2);
+            if (!$bid || $amt <= 0) continue;
+            if ($dir === 'in') {
+                $bill = row('SELECT * FROM sales WHERE id = ? AND party_id = ?', [$bid, $party_id]);
+                if (!$bill) continue;
+                $amt = min($amt, $bill['total'] - $bill['paid']);
+                if ($amt <= 0) continue;
+                q('UPDATE sales SET paid = paid + ?, status = ? WHERE id = ?',
+                  [$amt, payment_status($bill['total'], $bill['paid'] + $amt), $bid]);
+                $allocNotes[] = $bill['invoice_no'] . ': ₹' . money($amt);
+            } else {
+                $bill = row('SELECT * FROM purchases WHERE id = ? AND party_id = ?', [$bid, $party_id]);
+                if (!$bill) continue;
+                $amt = min($amt, $bill['total'] - $bill['paid']);
+                if ($amt <= 0) continue;
+                q('UPDATE purchases SET paid = paid + ?, status = ? WHERE id = ?',
+                  [$amt, payment_status($bill['total'], $bill['paid'] + $amt), $bid]);
+                $allocNotes[] = ($bill['bill_no'] ?: '#' . $bid) . ': ₹' . money($amt);
+            }
+            $allocated += $amt;
+        }
+        if ($allocated > $amount + 0.009) throw new Exception('Linked amount is more than payment amount.');
+
+        $notes = trim(post('notes'));
+        if ($allocNotes) $notes = trim($notes . ' [' . implode(', ', $allocNotes) . ']');
+        q('INSERT INTO payments (party_id, direction, amount, mode, pay_date, notes, created_by) VALUES (?,?,?,?,?,?,?)',
+          [$party_id, $dir, $amount, post('mode', 'cash'), post('pay_date', today()), $notes, $u['id']]);
+        $pid = insert_id();
+        $pdo->commit();
+        log_activity('payment_add', "P-$pid party={$party['name']} $dir $amount");
+
+        // WhatsApp receipt to party (payment-in only)
+        if ($dir === 'in' && post('send_wa') && $party['mobile']) {
+            $bal = party_balance($party_id);
+            $balTxt = $bal > 0.009 ? '₹' . money($bal) . ' (due)' : ($bal < -0.009 ? '₹' . money(-$bal) . ' (advance)' : '₹0.00 (clear)');
+            send_whatsapp($party['mobile'], wa_template('payment_receipt', [
+                'amount' => money($amount), 'mode' => post('mode', 'cash'), 'date' => dmy(post('pay_date', today())),
+                'alloc' => $allocNotes ? 'Against: ' . implode(', ', $allocNotes) . "\n" : '',
+                'balance' => $balTxt, 'party' => $party['name'],
+            ]));
+        }
+        flash(($dir === 'in' ? 'Payment-In' : 'Payment-Out') . ' of ₹' . money($amount) . ' saved' . ($allocNotes ? ' & linked to ' . count($allocNotes) . ' bill(s).' : '.'));
+        redirect('payments.php');
+    } catch (Exception $ex) {
+        $pdo->rollBack();
+        flash('Error: ' . $ex->getMessage(), 'error');
+        redirect('payments.php?action=new&dir=' . $dir);
+    }
+}
+
+// ---------- WhatsApp reminder ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remind') {
     $s = row('SELECT s.*, c.name company_name FROM sales s JOIN companies c ON c.id = s.company_id WHERE s.id = ?', [(int)post('sale_id')]);
     if ($s && $s['customer_mobile']) {
-        $dueAmt = $s['total'] - $s['paid'];
-        send_whatsapp($s['customer_mobile'],
-            '*' . $s['company_name'] . "*\nPayment reminder 🙏\nInvoice: {$s['invoice_no']} (" . dmy($s['sale_date']) . ")\n" .
-            "Balance due: *₹" . money($dueAmt) . "*" . ($s['due_date'] ? "\nDue date: " . dmy($s['due_date']) : '') .
-            "\nKindly arrange the payment. Thank you!");
+        send_whatsapp($s['customer_mobile'], wa_template('reminder', [
+            'firm' => $s['company_name'], 'invoice_no' => $s['invoice_no'], 'date' => dmy($s['sale_date']),
+            'due' => money($s['total'] - $s['paid']),
+            'due_date_line' => $s['due_date'] ? 'Due date: ' . dmy($s['due_date']) . "\n" : '',
+        ]));
         flash('Reminder sent on WhatsApp.');
     } else {
         flash('No customer mobile on this bill.', 'error');
@@ -35,10 +104,101 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remind') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('payments.delete');
     q('DELETE FROM payments WHERE id = ?', [(int)post('id')]);
-    flash('Payment entry deleted.');
+    flash('Payment entry deleted. (Note: linked bill paid amounts are not reversed automatically.)');
     redirect('payments.php');
 }
 
+// ---------- Payment-In / Payment-Out form ----------
+if ($action === 'new') {
+    require_perm('payments.add');
+    $dir = get('dir') === 'out' ? 'out' : 'in';
+    $presetParty = (int)get('party');
+    $types = $dir === 'in' ? "('customer','both')" : "('supplier','both','service_center')";
+    $parties = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 AND type IN $types ORDER BY name");
+    $page_title = $dir === 'in' ? 'Payment-In (વસૂલી)' : 'Payment-Out (ચુકવણી)';
+    include __DIR__ . '/includes/header.php';
+    ?>
+    <form method="post">
+      <?= csrf_field() ?>
+      <input type="hidden" name="do" value="save_payment">
+      <input type="hidden" name="direction" value="<?= $dir ?>">
+      <div class="card">
+        <div class="form-row cols-3">
+          <div><label><?= $dir === 'in' ? 'Customer / Party *' : 'Supplier / Party *' ?></label>
+            <select name="party_id" id="party_id" required>
+              <option value="">-- select party --</option>
+              <?php foreach ($parties as $p): ?>
+              <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+            <p class="muted mt" id="balInfo"></p>
+          </div>
+          <div><label>Date</label><input type="date" name="pay_date" value="<?= today() ?>"></div>
+          <div><label>Mode</label>
+            <select name="mode"><option>cash</option><option>upi</option><option>bank</option><option>card</option><option>cheque</option></select></div>
+        </div>
+        <div class="form-row cols-2">
+          <div><label><?= $dir === 'in' ? 'Received amount (₹) *' : 'Paid amount (₹) *' ?></label>
+            <input type="number" step="any" min="0.01" name="amount" id="pay_amount" required></div>
+          <div><label>Notes</label><input type="text" name="notes"></div>
+        </div>
+        <?php if ($dir === 'in'): ?>
+        <label class="check-inline"><input type="checkbox" name="send_wa" value="1" checked> Party ને WhatsApp receipt મોકલવી</label>
+        <?php endif; ?>
+      </div>
+
+      <div class="card">
+        <h3>🔗 Bill સાથે link કરો (optional)</h3>
+        <p class="muted mb">Party select કરો એટલે એના બાકી bills દેખાશે. "Auto" દબાવો તો જૂનામાં જૂના bill થી આપોઆપ વહેંચાઈ જશે. Link ના કરો તો પણ payment ledger માં જમા થશે જ.</p>
+        <div id="billList" class="muted">પહેલા party select કરો.</div>
+        <button type="button" class="btn btn-sm btn-outline mt" id="autoAlloc" style="display:none">⚡ Auto-link (oldest first)</button>
+      </div>
+      <button class="btn btn-block <?= $dir === 'in' ? 'btn-success' : '' ?>" type="submit">💾 Save <?= $dir === 'in' ? 'Payment-In' : 'Payment-Out' ?></button>
+    </form>
+    <script>
+    var DIR = '<?= $dir ?>';
+    function loadBills() {
+      var pid = document.getElementById('party_id').value;
+      var box = document.getElementById('billList');
+      document.getElementById('balInfo').textContent = '';
+      document.getElementById('autoAlloc').style.display = 'none';
+      if (!pid) { box.textContent = 'પહેલા party select કરો.'; return; }
+      fetch('ajax.php?a=party_bills&dir=' + DIR + '&party_id=' + pid)
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var b = d.balance;
+          document.getElementById('balInfo').innerHTML = 'Party Balance: <strong style="color:' +
+            (b > 0 ? 'var(--ok)' : (b < 0 ? 'var(--bad)' : 'inherit')) + '">₹' +
+            Math.abs(b).toFixed(2) + (b > 0 ? ' લેવાના' : (b < 0 ? ' દેવાના' : '')) + '</strong>';
+          if (!d.bills.length) { box.innerHTML = '<span class="muted">કોઈ બાકી bill નથી - payment ખાલી ledger માં જમા થશે.</span>'; return; }
+          var h = '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>Bill</th><th>Date</th><th class="num">Due ₹</th><th style="width:130px">Link ₹</th></tr></thead><tbody>';
+          d.bills.forEach(function (bl) {
+            h += '<tr><td>' + bl.no + '<input type="hidden" name="alloc_id[]" value="' + bl.id + '"></td>' +
+                 '<td>' + bl.date + '</td><td class="num">' + bl.due.toFixed(2) + '</td>' +
+                 '<td><input type="number" step="any" min="0" max="' + bl.due + '" name="alloc_amt[]" value="0" class="alloc-inp" data-due="' + bl.due + '"></td></tr>';
+          });
+          box.innerHTML = h + '</tbody></table></div>';
+          document.getElementById('autoAlloc').style.display = '';
+        });
+    }
+    document.getElementById('party_id').addEventListener('change', loadBills);
+    document.getElementById('autoAlloc').addEventListener('click', function () {
+      var left = parseFloat(document.getElementById('pay_amount').value) || 0;
+      document.querySelectorAll('.alloc-inp').forEach(function (inp) {
+        var due = parseFloat(inp.dataset.due) || 0;
+        var use = Math.min(left, due);
+        inp.value = use > 0 ? use.toFixed(2) : 0;
+        left -= use;
+      });
+    });
+    if (document.getElementById('party_id').value) loadBills();
+    </script>
+    <?php
+    include __DIR__ . '/includes/footer.php';
+    exit;
+}
+
+// ---------- list ----------
 $parties = all('SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name');
 $recent = all('SELECT p.*, pt.name party_name, u2.name by_name FROM payments p
                JOIN parties pt ON pt.id = p.party_id JOIN users u2 ON u2.id = p.created_by
@@ -51,25 +211,15 @@ $duePurchases = all("SELECT p.*, pt.name party_name FROM purchases p JOIN partie
 $page_title = 'Payments';
 include __DIR__ . '/includes/header.php';
 ?>
-<?php if (can('payments.add')): ?>
-<div class="card">
-  <h2>Record payment</h2>
-  <form method="post" class="filterbar">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="save">
-    <div><label>Party</label><select name="party_id"><?php foreach ($parties as $p): ?><option value="<?= $p['id'] ?>"><?= e($p['name']) ?></option><?php endforeach; ?></select></div>
-    <div><label>Direction</label><select name="direction"><option value="in">Received (in)</option><option value="out">Paid (out)</option></select></div>
-    <div><label>Amount</label><input type="number" step="any" name="amount" required></div>
-    <div><label>Mode</label><select name="mode"><option>cash</option><option>upi</option><option>bank</option><option>cheque</option></select></div>
-    <div><label>Date</label><input type="date" name="pay_date" value="<?= today() ?>"></div>
-    <div><label>Notes</label><input type="text" name="notes"></div>
-    <button class="btn btn-sm" type="submit">Save</button>
-  </form>
+<div class="page-actions">
+  <?php if (can('payments.add')): ?>
+  <a class="btn btn-success" href="payments.php?action=new&dir=in">⬇ Payment-In (વસૂલી)</a>
+  <a class="btn btn-danger" href="payments.php?action=new&dir=out">⬆ Payment-Out (ચુકવણી)</a>
+  <?php endif; ?>
 </div>
-<?php endif; ?>
 
 <div class="card">
-  <h2>💰 Receivables (customers to pay us)</h2>
+  <h2>💰 Receivables (લેવાના)</h2>
   <div class="table-wrap" style="box-shadow:none">
   <table>
     <thead><tr><th>Invoice</th><th>Customer</th><th class="num">Due ₹</th><th>Due date</th><th></th></tr></thead>
@@ -79,10 +229,13 @@ include __DIR__ . '/includes/header.php';
         <td><?= e($s['customer_name'] ?: 'Walk-in') ?></td>
         <td class="num">₹<?= money($d) ?></td>
         <td><?= dmy($s['due_date']) ?><?= $s['due_date'] && $s['due_date'] < today() ? ' <span class="badge badge-bad">overdue</span>' : '' ?></td>
-        <td>
+        <td style="white-space:nowrap">
+          <?php if (can('payments.add') && $s['party_id']): ?>
+            <a class="btn btn-sm btn-success" href="payments.php?action=new&dir=in&party=<?= $s['party_id'] ?>">Receive</a>
+          <?php endif; ?>
           <?php if ($s['customer_mobile']): ?>
           <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="remind"><input type="hidden" name="sale_id" value="<?= $s['id'] ?>">
-            <button class="btn btn-sm btn-wa" type="submit">📲 Remind</button></form>
+            <button class="btn btn-sm btn-wa" type="submit">📲</button></form>
           <?php endif; ?>
         </td>
       </tr>
@@ -92,7 +245,7 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <div class="card">
-  <h2>📤 Payables (we owe suppliers)</h2>
+  <h2>📤 Payables (દેવાના)</h2>
   <div class="table-wrap" style="box-shadow:none">
   <table>
     <thead><tr><th>Bill</th><th>Supplier</th><th class="num">Due ₹</th><th>Due date</th><th></th></tr></thead>
@@ -102,7 +255,7 @@ include __DIR__ . '/includes/header.php';
         <td><?= e($p['party_name']) ?></td>
         <td class="num">₹<?= money($p['total'] - $p['paid']) ?></td>
         <td><?= dmy($p['due_date']) ?><?= $p['due_date'] && $p['due_date'] < today() ? ' <span class="badge badge-bad">overdue</span>' : '' ?></td>
-        <td></td>
+        <td><?php if (can('payments.add')): ?><a class="btn btn-sm btn-danger" href="payments.php?action=new&dir=out&party=<?= $p['party_id'] ?>">Pay</a><?php endif; ?></td>
       </tr>
     <?php endforeach; if (!$duePurchases): ?><tr><td colspan="5" class="muted">All clear 🎉</td></tr><?php endif; ?></tbody>
   </table>
@@ -113,11 +266,12 @@ include __DIR__ . '/includes/header.php';
   <h2>Recent entries</h2>
   <div class="table-wrap" style="box-shadow:none">
   <table>
-    <thead><tr><th>Date</th><th>Party</th><th>Dir</th><th class="num">Amount</th><th>Mode</th><th>Notes</th><th></th></tr></thead>
+    <thead><tr><th>#</th><th>Date</th><th>Party</th><th>Dir</th><th class="num">Amount</th><th>Mode</th><th>Notes</th><th></th></tr></thead>
     <tbody><?php foreach ($recent as $pm): ?>
       <tr>
+        <td>P-<?= str_pad($pm['id'], 5, '0', STR_PAD_LEFT) ?></td>
         <td><?= dmy($pm['pay_date']) ?></td>
-        <td><?= e($pm['party_name']) ?></td>
+        <td><a href="parties.php?action=ledger&id=<?= $pm['party_id'] ?>"><?= e($pm['party_name']) ?></a></td>
         <td><?= $pm['direction'] === 'in' ? '<span class="badge badge-ok">IN</span>' : '<span class="badge badge-bad">OUT</span>' ?></td>
         <td class="num">₹<?= money($pm['amount']) ?></td>
         <td><?= e($pm['mode']) ?></td>

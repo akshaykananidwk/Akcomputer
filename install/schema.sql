@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS credit_terms (
 CREATE TABLE IF NOT EXISTS parties (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(120) NOT NULL,
-  type ENUM('customer','supplier','both') NOT NULL DEFAULT 'customer',
+  type ENUM('customer','supplier','both','service_center') NOT NULL DEFAULT 'customer',
   mobile VARCHAR(15) DEFAULT '',
   email VARCHAR(100) DEFAULT '',
   gstin VARCHAR(20) DEFAULT '',
@@ -208,7 +208,7 @@ CREATE TABLE IF NOT EXISTS item_serials (
   serial_no VARCHAR(100) NOT NULL,
   location_id INT DEFAULT NULL,
   user_id INT DEFAULT NULL,
-  status ENUM('in_stock','with_staff','sold','claim','returned_supplier') NOT NULL DEFAULT 'in_stock',
+  status ENUM('in_stock','with_staff','sold','claim','returned_supplier','replaced') NOT NULL DEFAULT 'in_stock',
   purchase_id INT DEFAULT NULL,
   sale_id INT DEFAULT NULL,
   warranty_months INT NOT NULL DEFAULT 0,
@@ -521,6 +521,20 @@ CREATE TABLE IF NOT EXISTS challan_items (
   price DECIMAL(12,2) NOT NULL DEFAULT 0,
   total DECIMAL(12,2) NOT NULL DEFAULT 0,
   KEY idx_ci (challan_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------- Website orders ----------
+CREATE TABLE IF NOT EXISTS web_orders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  order_no VARCHAR(30) DEFAULT '',
+  customer_name VARCHAR(120) NOT NULL,
+  mobile VARCHAR(15) NOT NULL,
+  address VARCHAR(255) DEFAULT '',
+  notes VARCHAR(255) DEFAULT '',
+  items_json TEXT,
+  total DECIMAL(12,2) NOT NULL DEFAULT 0,
+  status ENUM('new','contacted','completed','cancelled') NOT NULL DEFAULT 'new',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------- Activity log ----------
