@@ -46,6 +46,17 @@ function run_migration_file($label, $sql, &$log) {
     return [$applied, $already, $failed];
 }
 
+// Some shared hosts run PHP with OPcache set to NOT re-check file
+// timestamps (opcache.validate_timestamps=0 or a long revalidate_freq) -
+// on those hosts, uploading new .php files has NO effect at all until the
+// cached compiled bytecode is cleared, because PHP keeps running the OLD
+// code from memory even though the file on disk is already correct. This
+// is invisible from the file manager/FTP side - everything LOOKS updated,
+// but old bugs keep happening. Clearing it here, every time this page is
+// opened, makes "upload files then open this link" actually reliable.
+$opcacheCleared = false;
+if (function_exists('opcache_reset')) { $opcacheCleared = opcache_reset(); }
+
 // Runs automatically on every visit to this page (GET or POST) - opening
 // the link IS the action, nothing to click.
 $log = [];
@@ -108,6 +119,7 @@ include __DIR__ . '/../includes/header.php';
   <h2><?= $result['totals']['failed'] ? '⚠️ થોડું ધ્યાન આપવા જેવું' : '✅ Database Update થઈ ગયું' ?></h2>
   <p class="muted mb">આ link ખોલો એટલે આપોઆપ ડેટાબેસ update થઈ જાય — કંઈ ક્લિક કરવાની જરૂર નથી. જૂનો ડેટા (bills, parties, stock — બધું) જેમનું તેમ રહે છે, ફક્ત code ને જોઈતા નવા tables/columns જ ઉમેરાય છે. Server પર files upload કર્યા પછી આ link ફરી ખોલી લેવાની — ગમે એટલી વાર ખોલવામાં કંઈ નુકસાન નથી.</p>
   <p class="muted mb">Last run: <?= e(setting('db_last_migrated')) ?></p>
+  <p class="mb"><?= $opcacheCleared ? '✅ PHP code cache પણ ક્લિયર કરી દીધું - server હવે તરત જ નવી files વાપરશે.' : '<span class="muted">PHP code cache (OPcache) આ server પર enabled નથી - files upload કરો કે તરત જ effect થાય છે, અહીં કંઈ કરવાની જરૂર નથી.</span>' ?></p>
   <div class="grid-stats" style="margin-bottom:0">
     <div class="stat s-ok"><div class="stat-label">લાગુ થયું</div><div class="stat-value"><?= $result['totals']['applied'] ?></div></div>
     <div class="stat"><div class="stat-label">પહેલેથી હતું</div><div class="stat-value"><?= $result['totals']['already'] ?></div></div>
