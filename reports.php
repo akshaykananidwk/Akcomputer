@@ -12,6 +12,7 @@ include __DIR__ . '/includes/header.php';
 $tabs = [
     'business' => '🏢 Business Report',
     'daily' => '📅 Daily Sales', 'sales' => '🧾 Sales', 'party_sales' => '👥 Party Sales',
+    'aging' => '⏳ Aging / Collection',
     'purchase' => '📦 Purchase', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
     'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Profit',
     'bill_profit' => '🧮 Bill Profit', 'staff' => '🎒 Staff Stock',
@@ -204,6 +205,47 @@ if ($r === 'party_sales') {
     echo '<div class="table-wrap"><table><thead><tr><th>Customer / Party</th><th class="num">Bills</th><th class="num">Total ₹</th><th class="num">Paid ₹</th><th class="num">Due ₹</th></tr></thead><tbody>';
     foreach ($rows as $x) echo '<tr><td>' . e($x['pname']) . '</td><td class="num">' . $x['bills'] . '</td><td class="num">' . money($x['total']) . '</td><td class="num">' . money($x['paid']) . '</td><td class="num">' . money($x['total'] - $x['paid']) . '</td></tr>';
     echo '</tbody></table></div>';
+}
+
+// ---------------- aging / collection (as of today, ignores from/to) ----------------
+if ($r === 'aging') {
+    $rows = all("SELECT COALESCE(p.name, NULLIF(s.customer_name, ''), 'Walk-in') pname, s.customer_mobile,
+                 p.mobile party_mobile, s.due_date, s.sale_date, (s.total - s.paid) due
+                 FROM sales s LEFT JOIN parties p ON p.id = s.party_id
+                 WHERE s.is_cancelled = 0 AND s.status <> 'paid'");
+    $agg = [];
+    foreach ($rows as $x) {
+        $base = $x['due_date'] ?: $x['sale_date'];
+        $days = days_between($base);
+        $bucket = $days <= 30 ? 'b1' : ($days <= 60 ? 'b2' : ($days <= 90 ? 'b3' : 'b4'));
+        $key = $x['pname'];
+        if (!isset($agg[$key])) $agg[$key] = ['pname' => $key, 'mobile' => $x['party_mobile'] ?: $x['customer_mobile'],
+            'b1' => 0, 'b2' => 0, 'b3' => 0, 'b4' => 0, 'total' => 0];
+        $agg[$key][$bucket] += $x['due'];
+        $agg[$key]['total'] += $x['due'];
+    }
+    usort($agg, fn($a, $b) => $b['total'] <=> $a['total']);
+    echo '<p class="muted mb">આજની તારીખ પ્રમાણે - date filter ને લાગુ પડતું નથી (કેટલા દિવસથી due છે એ પ્રમાણે).</p>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Customer / Party</th><th class="num">0-30 દિવસ</th><th class="num">31-60 દિવસ</th><th class="num">61-90 દિવસ</th><th class="num">90+ દિવસ</th><th class="num">Total Due ₹</th><th></th></tr></thead><tbody>';
+    $tot = ['b1' => 0, 'b2' => 0, 'b3' => 0, 'b4' => 0, 'total' => 0];
+    foreach ($agg as $x) {
+        foreach (['b1', 'b2', 'b3', 'b4', 'total'] as $k) $tot[$k] += $x[$k];
+        echo '<tr><td>' . e($x['pname']) . '</td>'
+           . '<td class="num">' . ($x['b1'] > 0.009 ? '₹' . money($x['b1']) : '·') . '</td>'
+           . '<td class="num">' . ($x['b2'] > 0.009 ? '₹' . money($x['b2']) : '·') . '</td>'
+           . '<td class="num">' . ($x['b3'] > 0.009 ? '₹' . money($x['b3']) : '·') . '</td>'
+           . '<td class="num">' . ($x['b4'] > 0.009 ? '<span class="badge badge-bad">₹' . money($x['b4']) . '</span>' : '·') . '</td>'
+           . '<td class="num"><strong>₹' . money($x['total']) . '</strong></td>'
+           . '<td>' . ($x['mobile'] ? '<a class="btn btn-sm btn-wa" href="https://wa.me/91' . e(preg_replace('/\D/', '', $x['mobile'])) . '" target="_blank">📲</a>' : '') . '</td></tr>';
+    }
+    if (!$agg) echo '<tr><td colspan="7" class="muted">All clear 🎉</td></tr>';
+    echo '</tbody></table></div>';
+    echo '<div class="grid-stats">';
+    echo '<div class="stat"><div class="stat-label">0-30 દિવસ</div><div class="stat-value">₹' . money($tot['b1']) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">31-60 દિવસ</div><div class="stat-value">₹' . money($tot['b2']) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">61-90 દિવસ</div><div class="stat-value">₹' . money($tot['b3']) . '</div></div>';
+    echo '<div class="stat s-bad"><div class="stat-label">90+ દિવસ (જોખમી)</div><div class="stat-value">₹' . money($tot['b4']) . '</div></div>';
+    echo '</div>';
 }
 
 // ---------------- stock report (qty + value, location-wise) ----------------

@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'apply_update') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('settings.edit');
-    foreach (['app_name', 'wa_api_url', 'wa_session_id', 'wa_api_key', 'default_tax', 'wa_shop_number', 'review_api_url', 'review_api_key'] as $k) {
+    foreach (['app_name', 'wa_api_url', 'wa_session_id', 'wa_api_key', 'default_tax', 'wa_shop_number', 'review_api_url', 'review_api_key', 'razorpay_key_id', 'razorpay_key_secret'] as $k) {
         set_setting($k, post($k));
     }
     set_setting('login_otp', post('login_otp') ? '1' : '0');
@@ -132,6 +132,10 @@ include __DIR__ . '/includes/header.php';
     <div class="form-row cols-2">
       <div><label>Google Review API URL</label><input type="text" name="review_api_url" value="<?= e(setting('review_api_url', 'https://review.akdwk.in/api/v1/trigger_invite.php')) ?>"></div>
       <div><label>Review API Key</label><input type="text" name="review_api_key" value="<?= e(setting('review_api_key')) ?>"></div>
+    </div>
+    <div class="form-row cols-2">
+      <div><label>Razorpay Key ID <span class="muted" style="font-weight:normal">(bill પર online payment link માટે, optional)</span></label><input type="text" name="razorpay_key_id" value="<?= e(setting('razorpay_key_id')) ?>" placeholder="rzp_live_..."></div>
+      <div><label>Razorpay Key Secret</label><input type="password" name="razorpay_key_secret" value="<?= e(setting('razorpay_key_secret')) ?>"></div>
     </div>
     <label class="check-inline mb"><input type="checkbox" name="login_otp" value="1" <?= setting('login_otp') === '1' ? 'checked' : '' ?>> Login પર WhatsApp OTP ફરજિયાત (2-step)</label>
     <label class="check-inline mb"><input type="checkbox" name="allow_negative_stock" value="1" <?= setting('allow_negative_stock', '1') === '1' ? 'checked' : '' ?>> Purchase વગર sale કરવા દેવું (negative stock allowed)</label>

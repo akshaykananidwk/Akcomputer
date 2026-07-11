@@ -250,6 +250,33 @@ function invoice_theme_accent_rgb() {
     return [hexdec(substr($hex, 0, 2)) / 255, hexdec(substr($hex, 2, 2)) / 255, hexdec(substr($hex, 4, 2)) / 255];
 }
 
+// ---------- Online payment link (Razorpay Payment Links API) ----------
+function razorpay_payment_link($amount, $description, $customerName = '', $customerMobile = '', $referenceId = '') {
+    $keyId = setting('razorpay_key_id'); $keySecret = setting('razorpay_key_secret');
+    if (!$keyId || !$keySecret || $amount <= 0 || !function_exists('curl_init')) return null;
+    $payload = [
+        'amount' => (int)round($amount * 100),
+        'currency' => 'INR',
+        'description' => mb_substr($description, 0, 250),
+        'customer' => array_filter(['name' => $customerName, 'contact' => $customerMobile]),
+        'notify' => ['sms' => false, 'email' => false],
+        'reference_id' => $referenceId,
+    ];
+    $ch = curl_init('https://api.razorpay.com/v1/payment_links');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 15,
+        CURLOPT_USERPWD => $keyId . ':' . $keySecret,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_POSTFIELDS => json_encode($payload),
+    ]);
+    $resp = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($resp === false || $code >= 300) return null;
+    $data = json_decode($resp, true);
+    return $data['short_url'] ?? null;
+}
+
 // ---------- Misc ----------
 function share_token() { return bin2hex(random_bytes(16)); }
 
@@ -257,6 +284,47 @@ function payment_status($total, $paid) {
     if ($paid <= 0.009) return 'due';
     if ($paid + 0.009 >= $total) return 'paid';
     return 'partial';
+}
+
+// ---------- AMC / recurring billing ----------
+function amc_advance_date($date, $cycle) {
+    $map = ['monthly' => '+1 month', 'quarterly' => '+3 months', 'half_yearly' => '+6 months', 'yearly' => '+1 year'];
+    return date('Y-m-d', strtotime($date . ' ' . ($map[$cycle] ?? '+1 year')));
+}
+
+/** Auto-create a sale invoice for one AMC billing cycle. Returns
+ *  ['sale_id'=>, 'invoice_no'=>, 'total'=>] on success, null on failure. */
+function amc_generate_invoice($contract) {
+    $item = row('SELECT * FROM items WHERE id = ?', [$contract['item_id']]);
+    $company = row('SELECT * FROM companies WHERE id = ?', [$contract['company_id']]);
+    $party = row('SELECT * FROM parties WHERE id = ?', [$contract['party_id']]);
+    if (!$item || !$company || !$party) return null;
+    $tr = $company['is_gst'] ? (float)$item['tax_rate'] : 0;
+    $subtotal = (float)$contract['amount'];
+    $tax = round($subtotal * $tr / 100, 2);
+    $total = $subtotal + $tax;
+    $today = today();
+    $credit_days = (int)$party['credit_days'];
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        q('INSERT INTO sales (company_id, party_id, customer_name, customer_mobile, location_id, sale_date, price_type,
+           credit_days, due_date, subtotal, tax_amount, total, paid, payment_mode, status, notes, created_by, share_token, amc_contract_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [$company['id'], $party['id'], $party['name'], $party['mobile'], $contract['location_id'], $today, 'retail',
+           $credit_days, $credit_days ? date('Y-m-d', strtotime("$today +$credit_days days")) : null,
+           $subtotal, $tax, $total, 0, 'credit', 'due', 'AMC renewal: ' . $contract['title'], $contract['created_by'], share_token(), $contract['id']]);
+        $sale_id = insert_id();
+        $invoice_no = $company['invoice_prefix'] . '-' . date('y') . '-' . str_pad($sale_id, 5, '0', STR_PAD_LEFT);
+        q('UPDATE sales SET invoice_no = ? WHERE id = ?', [$invoice_no, $sale_id]);
+        q('INSERT INTO sale_items (sale_id, item_id, qty, price, cost_price, tax_rate, total) VALUES (?,?,?,?,?,?,?)',
+          [$sale_id, $item['id'], 1, $subtotal, 0, $tr, $subtotal]);
+        $pdo->commit();
+        return ['sale_id' => $sale_id, 'invoice_no' => $invoice_no, 'total' => $total];
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        return null;
+    }
 }
 
 function status_badge($status) {

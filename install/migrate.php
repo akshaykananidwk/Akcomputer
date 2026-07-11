@@ -88,6 +88,8 @@ function schema_check() {
         'purchases.is_cancelled' => "SHOW COLUMNS FROM purchases LIKE 'is_cancelled'",
         'sales.shipping' => "SHOW COLUMNS FROM sales LIKE 'shipping'",
         'purchases.shipping' => "SHOW COLUMNS FROM purchases LIKE 'shipping'",
+        'amc_contracts table' => "SHOW TABLES LIKE 'amc_contracts'",
+        'sales.amc_contract_id' => "SHOW COLUMNS FROM sales LIKE 'amc_contract_id'",
         'payments.party_id nullable' => "SHOW COLUMNS FROM payments LIKE 'party_id'",
         'payments.bank_account_id' => "SHOW COLUMNS FROM payments LIKE 'bank_account_id'",
         'expenses.bank_account_id' => "SHOW COLUMNS FROM expenses LIKE 'bank_account_id'",

@@ -41,6 +41,7 @@ $_navMenu = [
         ['repairs.php', 'Repair Jobs', 'repairs.view', 'repairs.php?action=new', 'repairs.add'],
         ['tasks.php', 'Field Tasks', 'tasks.view', 'tasks.php?action=new', 'tasks.add'],
         ['warranty.php', 'Warranty Claims', 'warranty.view', 'warranty.php?action=new', 'warranty.add'],
+        ['amc.php', 'AMC / Recurring Billing', 'amc.view', 'amc.php?action=new', 'amc.add'],
     ]],
     ['link', 'reports.php', '📈', 'Reports', 'reports.view'],
     ['group', 'store', '🌐', 'My Online Store', [

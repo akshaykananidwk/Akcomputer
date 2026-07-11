@@ -38,10 +38,12 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
         invoice_pdf($sale, all('SELECT si.*, i.name, i.unit FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$id])));
     $pdfUrl = base_url('uploads/invoices/' . $pdfName);
     $due = $sale['total'] - $sale['paid'];
+    $payLink = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no']) : null;
     $msg = wa_template('bill', [
         'firm' => $sale['company_name'], 'invoice_no' => $sale['invoice_no'], 'date' => dmy($sale['sale_date']),
         'total' => money($sale['total']),
         'due_line' => $due > 0.009 ? 'Balance due: ₹' . money($due) : 'Paid ✔',
+        'pay_link' => $payLink ? "💳 Pay online: $payLink\n" : '',
         'link' => $link, 'customer' => $sale['customer_name'],
     ]);
     // bill goes as a PDF document with the message as caption
@@ -50,6 +52,18 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
         flash('Bill (PDF) sent on WhatsApp to ' . $mobile);
     } else {
         flash('WhatsApp send failed. Check number & API settings.', 'error');
+    }
+    redirect('sale_view.php?id=' . $id);
+}
+
+// ---------- standalone payment link (for copy/SMS/email) ----------
+if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'paylink') {
+    $due = $sale['total'] - $sale['paid'];
+    $link = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no']) : null;
+    if ($link) {
+        flash('Payment Link: ' . $link . ' (copy કરી લો)');
+    } else {
+        flash('Link બની ના શકી - Settings માં Razorpay Key ID/Secret ચકાસો, અથવા bill પૂરું ભરાઈ ગયું છે.', 'error');
     }
     redirect('sale_view.php?id=' . $id);
 }
@@ -104,6 +118,10 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
   <?php if (setting('review_api_key') && $sale['customer_mobile']): ?>
   <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="review">
     <button class="btn btn-outline" type="submit">⭐ Review Invite</button></form>
+  <?php endif; ?>
+  <?php if (setting('razorpay_key_id') && $due > 0.009): ?>
+  <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="paylink">
+    <button class="btn btn-outline" type="submit">🔗 Payment Link</button></form>
   <?php endif; ?>
   <a class="btn btn-outline" href="sales.php">← Back</a>
   <?php if (can('sales.edit') && !$sale['is_cancelled']): ?>

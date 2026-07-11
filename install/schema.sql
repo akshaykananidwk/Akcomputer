@@ -255,12 +255,34 @@ CREATE TABLE IF NOT EXISTS sales (
   discount_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
   bank_account_id INT DEFAULT NULL,
   payment_method_id INT DEFAULT NULL,
+  amc_contract_id INT DEFAULT NULL,
   notes VARCHAR(255) DEFAULT '',
   created_by INT NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uk_invoice (invoice_no),
   KEY idx_sale_date (sale_date),
   KEY idx_sale_party (party_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------- AMC / recurring billing contracts ----------
+CREATE TABLE IF NOT EXISTS amc_contracts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  party_id INT NOT NULL,
+  item_id INT NOT NULL,
+  company_id INT NOT NULL DEFAULT 1,
+  location_id INT NOT NULL,
+  title VARCHAR(150) DEFAULT '',
+  amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  billing_cycle ENUM('monthly','quarterly','half_yearly','yearly') NOT NULL DEFAULT 'yearly',
+  start_date DATE NOT NULL,
+  next_bill_date DATE NOT NULL,
+  end_date DATE DEFAULT NULL,
+  status ENUM('active','paused','cancelled') NOT NULL DEFAULT 'active',
+  notes VARCHAR(255) DEFAULT '',
+  created_by INT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_amc_party (party_id),
+  KEY idx_amc_next (next_bill_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS sale_items (

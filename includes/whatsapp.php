@@ -52,8 +52,8 @@ function wa_template_defaults() {
     return [
         'otp' => ["*{shop}*\nYour OTP for {reason} is: *{otp}*\nValid for 10 minutes. Do not share.",
                   '{shop} {otp} {reason}', 'OTP message (login / password / handover)'],
-        'bill' => ["*{firm}*\nInvoice: *{invoice_no}*\nDate: {date}\nAmount: *₹{total}*\n{due_line}\nView/download bill:\n{link}\n\nThank you for your business! 🙏",
-                   '{firm} {invoice_no} {date} {total} {due_line} {link} {customer}', 'Bill / Invoice send'],
+        'bill' => ["*{firm}*\nInvoice: *{invoice_no}*\nDate: {date}\nAmount: *₹{total}*\n{due_line}\n{pay_link}View/download bill:\n{link}\n\nThank you for your business! 🙏",
+                   '{firm} {invoice_no} {date} {total} {due_line} {pay_link} {link} {customer}', 'Bill / Invoice send'],
         'estimate' => ["*{firm}*\nEstimate: *{estimate_no}*\n{items}\n*Total: ₹{total}*\nValid for 7 days. Reply to confirm order. 🙏",
                        '{firm} {estimate_no} {items} {total}', 'Estimate send'],
         'reminder' => ["*{firm}*\nPayment reminder 🙏\nInvoice: {invoice_no} ({date})\nBalance due: *₹{due}*\n{due_date_line}Kindly arrange the payment. Thank you!",
@@ -74,6 +74,8 @@ function wa_template_defaults() {
                               '{shop} {claim_no} {serial} {status_line}', 'Warranty status update'],
         'weborder' => ["*{shop}* 🌐 New website order {order_no}\nName: {customer} ({mobile})\nAddress: {address}\n{items}\n*Total: ₹{total}*",
                        '{shop} {order_no} {customer} {mobile} {address} {items} {total}', 'Website order alert (shop)'],
+        'amc_bill' => ["*{firm}*\nAMC Renewal Invoice: *{invoice_no}*\nContract: {title}\nAmount: *₹{total}*\nNext renewal: {next_date}\nThank you for staying with us! 🙏",
+                       '{firm} {invoice_no} {title} {total} {next_date}', 'AMC auto-renewal invoice'],
     ];
 }
 
