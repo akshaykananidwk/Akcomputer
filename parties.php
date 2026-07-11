@@ -26,6 +26,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('parties.delete');
     $pid = (int)post('id');
+    $bal = party_balance($pid);
+    if (abs($bal) > 0.009) {
+        flash('આ party નું ₹' . money(abs($bal)) . ' (' . ($bal > 0 ? 'લેવાના' : 'દેવાના') . ') બાકી છે - પહેલા balance ચૂકતે કરો, પછી જ delete/inactive કરી શકાશે (નહીં તો એ રકમ ક્યાંય દેખાવાની બંધ થઈ જાય).', 'error');
+        redirect('parties.php');
+    }
     $tx = (int)val('SELECT (SELECT COUNT(*) FROM sales WHERE party_id=?) + (SELECT COUNT(*) FROM purchases WHERE party_id=?) + (SELECT COUNT(*) FROM payments WHERE party_id=?)', [$pid,$pid,$pid]);
     if ($tx > 0) {
         q('UPDATE parties SET is_active = 0 WHERE id = ?', [$pid]);
@@ -177,8 +182,12 @@ if ($action === 'ledger' && $id) {
 }
 
 // ---- list (with live balance: + = you'll get, - = you'll give) ----
-$parties = all('SELECT p.*, ' . party_balance_expr('p') . ' AS balance
-    FROM parties p WHERE p.is_active = 1 ORDER BY p.name');
+// Inactive parties are hidden UNLESS they still carry a balance - a party
+// deactivated while money was still due/payable must never quietly
+// disappear from view (that money would then show nowhere at all).
+$balExprList = party_balance_expr('p');
+$parties = all("SELECT p.*, $balExprList AS balance
+    FROM parties p WHERE p.is_active = 1 OR ABS($balExprList) > 0.009 ORDER BY p.name");
 $totGet = 0; $totGive = 0;
 foreach ($parties as $p) {
     if ($p['balance'] > 0.009) $totGet += $p['balance'];
@@ -201,7 +210,7 @@ include __DIR__ . '/includes/header.php';
   <tbody>
   <?php foreach ($parties as $p): ?>
     <tr>
-      <td><strong><?= e($p['name']) ?></strong> <span class="muted">(<?= e($p['type']) ?>)</span><?= $p['gstin'] ? '<br><span class="muted">' . e($p['gstin']) . '</span>' : '' ?></td>
+      <td><strong><?= e($p['name']) ?></strong> <span class="muted">(<?= e($p['type']) ?>)</span><?= !$p['is_active'] ? ' <span class="badge badge-bad">INACTIVE - બાકી છે</span>' : '' ?><?= $p['gstin'] ? '<br><span class="muted">' . e($p['gstin']) . '</span>' : '' ?></td>
       <td class="num">
         <?php if ($p['balance'] > 0.009): ?>
           <span class="bal-get">₹<?= money($p['balance']) ?><span class="bal-sub">You'll Get</span></span>

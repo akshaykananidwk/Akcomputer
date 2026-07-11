@@ -16,7 +16,11 @@ $monthSales = row("SELECT COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled
 $canMoney = can('payments.view');
 $recv = 0; $paybl = 0; $walkinDue = 0;
 if ($canMoney) {
-    $bals = all('SELECT ' . party_balance_expr('p') . ' AS bal FROM parties p WHERE p.is_active = 1');
+    // Inactive parties are still included when they carry a balance - a
+    // party deactivated with money outstanding must not vanish from the
+    // dashboard totals either.
+    $balExprDash = party_balance_expr('p');
+    $bals = all("SELECT $balExprDash AS bal FROM parties p WHERE p.is_active = 1 OR ABS($balExprDash) > 0.009");
     foreach ($bals as $b) { if ($b['bal'] > 0.009) $recv += $b['bal']; elseif ($b['bal'] < -0.009) $paybl += -$b['bal']; }
     $walkinDue = walkin_due();
 }

@@ -108,10 +108,12 @@ if ($action === 'new') {
     // with a due, because a party can be receiving/paying an ADVANCE with
     // no bill against it yet. Parties with a pending balance in this
     // direction are just sorted to the top so the common case stays fast.
+    // Inactive parties are included too when they still carry a balance -
+    // a party deactivated with money outstanding must stay collectible.
     $balExpr = party_balance_expr('p');
     $pendingFirst = $dir === 'in' ? "($balExpr > 0.009) DESC, $balExpr DESC" : "($balExpr < -0.009) DESC, $balExpr ASC";
     $parties = all("SELECT p.id, p.name, p.mobile, $balExpr AS balance FROM parties p
-                    WHERE p.is_active = 1 AND p.type IN $types
+                    WHERE (p.is_active = 1 OR ABS($balExpr) > 0.009) AND p.type IN $types
                     ORDER BY $pendingFirst, p.name");
     $pendingCount = count(array_filter($parties, fn($p) => $dir === 'in' ? $p['balance'] > 0.009 : $p['balance'] < -0.009));
     $wDue = $dir === 'in' ? walkin_due() : 0;
