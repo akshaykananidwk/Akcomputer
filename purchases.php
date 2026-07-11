@@ -7,6 +7,7 @@ $action = get('action', 'list');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('purchases.add');
+    $company = row('SELECT * FROM companies WHERE id = ?', [(int)post('company_id', 1)]);
     $loc_id = (int)post('location_id') ?: $u['location_id'];
     $party_id = (int)post('party_id');
     $item_ids = post('item_id', []);
@@ -21,8 +22,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $iid = (int)$iid;
         $qty = (float)($qtys[$i] ?? 0);
         if (!$iid || $qty <= 0) { continue; }
+        $tr = ($company && $company['is_gst']) ? (float)($taxes[$i] ?? 0) : 0;
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'price' => (float)($prices[$i] ?? 0),
-                   'tax_rate' => (float)($taxes[$i] ?? 0), 'total' => $qty * (float)($prices[$i] ?? 0),
+                   'tax_rate' => $tr, 'total' => $qty * (float)($prices[$i] ?? 0),
                    'serials' => trim((string)($serials_in[$i] ?? ''))];
     }
     if (!$rows || !$party_id) { flash('Party and at least one item required.', 'error'); redirect('purchases.php?action=new'); }
@@ -142,6 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         redirect('purchase_view.php?id=' . $pid);
     }
 
+    $company = row('SELECT * FROM companies WHERE id = ?', [(int)post('company_id', 1)]);
     $loc_id = (int)post('location_id') ?: $u['location_id'];
     $party_id = (int)post('party_id');
     $item_ids = post('item_id', []);
@@ -155,8 +158,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         $iid = (int)$iid;
         $qty = (float)($qtys[$i] ?? 0);
         if (!$iid || $qty <= 0) { continue; }
+        $tr = ($company && $company['is_gst']) ? (float)($taxes[$i] ?? 0) : 0;
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'price' => (float)($prices[$i] ?? 0),
-                   'tax_rate' => (float)($taxes[$i] ?? 0), 'total' => $qty * (float)($prices[$i] ?? 0),
+                   'tax_rate' => $tr, 'total' => $qty * (float)($prices[$i] ?? 0),
                    'serials' => trim((string)($serials_in[$i] ?? ''))];
     }
     if (!$rows || !$party_id) { flash('Party and at least one item required.', 'error'); redirect('purchases.php?action=edit&id=' . $pid); }
@@ -263,7 +267,7 @@ if ($action === 'new' || $action === 'edit') {
             <p class="muted mt"><a href="#" onclick="document.getElementById('qpModal').style.display='block';return false">+ Add new party</a></p>
           </div>
           <div><label>Firm / Company</label>
-            <select name="company_id" id="company_id"><?php foreach ($companies as $c): ?><option value="<?= $c['id'] ?>"><?= e($c['name']) ?></option><?php endforeach; ?></select></div>
+            <select name="company_id" id="company_id"><?php foreach ($companies as $c): ?><option value="<?= $c['id'] ?>" data-gst="<?= $c['is_gst'] ?>"><?= e($c['name']) ?><?= $c['is_gst'] ? ' (GST)' : '' ?></option><?php endforeach; ?></select></div>
           <div><label>Supplier bill no.</label><input type="text" name="bill_no" id="bill_no" value="<?= $isEdit ? e($editPurchase['bill_no']) : '' ?>"></div>
           <div><label>Date</label><input type="date" name="purchase_date" id="purchase_date" value="<?= $isEdit ? e($editPurchase['purchase_date']) : today() ?>"></div>
         </div>
@@ -346,7 +350,11 @@ if ($action === 'new' || $action === 'edit') {
       <button type="button" class="btn btn-sm" onclick="quickParty()">Add</button>
     </div>
     <script>
-      Bill.init({mode: 'purchase', serials: true, locSel: 'location_id', gst: true});
+      Bill.init({mode: 'purchase', serials: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1});
+      document.getElementById('company_id').addEventListener('change', function () {
+        Bill.cfg.gst = this.options[this.selectedIndex].dataset.gst == 1;
+        Bill.totals();
+      });
       <?php if ($isEdit): ?>
       // prefill rows from the existing purchase being edited
       (function () {
@@ -362,6 +370,7 @@ if ($action === 'new' || $action === 'edit') {
         document.getElementById('discount_val').value = '<?= $editPurchase['discount_type'] === 'percent' ? (float)$editPurchase['discount_pct'] : (float)$editPurchase['discount'] ?>';
         document.getElementById('discAmt').className = <?= json_encode($editPurchase['discount_type']) ?> === 'amount' ? 'on-cash' : '';
         document.getElementById('discPct').className = <?= json_encode($editPurchase['discount_type']) ?> === 'percent' ? 'on-cash' : '';
+        Bill.cfg.gst = document.querySelector('#company_id option:checked').dataset.gst == 1;
         pre.forEach(function (it, idx) {
           if (idx > 0) Bill.addRow();
           var rows = document.querySelectorAll('#billItems .bill-row');

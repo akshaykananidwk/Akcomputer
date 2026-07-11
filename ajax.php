@@ -19,10 +19,19 @@ if ($a === 'item_search') {
 }
 
 if ($a === 'serials') {
-    // available serial numbers of item at a location
+    // available serial numbers of item at a location - when editing a bill
+    // (sale_id given), also include this item's serials already sold on
+    // THIS bill (status='sold'), so they stay pickable/keepable while editing
     $item_id = (int)get('item_id');
     $loc = (int)get('loc');
-    $sns = all("SELECT serial_no FROM item_serials WHERE item_id = ? AND location_id = ? AND status = 'in_stock' ORDER BY serial_no", [$item_id, $loc]);
+    $saleId = (int)get('sale_id');
+    if ($saleId) {
+        $sns = all("SELECT serial_no FROM item_serials WHERE item_id = ? AND
+                    ((location_id = ? AND status = 'in_stock') OR (status = 'sold' AND sale_id = ?))
+                    ORDER BY serial_no", [$item_id, $loc, $saleId]);
+    } else {
+        $sns = all("SELECT serial_no FROM item_serials WHERE item_id = ? AND location_id = ? AND status = 'in_stock' ORDER BY serial_no", [$item_id, $loc]);
+    }
     echo json_encode(array_column($sns, 'serial_no'));
     exit;
 }

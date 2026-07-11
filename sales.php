@@ -323,7 +323,7 @@ if ($action === 'new' || $action === 'edit') {
         if (!$editSale) die('Bill not found.');
         if (!can('sales.all') && $editSale['created_by'] != $u['id']) die('Access denied.');
         if ($editSale['is_cancelled']) { flash('Cancelled bill ને edit કરી શકાય નહીં.', 'error'); redirect('sale_view.php?id=' . $editSale['id']); }
-        $editItems = all('SELECT si.*, i.name FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$editSale['id']]);
+        $editItems = all('SELECT si.*, i.name, i.serial_tracked FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$editSale['id']]);
     }
     $parties = all("SELECT id, name, mobile, credit_days FROM parties WHERE is_active = 1 AND type IN ('customer','both') ORDER BY name");
     // prefill from estimate or delivery challan (convert to bill)
@@ -450,7 +450,7 @@ if ($action === 'new' || $action === 'edit') {
       </div>
     </form>
     <script>
-      Bill.init({mode: 'sale', serials: true, freeQty: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1});
+      Bill.init({mode: 'sale', serials: true, freeQty: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1<?= $isEdit ? ', editSaleId: ' . (int)$editSale['id'] : '' ?>});
       <?php if ($est && $estItems): ?>
       // prefill rows from estimate
       (function () {
@@ -481,6 +481,8 @@ if ($action === 'new' || $action === 'edit') {
         var pre = <?= json_encode(array_map(fn($x) => [
             'id' => (int)$x['item_id'], 'name' => $x['name'], 'qty' => (float)$x['qty'],
             'free' => (float)($x['free_qty'] ?? 0), 'price' => (float)$x['price'], 'tax' => (float)$x['tax_rate'],
+            'serialTracked' => (int)$x['serial_tracked'],
+            'serials' => $x['serials'] ? array_values(array_filter(array_map('trim', explode(',', $x['serials'])))) : [],
         ], $editItems)) ?>;
         document.getElementById('company_id').value = '<?= (int)$editSale['company_id'] ?>';
         document.getElementById('location_id').value = '<?= (int)$editSale['location_id'] ?>';
@@ -499,12 +501,21 @@ if ($action === 'new' || $action === 'edit') {
           if (idx > 0) Bill.addRow();
           var rows = document.querySelectorAll('#billItems .bill-row');
           var div = rows[rows.length - 1];
-          div.querySelector('.i-search').value = it.name;
-          div.querySelector('.i-id').value = it.id;
-          div.querySelector('.i-tax').value = it.tax;
           div.querySelector('.i-qty').value = it.qty;
-          div.querySelector('.i-price').value = it.price;
           var fq = div.querySelector('.i-freeq'); if (fq) fq.value = it.free;
+          if (it.serialTracked) {
+            // route through pickItem so the Vyapar-style serial checkbox
+            // picker renders (fetches this item's available + already-on-
+            // this-bill serials) with the bill's current serials pre-checked
+            div.dataset.preSerials = JSON.stringify(it.serials);
+            Bill.pickItem(div, {id: it.id, name: it.name, tax_rate: it.tax, serial_tracked: 1,
+              selling_price: it.price, b2b_price: it.price, purchase_price: it.price, stock: 0, unit: '', barcode: ''});
+          } else {
+            div.querySelector('.i-search').value = it.name;
+            div.querySelector('.i-id').value = it.id;
+            div.querySelector('.i-tax').value = it.tax;
+            div.querySelector('.i-price').value = it.price;
+          }
           Bill.rowTotal(div);
         });
         Bill.totals();

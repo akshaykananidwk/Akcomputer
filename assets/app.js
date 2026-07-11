@@ -192,14 +192,21 @@ var Bill = {
           '<textarea name="serials[]" rows="2" placeholder="SN001\nSN002"></textarea>';
         div.dataset.hasSerialBox = '1';
       } else if (this.cfg.mode === 'sale') {
-        // Vyapar-style serial picker: scan/type + Add, checkbox list, counter
+        // Vyapar-style serial picker: scan/type + Add, checkbox list, counter.
+        // When editing a bill (cfg.editSaleId set), the fetch also returns
+        // this item's serials already on THIS bill, and any serials passed
+        // via div.dataset.preSerials come back pre-checked - so editing a
+        // bill shows its current serials and lets you swap/fix them.
         var loc = this.cfg.locSel ? document.getElementById(this.cfg.locSel).value : '';
         var n = div.dataset.n;
-        fetch('ajax.php?a=serials&item_id=' + it.id + '&loc=' + loc)
+        var saleIdQ = this.cfg.editSaleId ? '&sale_id=' + this.cfg.editSaleId : '';
+        var pre = div.dataset.preSerials ? JSON.parse(div.dataset.preSerials) : [];
+        fetch('ajax.php?a=serials&item_id=' + it.id + '&loc=' + loc + saleIdQ)
           .then(function (r) { return r.json(); })
           .then(function (sns) {
             var boxes = sns.map(function (s) {
-              return '<label class="sp-row"><input type="checkbox" name="serial_sel[' + n + '][]" value="' + s + '"> ' + s + '</label>';
+              var checked = pre.indexOf(s) !== -1 ? ' checked' : '';
+              return '<label class="sp-row"><input type="checkbox" name="serial_sel[' + n + '][]" value="' + s + '"' + checked + '> ' + s + '</label>';
             }).join('');
             extra.innerHTML =
               '<div class="serial-pick mt">' +
@@ -215,6 +222,7 @@ var Bill = {
               el.textContent = c + ' / ' + need + ' entered';
               el.className = 'sp-count badge ' + (c == need ? 'badge-ok' : 'badge-warn');
             }
+            updCount();
             extra.addEventListener('change', updCount);
             div.querySelector('.i-qty').addEventListener('input', updCount);
             var spInp = extra.querySelector('.sp-inp');
