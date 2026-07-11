@@ -43,6 +43,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $bankAccId = (int)post('bank_account_id') ?: null;
     $pmId = (int)post('payment_method_id') ?: null;
 
+    // Auto-link/create a Party from the mobile number (Vyapar-style) so
+    // every customer becomes a trackable ledger party even when staff just
+    // type name/mobile during quick billing instead of picking "Party" -
+    // otherwise Payment-In has nothing to collect against later.
+    $party_id = (int)post('party_id') ?: null;
+    $custMobile = post('customer_mobile');
+    $custName = post('customer_name');
+    if (!$party_id && $custMobile !== '') {
+        $existing = row('SELECT id, type FROM parties WHERE mobile = ? LIMIT 1', [$custMobile]);
+        if ($existing) {
+            $party_id = (int)$existing['id'];
+            if ($existing['type'] === 'supplier') q("UPDATE parties SET type = 'both' WHERE id = ?", [$party_id]);
+        } else {
+            q("INSERT INTO parties (name, type, mobile, credit_days, opening_balance, is_active) VALUES (?, 'customer', ?, 0, 0, 1)",
+              [$custName ?: $custMobile, $custMobile]);
+            $party_id = insert_id();
+        }
+    }
+
     $pdo = db();
     $pdo->beginTransaction();
     try {
@@ -50,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
            credit_days, due_date, subtotal, discount, discount_type, discount_pct, tax_amount, total, paid, payment_mode,
            bank_account_id, payment_method_id, status, notes, created_by, share_token)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-          [$company['id'], (int)post('party_id') ?: null, post('customer_name'), post('customer_mobile'), $loc_id,
+          [$company['id'], $party_id, post('customer_name'), post('customer_mobile'), $loc_id,
            post('sale_date', today()), post('price_type', 'retail'), $credit_days,
            $credit_days ? date('Y-m-d', strtotime(post('sale_date', today()) . " +$credit_days days")) : null,
            $subtotal, $discount, $discType, $discPct, $tax, $total, $paid, post('payment_mode', 'cash'),
@@ -96,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if ($paid > 0) {
             q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-              [(int)post('party_id') ?: null, 'in', $paid, post('payment_mode', 'cash'), $bankAccId, $pmId, 'sale', $sale_id,
+              [$party_id, 'in', $paid, post('payment_mode', 'cash'), $bankAccId, $pmId, 'sale', $sale_id,
                post('sale_date', today()), 'With bill ' . $invoice_no, $u['id']]);
         }
         if ((int)post('estimate_id')) {
