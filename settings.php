@@ -56,6 +56,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'design') {
     redirect('settings.php');
 }
 
+if (setting('cron_key', '') === '') set_setting('cron_key', bin2hex(random_bytes(12)));
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reminder_gap') {
+    require_perm('settings.edit');
+    set_setting('reminder_gap_days', max(1, (int)post('gap')));
+    flash('Reminder gap saved.');
+    redirect('settings.php');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_test') {
     require_perm('settings.edit');
     $ok = send_whatsapp(post('test_mobile'), '✅ Test message from ' . setting('app_name', 'AK Computer') . ' billing system. WhatsApp API is working!');
@@ -170,6 +178,21 @@ include __DIR__ . '/includes/header.php';
       <?php endforeach; ?>
     </div>
     <button class="btn mt" type="submit">Apply Design</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>⏰ Auto Overdue Reminders (cron)</h3>
+  <?php $cronUrl = base_url('cron.php?key=' . setting('cron_key')); ?>
+  <p class="muted mb">Due date વીતી ગયેલા unpaid bills પર આપોઆપ WhatsApp reminder જાય. Hosting ના cPanel → Cron Jobs માં રોજ એક વાર આ URL ચલાવવા મૂકો:</p>
+  <p class="mb"><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block"><?= e($cronUrl) ?></code></p>
+  <p class="muted mb">cPanel command: <code>wget -qO- "<?= e($cronUrl) ?>"</code> (દા.ત. રોજ સવારે 10:00)</p>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="reminder_gap">
+    <div><label>એક જ bill પર ફરી reminder કેટલા દિવસે?</label><input type="number" name="gap" min="1" value="<?= (int)setting('reminder_gap_days', '3') ?>"></div>
+    <button class="btn btn-sm" type="submit">Save</button>
+    <a class="btn btn-sm btn-outline" href="<?= e($cronUrl) ?>" target="_blank">▶ અત્યારે Test Run</a>
   </form>
 </div>
 

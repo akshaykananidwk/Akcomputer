@@ -118,6 +118,30 @@ function verify_otp($purpose, $target, $code) {
     return true;
 }
 
+// ---------- Amount in words (Indian system) ----------
+function amount_in_words($num) {
+    $num = round((float)$num, 2);
+    $paise = round(($num - floor($num)) * 100);
+    $num = (int)floor($num);
+    if ($num == 0 && $paise == 0) return 'Zero Rupees Only';
+    $ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve',
+             'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    $tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    $two = function ($n) use ($ones, $tens) {
+        if ($n < 20) return $ones[$n];
+        return trim($tens[intdiv($n, 10)] . ' ' . $ones[$n % 10]);
+    };
+    $out = '';
+    if ($num >= 10000000) { $out .= $two(intdiv($num, 10000000)) . ' Crore '; $num %= 10000000; }
+    if ($num >= 100000) { $out .= $two(intdiv($num, 100000)) . ' Lakh '; $num %= 100000; }
+    if ($num >= 1000) { $out .= $two(intdiv($num, 1000)) . ' Thousand '; $num %= 1000; }
+    if ($num >= 100) { $out .= $ones[intdiv($num, 100)] . ' Hundred '; $num %= 100; }
+    if ($num > 0) $out .= $two($num) . ' ';
+    $out = trim($out) . ' Rupees';
+    if ($paise > 0) $out .= ' and ' . $two($paise) . ' Paise';
+    return trim($out) . ' Only';
+}
+
 // ---------- Invoice design themes ----------
 function invoice_themes() {
     // id => [name, layout-classes, accent hex for preview]

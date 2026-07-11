@@ -243,6 +243,7 @@ CREATE TABLE IF NOT EXISTS sales (
   payment_mode VARCHAR(20) NOT NULL DEFAULT 'cash',
   status ENUM('due','partial','paid') NOT NULL DEFAULT 'paid',
   is_cancelled TINYINT(1) NOT NULL DEFAULT 0,
+  last_reminder DATE DEFAULT NULL,
   notes VARCHAR(255) DEFAULT '',
   created_by INT NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -162,13 +162,49 @@ function invoice_pdf($sale, $items) {
         $pdf->text_right($R, $y, 11, 'Rs ' . money($due), 'B', [0.8, 0.15, 0.15]);
         $y += 14;
     }
-    $y += 14;
+    $y += 4;
+    // amount in words
+    $pdf->text($L, $y, 9, 'Amount in words: ' . amount_in_words($sale['total']), 'B');
+    $y += 16;
+
+    // GST slab breakdown
+    if ($sale['is_gst'] && $sale['tax_amount'] > 0) {
+        $slabs = [];
+        foreach ($items as $it) {
+            $tr = (float)$it['tax_rate'];
+            if ($tr > 0) $slabs[(string)$tr] = ($slabs[(string)$tr] ?? 0) + (float)$it['total'];
+        }
+        ksort($slabs);
+        $pdf->rect($L - 4, $y - 10, 330, 14, [0.93, 0.95, 0.98]);
+        $pdf->text($L, $y, 8.5, 'GST Slab', 'B');
+        $pdf->text($L + 70, $y, 8.5, 'Taxable', 'B');
+        $pdf->text($L + 140, $y, 8.5, 'CGST', 'B');
+        $pdf->text($L + 210, $y, 8.5, 'SGST', 'B');
+        $pdf->text($L + 280, $y, 8.5, 'Total Tax', 'B');
+        $y += 13;
+        foreach ($slabs as $tr => $tv) {
+            $tx = $tv * (float)$tr / 100;
+            $pdf->text($L, $y, 8.5, $tr . '%');
+            $pdf->text($L + 70, $y, 8.5, money($tv));
+            $pdf->text($L + 140, $y, 8.5, money($tx / 2));
+            $pdf->text($L + 210, $y, 8.5, money($tx / 2));
+            $pdf->text($L + 280, $y, 8.5, money($tx));
+            $y += 12;
+        }
+        $y += 6;
+    }
     if (!empty($sale['c_terms'])) {
         foreach (array_slice(explode("\n", $sale['c_terms']), 0, 3) as $tl) {
             $pdf->text($L, $y, 8, $tl, '', [0.45, 0.5, 0.55]);
             $y += 10;
         }
     }
-    $pdf->text($L, 790, 8, 'This is a computer generated invoice.', '', [0.55, 0.58, 0.62]);
+    // signature block
+    $sy = max($y + 44, 740);
+    $pdf->line($L, $sy, $L + 150, $sy, 0.8);
+    $pdf->text($L + 20, $sy + 12, 8.5, "Receiver's Signature");
+    $pdf->line($R - 190, $sy, $R, $sy, 0.8);
+    $pdf->text($R - 180, $sy + 12, 8.5, 'For ' . $sale['company_name'] . ' - Authorised Signatory');
+    $pdf->text($L, 800, 8, 'This is a computer generated invoice.', '', [0.55, 0.58, 0.62]);
     return $pdf->output();
 }

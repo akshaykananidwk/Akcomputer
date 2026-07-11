@@ -28,7 +28,15 @@ $items = all('SELECT si.*, i.name, i.unit, i.hsn FROM sale_items si JOIN items i
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
     $mobile = post('mobile') ?: $sale['customer_mobile'];
     $link = base_url('sale_view.php?id=' . $id . '&token=' . $sale['share_token']);
-    $pdfUrl = base_url('sale_pdf.php?id=' . $id . '&token=' . $sale['share_token']);
+    // WhatsApp needs a URL ending in .pdf, otherwise the document arrives
+    // named "sale_pdf.php" - so write a real .pdf file and send its link
+    require_once __DIR__ . '/includes/pdf.php';
+    $pdfDir = __DIR__ . '/uploads/invoices';
+    if (!is_dir($pdfDir)) mkdir($pdfDir, 0755, true);
+    $pdfName = preg_replace('/[^A-Za-z0-9\-]/', '_', $sale['invoice_no']) . '_' . substr($sale['share_token'], 0, 10) . '.pdf';
+    file_put_contents($pdfDir . '/' . $pdfName,
+        invoice_pdf($sale, all('SELECT si.*, i.name, i.unit FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$id])));
+    $pdfUrl = base_url('uploads/invoices/' . $pdfName);
     $due = $sale['total'] - $sale['paid'];
     $msg = wa_template('bill', [
         'firm' => $sale['company_name'], 'invoice_no' => $sale['invoice_no'], 'date' => dmy($sale['sale_date']),
@@ -176,7 +184,35 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
     <div class="t-line"><span>Paid (<?= e($sale['payment_mode']) ?>)</span><span>₹<?= money($sale['paid']) ?></span></div>
     <?php if ($due > 0.009): ?><div class="t-line"><span><strong>Balance Due</strong></span><span><strong>₹<?= money($due) ?></strong></span></div><?php endif; ?>
   </div>
-  <?php if ($sale['c_terms']): ?><p class="muted mt"><?= nl2br(e($sale['c_terms'])) ?></p><?php endif; ?>
-  <p class="muted mt">Billed by: <?= e($sale['staff_name']) ?><?= $sale['notes'] ? ' | ' . e($sale['notes']) : '' ?></p>
+  <p class="mt" style="font-size:13px"><strong>Amount in words:</strong> <?= e(amount_in_words($sale['total'])) ?></p>
+
+  <?php if ($sale['is_gst'] && $sale['tax_amount'] > 0):
+      $slabs = [];
+      foreach ($items as $it) {
+          $tr = (float)$it['tax_rate'];
+          if (!isset($slabs[$tr])) $slabs[$tr] = 0;
+          $slabs[$tr] += (float)$it['total'];
+      }
+      ksort($slabs); ?>
+  <div class="table-wrap mt" style="box-shadow:none">
+    <table class="table-sm inv-table">
+      <thead><tr><th>GST Slab</th><th class="num">Taxable ₹</th><th class="num">CGST</th><th class="num">SGST</th><th class="num">Total Tax ₹</th></tr></thead>
+      <tbody><?php foreach ($slabs as $tr => $tv): if ($tr <= 0) continue; $tx = $tv * $tr / 100; ?>
+        <tr><td><?= $tr ?>%</td><td class="num"><?= money($tv) ?></td>
+        <td class="num"><?= ($tr / 2) ?>% = <?= money($tx / 2) ?></td>
+        <td class="num"><?= ($tr / 2) ?>% = <?= money($tx / 2) ?></td>
+        <td class="num"><?= money($tx) ?></td></tr>
+      <?php endforeach; ?></tbody>
+    </table>
+  </div>
+  <?php endif; ?>
+
+  <?php if ($sale['c_terms']): ?><p class="muted mt" style="font-size:11.5px"><strong>Terms & Conditions:</strong><br><?= nl2br(e($sale['c_terms'])) ?></p><?php endif; ?>
+
+  <div class="mt" style="display:flex;justify-content:space-between;gap:20px;padding-top:34px;font-size:13px">
+    <div style="border-top:1px solid var(--text);padding-top:6px;min-width:160px;text-align:center">Receiver's Signature</div>
+    <div style="border-top:1px solid var(--text);padding-top:6px;min-width:200px;text-align:center">For <strong><?= e($sale['company_name']) ?></strong><br>Authorised Signatory</div>
+  </div>
+  <p class="muted mt" style="font-size:11px">Billed by: <?= e($sale['staff_name']) ?><?= $sale['notes'] ? ' | ' . e($sale['notes']) : '' ?></p>
 </div>
 <?php include __DIR__ . '/includes/footer.php'; ?>

@@ -13,6 +13,7 @@ $_navMenu = [
     ]],
     ['group', 'items', '🖥️', 'Items', [
         ['items.php', 'All Items', 'items.view', 'items.php?action=new', 'items.add'],
+        ['items_import.php', 'Import Excel/CSV', 'items.add', null, null],
         ['stock.php', 'Stock Levels', 'stock.view', null, null],
     ]],
     ['group', 'sale', '🧾', 'Sale', [
