@@ -186,7 +186,7 @@ function party_balance_expr($alias = 'p') {
     return "($alias.opening_balance
         + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = $alias.id AND is_cancelled = 0), 0)
         - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = $alias.id), 0)
-        - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = $alias.id), 0)
+        - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = $alias.id AND is_cancelled = 0), 0)
         + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = $alias.id), 0)
         - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'in'), 0)
         + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'out'), 0))";

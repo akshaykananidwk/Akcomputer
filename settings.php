@@ -237,6 +237,12 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <div class="card">
+  <h3>🛠️ Database Update <span class="badge badge-warn">Files FTP/cPanel થી upload કર્યા હોય તો</span></h3>
+  <p class="muted mb">જો files સીધી server પર (FTP / cPanel File Manager થી) upload કરી હોય — "Apply Update" વાળી નીચેની રીતથી નહીં — તો database એ નવી files ને અનુરૂપ update કરવાનું ભૂલાઈ શકે, અને pages બરાબર ના ચાલે. Files upload કર્યા પછી હંમેશા આ button દબાવો, safe છે ગમે એટલી વાર દબાવવામાં:</p>
+  <a class="btn btn-outline" href="install/migrate.php">⚡ Database Update Tool ખોલો</a>
+</div>
+
+<div class="card">
   <h3>🔄 Software Update <span class="badge badge-info">v<?= e(setting('app_version', APP_VERSION)) ?></span></h3>
   <p class="muted mb">Encrypted update file (<code>.akupd</code>) અહીં upload કરો — files + database બધું આપોઆપ update થઈ જશે. Update Key બંને બાજુ સરખી હોવી જોઈએ (ખોટી key વાળી કે બગડેલી file લાગશે નહીં).</p>
   <form method="post" class="filterbar">

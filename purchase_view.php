@@ -25,16 +25,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' && can('paymen
 
 $items = all('SELECT pi.*, i.name, i.unit, i.serial_tracked FROM purchase_items pi JOIN items i ON i.id = pi.item_id WHERE pi.purchase_id = ?', [$id]);
 $serials = all('SELECT serial_no, status, item_id FROM item_serials WHERE purchase_id = ?', [$id]);
-$due = $p['total'] - $p['paid'];
+$due = $p['is_cancelled'] ? 0 : $p['total'] - $p['paid'];
 $page_title = 'Purchase #' . $id;
 include __DIR__ . '/includes/header.php';
 ?>
+<?php if ($p['is_cancelled']): ?><div class="flash flash-error">🚫 આ PURCHASE BILL CANCELLED છે.</div><?php endif; ?>
 <div class="page-actions no-print">
   <button class="btn" onclick="window.print()">🖨️ Print</button>
   <a class="btn btn-outline" href="purchases.php">← Back</a>
+  <?php if (can('purchases.delete')): ?>
+  <?php if (!$p['is_cancelled']): ?>
+  <form method="post" action="purchases.php" onsubmit="return confirm('Purchase bill CANCEL કરવું? (Record રહેશે, stock ઓછો થશે)')" style="display:inline">
+    <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="mode" value="cancel"><input type="hidden" name="id" value="<?= $id ?>">
+    <button class="btn btn-muted" type="submit">🚫 Cancel Bill</button>
+  </form>
+  <?php endif; ?>
+  <form method="post" action="purchases.php" onsubmit="return confirm('પૂરેપૂરું DELETE કરવું? Record પણ જતો રહેશે!')" style="display:inline">
+    <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="mode" value="delete"><input type="hidden" name="id" value="<?= $id ?>">
+    <button class="btn btn-danger" type="submit">Delete</button>
+  </form>
+  <?php endif; ?>
 </div>
 <div class="card">
-  <h2>Purchase #<?= $id ?> <?= status_badge($p['status']) ?></h2>
+  <h2>Purchase #<?= $id ?> <?= $p['is_cancelled'] ? '<span class="badge badge-bad">CANCELLED</span>' : status_badge($p['status']) ?></h2>
   <p><strong><?= e($p['party_name']) ?></strong> · <?= e($p['party_mobile']) ?><br>
   Bill no: <?= e($p['bill_no'] ?: '-') ?> · Date: <?= dmy($p['purchase_date']) ?> · Location: <?= e($p['loc_name']) ?><br>
   Credit: <?= (int)$p['credit_days'] ?> days <?= $p['due_date'] ? '(due ' . dmy($p['due_date']) . ')' : '' ?></p>

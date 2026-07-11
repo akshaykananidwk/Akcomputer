@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS purchases (
   discount_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
   bank_account_id INT DEFAULT NULL,
   payment_method_id INT DEFAULT NULL,
+  is_cancelled TINYINT(1) NOT NULL DEFAULT 0,
   notes VARCHAR(255) DEFAULT '',
   created_by INT NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

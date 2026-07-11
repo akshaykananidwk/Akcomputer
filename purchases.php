@@ -90,6 +90,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     }
 }
 
+// ---------- delete / cancel ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('purchases.delete');
+    $pid = (int)post('id');
+    $purchase = row('SELECT * FROM purchases WHERE id = ?', [$pid]);
+    $cancelOnly = post('mode') === 'cancel';
+    if ($purchase) {
+        $moved = (int)val("SELECT COUNT(*) FROM item_serials WHERE purchase_id = ? AND status <> 'in_stock'", [$pid]);
+        if (!$purchase['is_cancelled'] && $moved > 0) {
+            flash('આ bill ના કેટલાક serial numbers પહેલેથી sold/issued/returned થઈ ગયા છે, એટલે ' . ($cancelOnly ? 'cancel' : 'delete') . ' કરી શકાય એમ નથી.', 'error');
+            redirect('purchase_view.php?id=' . $pid);
+        }
+        $pdo = db();
+        $pdo->beginTransaction();
+        foreach ($purchase['is_cancelled'] ? [] : all('SELECT * FROM purchase_items WHERE purchase_id = ?', [$pid]) as $pi) {
+            adjust_stock($pi['item_id'], $purchase['location_id'], -(float)$pi['qty'], 'purchase_delete', $pid);
+        }
+        if (!$purchase['is_cancelled']) {
+            q('DELETE FROM item_serials WHERE purchase_id = ?', [$pid]);
+        }
+        q("DELETE FROM payments WHERE ref_type = 'purchase' AND ref_id = ?", [$pid]);
+        if ($cancelOnly) {
+            q('UPDATE purchases SET is_cancelled = 1, paid = 0, status = ? WHERE id = ?', ['due', $pid]);
+            log_activity('purchase_cancel', $purchase['bill_no'] ?: "#$pid");
+            flash('Purchase bill CANCELLED - stock પાછો ઓછો થયો, record સચવાયો.');
+        } else {
+            q('DELETE FROM purchase_items WHERE purchase_id = ?', [$pid]);
+            q('DELETE FROM purchases WHERE id = ?', [$pid]);
+            log_activity('purchase_delete', $purchase['bill_no'] ?: "#$pid");
+            flash('Purchase bill deleted and stock reversed.');
+        }
+        $pdo->commit();
+    }
+    redirect('purchases.php');
+}
+
 $locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
 $terms = all('SELECT * FROM credit_terms ORDER BY days');
 $companies = all('SELECT * FROM companies WHERE is_active = 1 ORDER BY id');
@@ -230,7 +266,7 @@ $purchases = all("SELECT p.*, pt.name party_name FROM purchases p
                   JOIN parties pt ON pt.id = p.party_id
                   WHERE p.purchase_date BETWEEN ? AND ? $scope
                   ORDER BY p.id DESC LIMIT 500", array_merge([$from, $to], $params));
-$sumDueP = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases p WHERE p.status <> 'paid' " . $scope, $params);
+$sumDueP = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases p WHERE p.status <> 'paid' AND p.is_cancelled = 0 " . $scope, $params);
 $page_title = 'Purchases';
 include __DIR__ . '/includes/header.php';
 ?>
@@ -259,7 +295,7 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($p['bill_no']) ?></td>
       <td class="num">₹<?= money($p['total']) ?></td>
       <td><?= dmy($p['due_date']) ?><?= $p['status'] !== 'paid' && $p['due_date'] && $p['due_date'] < today() ? ' <span class="badge badge-bad">overdue</span>' : '' ?></td>
-      <td><?= status_badge($p['status']) ?></td>
+      <td><?= $p['is_cancelled'] ? '<span class="badge badge-bad">CANCELLED</span>' : status_badge($p['status']) ?></td>
       <td><a class="btn btn-sm btn-outline" href="purchase_view.php?id=<?= $p['id'] ?>">View</a></td>
     </tr>
   <?php endforeach; ?>
