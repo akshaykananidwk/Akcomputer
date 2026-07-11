@@ -90,6 +90,8 @@ function schema_check() {
         'purchases.shipping' => "SHOW COLUMNS FROM purchases LIKE 'shipping'",
         'amc_contracts table' => "SHOW TABLES LIKE 'amc_contracts'",
         'sales.amc_contract_id' => "SHOW COLUMNS FROM sales LIKE 'amc_contract_id'",
+        'tasks.signature' => "SHOW COLUMNS FROM tasks LIKE 'signature'",
+        'sites table' => "SHOW TABLES LIKE 'sites'",
         'payments.party_id nullable' => "SHOW COLUMNS FROM payments LIKE 'party_id'",
         'payments.bank_account_id' => "SHOW COLUMNS FROM payments LIKE 'bank_account_id'",
         'expenses.bank_account_id' => "SHOW COLUMNS FROM expenses LIKE 'bank_account_id'",

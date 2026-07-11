@@ -304,3 +304,40 @@ function payFull() {
   var p = document.getElementById('paid');
   if (g && p) { p.value = g.textContent; Bill.totals(); }
 }
+
+// ----- signature pad (digital job card sign-off) -----
+var SignaturePad = {
+  init: function (canvasId, hiddenId, clearBtnId) {
+    var canvas = document.getElementById(canvasId);
+    var input = document.getElementById(hiddenId);
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    var drawing = false, last = null, hasDrawn = false;
+    function pos(ev) {
+      var r = canvas.getBoundingClientRect();
+      var t = ev.touches && ev.touches.length ? ev.touches[0] : ev;
+      return { x: (t.clientX - r.left) * (canvas.width / r.width), y: (t.clientY - r.top) * (canvas.height / r.height) };
+    }
+    function start(ev) { drawing = true; last = pos(ev); ev.preventDefault(); }
+    function move(ev) {
+      if (!drawing) return;
+      var p = pos(ev);
+      ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+      last = p; hasDrawn = true; ev.preventDefault();
+    }
+    function end() { if (drawing) { drawing = false; if (input && hasDrawn) input.value = canvas.toDataURL('image/png'); } }
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+    canvas.addEventListener('touchstart', start, { passive: false });
+    canvas.addEventListener('touchmove', move, { passive: false });
+    canvas.addEventListener('touchend', end);
+    var clearBtn = clearBtnId ? document.getElementById(clearBtnId) : null;
+    if (clearBtn) clearBtn.addEventListener('click', function () {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      hasDrawn = false;
+      if (input) input.value = '';
+    });
+  }
+};

@@ -16,7 +16,7 @@ $tabs = [
     'purchase' => '📦 Purchase', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
     'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Profit',
     'bill_profit' => '🧮 Bill Profit', 'staff' => '🎒 Staff Stock',
-    'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'low' => '⚠️ Low Stock',
+    'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'tech_sla' => '⏱️ Technician SLA', 'low' => '⚠️ Low Stock',
 ];
 if (!can('reports.gst')) unset($tabs['gst']);
 if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); }
@@ -381,6 +381,31 @@ if ($r === 'warranty_tat') {
     echo '<div class="table-wrap"><table><thead><tr><th>Company</th><th class="num">Claims</th><th class="num">Avg days</th><th class="num">Max days</th><th class="num">Pending</th></tr></thead><tbody>';
     foreach ($rows as $x) echo '<tr><td>' . e($x['company']) . '</td><td class="num">' . $x['claims'] . '</td><td class="num">' . round($x['avg_days'], 1) . '</td><td class="num">' . $x['max_days'] . '</td><td class="num">' . $x['pending'] . '</td></tr>';
     if (!$rows) echo '<tr><td colspan="5" class="muted">No claims sent in this period.</td></tr>';
+    echo '</tbody></table></div>';
+}
+
+// ---------------- technician SLA / performance ----------------
+if ($r === 'tech_sla') {
+    $rows = all("SELECT u2.name staff, COUNT(*) jobs,
+                 AVG(TIMESTAMPDIFF(MINUTE, t.start_time, t.end_time)) avg_min,
+                 SUM(t.scheduled_date IS NOT NULL AND DATE(t.end_time) <= t.scheduled_date) on_time,
+                 SUM(t.scheduled_date IS NOT NULL) has_schedule,
+                 SUM(t.service_charge + t.material_total) revenue
+                 FROM tasks t JOIN users u2 ON u2.id = t.assigned_to
+                 WHERE t.status = 'completed' AND DATE(t.end_time) BETWEEN ? AND ?
+                 GROUP BY t.assigned_to ORDER BY jobs DESC", [$from, $to]);
+    echo '<div class="card"><p class="muted">Field task / installation job નું completion time અને scheduled date પ્રમાણે on-time % - technician પ્રમાણે.</p></div>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Technician</th><th class="num">Jobs Completed</th><th class="num">Avg Duration</th><th class="num">On-Time %</th><th class="num">Revenue ₹</th></tr></thead><tbody>';
+    foreach ($rows as $x) {
+        $avgMin = $x['avg_min'] !== null ? round($x['avg_min']) : null;
+        $pct = $x['has_schedule'] > 0 ? round($x['on_time'] / $x['has_schedule'] * 100) : null;
+        $pctCls = $pct === null ? '' : ($pct >= 80 ? 'badge-ok' : ($pct >= 50 ? 'badge-warn' : 'badge-bad'));
+        echo '<tr><td>' . e($x['staff']) . '</td><td class="num">' . $x['jobs'] . '</td>'
+           . '<td class="num">' . ($avgMin !== null ? ($avgMin >= 60 ? round($avgMin / 60, 1) . ' hr' : $avgMin . ' min') : '-') . '</td>'
+           . '<td class="num">' . ($pct !== null ? '<span class="badge ' . $pctCls . '">' . $pct . '%</span>' : '-') . '</td>'
+           . '<td class="num">₹' . money($x['revenue']) . '</td></tr>';
+    }
+    if (!$rows) echo '<tr><td colspan="5" class="muted">No completed tasks in this period.</td></tr>';
     echo '</tbody></table></div>';
 }
 

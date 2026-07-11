@@ -132,6 +132,9 @@ if ($action === 'ledger' && $id) {
     <div class="card">
       <h2><?= e($p['name']) ?> <span class="muted">(<?= e($p['type']) ?>, credit <?= (int)$p['credit_days'] ?> days)</span></h2>
       <p class="muted"><?= e($p['mobile']) ?> <?= $p['gstin'] ? '| GSTIN: ' . e($p['gstin']) : '' ?></p>
+      <?php if (can('sites.view')): $siteCount = (int)val('SELECT COUNT(*) FROM sites WHERE party_id = ?', [$id]); ?>
+      <p class="mt"><a class="btn btn-sm btn-outline" href="sites.php?party_id=<?= $id ?>">🌐 Sites (<?= $siteCount ?>)</a></p>
+      <?php endif; ?>
     </div>
     <div class="table-wrap">
       <table>

@@ -61,9 +61,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'complete') {
             adjust_staff_stock($t['assigned_to'], $iid, -$qty, 'task_use', $t['id'], $t['task_no']);
             $matTotal += $qty * $price;
         }
+        $sig = post('signature');
+        if ($sig && strpos($sig, 'data:image/png;base64,') !== 0) $sig = null; // only accept our own canvas output
         q("UPDATE tasks SET status='completed', end_time=NOW(), work_done=?, service_charge=?, material_total=?,
-           start_time=COALESCE(start_time, NOW()) WHERE id=?",
-          [post('work_done'), (float)post('service_charge'), $matTotal, $t['id']]);
+           start_time=COALESCE(start_time, NOW()), signature=COALESCE(?, signature) WHERE id=?",
+          [post('work_done'), (float)post('service_charge'), $matTotal, $sig, $t['id']]);
         $pdo->commit();
         log_activity('task_complete', $t['task_no']);
         flash('Task completed. Material used deducted from your stock.');
@@ -178,8 +180,15 @@ if ($action === 'view') {
           </div>
           <?php endforeach; ?>
         <?php else: ?><p class="muted">Staff holds no stock (material usage will be empty).</p><?php endif; ?>
+        <div class="field mt">
+          <label>Customer Signature (કામ પૂરું થયાની પુષ્ટિ)</label>
+          <canvas id="sigPad" width="600" height="180" style="width:100%;max-width:600px;height:180px;border:1.5px dashed var(--border);border-radius:8px;touch-action:none;background:#fff"></canvas>
+          <input type="hidden" name="signature" id="sigInput">
+          <button type="button" id="sigClear" class="btn btn-sm btn-outline mt">Clear Signature</button>
+        </div>
         <button class="btn btn-success btn-block mt" type="submit">Complete Task</button>
       </form>
+      <script>SignaturePad.init('sigPad', 'sigInput', 'sigClear');</script>
     </div>
     <?php endif; ?>
 
@@ -193,7 +202,18 @@ if ($action === 'view') {
         <tr><td><strong>Material total</strong></td><td></td><td class="num"><strong>₹<?= money($t['material_total']) ?></strong></td></tr>
         <tr><td><strong>Service charge</strong></td><td></td><td class="num"><strong>₹<?= money($t['service_charge']) ?></strong></td></tr>
       </table>
-      <?php if ($t['work_done']): ?><p class="mt"><?= nl2br(e($t['work_done'])) ?></p><?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($t['status'] === 'completed' && ($t['work_done'] || $t['signature'])): ?>
+    <div class="card">
+      <h3>Job Card Summary</h3>
+      <?php if ($t['work_done']): ?><p><?= nl2br(e($t['work_done'])) ?></p><?php endif; ?>
+      <?php if ($t['signature']): ?>
+      <div class="mt"><span class="muted">Customer Signature:</span><br>
+        <img src="<?= e($t['signature']) ?>" alt="Signature" style="max-width:300px;border:1px solid var(--border);border-radius:8px;background:#fff">
+      </div>
+      <?php endif; ?>
     </div>
     <?php endif; ?>
 

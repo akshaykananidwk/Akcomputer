@@ -250,6 +250,23 @@ function invoice_theme_accent_rgb() {
     return [hexdec(substr($hex, 0, 2)) / 255, hexdec(substr($hex, 2, 2)) / 255, hexdec(substr($hex, 4, 2)) / 255];
 }
 
+// ---------- Site credential vault (DVR/NVR passwords etc, encrypted at rest) ----------
+function vault_encrypt($plain) {
+    if ($plain === '' || $plain === null) return '';
+    $key = hash('sha256', 'site_vault|' . APP_SECRET, true);
+    $iv = random_bytes(16);
+    $cipher = openssl_encrypt($plain, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+    return $cipher === false ? '' : base64_encode($iv . $cipher);
+}
+function vault_decrypt($enc) {
+    if ($enc === '' || $enc === null) return '';
+    $raw = base64_decode($enc, true);
+    if ($raw === false || strlen($raw) < 17) return '';
+    $key = hash('sha256', 'site_vault|' . APP_SECRET, true);
+    $plain = openssl_decrypt(substr($raw, 16), 'aes-256-cbc', $key, OPENSSL_RAW_DATA, substr($raw, 0, 16));
+    return $plain === false ? '' : $plain;
+}
+
 // ---------- Online payment link (Razorpay Payment Links API) ----------
 function razorpay_payment_link($amount, $description, $customerName = '', $customerMobile = '', $referenceId = '') {
     $keyId = setting('razorpay_key_id'); $keySecret = setting('razorpay_key_secret');
