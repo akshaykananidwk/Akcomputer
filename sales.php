@@ -16,6 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $prices = post('price', []);
     $taxes = post('tax_rate', []);
     $serialSel = post('serial_sel', []);
+    $freeQtys = post('free_qty', []);
 
     $rows = [];
     foreach ($item_ids as $i => $iid) {
@@ -24,7 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if (!$iid || $qty <= 0) continue;
         $price = (float)($prices[$i] ?? 0);
         $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
-        $rows[] = ['item_id' => $iid, 'qty' => $qty, 'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $i + 1];
+        $rows[] = ['item_id' => $iid, 'qty' => $qty, 'free' => (float)($freeQtys[$i] ?? 0),
+                   'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $i + 1];
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=new'); }
 
@@ -63,13 +65,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             if ($item['serial_tracked'] && !$serials && !$allowNeg) {
                 throw new Exception("Select serial number(s) for {$item['name']}.");
             }
-            q('INSERT INTO sale_items (sale_id, item_id, qty, price, cost_price, tax_rate, total, serials) VALUES (?,?,?,?,?,?,?,?)',
-              [$sale_id, $r['item_id'], $r['qty'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null]);
+            q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, serials) VALUES (?,?,?,?,?,?,?,?,?)',
+              [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null]);
 
             if (!$allowNeg && stock_qty($r['item_id'], $loc_id) < $r['qty']) {
                 throw new Exception("Not enough stock of {$item['name']} at this location.");
             }
-            adjust_stock($r['item_id'], $loc_id, -$r['qty'], 'sale', $sale_id, $invoice_no);
+            adjust_stock($r['item_id'], $loc_id, -($r['qty'] + $r['free']), 'sale', $sale_id, $invoice_no);
 
             foreach ($serials as $sn) {
                 $expiry = $item['warranty_months'] > 0
@@ -99,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $pdo->commit();
         log_activity('sale_add', "$invoice_no total $total");
         flash("Bill $invoice_no saved.");
-        redirect('sale_view.php?id=' . $sale_id);
+        redirect(post('save_new') ? 'sales.php?action=new' : 'sale_view.php?id=' . $sale_id);
     } catch (Exception $ex) {
         $pdo->rollBack();
         flash('Error: ' . $ex->getMessage(), 'error');
@@ -116,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         $pdo = db();
         $pdo->beginTransaction();
         foreach (all('SELECT * FROM sale_items WHERE sale_id = ?', [$sid]) as $si) {
-            adjust_stock($si['item_id'], $sale['location_id'], (float)$si['qty'], 'sale_delete', $sid);
+            adjust_stock($si['item_id'], $sale['location_id'], (float)$si['qty'] + (float)($si['free_qty'] ?? 0), 'sale_delete', $sid);
             if ($si['serials']) {
                 foreach (explode(',', $si['serials']) as $sn) {
                     q("UPDATE item_serials SET status='in_stock', sale_id=NULL, location_id=?, warranty_expiry=NULL
@@ -163,6 +165,12 @@ if ($action === 'new') {
     <form method="post" id="billForm">
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="save">
+      <div class="page-actions" style="justify-content:center">
+        <div class="cc-toggle">
+          <button type="button" id="ccCredit" onclick="setCC('credit')">Credit</button>
+          <button type="button" id="ccCash" class="on-cash" onclick="setCC('cash')">Cash</button>
+        </div>
+      </div>
       <?php if ($est && $est['id']): ?><input type="hidden" name="estimate_id" value="<?= $est['id'] ?>"><?php endif; ?>
       <?php if ($chal): ?><input type="hidden" name="challan_id" value="<?= $chal['id'] ?>"><?php endif; ?>
       <div class="card">
@@ -220,11 +228,14 @@ if ($action === 'new') {
           <div class="t-line t-grand"><span>Total</span><span>₹ <span id="t_grand">0.00</span></span></div>
           <div class="t-line"><span>Balance due</span><span>₹ <span id="t_due">0.00</span></span></div>
         </div>
-        <button class="btn btn-block mt" type="submit">💾 Save Bill</button>
+        <div class="form-row cols-2 mt">
+          <button class="btn btn-outline" type="submit" name="save_new" value="1">Save & New</button>
+          <button class="btn" type="submit">💾 Save</button>
+        </div>
       </div>
     </form>
     <script>
-      Bill.init({mode: 'sale', serials: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1});
+      Bill.init({mode: 'sale', serials: true, freeQty: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1});
       <?php if ($est && $estItems): ?>
       // prefill rows from estimate
       (function () {
@@ -253,6 +264,24 @@ if ($action === 'new') {
         Bill.cfg.gst = this.options[this.selectedIndex].dataset.gst == 1;
         Bill.totals();
       });
+      var ccMode = 'cash';
+      function setCC(m) {
+        ccMode = m;
+        document.getElementById('ccCash').className = m === 'cash' ? 'on-cash' : '';
+        document.getElementById('ccCredit').className = m === 'credit' ? 'on-credit' : '';
+        if (m === 'cash') { payFull(); document.querySelector('select[name=payment_mode]').value = 'cash'; }
+        else { document.getElementById('paid').value = 0; document.querySelector('select[name=payment_mode]').value = 'credit'; Bill.totals(); }
+      }
+      window.setCC = setCC;
+      // cash mode: paid follows total automatically
+      var _origTotals = Bill.totals.bind(Bill);
+      Bill.totals = function () {
+        _origTotals();
+        if (ccMode === 'cash') {
+          var g = document.getElementById('t_grand'), p = document.getElementById('paid');
+          if (g && p) { p.value = g.textContent; var d = document.getElementById('t_due'); if (d) d.textContent = '0.00'; }
+        }
+      };
       document.getElementById('party_id').addEventListener('change', function () {
         var o = this.options[this.selectedIndex];
         if (this.value) {

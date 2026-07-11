@@ -128,7 +128,7 @@ $due = $sale['total'] - $sale['paid'];
           <td><?= $n + 1 ?></td>
           <td><?= e($it['name']) ?><?= $it['serials'] ? '<br><small>SN: ' . e($it['serials']) . '</small>' : '' ?></td>
           <?php if ($sale['is_gst']): ?><td><?= e($it['hsn']) ?></td><?php endif; ?>
-          <td class="num"><?= (float)$it['qty'] ?> <?= e($it['unit']) ?></td>
+          <td class="num"><?= (float)$it['qty'] ?><?= !empty($it['free_qty']) && $it['free_qty'] > 0 ? ' <span class="badge badge-ok">+' . (float)$it['free_qty'] . ' free</span>' : '' ?> <?= e($it['unit']) ?></td>
           <td class="num"><?= money($it['price']) ?></td>
           <?php if ($sale['is_gst']): ?><td class="num"><?= (float)$it['tax_rate'] ?>%</td><?php endif; ?>
           <td class="num"><?= money($it['total']) ?></td>

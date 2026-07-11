@@ -352,3 +352,14 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .photo-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
 .searchbox { margin-bottom: 12px; }
 .list-count { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+
+/* ---------- Vyapar-style serial picker & credit/cash toggle ---------- */
+.sp-scan { display: flex; gap: 8px; margin: 6px 0; }
+.sp-list { max-height: 150px; overflow-y: auto; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.sp-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-weight: normal; border-bottom: 1px dashed var(--border); }
+.sp-row:last-child { border-bottom: 0; }
+.sp-row input { width: auto; }
+.cc-toggle { display: inline-flex; border: 2px solid var(--primary); border-radius: 999px; overflow: hidden; }
+.cc-toggle button { border: 0; background: #fff; color: var(--primary); padding: 8px 22px; font-weight: 700; font-size: 14px; cursor: pointer; }
+.cc-toggle button.on-credit { background: #059669; color: #fff; }
+.cc-toggle button.on-cash { background: var(--primary); color: #fff; }

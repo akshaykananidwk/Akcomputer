@@ -103,6 +103,7 @@ var Bill = {
       '  <div class="isearch-results"></div>' +
       '</div>' +
       '<div><label>Qty</label><input type="number" step="any" min="0" name="qty[]" class="i-qty" value="1"></div>' +
+      (this.cfg.freeQty ? '<div><label>Free</label><input type="number" step="any" min="0" name="free_qty[]" class="i-freeq" value="0" title="Free quantity (scheme)"></div>' : '') +
       '<div><label>Price</label><input type="number" step="any" min="0" name="price[]" class="i-price" value="0"></div>' +
       '<div><label>Total</label><input type="text" class="i-total" value="0.00" readonly tabindex="-1"></div>' +
       '<div><button type="button" class="row-del" title="Remove">✕</button></div>' +
@@ -153,7 +154,16 @@ var Bill = {
               d.addEventListener('click', function () { self.pickItem(div, it); });
               res.appendChild(d);
             });
-            res.classList.toggle('show', items.length > 0);
+            // Vyapar-style: "Add New Item" link at the bottom of results
+            var addNew = document.createElement('div');
+            addNew.className = 'ir';
+            addNew.innerHTML = '<strong style="color:var(--primary)">＋ Add New Item</strong><small>"' + qy + '" નવી item બનાવો</small>';
+            addNew.addEventListener('click', function () {
+              window.open('items.php?action=new', '_blank');
+              res.classList.remove('show');
+            });
+            res.appendChild(addNew);
+            res.classList.add('show');
           });
       }, 250);
     });
@@ -182,13 +192,44 @@ var Bill = {
           '<textarea name="serials[]" rows="2" placeholder="SN001\nSN002"></textarea>';
         div.dataset.hasSerialBox = '1';
       } else if (this.cfg.mode === 'sale') {
+        // Vyapar-style serial picker: scan/type + Add, checkbox list, counter
         var loc = this.cfg.locSel ? document.getElementById(this.cfg.locSel).value : '';
+        var n = div.dataset.n;
         fetch('ajax.php?a=serials&item_id=' + it.id + '&loc=' + loc)
           .then(function (r) { return r.json(); })
           .then(function (sns) {
-            var opts = sns.map(function (s) { return '<option value="' + s + '">' + s + '</option>'; }).join('');
-            extra.innerHTML = '<label class="mt">Select serial(s) - hold to multi-select</label>' +
-              '<select name="serial_sel[' + div.dataset.n + '][]" multiple size="3">' + opts + '</select>';
+            var boxes = sns.map(function (s) {
+              return '<label class="sp-row"><input type="checkbox" name="serial_sel[' + n + '][]" value="' + s + '"> ' + s + '</label>';
+            }).join('');
+            extra.innerHTML =
+              '<div class="serial-pick mt">' +
+              '<label>Select Serial No. <span class="sp-count badge badge-warn">0 / ' + (parseFloat(div.querySelector('.i-qty').value) || 1) + ' entered</span></label>' +
+              '<div class="sp-scan"><input type="text" class="sp-inp" placeholder="Type / scan serial no.">' +
+              '<button type="button" class="btn btn-sm sp-add">Add</button></div>' +
+              '<div class="sp-list">' + (boxes || '<span class="muted">Stock માં serial નથી (advance billing ચાલશે)</span>') + '</div>' +
+              '</div>';
+            function updCount() {
+              var c = extra.querySelectorAll('input[type=checkbox]:checked').length;
+              var need = parseFloat(div.querySelector('.i-qty').value) || 0;
+              var el = extra.querySelector('.sp-count');
+              el.textContent = c + ' / ' + need + ' entered';
+              el.className = 'sp-count badge ' + (c == need ? 'badge-ok' : 'badge-warn');
+            }
+            extra.addEventListener('change', updCount);
+            div.querySelector('.i-qty').addEventListener('input', updCount);
+            var spInp = extra.querySelector('.sp-inp');
+            spInp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); extra.querySelector('.sp-add').click(); } });
+            extra.querySelector('.sp-add').addEventListener('click', function () {
+              var v = spInp.value.trim();
+              if (!v) return;
+              var found = false;
+              extra.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+                if (cb.value.toLowerCase() === v.toLowerCase()) { cb.checked = true; found = true; }
+              });
+              if (!found) alert('Serial "' + v + '" stock માં નથી.');
+              spInp.value = '';
+              updCount();
+            });
           });
       }
     }
