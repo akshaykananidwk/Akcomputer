@@ -8,7 +8,7 @@ $action = get('action', 'list');
 
 function party_balance($party_id) {
     return (float)val("SELECT p.opening_balance
-        + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id), 0)
+        + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id AND is_cancelled = 0), 0)
         - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = p.id), 0)
         - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = p.id), 0)
         + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = p.id), 0)
@@ -204,7 +204,7 @@ $recent = all('SELECT p.*, pt.name party_name, u2.name by_name FROM payments p
                JOIN parties pt ON pt.id = p.party_id JOIN users u2 ON u2.id = p.created_by
                ORDER BY p.id DESC LIMIT 100');
 $dueSales = all("SELECT s.*, c.name company_name FROM sales s JOIN companies c ON c.id = s.company_id
-                 WHERE s.status <> 'paid' ORDER BY s.due_date IS NULL, s.due_date LIMIT 100");
+                 WHERE s.status <> 'paid' AND s.is_cancelled = 0 ORDER BY s.due_date IS NULL, s.due_date LIMIT 100");
 $duePurchases = all("SELECT p.*, pt.name party_name FROM purchases p JOIN parties pt ON pt.id = p.party_id
                      WHERE p.status <> 'paid' ORDER BY p.due_date IS NULL, p.due_date LIMIT 100");
 

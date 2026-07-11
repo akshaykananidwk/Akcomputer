@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $tax = 0;
     foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
     $total = $subtotal - $discount + $tax;
-    $paid = min((float)post('paid'), $total);
+    $paid = post('payment_mode') === 'credit' ? 0 : min((float)post('paid'), $total);
     $credit_days = (int)post('credit_days');
 
     $pdo = db();
@@ -68,6 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, serials) VALUES (?,?,?,?,?,?,?,?,?)',
               [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null]);
 
+            if ($item['item_type'] === 'service') { continue; } // service: no stock effect
             if (!$allowNeg && stock_qty($r['item_id'], $loc_id) < $r['qty']) {
                 throw new Exception("Not enough stock of {$item['name']} at this location.");
             }
@@ -114,10 +115,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('sales.delete');
     $sid = (int)post('id');
     $sale = row('SELECT * FROM sales WHERE id = ?', [$sid]);
+    $cancelOnly = post('mode') === 'cancel';
     if ($sale) {
         $pdo = db();
         $pdo->beginTransaction();
-        foreach (all('SELECT * FROM sale_items WHERE sale_id = ?', [$sid]) as $si) {
+        foreach ($sale['is_cancelled'] ? [] : all('SELECT * FROM sale_items WHERE sale_id = ?', [$sid]) as $si) {
             adjust_stock($si['item_id'], $sale['location_id'], (float)$si['qty'] + (float)($si['free_qty'] ?? 0), 'sale_delete', $sid);
             if ($si['serials']) {
                 foreach (explode(',', $si['serials']) as $sn) {
@@ -126,12 +128,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
                 }
             }
         }
-        q('DELETE FROM sale_items WHERE sale_id = ?', [$sid]);
         q("DELETE FROM payments WHERE ref_type = 'sale' AND ref_id = ?", [$sid]);
-        q('DELETE FROM sales WHERE id = ?', [$sid]);
+        if ($cancelOnly) {
+            q('UPDATE sales SET is_cancelled = 1, paid = 0, status = ? WHERE id = ?', ['due', $sid]);
+            log_activity('sale_cancel', $sale['invoice_no']);
+            flash('Invoice ' . $sale['invoice_no'] . ' CANCELLED - stock restored, record સચવાયો.');
+        } else {
+            q('DELETE FROM sale_items WHERE sale_id = ?', [$sid]);
+            q('DELETE FROM sales WHERE id = ?', [$sid]);
+            log_activity('sale_delete', $sale['invoice_no']);
+            flash('Bill deleted and stock restored.');
+        }
         $pdo->commit();
-        log_activity('sale_delete', $sale['invoice_no']);
-        flash('Bill deleted and stock restored.');
     }
     redirect('sales.php');
 }
@@ -307,7 +315,7 @@ $sales = all("SELECT s.*, c.name AS company_name, u2.name AS staff_name
               WHERE s.sale_date BETWEEN ? AND ? $scope
               ORDER BY s.id DESC LIMIT 500", array_merge([$from, $to], $params));
 $sumTotal = array_sum(array_column($sales, 'total'));
-$sumDue = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales s WHERE s.status <> 'paid' " . str_replace('s.created_by', 'created_by', $scope), $params);
+$sumDue = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales s WHERE s.status <> 'paid' AND s.is_cancelled = 0 " . str_replace('s.created_by', 'created_by', $scope), $params);
 $page_title = 'Sales / Billing';
 include __DIR__ . '/includes/header.php';
 ?>
@@ -335,7 +343,7 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($s['customer_name'] ?: 'Walk-in') ?><br><span class="muted"><?= e($s['customer_mobile']) ?></span></td>
       <td><?= e($s['company_name']) ?></td>
       <td class="num">₹<?= money($s['total']) ?></td>
-      <td><?= status_badge($s['status']) ?></td>
+      <td><?= $s['is_cancelled'] ? '<span class="badge badge-bad">CANCELLED</span>' : status_badge($s['status']) ?></td>
       <td><a class="btn btn-sm btn-outline" href="sale_view.php?id=<?= $s['id'] ?>">View</a></td>
     </tr>
   <?php endforeach; ?>

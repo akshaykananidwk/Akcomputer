@@ -63,7 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             }
         }
         // update item purchase price to latest
-        foreach ($rows as $r) q('UPDATE items SET purchase_price = ? WHERE id = ?', [$r['price'], $r['item_id']]);
+        foreach ($rows as $r) {
+            q('UPDATE items SET purchase_price = ? WHERE id = ?', [$r['price'], $r['item_id']]);
+            q('UPDATE items SET selling_price = ROUND(purchase_price * (1 + margin_pct / 100), 2)
+               WHERE id = ? AND margin_pct > 0', [$r['item_id']]);
+        }
 
         if ($paid > 0) {
             q('INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)

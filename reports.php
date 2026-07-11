@@ -56,18 +56,18 @@ function exportCsv() {
 <?php
 // ---------------- business report (P&L) ----------------
 if ($r === 'business' && can('reports.profit')) {
-    $sales = (float)val('SELECT COALESCE(SUM(total),0) FROM sales WHERE sale_date BETWEEN ? AND ?', [$from, $to]);
+    $sales = (float)val('SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?', [$from, $to]);
     $salesRet = (float)val('SELECT COALESCE(SUM(total),0) FROM sales_returns WHERE return_date BETWEEN ? AND ?', [$from, $to]);
     $cogs = (float)val('SELECT COALESCE(SUM(si.qty * IF(si.cost_price > 0, si.cost_price, i.purchase_price)),0)
                         FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
-                        WHERE s.sale_date BETWEEN ? AND ?', [$from, $to]);
+                        WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?', [$from, $to]);
     $purch = (float)val('SELECT COALESCE(SUM(total),0) FROM purchases WHERE purchase_date BETWEEN ? AND ?', [$from, $to]);
     $purchRet = (float)val('SELECT COALESCE(SUM(total),0) FROM purchase_returns WHERE return_date BETWEEN ? AND ?', [$from, $to]);
     $svc = (float)val('SELECT COALESCE(SUM(service_charge),0) FROM tasks WHERE status = "completed" AND DATE(end_time) BETWEEN ? AND ?', [$from, $to]);
     $repairIncome = (float)val('SELECT COALESCE(SUM(final_charge),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$from, $to]);
     $repairCost = (float)val('SELECT COALESCE(SUM(outsource_cost),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$from, $to]);
     $exp = (float)val('SELECT COALESCE(SUM(amount),0) FROM expenses WHERE exp_date BETWEEN ? AND ?', [$from, $to]);
-    $recv = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid'");
+    $recv = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid' AND is_cancelled = 0");
     $paybl = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid'");
     $stockVal = (float)val('SELECT COALESCE(SUM(sq.q * i.purchase_price),0) FROM
                             (SELECT item_id, SUM(qty) q FROM (SELECT item_id, qty FROM stock UNION ALL SELECT item_id, qty FROM staff_stock) z GROUP BY item_id) sq
@@ -131,7 +131,7 @@ if ($r === 'daily') {
 if ($r === 'sales') {
     $rows = all('SELECT i.name, SUM(si.qty) qty, SUM(si.total) amount FROM sale_items si
                  JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
-                 WHERE s.sale_date BETWEEN ? AND ? GROUP BY si.item_id ORDER BY amount DESC', [$from, $to]);
+                 WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? GROUP BY si.item_id ORDER BY amount DESC', [$from, $to]);
     echo '<div class="table-wrap"><table><thead><tr><th>Item</th><th class="num">Qty sold</th><th class="num">Amount ₹</th></tr></thead><tbody>';
     foreach ($rows as $x) echo '<tr><td>' . e($x['name']) . '</td><td class="num">' . (float)$x['qty'] . '</td><td class="num">' . money($x['amount']) . '</td></tr>';
     echo '<tr><td><strong>Total</strong></td><td></td><td class="num"><strong>' . money(array_sum(array_column($rows, 'amount'))) . '</strong></td></tr></tbody></table></div>';
@@ -151,7 +151,7 @@ if ($r === 'purchase') {
 if ($r === 'gst' && can('reports.gst')) {
     foreach (all('SELECT * FROM companies WHERE is_active = 1') as $co) {
         $s = row('SELECT COUNT(*) bills, COALESCE(SUM(subtotal - discount),0) taxable, COALESCE(SUM(tax_amount),0) tax, COALESCE(SUM(total),0) total
-                  FROM sales WHERE company_id = ? AND sale_date BETWEEN ? AND ?', [$co['id'], $from, $to]);
+                  FROM sales WHERE is_cancelled = 0 AND company_id = ? AND sale_date BETWEEN ? AND ?', [$co['id'], $from, $to]);
         echo '<div class="card"><h2>' . e($co['name']) . ($co['is_gst'] ? ' <span class="badge badge-ok">GST</span> ' . e($co['gstin']) : ' <span class="badge badge-info">Non-GST</span>') . '</h2>';
         echo '<div class="grid-stats">';
         echo '<div class="stat"><div class="stat-label">Bills</div><div class="stat-value">' . $s['bills'] . '</div></div>';
@@ -177,7 +177,7 @@ if ($r === 'gst' && can('reports.gst')) {
 if ($r === 'profit' && can('reports.profit')) {
     $rows = all('SELECT i.name, SUM(si.qty) qty, SUM(si.total) revenue, SUM(si.qty * i.purchase_price) cost
                  FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
-                 WHERE s.sale_date BETWEEN ? AND ? GROUP BY si.item_id ORDER BY (SUM(si.total) - SUM(si.qty * i.purchase_price)) DESC', [$from, $to]);
+                 WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? GROUP BY si.item_id ORDER BY (SUM(si.total) - SUM(si.qty * i.purchase_price)) DESC', [$from, $to]);
     $rev = array_sum(array_column($rows, 'revenue'));
     $cost = array_sum(array_column($rows, 'cost'));
     $svc = (float)val('SELECT COALESCE(SUM(service_charge),0) FROM tasks WHERE status = "completed" AND DATE(end_time) BETWEEN ? AND ?', [$from, $to]);
@@ -199,7 +199,7 @@ if ($r === 'party_sales') {
     $rows = all("SELECT COALESCE(p.name, CONCAT(s.customer_name, ' (walk-in)'), 'Walk-in') pname,
                  COUNT(*) bills, SUM(s.total) total, SUM(s.paid) paid
                  FROM sales s LEFT JOIN parties p ON p.id = s.party_id
-                 WHERE s.sale_date BETWEEN ? AND ?
+                 WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?
                  GROUP BY COALESCE(CONCAT('p', s.party_id), s.customer_name) ORDER BY total DESC", [$from, $to]);
     echo '<div class="table-wrap"><table><thead><tr><th>Customer / Party</th><th class="num">Bills</th><th class="num">Total ₹</th><th class="num">Paid ₹</th><th class="num">Due ₹</th></tr></thead><tbody>';
     foreach ($rows as $x) echo '<tr><td>' . e($x['pname']) . '</td><td class="num">' . $x['bills'] . '</td><td class="num">' . money($x['total']) . '</td><td class="num">' . money($x['paid']) . '</td><td class="num">' . money($x['total'] - $x['paid']) . '</td></tr>';
@@ -280,7 +280,7 @@ if ($r === 'bill_profit' && can('reports.profit')) {
     $rows = all("SELECT s.id, s.invoice_no, s.sale_date, s.customer_name, s.total,
                  SUM(si.total) rev, SUM(si.qty * IF(si.cost_price > 0, si.cost_price, i.purchase_price)) cost
                  FROM sales s JOIN sale_items si ON si.sale_id = s.id JOIN items i ON i.id = si.item_id
-                 WHERE s.sale_date BETWEEN ? AND ? GROUP BY s.id ORDER BY s.id DESC", [$from, $to]);
+                 WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? GROUP BY s.id ORDER BY s.id DESC", [$from, $to]);
     echo '<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th class="num">Bill ₹</th><th class="num">Cost ₹</th><th class="num">Profit ₹</th><th class="num">Margin %</th></tr></thead><tbody>';
     $tp = 0;
     foreach ($rows as $x) {

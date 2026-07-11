@@ -7,11 +7,11 @@ $u = current_user();
 $today = today();
 list($saleScope, $saleParams) = own_scope('sales');
 
-$todaySales = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM sales WHERE sale_date = ? $saleScope", array_merge([$today], $saleParams));
-$monthSales = row("SELECT COALESCE(SUM(total),0) t FROM sales WHERE sale_date >= ? $saleScope", array_merge([date('Y-m-01')], $saleParams));
+$todaySales = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date = ? $saleScope", array_merge([$today], $saleParams));
+$monthSales = row("SELECT COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date >= ? $saleScope", array_merge([date('Y-m-01')], $saleParams));
 
 $canMoney = can('payments.view');
-$recv = $canMoney ? (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid'") : 0;
+$recv = $canMoney ? (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid' AND is_cancelled = 0") : 0;
 $paybl = $canMoney ? (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid'") : 0;
 
 // last 6 months sales for chart
@@ -21,7 +21,7 @@ for ($i = 5; $i >= 0; $i--) {
     $mEnd = date('Y-m-t', strtotime($mStart));
     $chart[] = [
         'label' => date('M', strtotime($mStart)),
-        'val' => (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE sale_date BETWEEN ? AND ? $saleScope",
+        'val' => (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ? $saleScope",
                             array_merge([$mStart, $mEnd], $saleParams)),
     ];
 }

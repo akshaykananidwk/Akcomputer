@@ -21,19 +21,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = [
             post('name'), (int)post('category_id') ?: null, post('brand'), post('model'), post('unit', 'PCS'),
             post('hsn'), (float)post('tax_rate'), (float)post('purchase_price'), (float)post('selling_price'),
-            (float)post('b2b_price'), post('serial_tracked') ? 1 : 0, (int)post('warranty_months'),
+            (float)post('b2b_price'), post('serial_tracked') ? 1 : 0, (float)post('margin_pct'),
+            post('item_type') === 'service' ? 'service' : 'product', (int)post('warranty_months'),
             (float)post('min_stock'), post('show_on_website') ? 1 : 0, $photo, post('barcode'),
             post('is_active') ? 1 : 0,
         ];
         if ($id) {
             q('UPDATE items SET name=?, category_id=?, brand=?, model=?, unit=?, hsn=?, tax_rate=?, purchase_price=?,
-               selling_price=?, b2b_price=?, serial_tracked=?, warranty_months=?, min_stock=?, show_on_website=?,
+               selling_price=?, b2b_price=?, serial_tracked=?, margin_pct=?, item_type=?, warranty_months=?, min_stock=?, show_on_website=?,
                photo=?, barcode=?, is_active=? WHERE id=?', array_merge($data, [$id]));
             flash('Item updated.');
         } else {
             q('INSERT INTO items (name, category_id, brand, model, unit, hsn, tax_rate, purchase_price, selling_price,
-               b2b_price, serial_tracked, warranty_months, min_stock, show_on_website, photo, barcode, is_active)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', $data);
+               b2b_price, serial_tracked, margin_pct, item_type, warranty_months, min_stock, show_on_website, photo, barcode, is_active)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', $data);
             flash('Item added.');
         }
         log_activity('item_save', post('name'));
@@ -86,8 +87,14 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Unit</label><input type="text" name="unit" value="<?= e($it['unit'] ?? 'PCS') ?>"></div>
         </div>
         <div class="form-row cols-3">
-          <div><label>Purchase Price</label><input type="number" step="any" name="purchase_price" value="<?= e($it['purchase_price'] ?? '0') ?>"></div>
-          <div><label>Selling Price (Retail)</label><input type="number" step="any" name="selling_price" value="<?= e($it['selling_price'] ?? '0') ?>"></div>
+          <div><label>Type</label>
+            <select name="item_type" onchange="document.getElementById('marginBox').style.display=this.value==='service'?'none':''">
+              <option value="product" <?= ($it['item_type'] ?? 'product') === 'product' ? 'selected' : '' ?>>Product</option>
+              <option value="service" <?= ($it['item_type'] ?? '') === 'service' ? 'selected' : '' ?>>Service (stock નહીં)</option>
+            </select></div>
+          <div><label>Purchase Price</label><input type="number" step="any" name="purchase_price" id="f_pp" value="<?= e($it['purchase_price'] ?? '0') ?>" oninput="mCalc()"></div>
+          <div id="marginBox"><label>Margin % (ભરો એટલે selling આપોઆપ)</label><input type="number" step="any" name="margin_pct" id="f_mg" value="<?= e($it['margin_pct'] ?? '0') ?>" oninput="mCalc()"></div>
+          <div><label>Selling Price (Retail)</label><input type="number" step="any" name="selling_price" id="f_sp" value="<?= e($it['selling_price'] ?? '0') ?>"></div>
           <div><label>B2B Price</label><input type="number" step="any" name="b2b_price" value="<?= e($it['b2b_price'] ?? '0') ?>"></div>
         </div>
         <div class="form-row cols-4">
@@ -105,6 +112,7 @@ if ($action === 'new' || $action === 'edit') {
           <label class="check-inline"><input type="checkbox" name="show_on_website" value="1" <?= !empty($it['show_on_website']) ? 'checked' : '' ?>> Show on website</label>
           <label class="check-inline"><input type="checkbox" name="is_active" value="1" <?= ($it === null || $it['is_active']) ? 'checked' : '' ?>> Active</label>
         </div>
+        <script>function mCalc(){var pp=parseFloat(document.getElementById('f_pp').value)||0,mg=parseFloat(document.getElementById('f_mg').value)||0;if(mg>0)document.getElementById('f_sp').value=(pp*(1+mg/100)).toFixed(2);}</script>
         <button class="btn" type="submit">Save Item</button>
         <a class="btn btn-muted" href="items.php">Cancel</a>
       </form>

@@ -23,6 +23,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     redirect('parties.php');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('parties.delete');
+    $pid = (int)post('id');
+    $tx = (int)val('SELECT (SELECT COUNT(*) FROM sales WHERE party_id=?) + (SELECT COUNT(*) FROM purchases WHERE party_id=?) + (SELECT COUNT(*) FROM payments WHERE party_id=?)', [$pid,$pid,$pid]);
+    if ($tx > 0) {
+        q('UPDATE parties SET is_active = 0 WHERE id = ?', [$pid]);
+        flash('Party ના વ્યવહારો છે એટલે delete ના બદલે INACTIVE કરી (ledger સચવાયું).', 'info');
+    } else {
+        q('DELETE FROM parties WHERE id = ?', [$pid]);
+        flash('Party deleted.');
+    }
+    redirect('parties.php');
+}
+
 $terms = all('SELECT * FROM credit_terms ORDER BY days');
 
 if ($action === 'new' || $action === 'edit') {
@@ -93,7 +107,7 @@ if ($action === 'ledger' && $id) {
     $p = row('SELECT * FROM parties WHERE id = ?', [$id]);
     if (!$p) { flash('Party not found', 'error'); redirect('parties.php'); }
     $entries = [];
-    foreach (all('SELECT id, invoice_no ref, sale_date d, total amt FROM sales WHERE party_id = ?', [$id]) as $r)
+    foreach (all('SELECT id, invoice_no ref, sale_date d, total amt FROM sales WHERE party_id = ? AND is_cancelled = 0', [$id]) as $r)
         $entries[] = ['date' => $r['d'], 'desc' => 'Sale ' . $r['ref'], 'dr' => $r['amt'], 'cr' => 0];
     foreach (all('SELECT id, bill_no ref, purchase_date d, total amt FROM purchases WHERE party_id = ?', [$id]) as $r)
         $entries[] = ['date' => $r['d'], 'desc' => 'Purchase ' . $r['ref'], 'dr' => 0, 'cr' => $r['amt']];
@@ -165,7 +179,7 @@ if ($action === 'ledger' && $id) {
 // ---- list (with live balance: + = you'll get, - = you'll give) ----
 $parties = all("SELECT p.*,
     (p.opening_balance
-     + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id), 0)
+     + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = p.id AND is_cancelled = 0), 0)
      - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = p.id), 0)
      - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = p.id), 0)
      + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = p.id), 0)
@@ -211,6 +225,7 @@ include __DIR__ . '/includes/header.php';
       <td>
         <a class="btn btn-sm btn-outline" href="parties.php?action=ledger&id=<?= $p['id'] ?>">Ledger</a>
         <?php if (can('parties.edit')): ?><a class="btn btn-sm btn-outline" href="parties.php?action=edit&id=<?= $p['id'] ?>">Edit</a><?php endif; ?>
+        <?php if (can('parties.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Party delete કરવી? વ્યવહાર હશે તો ખાલી inactive થશે.')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
       </td>
     </tr>
   <?php endforeach; ?>

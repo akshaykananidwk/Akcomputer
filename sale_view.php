@@ -46,6 +46,23 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
     redirect('sale_view.php?id=' . $id);
 }
 
+// ---------- Google review invite ----------
+if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'review') {
+    $rurl = setting('review_api_url'); $rkey = setting('review_api_key');
+    $mob = post('mobile') ?: $sale['customer_mobile'];
+    if ($rurl && $rkey && $mob) {
+        $ch = curl_init($rurl);
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 15,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $rkey, 'Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => json_encode(['name' => $sale['customer_name'] ?: 'Customer', 'mobile' => $mob])]);
+        $resp = curl_exec($ch);
+        $ok = $resp !== false && curl_getinfo($ch, CURLINFO_HTTP_CODE) < 400;
+        curl_close($ch);
+        flash($ok ? '⭐ Google review invite મોકલ્યું.' : 'Review API fail - Settings માં URL/Key ચકાસો.', $ok ? 'success' : 'error');
+    } else { flash('Review API Key/mobile ખૂટે છે (Settings).', 'error'); }
+    redirect('sale_view.php?id=' . $id);
+}
+
 // ---------- record payment ----------
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' && can('payments.add')) {
     $amt = min((float)post('amount'), $sale['total'] - $sale['paid']);
@@ -64,8 +81,9 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' &&
 
 $page_title = 'Invoice ' . $sale['invoice_no'];
 include __DIR__ . '/includes/header.php';
-$due = $sale['total'] - $sale['paid'];
+$due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
 ?>
+<?php if ($sale['is_cancelled']): ?><div class="flash flash-error">🚫 આ INVOICE CANCELLED છે.</div><?php endif; ?>
 <?php if (!$public): ?>
 <div class="page-actions no-print">
   <button class="btn" onclick="window.print()">🖨️ Print</button>
@@ -76,10 +94,20 @@ $due = $sale['total'] - $sale['paid'];
     <input type="tel" name="mobile" value="<?= e($sale['customer_mobile']) ?>" placeholder="WhatsApp no." style="width:150px">
     <button class="btn btn-wa" type="submit">📲 Send WhatsApp</button>
   </form>
+  <?php if (setting('review_api_key') && $sale['customer_mobile']): ?>
+  <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="review">
+    <button class="btn btn-outline" type="submit">⭐ Review Invite</button></form>
+  <?php endif; ?>
   <a class="btn btn-outline" href="sales.php">← Back</a>
   <?php if (can('sales.delete')): ?>
-  <form method="post" action="sales.php" onsubmit="return confirm('Delete this bill? Stock will be restored.')" style="display:inline">
-    <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $id ?>">
+  <?php if (!$sale['is_cancelled']): ?>
+  <form method="post" action="sales.php" onsubmit="return confirm('Invoice CANCEL કરવું? (Record રહેશે, stock પાછો આવશે)')" style="display:inline">
+    <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="mode" value="cancel"><input type="hidden" name="id" value="<?= $id ?>">
+    <button class="btn btn-muted" type="submit">🚫 Cancel Invoice</button>
+  </form>
+  <?php endif; ?>
+  <form method="post" action="sales.php" onsubmit="return confirm('પૂરેપૂરું DELETE કરવું? Record પણ જતો રહેશે!')" style="display:inline">
+    <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="mode" value="delete"><input type="hidden" name="id" value="<?= $id ?>">
     <button class="btn btn-danger" type="submit">Delete</button>
   </form>
   <?php endif; ?>
