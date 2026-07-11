@@ -118,6 +118,39 @@ function verify_otp($purpose, $target, $code) {
     return true;
 }
 
+// ---------- Invoice design themes ----------
+function invoice_themes() {
+    // id => [name, layout-classes, accent hex for preview]
+    return [
+        1 => ['Classic Blue', 'inv-band', '#1a56db'],
+        2 => ['Royal Dark', 'inv-band', '#0f172a'],
+        3 => ['Emerald', 'inv-band', '#047857'],
+        4 => ['Maroon', 'inv-band', '#9f1239'],
+        5 => ['Purple', 'inv-band', '#6d28d9'],
+        6 => ['Teal', 'inv-band', '#0f766e'],
+        7 => ['Orange', 'inv-band', '#c2410c'],
+        8 => ['Slate Minimal', 'inv-accentline', '#334155'],
+        9 => ['Blue Minimal', 'inv-accentline', '#1a56db'],
+        10 => ['Green Minimal', 'inv-accentline', '#047857'],
+        11 => ['Elegant Centre', 'inv-center inv-serif', '#0f172a'],
+        12 => ['Gold Classic', 'inv-center inv-serif', '#a16207'],
+        13 => ['Boxed Blue', 'inv-boxed', '#1a56db'],
+        14 => ['Boxed Dark', 'inv-boxed', '#0f172a'],
+        15 => ['Thermal Compact', 'inv-compact', '#0f172a'],
+        16 => ['Gradient Indigo', 'inv-grad', '#1a56db'],
+        17 => ['Gradient Sunset', 'inv-grad', '#db2777'],
+        18 => ['Gradient Forest', 'inv-grad', '#0f766e'],
+        19 => ['Zebra Maroon', 'inv-zebra', '#9f1239'],
+        20 => ['Zebra Dark', 'inv-zebra', '#1e293b'],
+    ];
+}
+function invoice_theme_class() {
+    $n = (int)setting('invoice_theme', '1');
+    $themes = invoice_themes();
+    if (!isset($themes[$n])) $n = 1;
+    return 'invt-' . $n . ' ' . $themes[$n][1];
+}
+
 // ---------- Misc ----------
 function share_token() { return bin2hex(random_bytes(16)); }
 

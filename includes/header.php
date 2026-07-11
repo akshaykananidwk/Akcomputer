@@ -27,6 +27,7 @@ $nav = [
     ['locations.view', 'locations.php', '🏪', 'Locations'],
     ['companies.view', 'companies.php', '🏢', 'Companies'],
     ['settings.view', 'settings.php', '⚙️', 'Settings'],
+    [null, 'catalog.php', '🌐', 'Website (Catalog)'],
 ];
 $current = basename($_SERVER['SCRIPT_NAME']);
 ?><!DOCTYPE html>
@@ -67,6 +68,7 @@ $current = basename($_SERVER['SCRIPT_NAME']);
   </div>
 </nav>
 <?php endif; ?>
+<script src="assets/app.js?v=2"></script>
 <main class="content<?= $u ? '' : ' content-full' ?>">
 <?php foreach (get_flashes() as $f): ?>
   <div class="flash flash-<?= e($f['type']) ?>"><?= e($f['msg']) ?></div>

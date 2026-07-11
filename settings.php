@@ -1,7 +1,30 @@
 <?php
-// Settings: app, WhatsApp API, credit terms, test message
+// Settings: app, WhatsApp API, credit terms, bill design, backup, software updates
 require_once __DIR__ . '/includes/init.php';
+require_once __DIR__ . '/includes/version.php';
+require_once __DIR__ . '/includes/updater.php';
 require_perm('settings.view');
+
+// ---- software update: save key / apply package ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update_key') {
+    require_perm('settings.edit');
+    set_setting('update_key', post('update_key'));
+    flash('Update Key saved.');
+    redirect('settings.php');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'apply_update') {
+    require_perm('settings.edit');
+    $key = setting('update_key', '');
+    if ($key === '') {
+        flash('પહેલા Update Key set કરો.', 'error');
+    } elseif (empty($_FILES['pkg']['tmp_name'])) {
+        flash('.akupd file select કરો.', 'error');
+    } else {
+        list($ok, $msg) = akupd_apply($_FILES['pkg']['tmp_name'], $key);
+        flash($msg, $ok ? 'success' : 'error');
+    }
+    redirect('settings.php');
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('settings.edit');
@@ -11,6 +34,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     set_setting('login_otp', post('login_otp') ? '1' : '0');
     log_activity('settings_save');
     flash('Settings saved.');
+    redirect('settings.php');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'design') {
+    require_perm('settings.edit');
+    set_setting('invoice_theme', (int)post('invoice_theme'));
+    flash('Bill design બદલાઈ ગઈ ✔ — કોઈ પણ bill ખોલીને જુઓ.');
     redirect('settings.php');
 }
 
@@ -85,6 +115,32 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <div class="card">
+  <h3>🎨 Bill / Invoice Design (<?= count(invoice_themes()) ?> designs)</h3>
+  <p class="muted mb">Design પસંદ કરો — બધા bills, estimates અને challans પર લાગુ થશે.</p>
+  <form method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="design">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">
+      <?php $cur = (int)setting('invoice_theme', '1');
+      foreach (invoice_themes() as $tid => $th): ?>
+      <label style="border:2px solid <?= $cur === $tid ? 'var(--primary)' : 'var(--border)' ?>;border-radius:10px;padding:10px;cursor:pointer;display:block">
+        <input type="radio" name="invoice_theme" value="<?= $tid ?>" <?= $cur === $tid ? 'checked' : '' ?> style="width:auto"> <strong style="font-size:13px"><?= e($th[0]) ?></strong>
+        <div style="margin-top:6px;border:1px solid var(--border);border-radius:6px;overflow:hidden">
+          <div style="background:<?= e($th[2]) ?>;height:16px"></div>
+          <div style="padding:5px;font-size:9px;line-height:1.5;color:#475569">
+            INVOICE #001<br>
+            <span style="display:inline-block;width:70%;height:4px;background:#e2e8f0"></span><br>
+            <span style="display:inline-block;width:50%;height:4px;background:#e2e8f0"></span>
+          </div>
+        </div>
+      </label>
+      <?php endforeach; ?>
+    </div>
+    <button class="btn mt" type="submit">Apply Design</button>
+  </form>
+</div>
+
+<div class="card">
   <h3>💾 Backup</h3>
   <p class="muted mb">આખા database નો backup (.sql file) download કરો — Google Drive / pen drive માં સાચવી રાખો.</p>
   <a class="btn btn-outline" href="settings.php?do=backup">⬇ Download full backup</a>
@@ -122,6 +178,31 @@ include __DIR__ . '/includes/header.php';
     <div><input type="text" name="label" placeholder="Label (optional)"></div>
     <button class="btn btn-sm" type="submit">Add term</button>
   </form>
+</div>
+
+<div class="card">
+  <h3>🔄 Software Update <span class="badge badge-info">v<?= e(setting('app_version', APP_VERSION)) ?></span></h3>
+  <p class="muted mb">Encrypted update file (<code>.akupd</code>) અહીં upload કરો — files + database બધું આપોઆપ update થઈ જશે. Update Key બંને બાજુ સરખી હોવી જોઈએ (ખોટી key વાળી કે બગડેલી file લાગશે નહીં).</p>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="update_key">
+    <div><label>Update Key (secret)</label><input type="password" name="update_key" value="<?= e(setting('update_key')) ?>" placeholder="secret key"></div>
+    <button class="btn btn-sm btn-outline" type="submit">Save Key</button>
+  </form>
+  <form method="post" enctype="multipart/form-data" class="filterbar mt" onsubmit="return confirm('Update લગાડવું છે? પહેલા backup લેવાની સલાહ છે.')">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="apply_update">
+    <div><label>.akupd update file</label><input type="file" name="pkg" accept=".akupd" required></div>
+    <button class="btn btn-sm" type="submit">⬆ Apply Update</button>
+  </form>
+  <?php $hist = update_history(); if ($hist): ?>
+  <h3 class="mt">Update history</h3>
+  <table class="table-sm">
+    <?php foreach (array_slice($hist, 0, 10) as $h): ?>
+    <tr><td><strong>v<?= e($h['version']) ?></strong></td><td><?= e($h['applied_at']) ?></td><td><?= (int)$h['files'] ?> files</td><td><?= e($h['by']) ?></td></tr>
+    <?php endforeach; ?>
+  </table>
+  <?php endif; ?>
 </div>
 
 <div class="card">

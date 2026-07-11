@@ -188,6 +188,77 @@ td.num, th.num { text-align: right; white-space: nowrap; }
   .card { box-shadow: none; }
 }
 
+/* ---------- Desktop layout: docked sidebar, no bottom nav ---------- */
+@media (min-width: 1024px) {
+  .menu-btn { display: none; }
+  .sidebar { transform: none; box-shadow: none; }
+  .sidebar-overlay { display: none !important; }
+  .topbar { left: 270px; }
+  .content:not(.content-full) {
+    margin-left: 270px; max-width: none;
+    padding: calc(var(--topbar-h) + 24px) 28px 40px;
+  }
+  .content:not(.content-full) > * { max-width: 1100px; }
+  .bottomnav { display: none; }
+  .grid-stats { grid-template-columns: repeat(4, 1fr); }
+}
+@media (min-width: 1440px) {
+  .content:not(.content-full) > * { max-width: 1250px; }
+}
+
+/* ---------- Invoice design themes (pick in Settings) ---------- */
+.inv-paper { --ia: #1a56db; --ia-text: #ffffff; }
+.inv-paper .inv-head { border-bottom-color: var(--ia); }
+.inv-paper .inv-title { color: var(--ia); }
+/* band layout: colored header strip */
+.inv-band .inv-head { background: var(--ia); color: var(--ia-text); padding: 16px; border-radius: 8px; border-bottom: 0; margin: -8px -8px 14px; }
+.inv-band .inv-head .muted, .inv-band .inv-title { color: var(--ia-text); opacity: .95; }
+.inv-band .inv-head h1 { color: var(--ia-text); }
+/* left accent layout */
+.inv-accentline { border-left: 6px solid var(--ia); }
+.inv-accentline .inv-head { border-bottom: 1px solid var(--border); }
+/* centered elegant layout */
+.inv-center .inv-head { display: block; text-align: center; border-bottom: 3px double var(--ia); }
+.inv-center .inv-meta { text-align: center; margin-top: 8px; }
+.inv-center .inv-firm h1 { font-size: 26px; letter-spacing: .04em; }
+/* boxed layout */
+.inv-boxed { border: 2px solid var(--ia); }
+.inv-boxed .inv-table th { border: 1px solid var(--border); }
+.inv-boxed .inv-table td { border: 1px solid var(--border); }
+/* zebra rows */
+.inv-zebra tbody tr:nth-child(even) td { background: #f8fafc; }
+.inv-zebra .inv-table th { background: var(--ia); color: var(--ia-text); }
+/* compact / thermal-style */
+.inv-compact { font-family: 'Courier New', monospace; max-width: 480px; }
+.inv-compact .inv-head { display: block; text-align: center; }
+.inv-compact table { font-size: 12.5px; }
+/* serif elegant */
+.inv-serif { font-family: Georgia, 'Times New Roman', serif; }
+/* gradient band */
+.inv-grad .inv-head { background: linear-gradient(120deg, var(--ia), var(--ia2, #7c3aed)); color: #fff; padding: 16px; border-radius: 8px; border-bottom: 0; margin: -8px -8px 14px; }
+.inv-grad .inv-head .muted, .inv-grad .inv-title, .inv-grad .inv-head h1 { color: #fff; }
+/* theme color palettes */
+.invt-1 { --ia: #1a56db; }                                   /* Classic Blue band */
+.invt-2 { --ia: #0f172a; }                                   /* Royal Dark band */
+.invt-3 { --ia: #047857; }                                   /* Emerald band */
+.invt-4 { --ia: #9f1239; }                                   /* Maroon band */
+.invt-5 { --ia: #6d28d9; }                                   /* Purple band */
+.invt-6 { --ia: #0f766e; }                                   /* Teal band */
+.invt-7 { --ia: #c2410c; }                                   /* Orange band */
+.invt-8 { --ia: #334155; }                                   /* Slate minimal */
+.invt-9 { --ia: #1a56db; }                                   /* Blue minimal */
+.invt-10 { --ia: #047857; }                                  /* Green minimal */
+.invt-11 { --ia: #0f172a; }                                  /* Elegant centre */
+.invt-12 { --ia: #a16207; }                                  /* Gold centre serif */
+.invt-13 { --ia: #1a56db; }                                  /* Boxed blue */
+.invt-14 { --ia: #0f172a; }                                  /* Boxed dark */
+.invt-15 { --ia: #0f172a; }                                  /* Thermal compact */
+.invt-16 { --ia: #1a56db; --ia2: #7c3aed; }                  /* Gradient indigo */
+.invt-17 { --ia: #db2777; --ia2: #f59e0b; }                  /* Gradient sunset */
+.invt-18 { --ia: #0f766e; --ia2: #16a34a; }                  /* Gradient forest */
+.invt-19 { --ia: #9f1239; }                                  /* Zebra maroon */
+.invt-20 { --ia: #1e293b; }                                  /* Zebra dark */
+
 /* misc */
 .muted { color: var(--muted); font-size: 13px; }
 .mt { margin-top: 12px; } .mb { margin-bottom: 12px; }

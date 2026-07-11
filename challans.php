@@ -103,7 +103,7 @@ if ($action === 'view') {
       <?php endif; ?>
       <a class="btn btn-outline" href="challans.php">← Back</a>
     </div>
-    <div class="inv-paper card">
+    <div class="inv-paper card <?= invoice_theme_class() ?>">
       <div class="inv-head">
         <div class="inv-firm"><h1><?= e($c['company_name']) ?></h1>
           <div class="muted"><?= e($c['co_address']) ?> <?= $c['co_phone'] ? '· Ph: ' . e($c['co_phone']) : '' ?></div></div>

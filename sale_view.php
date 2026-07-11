@@ -92,7 +92,7 @@ $due = $sale['total'] - $sale['paid'];
 </div>
 <?php endif; endif; ?>
 
-<div class="inv-paper card">
+<div class="inv-paper card <?= invoice_theme_class() ?>">
   <div class="inv-head">
     <div class="inv-firm">
       <?php if (!empty($sale['c_logo'])): ?><img src="<?= e($sale['c_logo']) ?>" alt="" style="max-height:56px;margin-bottom:6px"><br><?php endif; ?>

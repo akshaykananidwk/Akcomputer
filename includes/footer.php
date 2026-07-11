@@ -10,6 +10,5 @@
   <?php if (can('reports.view')): ?><a href="reports.php" class="<?= basename($_SERVER['SCRIPT_NAME']) === 'reports.php' ? 'active' : '' ?>"><span>📈</span>Reports</a><?php endif; ?>
 </nav>
 <?php endif; ?>
-<script src="assets/app.js?v=1"></script>
 </body>
 </html>
