@@ -51,7 +51,10 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
         log_activity('sale_whatsapp', $sale['invoice_no'] . ' to ' . $mobile);
         flash('Bill (photo) sent on WhatsApp to ' . $mobile);
     } else {
-        flash('WhatsApp send failed' . ($mobile ? '' : ' - mobile number ખૂટે છે') . '. ' . whatsapp_last_error(), 'error');
+        // Include the exact image URL that was sent to the gateway - lets
+        // you paste it straight into a browser (or the bulk.akdwk.in test
+        // link) to check whether it's actually reachable from outside.
+        flash('WhatsApp send failed' . ($mobile ? '' : ' - mobile number ખૂટે છે') . '. ' . whatsapp_last_error() . ' | Image URL: ' . $imgUrl, 'error');
     }
     redirect('sale_view.php?id=' . $id);
 }
