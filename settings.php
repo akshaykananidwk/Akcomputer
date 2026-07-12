@@ -122,6 +122,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'term_del') {
     flash('Credit term removed.');
     redirect('settings.php?cat=party');
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_loyalty') {
+    require_perm('settings.edit');
+    set_setting('loyalty_enabled', post('loyalty_enabled') ? '1' : '0');
+    set_setting('loyalty_earn_rate', max(0, (float)post('loyalty_earn_rate')));
+    set_setting('loyalty_redeem_value', max(0.01, (float)post('loyalty_redeem_value')));
+    flash('Loyalty settings saved.');
+    redirect('settings.php?cat=party');
+}
 
 $terms = all('SELECT * FROM credit_terms ORDER BY days');
 $page_title = 'Settings';
@@ -301,6 +309,21 @@ exit;
     <div><input type="number" name="days" placeholder="Days" required></div>
     <div><input type="text" name="label" placeholder="Label (optional)"></div>
     <button class="btn btn-sm" type="submit">Add term</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>⭐ Loyalty Points</h3>
+  <p class="muted mb">ON કરો તો દરેક bill પર party ને points મળે, અને bill બનાવતી વખતે જૂના points વાપરીને discount લઈ શકે.</p>
+  <form method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_loyalty">
+    <label class="check-inline mb"><input type="checkbox" name="loyalty_enabled" value="1" <?= setting('loyalty_enabled') === '1' ? 'checked' : '' ?>> Loyalty Points ચાલુ કરો</label>
+    <div class="form-row cols-2">
+      <div><label>₹100 ના bill પર કેટલા points મળે?</label><input type="number" step="any" name="loyalty_earn_rate" value="<?= e(setting('loyalty_earn_rate', '1')) ?>"></div>
+      <div><label>1 point ની કિંમત (₹, redeem કરતી વખતે)</label><input type="number" step="any" name="loyalty_redeem_value" value="<?= e(setting('loyalty_redeem_value', '1')) ?>"></div>
+    </div>
+    <button class="btn" type="submit">Save</button>
   </form>
 </div>
 <?php endif; ?>

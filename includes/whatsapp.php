@@ -121,6 +121,12 @@ function wa_template_defaults() {
                        '{firm} {invoice_no} {title} {total} {next_date}', 'AMC auto-renewal invoice'],
         'review' => ["*{shop}*\nThank you for choosing us, {customer}! 🙏\nIf you liked our service, a quick Google review would mean a lot:\n{link}",
                      '{shop} {customer} {link}', 'Google review invite (WhatsApp)'],
+        'birthday' => ["*{shop}*\n🎉 Happy Birthday, {customer}! 🎂\nWishing you a wonderful year ahead. Visit us for a special birthday discount! 🙏",
+                       '{shop} {customer}', 'Birthday wish'],
+        'anniversary' => ["*{shop}*\n🎉 Happy Anniversary, {customer}! 💐\nThank you for being with us. Visit us for a special discount! 🙏",
+                          '{shop} {customer}', 'Anniversary wish'],
+        'feedback_request' => ["*{shop}*\nHi {customer}, your job {job_no} is complete! 🙏\nWe'd love your feedback - please rate our service:\n{link}",
+                               '{shop} {customer} {job_no} {link}', 'Feedback request (after job completion)'],
     ];
 }
 

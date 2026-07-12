@@ -39,6 +39,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
     $shipping = max(0, (float)post('shipping'));
     $total = $subtotal - $discount + $tax + $shipping;
+
+    // Loyalty points redemption - only for an explicitly picked party (one
+    // auto-created below from a typed mobile number has 0 points anyway,
+    // nothing to redeem). Re-checked against the party's real current
+    // balance here - the client-side cap in the bill form is just UX and
+    // is never trusted for the actual deduction.
+    $loyaltyPointsUsed = 0; $loyaltyDiscount = 0;
+    $redeemPartyId = (int)post('party_id') ?: null;
+    if ($redeemPartyId && setting('loyalty_enabled') === '1') {
+        $avail = (int)val('SELECT loyalty_points FROM parties WHERE id = ?', [$redeemPartyId]);
+        $redeemValue = (float)setting('loyalty_redeem_value', '1');
+        $maxByTotal = $redeemValue > 0 ? (int)floor($total / $redeemValue) : 0;
+        $loyaltyPointsUsed = max(0, min((int)post('redeem_points'), $avail, $maxByTotal));
+        $loyaltyDiscount = round($loyaltyPointsUsed * $redeemValue, 2);
+        $total -= $loyaltyDiscount;
+    }
+
     $paid = post('payment_mode') === 'credit' ? 0 : min((float)post('paid'), $total);
     $credit_days = (int)post('credit_days');
     $bankAccId = (int)post('bank_account_id') ?: null;
@@ -67,13 +84,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $pdo->beginTransaction();
     try {
         q('INSERT INTO sales (company_id, party_id, customer_name, customer_mobile, location_id, sale_date, price_type,
-           credit_days, due_date, subtotal, discount, discount_type, discount_pct, tax_amount, shipping, total, paid, payment_mode,
+           credit_days, due_date, subtotal, discount, loyalty_points_used, loyalty_discount, discount_type, discount_pct, tax_amount, shipping, total, paid, payment_mode,
            bank_account_id, payment_method_id, status, notes, created_by, share_token)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
           [$company['id'], $party_id, post('customer_name'), post('customer_mobile'), $loc_id,
            post('sale_date', today()), post('price_type', 'retail'), $credit_days,
            $credit_days ? date('Y-m-d', strtotime(post('sale_date', today()) . " +$credit_days days")) : null,
-           $subtotal, $discount, $discType, $discPct, $tax, $shipping, $total, $paid, post('payment_mode', 'cash'),
+           $subtotal, $discount, $loyaltyPointsUsed, $loyaltyDiscount, $discType, $discPct, $tax, $shipping, $total, $paid, post('payment_mode', 'cash'),
            $bankAccId, $pmId, payment_status($total, $paid), post('notes'), $u['id'], share_token()]);
         $sale_id = insert_id();
         $invoice_no = $company['invoice_prefix'] . '-' . date('y') . '-' . str_pad($sale_id, 5, '0', STR_PAD_LEFT);
@@ -126,6 +143,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if ((int)post('challan_id')) {
             q("UPDATE challans SET status='converted', converted_sale_id=? WHERE id=? AND status='open'",
               [$sale_id, (int)post('challan_id')]);
+        }
+        if ($loyaltyPointsUsed > 0) {
+            loyalty_add($party_id, -$loyaltyPointsUsed, 'Redeemed on bill ' . $invoice_no, 'sale', $sale_id);
+        }
+        if ($party_id && setting('loyalty_enabled') === '1') {
+            $earned = (int)floor($total * (float)setting('loyalty_earn_rate', '1') / 100);
+            if ($earned > 0) loyalty_add($party_id, $earned, 'Earned on bill ' . $invoice_no, 'sale', $sale_id);
         }
         $pdo->commit();
         log_activity('sale_add', "$invoice_no total $total");
@@ -325,7 +349,7 @@ if ($action === 'new' || $action === 'edit') {
         if ($editSale['is_cancelled']) { flash('Cancelled bill ને edit કરી શકાય નહીં.', 'error'); redirect('sale_view.php?id=' . $editSale['id']); }
         $editItems = all('SELECT si.*, i.name, i.serial_tracked FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$editSale['id']]);
     }
-    $parties = all("SELECT id, name, mobile, credit_days FROM parties WHERE is_active = 1 ORDER BY name");
+    $parties = all("SELECT id, name, mobile, credit_days, loyalty_points FROM parties WHERE is_active = 1 ORDER BY name");
     // prefill from estimate or delivery challan (convert to bill)
     $est = null; $estItems = []; $chal = null;
     if (!$isEdit && (int)get('from_estimate')) {
@@ -382,7 +406,7 @@ if ($action === 'new' || $action === 'edit') {
             <select name="party_id" id="party_id">
               <option value="">-- Walk-in customer --</option>
               <?php foreach ($parties as $p): ?>
-              <option value="<?= $p['id'] ?>" data-mobile="<?= e($p['mobile']) ?>" data-credit="<?= $p['credit_days'] ?>"><?= e($p['name']) ?></option>
+              <option value="<?= $p['id'] ?>" data-mobile="<?= e($p['mobile']) ?>" data-credit="<?= $p['credit_days'] ?>" data-points="<?= (int)$p['loyalty_points'] ?>"><?= e($p['name']) ?></option>
               <?php endforeach; ?>
             </select></div>
           <div><label>Customer name</label><input type="text" name="customer_name" id="customer_name"></div>
@@ -415,6 +439,10 @@ if ($action === 'new' || $action === 'edit') {
             <input type="hidden" name="discount_type" id="discount_type" value="amount">
           </div>
           <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= $isEdit ? money($editSale['shipping']) : '0' ?>" oninput="Bill.totals()"></div>
+          <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
+          <div><label>⭐ Redeem Points <span class="muted" id="pointsAvail" style="font-weight:normal"></span></label>
+            <input type="number" step="1" min="0" name="redeem_points" id="redeem_points" value="0" oninput="Bill.totals()"></div>
+          <?php endif; ?>
           <?php if ($isEdit): ?>
           <div><label>Already paid</label><input type="text" value="₹<?= money($editSale['paid']) ?> (edit થી બદલાશે નહીં)" disabled></div>
           <?php else: ?>
@@ -435,6 +463,9 @@ if ($action === 'new' || $action === 'edit') {
           <div class="t-line"><span>Subtotal</span><span>₹ <span id="t_sub">0.00</span></span></div>
           <div class="t-line"><span>GST</span><span>₹ <span id="t_tax">0.00</span></span></div>
           <div class="t-line"><span>Shipping</span><span>₹ <span id="t_ship">0.00</span></span></div>
+          <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
+          <div class="t-line" id="loyaltyRow" style="display:none"><span>⭐ Points Discount</span><span>- ₹ <span id="t_loyalty">0.00</span></span></div>
+          <?php endif; ?>
           <div class="t-line t-grand"><span>Total</span><span>₹ <span id="t_grand">0.00</span></span></div>
           <?php if (!$isEdit): ?><div class="t-line"><span>Balance due</span><span>₹ <span id="t_due">0.00</span></span></div><?php endif; ?>
         </div>
@@ -551,13 +582,30 @@ if ($action === 'new' || $action === 'edit') {
         Bill.totals();
       }
       window.setDiscType = setDiscType;
-      // cash mode: paid follows total automatically
+      // cash mode: paid follows total automatically; loyalty points redemption
+      // further reduces the total shown before cash-mode auto-fill runs
+      var LOYALTY_REDEEM_VALUE = <?= json_encode((float)setting('loyalty_redeem_value', '1')) ?>;
       var _origTotals = Bill.totals.bind(Bill);
       Bill.totals = function () {
         _origTotals();
+        var redeemInp = document.getElementById('redeem_points');
+        if (redeemInp) {
+          var avail = parseInt(document.getElementById('party_id').selectedOptions[0].dataset.points || 0, 10);
+          var g = document.getElementById('t_grand');
+          var grand = parseFloat(g.textContent) || 0;
+          var pts = Math.max(0, Math.min(parseInt(redeemInp.value, 10) || 0, avail, Math.floor(grand / LOYALTY_REDEEM_VALUE)));
+          redeemInp.value = pts;
+          var loyaltyDisc = pts * LOYALTY_REDEEM_VALUE;
+          var row = document.getElementById('loyaltyRow');
+          if (row) row.style.display = loyaltyDisc > 0 ? '' : 'none';
+          var ld = document.getElementById('t_loyalty'); if (ld) ld.textContent = loyaltyDisc.toFixed(2);
+          g.textContent = (grand - loyaltyDisc).toFixed(2);
+          var due = document.getElementById('t_due');
+          if (due) { var paid = parseFloat((document.getElementById('paid') || {}).value) || 0; due.textContent = (grand - loyaltyDisc - paid).toFixed(2); }
+        }
         if (ccMode === 'cash') {
-          var g = document.getElementById('t_grand'), p = document.getElementById('paid');
-          if (g && p) { p.value = g.textContent; var d = document.getElementById('t_due'); if (d) d.textContent = '0.00'; }
+          var g2 = document.getElementById('t_grand'), p = document.getElementById('paid');
+          if (g2 && p) { p.value = g2.textContent; var d = document.getElementById('t_due'); if (d) d.textContent = '0.00'; }
         }
       };
       document.getElementById('party_id').addEventListener('change', function () {
@@ -565,8 +613,12 @@ if ($action === 'new' || $action === 'edit') {
         if (this.value) {
           document.getElementById('customer_name').value = o.textContent.trim();
           document.getElementById('customer_mobile').value = o.dataset.mobile || '';
+          var pa = document.getElementById('pointsAvail'); if (pa) pa.textContent = '(Available: ' + (o.dataset.points || 0) + ')';
           document.getElementById('credit_days').value = o.dataset.credit || 0;
+        } else {
+          var pa2 = document.getElementById('pointsAvail'); if (pa2) pa2.textContent = '';
         }
+        Bill.totals();
       });
     </script>
     <?php

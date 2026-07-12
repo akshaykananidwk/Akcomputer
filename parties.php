@@ -13,13 +13,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     // always stays active (deactivation only ever happens automatically,
     // from Delete, when it still has old transactions to preserve).
     $data = [post('name'), 'both', post('mobile'), post('email'), post('gstin'),
-             post('address'), post('city'), (int)post('credit_days'), (float)post('opening_balance')];
+             post('address'), post('city'), post('dob') ?: null, post('anniversary') ?: null,
+             (int)post('credit_days'), (float)post('opening_balance')];
     if ($id) {
-        q('UPDATE parties SET name=?, type=?, mobile=?, email=?, gstin=?, address=?, city=?, credit_days=?, opening_balance=?, is_active=1 WHERE id=?',
+        q('UPDATE parties SET name=?, type=?, mobile=?, email=?, gstin=?, address=?, city=?, dob=?, anniversary=?, credit_days=?, opening_balance=?, is_active=1 WHERE id=?',
           array_merge($data, [$id]));
         flash('Party updated.');
     } else {
-        q('INSERT INTO parties (name, type, mobile, email, gstin, address, city, credit_days, opening_balance, is_active) VALUES (?,?,?,?,?,?,?,?,?,1)', $data);
+        q('INSERT INTO parties (name, type, mobile, email, gstin, address, city, dob, anniversary, credit_days, opening_balance, is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?,1)', $data);
         flash('Party added.');
     }
     log_activity('party_save', post('name'));
@@ -69,6 +70,10 @@ if ($action === 'new' || $action === 'edit') {
         <div class="form-row cols-2">
           <div><label>Address</label><input type="text" name="address" value="<?= e($p['address'] ?? '') ?>"></div>
           <div><label>City</label><input type="text" name="city" value="<?= e($p['city'] ?? '') ?>"></div>
+        </div>
+        <div class="form-row cols-2">
+          <div><label>Birthday <span class="muted" style="font-weight:normal">(દર વર્ષે આપોઆપ WhatsApp wish જાય)</span></label><input type="date" name="dob" value="<?= e($p['dob'] ?? '') ?>"></div>
+          <div><label>Anniversary</label><input type="date" name="anniversary" value="<?= e($p['anniversary'] ?? '') ?>"></div>
         </div>
         <div class="form-row cols-2">
           <div><label>Credit term</label>
@@ -127,7 +132,7 @@ if ($action === 'ledger' && $id) {
     ?>
     <div class="card">
       <h2><?= e($p['name']) ?> <span class="muted">(credit <?= (int)$p['credit_days'] ?> days)</span></h2>
-      <p class="muted"><?= e($p['mobile']) ?> <?= $p['gstin'] ? '| GSTIN: ' . e($p['gstin']) : '' ?></p>
+      <p class="muted"><?= e($p['mobile']) ?> <?= $p['gstin'] ? '| GSTIN: ' . e($p['gstin']) : '' ?><?= setting('loyalty_enabled') === '1' ? ' | ⭐ ' . (int)$p['loyalty_points'] . ' points' : '' ?></p>
       <?php if (can('sites.view')): $siteCount = (int)val('SELECT COUNT(*) FROM sites WHERE party_id = ?', [$id]); ?>
       <p class="mt"><a class="btn btn-sm btn-outline" href="sites.php?party_id=<?= $id ?>">🌐 Sites (<?= $siteCount ?>)</a></p>
       <?php endif; ?>

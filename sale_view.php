@@ -216,6 +216,9 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
     <?php if ($sale['shipping'] > 0): ?>
     <div class="t-line"><span>Shipping</span><span>₹<?= money($sale['shipping']) ?></span></div>
     <?php endif; ?>
+    <?php if (!empty($sale['loyalty_points_used']) && $sale['loyalty_points_used'] > 0): ?>
+    <div class="t-line"><span>⭐ Points Discount (<?= (int)$sale['loyalty_points_used'] ?> pts)</span><span>- ₹<?= money($sale['loyalty_discount']) ?></span></div>
+    <?php endif; ?>
     <div class="t-line t-grand"><span>Total</span><span>₹<?= money($sale['total']) ?></span></div>
     <div class="t-line"><span>Paid (<?= e($sale['payment_mode']) ?>)</span><span>₹<?= money($sale['paid']) ?></span></div>
     <?php if ($due > 0.009): ?><div class="t-line"><span><strong>Balance Due</strong></span><span><strong>₹<?= money($due) ?></strong></span></div><?php endif; ?>

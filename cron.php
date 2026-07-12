@@ -71,3 +71,25 @@ foreach ($due as $c) {
 q('INSERT INTO activity_log (user_id, action, details) VALUES (NULL, ?, ?)',
   ['cron_amc', "due=" . count($due) . " generated=$amcGenerated"]);
 echo "AMC renewals: due " . count($due) . ", generated $amcGenerated\n";
+
+// ---------- Birthday / anniversary wishes ----------
+// Matches on month+day (not full date) so it fires every year. Guarded by
+// today's activity_log so re-running the cron (e.g. "Test Run" in Settings)
+// the same day never double-sends to the same party.
+$mmdd = substr($today, 5); // 'MM-DD'
+$wishSent = 0;
+foreach (['dob' => 'birthday', 'anniversary' => 'anniversary'] as $col => $tpl) {
+    $alreadyWished = array_column(all("SELECT details FROM activity_log WHERE action = ? AND DATE(created_at) = ?", ["cron_$tpl", $today]), 'details');
+    $matches = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 AND mobile <> '' AND $col IS NOT NULL AND DATE_FORMAT($col, '%m-%d') = ?", [$mmdd]);
+    foreach ($matches as $p) {
+        $marker = "party:{$p['id']}";
+        if (in_array($marker, $alreadyWished, true)) continue;
+        $ok = send_whatsapp($p['mobile'], wa_template($tpl, ['customer' => $p['name']]));
+        if ($ok) {
+            q('INSERT INTO activity_log (user_id, action, details) VALUES (NULL, ?, ?)', ["cron_$tpl", $marker]);
+            $wishSent++;
+        }
+        usleep(400000);
+    }
+}
+echo "Birthday/anniversary wishes sent: $wishSent\n";

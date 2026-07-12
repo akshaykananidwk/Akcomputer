@@ -55,6 +55,10 @@ function schema_check() {
         'items.margin_pct' => "SHOW COLUMNS FROM items LIKE 'margin_pct'",
         'items.item_type' => "SHOW COLUMNS FROM items LIKE 'item_type'",
         'parties.service_center type' => "SHOW COLUMNS FROM parties LIKE 'type'",
+        'parties.loyalty_points' => "SHOW COLUMNS FROM parties LIKE 'loyalty_points'",
+        'loyalty_ledger table' => "SHOW TABLES LIKE 'loyalty_ledger'",
+        'feedback table' => "SHOW TABLES LIKE 'feedback'",
+        'sites.next_visit_date' => "SHOW COLUMNS FROM sites LIKE 'next_visit_date'",
     ];
     $out = [];
     foreach ($checks as $label => $sql) {

@@ -94,12 +94,42 @@ CREATE TABLE IF NOT EXISTS parties (
   gstin VARCHAR(20) DEFAULT '',
   address VARCHAR(255) DEFAULT '',
   city VARCHAR(60) DEFAULT '',
+  dob DATE DEFAULT NULL,
+  anniversary DATE DEFAULT NULL,
   credit_days INT NOT NULL DEFAULT 0,
   opening_balance DECIMAL(12,2) NOT NULL DEFAULT 0,
+  loyalty_points INT NOT NULL DEFAULT 0,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_party_type (type),
   KEY idx_party_mobile (mobile)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS loyalty_ledger (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  party_id INT NOT NULL,
+  points INT NOT NULL,
+  reason VARCHAR(120) DEFAULT '',
+  ref_type VARCHAR(30) DEFAULT '',
+  ref_id INT DEFAULT NULL,
+  created_by INT DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_loyalty_party (party_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS feedback (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  ref_type ENUM('repair','task') NOT NULL,
+  ref_id INT NOT NULL,
+  token VARCHAR(40) NOT NULL,
+  customer_name VARCHAR(120) DEFAULT '',
+  mobile VARCHAR(15) DEFAULT '',
+  rating TINYINT DEFAULT NULL,
+  comment VARCHAR(500) DEFAULT '',
+  submitted_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_feedback_token (token),
+  KEY idx_feedback_ref (ref_type, ref_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------- Item categories ----------
@@ -243,6 +273,8 @@ CREATE TABLE IF NOT EXISTS sales (
   due_date DATE DEFAULT NULL,
   subtotal DECIMAL(12,2) NOT NULL DEFAULT 0,
   discount DECIMAL(12,2) NOT NULL DEFAULT 0,
+  loyalty_points_used INT NOT NULL DEFAULT 0,
+  loyalty_discount DECIMAL(12,2) NOT NULL DEFAULT 0,
   tax_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
   shipping DECIMAL(12,2) NOT NULL DEFAULT 0,
   total DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -453,6 +485,7 @@ CREATE TABLE IF NOT EXISTS sites (
   remote_id VARCHAR(80) DEFAULT '',
   install_date DATE DEFAULT NULL,
   warranty_till DATE DEFAULT NULL,
+  next_visit_date DATE DEFAULT NULL,
   notes VARCHAR(255) DEFAULT '',
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_by INT NOT NULL,

@@ -201,6 +201,17 @@ function walkin_due() {
     return (float)val("SELECT COALESCE(SUM(total - paid), 0) FROM sales WHERE party_id IS NULL AND status <> 'paid' AND is_cancelled = 0");
 }
 
+// ---------- Loyalty points ----------
+/** Adds (or, with a negative $points, deducts) loyalty points for a party
+ *  and logs the change. The parties.loyalty_points column is a running
+ *  cache kept in sync here, same pattern as stock's qty + stock_ledger. */
+function loyalty_add($party_id, $points, $reason, $ref_type = '', $ref_id = null) {
+    if (!$party_id || !$points) return;
+    q('UPDATE parties SET loyalty_points = GREATEST(0, loyalty_points + ?) WHERE id = ?', [$points, $party_id]);
+    q('INSERT INTO loyalty_ledger (party_id, points, reason, ref_type, ref_id, created_by) VALUES (?,?,?,?,?,?)',
+      [$party_id, $points, $reason, $ref_type, $ref_id, $_SESSION['user_id'] ?? null]);
+}
+
 // ---------- Bank accounts / payment methods / QR ----------
 function default_bank_account() {
     static $b = false;
