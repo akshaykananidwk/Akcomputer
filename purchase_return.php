@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 
 if ($action === 'new') {
     require_perm('purchase_return.add');
-    $suppliers = all("SELECT id, name FROM parties WHERE is_active = 1 AND type IN ('supplier','both') ORDER BY name");
+    $suppliers = all("SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name");
     $locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
     $page_title = 'New Purchase Return';
     include __DIR__ . '/includes/header.php';

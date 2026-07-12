@@ -246,7 +246,7 @@ if ($action === 'new' || $action === 'edit') {
         }
         unset($_ei);
     }
-    $parties = all("SELECT id, name, credit_days FROM parties WHERE is_active = 1 AND type IN ('supplier','both') ORDER BY name");
+    $parties = all("SELECT id, name, credit_days FROM parties WHERE is_active = 1 ORDER BY name");
     $page_title = $isEdit ? 'Edit Purchase #' . $editPurchase['id'] : 'New Purchase';
     include __DIR__ . '/includes/header.php';
     ?>

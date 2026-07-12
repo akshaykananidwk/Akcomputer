@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
     $est = row('SELECT e.*, c.name company_name FROM estimates e JOIN companies c ON c.id = e.company_id WHERE e.id = ?', [(int)post('id')]);
     $mobile = post('mobile') ?: $est['customer_mobile'];
     if ($est && $mobile) {
-        $eitems = all('SELECT ei.*, i.name FROM estimate_items ei JOIN items i ON i.id = ei.item_id WHERE ei.estimate_id = ?', [$est['id']]);
+        $eitems = all("SELECT ei.*, COALESCE(i.name, '(deleted item)') name FROM estimate_items ei LEFT JOIN items i ON i.id = ei.item_id WHERE ei.estimate_id = ?", [$est['id']]);
         $itemsTxt = '';
         foreach ($eitems as $it) $itemsTxt .= '- ' . $it['name'] . ' x' . (float)$it['qty'] . ' = ₹' . money($it['total']) . "\n";
         $msg = wa_template('estimate', ['firm' => $est['company_name'], 'estimate_no' => $est['estimate_no'],
@@ -78,7 +78,7 @@ $companies = all('SELECT * FROM companies WHERE is_active = 1 ORDER BY id');
 
 if ($action === 'new') {
     require_perm('estimates.add');
-    $parties = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 AND type IN ('customer','both') ORDER BY name");
+    $parties = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 ORDER BY name");
     $page_title = 'New Estimate';
     include __DIR__ . '/includes/header.php';
     ?>
@@ -137,7 +137,7 @@ if ($action === 'new') {
 if ($action === 'view') {
     $est = row('SELECT e.*, c.name company_name FROM estimates e JOIN companies c ON c.id = e.company_id WHERE e.id = ?', [(int)get('id')]);
     if (!$est) die('Not found');
-    $eitems = all('SELECT ei.*, i.name, i.unit FROM estimate_items ei JOIN items i ON i.id = ei.item_id WHERE ei.estimate_id = ?', [$est['id']]);
+    $eitems = all("SELECT ei.*, COALESCE(i.name, '(deleted item)') name, i.unit FROM estimate_items ei LEFT JOIN items i ON i.id = ei.item_id WHERE ei.estimate_id = ?", [$est['id']]);
     $page_title = 'Estimate ' . $est['estimate_no'];
     include __DIR__ . '/includes/header.php';
     ?>

@@ -86,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'cancel' && can('tas
 if ($action === 'new') {
     require_perm('tasks.add');
     $staffList = all('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name');
-    $parties = all("SELECT id, name, mobile, address FROM parties WHERE is_active = 1 AND type IN ('customer','both') ORDER BY name");
+    $parties = all("SELECT id, name, mobile, address FROM parties WHERE is_active = 1 ORDER BY name");
     $page_title = 'New Task';
     include __DIR__ . '/includes/header.php';
     ?>

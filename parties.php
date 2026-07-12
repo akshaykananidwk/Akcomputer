@@ -8,15 +8,18 @@ $id = (int)get('id');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm($id ? 'parties.edit' : 'parties.add');
-    $data = [post('name'), post('type', 'customer'), post('mobile'), post('email'), post('gstin'),
-             post('address'), post('city'), (int)post('credit_days'), (float)post('opening_balance'),
-             post('is_active') ? 1 : 0];
+    // Every party works on both sides (can be sold to AND purchased from) -
+    // no more customer/supplier/service-center type to pick, and a party
+    // always stays active (deactivation only ever happens automatically,
+    // from Delete, when it still has old transactions to preserve).
+    $data = [post('name'), 'both', post('mobile'), post('email'), post('gstin'),
+             post('address'), post('city'), (int)post('credit_days'), (float)post('opening_balance')];
     if ($id) {
-        q('UPDATE parties SET name=?, type=?, mobile=?, email=?, gstin=?, address=?, city=?, credit_days=?, opening_balance=?, is_active=? WHERE id=?',
+        q('UPDATE parties SET name=?, type=?, mobile=?, email=?, gstin=?, address=?, city=?, credit_days=?, opening_balance=?, is_active=1 WHERE id=?',
           array_merge($data, [$id]));
         flash('Party updated.');
     } else {
-        q('INSERT INTO parties (name, type, mobile, email, gstin, address, city, credit_days, opening_balance, is_active) VALUES (?,?,?,?,?,?,?,?,?,?)', $data);
+        q('INSERT INTO parties (name, type, mobile, email, gstin, address, city, credit_days, opening_balance, is_active) VALUES (?,?,?,?,?,?,?,?,?,1)', $data);
         flash('Party added.');
     }
     log_activity('party_save', post('name'));
@@ -57,15 +60,9 @@ if ($action === 'new' || $action === 'edit') {
         <input type="hidden" name="do" value="save">
         <div class="form-row cols-2">
           <div><label>Name *</label><input type="text" name="name" value="<?= e($p['name'] ?? '') ?>" required></div>
-          <div><label>Type</label>
-            <select name="type">
-              <?php foreach (['customer' => 'Customer', 'supplier' => 'Supplier', 'both' => 'Both', 'service_center' => 'Service Center'] as $t => $tl): ?>
-              <option value="<?= $t ?>" <?= ($p['type'] ?? 'customer') === $t ? 'selected' : '' ?>><?= $tl ?></option>
-              <?php endforeach; ?>
-            </select></div>
-        </div>
-        <div class="form-row cols-3">
           <div><label>Mobile (WhatsApp)</label><input type="tel" name="mobile" value="<?= e($p['mobile'] ?? '') ?>"></div>
+        </div>
+        <div class="form-row cols-2">
           <div><label>Email</label><input type="email" name="email" value="<?= e($p['email'] ?? '') ?>"></div>
           <div><label>GSTIN</label><input type="text" name="gstin" value="<?= e($p['gstin'] ?? '') ?>"></div>
         </div>
@@ -73,7 +70,7 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Address</label><input type="text" name="address" value="<?= e($p['address'] ?? '') ?>"></div>
           <div><label>City</label><input type="text" name="city" value="<?= e($p['city'] ?? '') ?>"></div>
         </div>
-        <div class="form-row cols-3">
+        <div class="form-row cols-2">
           <div><label>Credit term</label>
             <select name="credit_days">
               <?php foreach ($terms as $t): ?>
@@ -81,7 +78,6 @@ if ($action === 'new' || $action === 'edit') {
               <?php endforeach; ?>
             </select></div>
           <div><label>Opening balance (+ receivable / - payable)</label><input type="number" step="any" name="opening_balance" value="<?= e($p['opening_balance'] ?? '0') ?>"></div>
-          <div><label class="check-inline mt"><input type="checkbox" name="is_active" value="1" <?= ($p === null || $p['is_active']) ? 'checked' : '' ?>> Active</label></div>
         </div>
         <button class="btn" type="submit">Save Party</button>
         <a class="btn btn-muted" href="parties.php">Cancel</a>
@@ -130,7 +126,7 @@ if ($action === 'ledger' && $id) {
     include __DIR__ . '/includes/header.php';
     ?>
     <div class="card">
-      <h2><?= e($p['name']) ?> <span class="muted">(<?= e($p['type']) ?>, credit <?= (int)$p['credit_days'] ?> days)</span></h2>
+      <h2><?= e($p['name']) ?> <span class="muted">(credit <?= (int)$p['credit_days'] ?> days)</span></h2>
       <p class="muted"><?= e($p['mobile']) ?> <?= $p['gstin'] ? '| GSTIN: ' . e($p['gstin']) : '' ?></p>
       <?php if (can('sites.view')): $siteCount = (int)val('SELECT COUNT(*) FROM sites WHERE party_id = ?', [$id]); ?>
       <p class="mt"><a class="btn btn-sm btn-outline" href="sites.php?party_id=<?= $id ?>">🌐 Sites (<?= $siteCount ?>)</a></p>
@@ -213,7 +209,7 @@ include __DIR__ . '/includes/header.php';
   <tbody>
   <?php foreach ($parties as $p): ?>
     <tr>
-      <td><strong><?= e($p['name']) ?></strong> <span class="muted">(<?= e($p['type']) ?>)</span><?= !$p['is_active'] ? ' <span class="badge badge-bad">INACTIVE - બાકી છે</span>' : '' ?><?= $p['gstin'] ? '<br><span class="muted">' . e($p['gstin']) . '</span>' : '' ?></td>
+      <td><strong><?= e($p['name']) ?></strong><?= !$p['is_active'] ? ' <span class="badge badge-bad">INACTIVE - બાકી છે</span>' : '' ?><?= $p['gstin'] ? '<br><span class="muted">' . e($p['gstin']) . '</span>' : '' ?></td>
       <td class="num">
         <?php if ($p['balance'] > 0.009): ?>
           <span class="bal-get">₹<?= money($p['balance']) ?><span class="bal-sub">You'll Get</span></span>

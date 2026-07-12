@@ -65,8 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     redirect('repairs.php');
 }
 
-$repairParties = all("SELECT id, name FROM parties WHERE is_active = 1 AND type IN ('supplier','both') ORDER BY name");
-$customers = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 AND type IN ('customer','both') ORDER BY name");
+$repairParties = all("SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name");
+$customers = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 ORDER BY name");
 
 if ($action === 'new' || $action === 'edit') {
     $id = (int)get('id');

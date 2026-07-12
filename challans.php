@@ -54,7 +54,7 @@ $companies = all('SELECT * FROM companies WHERE is_active = 1 ORDER BY id');
 
 if ($action === 'new') {
     require_perm('challans.add');
-    $parties = all("SELECT id, name, mobile, address FROM parties WHERE is_active = 1 AND type IN ('customer','both') ORDER BY name");
+    $parties = all("SELECT id, name, mobile, address FROM parties WHERE is_active = 1 ORDER BY name");
     $page_title = 'New Delivery Challan';
     include __DIR__ . '/includes/header.php';
     ?>
@@ -101,7 +101,7 @@ if ($action === 'view') {
     $c = row('SELECT c.*, co.name company_name, co.address co_address, co.phone co_phone FROM challans c
               JOIN companies co ON co.id = c.company_id WHERE c.id = ?', [(int)get('id')]);
     if (!$c) die('Not found');
-    $citems = all('SELECT ci.*, i.name, i.unit FROM challan_items ci JOIN items i ON i.id = ci.item_id WHERE ci.challan_id = ?', [$c['id']]);
+    $citems = all("SELECT ci.*, COALESCE(i.name, '(deleted item)') name, i.unit FROM challan_items ci LEFT JOIN items i ON i.id = ci.item_id WHERE ci.challan_id = ?", [$c['id']]);
     $page_title = 'Challan ' . $c['challan_no'];
     include __DIR__ . '/includes/header.php';
     ?>

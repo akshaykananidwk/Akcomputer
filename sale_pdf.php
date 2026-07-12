@@ -21,7 +21,7 @@ if (!$public) {
     if (!can('sales.all') && $sale['created_by'] != current_user()['id']) die('Access denied.');
 }
 
-$items = all('SELECT si.*, i.name, i.unit FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$id]);
+$items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?", [$id]);
 $bytes = invoice_pdf($sale, $items);
 
 header('Content-Type: application/pdf');

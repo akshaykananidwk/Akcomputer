@@ -22,7 +22,7 @@ if (!$public) {
     }
 }
 
-$items = all('SELECT si.*, i.name, i.unit, i.hsn FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$id]);
+$items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit, i.hsn FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?", [$id]);
 
 // ---------- WhatsApp send ----------
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
@@ -35,7 +35,7 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
     if (!is_dir($imgDir)) mkdir($imgDir, 0755, true);
     $imgName = preg_replace('/[^A-Za-z0-9\-]/', '_', $sale['invoice_no']) . '_' . substr($sale['share_token'], 0, 10) . '.jpg';
     file_put_contents($imgDir . '/' . $imgName,
-        invoice_image_jpg($sale, all('SELECT si.*, i.name, i.unit FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$id])));
+        invoice_image_jpg($sale, all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?", [$id])));
     $imgUrl = base_url('uploads/invoices/' . $imgName);
     $due = $sale['total'] - $sale['paid'];
     $payLink = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no']) : null;

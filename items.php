@@ -48,15 +48,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (post('do') === 'delete') {
         require_perm('items.delete');
         $iid = (int)post('id');
-        $used = (int)val('SELECT (SELECT COUNT(*) FROM sale_items WHERE item_id=?) + (SELECT COUNT(*) FROM purchase_items WHERE item_id=?)
-                           + (SELECT COUNT(*) FROM stock_ledger WHERE item_id=?)', [$iid, $iid, $iid]);
-        if ($used > 0) {
-            q('UPDATE items SET is_active = 0 WHERE id = ?', [$iid]);
-            flash('Item ના transactions છે એટલે delete ના બદલે INACTIVE કરી (history સચવાઈ).', 'info');
-        } else {
-            q('DELETE FROM items WHERE id = ?', [$iid]);
-            flash('Item deleted.');
-        }
+        // Always actually deletes, even if used on old bills - views that
+        // display past sale/purchase/estimate/challan lines LEFT JOIN to
+        // items and fall back to "(deleted item)" so old invoices still
+        // show every line (and their totals still add up), instead of a
+        // deleted item's row silently vanishing from historical documents.
+        q('DELETE FROM items WHERE id = ?', [$iid]);
+        flash('Item deleted.');
         log_activity('item_delete', "#$iid");
         redirect('items.php' . (get('show') === 'all' ? '?show=all' : ''));
     }

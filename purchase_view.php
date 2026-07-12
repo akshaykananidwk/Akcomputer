@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' && can('paymen
     redirect('purchase_view.php?id=' . $id);
 }
 
-$items = all('SELECT pi.*, i.name, i.unit, i.serial_tracked FROM purchase_items pi JOIN items i ON i.id = pi.item_id WHERE pi.purchase_id = ?', [$id]);
+$items = all("SELECT pi.*, COALESCE(i.name, '(deleted item)') name, i.unit, COALESCE(i.serial_tracked, 0) serial_tracked FROM purchase_items pi LEFT JOIN items i ON i.id = pi.item_id WHERE pi.purchase_id = ?", [$id]);
 $serials = all('SELECT serial_no, status, item_id FROM item_serials WHERE purchase_id = ?', [$id]);
 $due = $p['is_cancelled'] ? 0 : $p['total'] - $p['paid'];
 $page_title = 'Purchase #' . $id;

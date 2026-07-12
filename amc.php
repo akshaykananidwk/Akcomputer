@@ -74,7 +74,7 @@ if ($action === 'new' || $action === 'edit') {
     require_perm($action === 'edit' ? 'amc.edit' : 'amc.add');
     $c = $action === 'edit' ? row('SELECT * FROM amc_contracts WHERE id = ?', [(int)get('id')]) : null;
     if ($action === 'edit' && !$c) die('Contract not found.');
-    $parties = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 AND type IN ('customer','both') ORDER BY name");
+    $parties = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 ORDER BY name");
     if (!$serviceItems) {
         flash('પહેલા Items માં "Service" type નો item બનાવો (દા.ત. "CCTV AMC", "Computer AMC") - AMC contract એ item સાથે link થાય છે.', 'error');
         redirect('items.php?action=new');

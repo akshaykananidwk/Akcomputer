@@ -73,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     redirect('warranty.php');
 }
 
-$suppliers = all("SELECT id, name, type FROM parties WHERE is_active = 1 AND type IN ('supplier','both','service_center') ORDER BY name");
+$suppliers = all("SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name");
 $itemsList = all('SELECT id, name FROM items WHERE is_active = 1 ORDER BY name');
 
 if ($action === 'new' || $action === 'edit') {
@@ -107,9 +107,9 @@ if ($action === 'new' || $action === 'edit') {
             <?php foreach ($itemsList as $it): ?><option value="<?= $it['id'] ?>" <?= ($c['item_id'] ?? '') == $it['id'] ? 'selected' : '' ?>><?= e($it['name']) ?></option><?php endforeach; ?>
             </select></div>
           <div><label>Serial no *</label><input type="text" name="serial_no" value="<?= e($c['serial_no'] ?? get('sn')) ?>" required></div>
-          <div><label>Company / Supplier / Service Center</label>
+          <div><label>Company / Supplier</label>
             <select name="party_id"><option value="">-- select --</option>
-            <?php foreach ($suppliers as $s): ?><option value="<?= $s['id'] ?>" <?= ($c['party_id'] ?? '') == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?><?= $s['type'] === 'service_center' ? ' (Service Center)' : '' ?></option><?php endforeach; ?>
+            <?php foreach ($suppliers as $s): ?><option value="<?= $s['id'] ?>" <?= ($c['party_id'] ?? '') == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option><?php endforeach; ?>
             </select></div>
         </div>
         <div class="form-row cols-3">

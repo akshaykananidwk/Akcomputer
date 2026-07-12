@@ -325,7 +325,7 @@ if ($action === 'new' || $action === 'edit') {
         if ($editSale['is_cancelled']) { flash('Cancelled bill ને edit કરી શકાય નહીં.', 'error'); redirect('sale_view.php?id=' . $editSale['id']); }
         $editItems = all('SELECT si.*, i.name, i.serial_tracked FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$editSale['id']]);
     }
-    $parties = all("SELECT id, name, mobile, credit_days FROM parties WHERE is_active = 1 AND type IN ('customer','both') ORDER BY name");
+    $parties = all("SELECT id, name, mobile, credit_days FROM parties WHERE is_active = 1 ORDER BY name");
     // prefill from estimate or delivery challan (convert to bill)
     $est = null; $estItems = []; $chal = null;
     if (!$isEdit && (int)get('from_estimate')) {
