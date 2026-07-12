@@ -2,7 +2,6 @@
 // Settings: app, WhatsApp API, credit terms, bill design, backup, software updates
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/version.php';
-require_once __DIR__ . '/includes/updater.php';
 require_once __DIR__ . '/includes/gh_updater.php';
 require_perm('settings.view');
 
@@ -25,27 +24,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_apply') {
     require_perm('settings.edit');
     list($ok, $msg) = gh_apply_update(post('sha'));
     flash($msg, $ok ? 'success' : 'error');
-    redirect('settings.php?cat=backup');
-}
-
-// ---- software update: save key / apply package ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update_key') {
-    require_perm('settings.edit');
-    set_setting('update_key', post('update_key'));
-    flash('Update Key saved.');
-    redirect('settings.php?cat=backup');
-}
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'apply_update') {
-    require_perm('settings.edit');
-    $key = setting('update_key', '');
-    if ($key === '') {
-        flash('પહેલા Update Key set કરો.', 'error');
-    } elseif (empty($_FILES['pkg']['tmp_name'])) {
-        flash('.akupd file select કરો.', 'error');
-    } else {
-        list($ok, $msg) = akupd_apply($_FILES['pkg']['tmp_name'], $key);
-        flash($msg, $ok ? 'success' : 'error');
-    }
     redirect('settings.php?cat=backup');
 }
 
@@ -157,7 +135,7 @@ $categories = [
     'invoice'   => ['🎨', 'Invoice / Bill', 'Design, Google review, online payment'],
     'reminders' => ['⏰', 'Reminders', 'Auto overdue payment reminders'],
     'party'     => ['👥', 'Party', 'Credit term options'],
-    'backup'    => ['🔄', 'Backup & Updates', 'Backup, GitHub update, software update'],
+    'backup'    => ['🔄', 'Backup & Updates', 'Backup download, GitHub update'],
     'about'     => ['📱', 'About', 'Install as app'],
 ];
 
@@ -367,29 +345,6 @@ exit;
       </form>
     </div>
   <?php endif; endif; ?>
-</div>
-
-<div class="card">
-  <h3>🛠️ Database Update <span class="badge badge-warn">Files FTP/cPanel થી upload કર્યા હોય તો</span></h3>
-  <p class="muted mb">જો files સીધી server પર (FTP / cPanel File Manager થી) upload કરી હોય — "Apply Update" વાળી નીચેની રીતથી નહીં — તો database એ નવી files ને અનુરૂપ update કરવાનું ભૂલાઈ શકે, અને pages બરાબર ના ચાલે. નીચેની link ખોલો એટલે <strong>આપોઆપ</strong> database update થઈ જાય — કંઈ ક્લિક/button નહીં, ફક્ત link ખોલવાની. જૂનો ડેટા (bills, parties, બધું) સચવાય જ છે, ફક્ત ખૂટતું ઉમેરાય છે. આ link save/bookmark કરી રાખો — Files upload કર્યા પછી હંમેશા આ ખોલી લેવાની, ગમે એટલી વાર ખોલવામાં કંઈ નુકસાન નથી:</p>
-  <a class="btn btn-outline" href="install/migrate.php" target="_blank">⚡ Database Update Link ખોલો</a>
-</div>
-
-<div class="card">
-  <h3>🔄 Software Update <span class="badge badge-info">v<?= e(setting('app_version', APP_VERSION)) ?></span></h3>
-  <p class="muted mb">Encrypted update file (<code>.akupd</code>) અહીં upload કરો — files + database બધું આપોઆપ update થઈ જશે. Update Key બંને બાજુ સરખી હોવી જોઈએ (ખોટી key વાળી કે બગડેલી file લાગશે નહીં).</p>
-  <form method="post" class="filterbar">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="update_key">
-    <div><label>Update Key (secret)</label><input type="password" name="update_key" value="<?= e(setting('update_key')) ?>" placeholder="secret key"></div>
-    <button class="btn btn-sm btn-outline" type="submit">Save Key</button>
-  </form>
-  <form method="post" enctype="multipart/form-data" class="filterbar mt" onsubmit="return confirm('Update લગાડવું છે? પહેલા backup લેવાની સલાહ છે.')">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="apply_update">
-    <div><label>.akupd update file</label><input type="file" name="pkg" accept=".akupd" required></div>
-    <button class="btn btn-sm" type="submit">⬆ Apply Update</button>
-  </form>
   <?php $hist = update_history(); if ($hist): ?>
   <h3 class="mt">Update history</h3>
   <table class="table-sm">

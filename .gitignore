@@ -3,5 +3,4 @@ uploads/*
 !uploads/.htaccess
 updates/*
 !updates/.htaccess
-*.akupd
 .DS_Store

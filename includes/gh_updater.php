@@ -7,6 +7,11 @@
 // GitHub repo (it's gitignored) so it can never be touched by this; the
 // uploads/ and updates/ folders (live shop data) are skipped defensively.
 
+function update_history() {
+    $hist = dirname(__DIR__) . '/updates/history.json';
+    return file_exists($hist) ? array_reverse(json_decode(file_get_contents($hist), true) ?: []) : [];
+}
+
 function gh_settings() {
     return [
         'repo' => trim(setting('gh_repo')),
