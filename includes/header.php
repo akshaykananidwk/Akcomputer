@@ -164,7 +164,7 @@ function nav_visible_items($items) {
   </div>
 </div>
 <?php endif; ?>
-<script src="assets/app.js?v=3"></script>
+<script src="assets/app.js?v=4"></script>
 <?php unset($_navMenu, $_navItems, $_navQuick, $_nm, $_ni, $_nq, $_navOpen); ?>
 <main class="content<?= $u ? '' : ' content-full' ?>">
 <?php foreach (get_flashes() as $f): ?>

@@ -97,7 +97,10 @@ var Bill = {
       '<div class="row-line">' +
       '<div class="cell-item isearch-wrap">' +
       '  <label>Item</label>' +
-      '  <input type="text" class="i-search" placeholder="Type item name..." autocomplete="off">' +
+      '  <div style="display:flex;gap:4px">' +
+      '  <input type="text" class="i-search" placeholder="Type item name..." autocomplete="off" style="flex:1">' +
+      (('BarcodeDetector' in window) ? '  <button type="button" class="btn btn-sm btn-outline i-scanbtn" title="Camera થી barcode scan કરો" style="flex-shrink:0">📷</button>' : '') +
+      '  </div>' +
       '  <input type="hidden" name="item_id[]" class="i-id">' +
       '  <input type="hidden" name="tax_rate[]" class="i-tax" value="0">' +
       '  <div class="isearch-results"></div>' +
@@ -119,6 +122,8 @@ var Bill = {
       div.querySelector(sel).addEventListener('input', function () { self.rowTotal(div); });
     });
     this.attachSearch(div);
+    var scanBtn = div.querySelector('.i-scanbtn');
+    if (scanBtn) scanBtn.addEventListener('click', function () { self.scanBarcode(div.querySelector('.i-search')); });
   },
 
   attachSearch: function (div) {
@@ -169,6 +174,62 @@ var Bill = {
     });
     document.addEventListener('click', function (ev) {
       if (!div.contains(ev.target)) res.classList.remove('show');
+    });
+  },
+
+  // Camera barcode scan - uses the browser's native BarcodeDetector (Chrome/
+  // Android has it built in), no external library needed. Detected code is
+  // typed into the item search box, which already auto-picks on an exact
+  // barcode match (see attachSearch above) - same path a USB scanner uses.
+  scanBarcode: function (inp) {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:#000;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center';
+    var video = document.createElement('video');
+    video.setAttribute('playsinline', '');
+    video.style.cssText = 'max-width:100%;max-height:80vh';
+    var closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕ Close';
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn btn-danger';
+    closeBtn.style.cssText = 'margin-top:14px';
+    var hint = document.createElement('div');
+    hint.textContent = 'Barcode ને camera સામે રાખો...';
+    hint.style.cssText = 'color:#fff;margin-bottom:10px;font-size:14px';
+    overlay.appendChild(hint);
+    overlay.appendChild(video);
+    overlay.appendChild(closeBtn);
+    document.body.appendChild(overlay);
+
+    var stream = null, stopped = false;
+    function stop() {
+      stopped = true;
+      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+      overlay.remove();
+    }
+    closeBtn.addEventListener('click', stop);
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(function (s) {
+      stream = s;
+      video.srcObject = s;
+      video.play();
+      var detector = new BarcodeDetector();
+      function tick() {
+        if (stopped) return;
+        detector.detect(video).then(function (codes) {
+          if (codes.length > 0) {
+            var val = codes[0].rawValue;
+            stop();
+            inp.value = val;
+            inp.dispatchEvent(new Event('input'));
+          } else if (!stopped) {
+            requestAnimationFrame(tick);
+          }
+        }).catch(function () { if (!stopped) requestAnimationFrame(tick); });
+      }
+      requestAnimationFrame(tick);
+    }).catch(function () {
+      hint.textContent = 'Camera access ના મળી - permission ચેક કરો.';
+      hint.style.color = '#f87171';
     });
   },
 
