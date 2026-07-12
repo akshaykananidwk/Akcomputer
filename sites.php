@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $data = [(int)post('party_id'), post('name'), post('address'), post('city'), post('device_type'),
               post('ip_address'), post('port'), post('dvr_username'), vault_encrypt(post('dvr_password')),
               post('remote_app'), post('remote_id'), post('install_date') ?: null, post('warranty_till') ?: null,
-              post('notes'), post('is_active') ? 1 : 0];
+              post('next_visit_date') ?: null, post('notes'), post('is_active') ? 1 : 0];
     if (!$data[0] || !$data[1]) { flash('Party અને Site name જરૂરી છે.', 'error'); redirect('sites.php?action=' . ($id ? "edit&id=$id" : 'new')); }
     if ($id) {
         // keep existing password if the field was left blank (edit form shows a placeholder, not the real value)
@@ -21,13 +21,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             $data[8] = row('SELECT dvr_password_enc FROM sites WHERE id = ?', [$id])['dvr_password_enc'] ?? '';
         }
         q('UPDATE sites SET party_id=?, name=?, address=?, city=?, device_type=?, ip_address=?, port=?, dvr_username=?,
-           dvr_password_enc=?, remote_app=?, remote_id=?, install_date=?, warranty_till=?, notes=?, is_active=? WHERE id=?',
+           dvr_password_enc=?, remote_app=?, remote_id=?, install_date=?, warranty_till=?, next_visit_date=?, notes=?, is_active=? WHERE id=?',
           array_merge($data, [$id]));
         flash('Site updated.');
     } else {
         q('INSERT INTO sites (party_id, name, address, city, device_type, ip_address, port, dvr_username,
-           dvr_password_enc, remote_app, remote_id, install_date, warranty_till, notes, is_active, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', array_merge($data, [$u['id']]));
+           dvr_password_enc, remote_app, remote_id, install_date, warranty_till, next_visit_date, notes, is_active, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', array_merge($data, [$u['id']]));
         flash('Site added.');
     }
     log_activity('site_save', post('name'));
@@ -90,9 +90,10 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Remote App (CMS/Cloud)</label><input type="text" name="remote_app" value="<?= e($s['remote_app'] ?? '') ?>" placeholder="દા.ત. V380, XMEYE, Hik-Connect"></div>
           <div><label>Remote / Cloud ID</label><input type="text" name="remote_id" value="<?= e($s['remote_id'] ?? '') ?>"></div>
         </div>
-        <div class="form-row cols-3">
+        <div class="form-row cols-4">
           <div><label>Install date</label><input type="date" name="install_date" value="<?= e($s['install_date'] ?? '') ?>"></div>
           <div><label>Warranty till</label><input type="date" name="warranty_till" value="<?= e($s['warranty_till'] ?? '') ?>"></div>
+          <div><label>Next visit / maintenance date</label><input type="date" name="next_visit_date" value="<?= e($s['next_visit_date'] ?? '') ?>"></div>
           <div><label class="check-inline mt"><input type="checkbox" name="is_active" value="1" <?= ($s === null || $s['is_active']) ? 'checked' : '' ?>> Active</label></div>
         </div>
         <div class="field"><label>Notes</label><input type="text" name="notes" value="<?= e($s['notes'] ?? '') ?>"></div>
@@ -120,7 +121,7 @@ include __DIR__ . '/includes/header.php';
 <div class="searchbox"><input type="text" id="sFilter" placeholder="🔍 Search sites/customer..."></div>
 <div class="table-wrap">
 <table id="sTable">
-  <thead><tr><th>Site</th><th>Customer</th><th>Device</th><th>IP:Port</th><th>Login</th><th></th></tr></thead>
+  <thead><tr><th>Site</th><th>Customer</th><th>Device</th><th>IP:Port</th><th>Login</th><th>Next Visit</th><th></th></tr></thead>
   <tbody>
   <?php foreach ($sites as $s): ?>
     <tr>
@@ -134,12 +135,15 @@ include __DIR__ . '/includes/header.php';
         <span class="site-pw" data-id="<?= $s['id'] ?>"><code>••••••••</code> <a href="#" onclick="revealPw(this,<?= $s['id'] ?>);return false" class="muted">show</a></span>
         <?php else: ?><span class="muted">-</span><?php endif; ?>
       </td>
+      <td><?php if ($s['next_visit_date']): $overdue = $s['next_visit_date'] < today(); ?>
+        <span class="badge <?= $overdue ? 'badge-bad' : 'badge-info' ?>"><?= dmy($s['next_visit_date']) ?></span>
+        <?php else: ?><span class="muted">-</span><?php endif; ?></td>
       <td style="white-space:nowrap">
         <?php if (can('sites.edit')): ?><a class="btn btn-sm btn-outline" href="sites.php?action=edit&id=<?= $s['id'] ?>">Edit</a><?php endif; ?>
         <?php if (can('sites.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Site delete કરવી?')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $s['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
       </td>
     </tr>
-  <?php endforeach; if (!$sites): ?><tr><td colspan="6" class="muted">કોઈ site નથી. "+ New Site" દબાવીને CCTV/DVR site ઉમેરો.</td></tr><?php endif; ?>
+  <?php endforeach; if (!$sites): ?><tr><td colspan="7" class="muted">કોઈ site નથી. "+ New Site" દબાવીને CCTV/DVR site ઉમેરો.</td></tr><?php endif; ?>
   </tbody>
 </table>
 </div>

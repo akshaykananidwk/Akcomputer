@@ -44,6 +44,7 @@ $_navMenu = [
         ['tasks.php', 'Field Tasks', 'tasks.view', 'tasks.php?action=new', 'tasks.add'],
         ['warranty.php', 'Warranty Claims', 'warranty.view', 'warranty.php?action=new', 'warranty.add'],
         ['amc.php', 'AMC / Recurring Billing', 'amc.view', 'amc.php?action=new', 'amc.add'],
+        ['amc.php?action=calendar', '📅 AMC / Visit Calendar', 'amc.view', null, null],
         ['sites.php', 'Customer Sites / DVR-NVR Vault', 'sites.view', 'sites.php?action=new', 'sites.add'],
     ]],
     ['link', 'reports.php', '📈', 'Reports', 'reports.view'],

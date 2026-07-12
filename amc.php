@@ -70,6 +70,60 @@ $companies = all('SELECT * FROM companies WHERE is_active = 1 ORDER BY id');
 $locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
 $serviceItems = all("SELECT * FROM items WHERE is_active = 1 AND item_type = 'service' ORDER BY name");
 
+// ---------- calendar: upcoming AMC renewals + site maintenance visits ----------
+if ($action === 'calendar') {
+    $month = get('month') ?: date('Y-m');
+    if (!preg_match('/^\d{4}-\d{2}$/', $month)) $month = date('Y-m');
+    $monthStart = $month . '-01';
+    $monthEnd = date('Y-m-t', strtotime($monthStart));
+    $prevMonth = date('Y-m', strtotime($monthStart . ' -1 month'));
+    $nextMonth = date('Y-m', strtotime($monthStart . ' +1 month'));
+
+    $events = [];
+    foreach (all("SELECT ac.next_bill_date d, ac.title, p.name party_name FROM amc_contracts ac
+                  JOIN parties p ON p.id = ac.party_id
+                  WHERE ac.status = 'active' AND ac.next_bill_date BETWEEN ? AND ?", [$monthStart, $monthEnd]) as $r) {
+        $events[$r['d']][] = ['type' => 'amc', 'label' => '💰 ' . $r['title'] . ' (' . $r['party_name'] . ')', 'link' => 'amc.php'];
+    }
+    foreach (all("SELECT s.next_visit_date d, s.name site_name, s.id, p.name party_name FROM sites s
+                  JOIN parties p ON p.id = s.party_id
+                  WHERE s.is_active = 1 AND s.next_visit_date BETWEEN ? AND ?", [$monthStart, $monthEnd]) as $r) {
+        $events[$r['d']][] = ['type' => 'visit', 'label' => '🌐 ' . $r['site_name'] . ' (' . $r['party_name'] . ')', 'link' => 'sites.php?action=edit&id=' . $r['id']];
+    }
+
+    $firstDow = (int)date('w', strtotime($monthStart)); // 0=Sun
+    $daysInMonth = (int)date('t', strtotime($monthStart));
+    $page_title = 'AMC / Site Visit Calendar';
+    include __DIR__ . '/includes/header.php';
+    ?>
+    <div class="page-actions">
+      <a class="btn btn-outline" href="amc.php">← AMC List</a>
+      <a class="btn btn-outline" href="amc.php?action=calendar&month=<?= $prevMonth ?>">‹ Prev</a>
+      <strong style="align-self:center"><?= date('F Y', strtotime($monthStart)) ?></strong>
+      <a class="btn btn-outline" href="amc.php?action=calendar&month=<?= $nextMonth ?>">Next ›</a>
+    </div>
+    <div class="cal-grid">
+      <?php foreach (['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as $dw): ?>
+      <div class="cal-dow"><?= $dw ?></div>
+      <?php endforeach; ?>
+      <?php for ($i = 0; $i < $firstDow; $i++): ?><div class="cal-cell cal-blank"></div><?php endfor; ?>
+      <?php for ($d = 1; $d <= $daysInMonth; $d++):
+          $dateStr = $month . '-' . str_pad($d, 2, '0', STR_PAD_LEFT);
+          $isToday = $dateStr === today(); ?>
+      <div class="cal-cell <?= $isToday ? 'cal-today' : '' ?>">
+        <div class="cal-daynum"><?= $d ?></div>
+        <?php foreach (($events[$dateStr] ?? []) as $ev): ?>
+        <a href="<?= e($ev['link']) ?>" class="cal-event cal-<?= $ev['type'] ?>"><?= e($ev['label']) ?></a>
+        <?php endforeach; ?>
+      </div>
+      <?php endfor; ?>
+    </div>
+    <div class="mt muted">💰 = AMC renewal due &nbsp; 🌐 = Site maintenance visit</div>
+    <?php
+    include __DIR__ . '/includes/footer.php';
+    exit;
+}
+
 if ($action === 'new' || $action === 'edit') {
     require_perm($action === 'edit' ? 'amc.edit' : 'amc.add');
     $c = $action === 'edit' ? row('SELECT * FROM amc_contracts WHERE id = ?', [(int)get('id')]) : null;
@@ -147,6 +201,7 @@ include __DIR__ . '/includes/header.php';
 </div>
 <div class="page-actions">
   <?php if (can('amc.add')): ?><a class="btn" href="amc.php?action=new">+ New AMC Contract</a><?php endif; ?>
+  <a class="btn btn-outline" href="amc.php?action=calendar">📅 Calendar</a>
 </div>
 <?php if ($dueCount): ?>
 <div class="flash flash-info">⏰ <?= $dueCount ?> contract(s) નું renewal due છે. cron ચાલુ હોય તો આપોઆપ bill બની જશે, નહીં તો નીચે "⚡ Generate Now" દબાવો.</div>
