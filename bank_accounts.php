@@ -39,6 +39,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'set_default') {
     flash('Default account set - એ જ invoice પર દેખાશે.');
     redirect('bank_accounts.php');
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('settings.edit');
+    $bid = (int)post('id');
+    // payments/expenses already reference this account - deactivate (not
+    // hard delete) so old ledger entries keep pointing at a real row.
+    q('UPDATE bank_accounts SET is_active = 0, is_default = 0 WHERE id = ?', [$bid]);
+    log_activity('bank_account_delete', "#$bid");
+    flash('Bank account deactivated.');
+    redirect('bank_accounts.php');
+}
 
 $acc = $id ? row('SELECT * FROM bank_accounts WHERE id = ?', [$id]) : null;
 $accounts = all('SELECT * FROM bank_accounts ORDER BY is_default DESC, account_name');
@@ -80,9 +90,11 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($b['account_number']) ?></td>
       <td class="num">₹<?= money(bank_balance($b['id'])) ?></td>
       <td><a class="btn btn-sm btn-outline" href="bank_accounts.php?id=<?= $b['id'] ?>">Edit</a></td>
-      <td><?php if (!$b['is_default']): ?>
+      <td style="white-space:nowrap"><?php if (!$b['is_default']): ?>
         <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="set_default"><input type="hidden" name="id" value="<?= $b['id'] ?>">
         <button class="btn btn-sm" type="submit">Make Default</button></form>
+        <form method="post" style="display:inline" onsubmit="return confirm('Bank account deactivate કરવું?')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $b['id'] ?>">
+        <button class="btn btn-sm btn-danger" type="submit">✕</button></form>
       <?php endif; ?></td>
     </tr>
   <?php endforeach; if (!$accounts): ?><tr><td colspan="6" class="muted">હજી કોઈ bank account ઉમેર્યું નથી.</td></tr><?php endif; ?></tbody>

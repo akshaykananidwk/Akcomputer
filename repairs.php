@@ -53,6 +53,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     redirect('repairs.php?action=edit&id=' . $id);
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('repairs.delete');
+    $rid = (int)post('id');
+    $job = row('SELECT * FROM repairs WHERE id = ?', [$rid]);
+    if ($job) {
+        q('DELETE FROM repairs WHERE id = ?', [$rid]);
+        log_activity('repair_delete', $job['job_no']);
+        flash('Job sheet ' . $job['job_no'] . ' deleted.');
+    }
+    redirect('repairs.php');
+}
+
 $repairParties = all("SELECT id, name FROM parties WHERE is_active = 1 AND type IN ('supplier','both') ORDER BY name");
 $customers = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 AND type IN ('customer','both') ORDER BY name");
 
@@ -167,7 +179,15 @@ include __DIR__ . '/includes/header.php';
       <td><?= status_badge($j['status']) ?></td>
       <td><?= e($j['outsource_name'] ?: '-') ?><?= $j['sent_date'] && !$j['received_back_date'] ? '<br><span class="badge badge-warn">' . days_between($j['sent_date']) . 'd with party</span>' : '' ?></td>
       <td class="num"><?= $days ?>d</td>
-      <td><?php if (can('repairs.edit')): ?><a class="btn btn-sm btn-outline" href="repairs.php?action=edit&id=<?= $j['id'] ?>">Open</a><?php endif; ?></td>
+      <td style="white-space:nowrap">
+        <?php if (can('repairs.edit')): ?><a class="btn btn-sm btn-outline" href="repairs.php?action=edit&id=<?= $j['id'] ?>">Open</a><?php endif; ?>
+        <?php if (can('repairs.delete')): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('Job sheet delete કરવો?')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $j['id'] ?>">
+          <button class="btn btn-sm btn-danger" type="submit">✕</button>
+        </form>
+        <?php endif; ?>
+      </td>
     </tr>
   <?php endforeach; ?>
   </tbody>

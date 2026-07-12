@@ -117,6 +117,21 @@ function schema_check() {
 $status = schema_check();
 $allOk = !in_array(false, $status, true);
 
+// Self-test: proves whether this SERVER is actually running the code in
+// this file's own folder, or old cached code (the classic symptom is a
+// bug that keeps "coming back" after every fix - amount_in_words() has
+// been reported wrong 3 times and is provably correct in the current
+// source every time it's checked, which points at stale code, not a bug).
+// If this ever shows FAIL, the server is NOT running the uploaded files.
+$selfTests = [
+    ['label' => 'amount_in_words(2868.58)', 'got' => amount_in_words(2868.58),
+     'want' => 'Two Thousand Eight Hundred Sixty Eight Rupees and Fifty Eight Paise Only'],
+    ['label' => 'amount_in_words(3374.80)', 'got' => amount_in_words(3374.80),
+     'want' => 'Three Thousand Three Hundred Seventy Four Rupees and Eighty Paise Only'],
+];
+$selfTestOk = true;
+foreach ($selfTests as $t) if ($t['got'] !== $t['want']) $selfTestOk = false;
+
 $page_title = 'Database Update';
 include __DIR__ . '/../includes/header.php';
 ?>
@@ -150,5 +165,28 @@ include __DIR__ . '/../includes/header.php';
     <?php endforeach; ?>
   </table>
   <?php if (!$allOk): ?><p class="flash flash-error mt">આ page હમણાં જ auto-update run કરી ચૂક્યું છે છતાં ઉપર કંઈ ✗ ખૂટે છે દેખાય છે — ઉપર "Failed" table માં error જુઓ, અથવા "🔄 ફરી ચેક કરો" દબાવો.</p><?php endif; ?>
+</div>
+
+<div class="card">
+  <h2><?= $selfTestOk ? '✅' : '🚨' ?> Code Self-Test (server ખરેખર નવો code વાપરે છે કે નહીં)</h2>
+  <p class="muted mb">આ ટેસ્ટ સાબિત કરે છે કે server આ folder ની આજની files જ ચલાવે છે, જૂનો cached code નહીં. "Amount in words" ની ફરિયાદ વારંવાર આવે છે છતાં code માં ભૂલ મળતી નથી - જો નીચે ❌ FAIL દેખાય, તો ખાતરી થઈ જશે કે server જૂનો code ચલાવે છે (files ફરી upload કરો + hosting support ને "OPcache/PHP cache restart" કરવા કહો). જો બધે ✅ PASS હોય, તો code સાચો જ છે.</p>
+  <table class="table-sm">
+    <thead><tr><th>Test</th><th>Server એ ગણેલું</th><th>સાચું હોવું જોઈએ</th><th></th></tr></thead>
+    <tbody>
+    <?php foreach ($selfTests as $t): $pass = $t['got'] === $t['want']; ?>
+    <tr>
+      <td><?= e($t['label']) ?></td>
+      <td><?= e($t['got']) ?></td>
+      <td><?= e($t['want']) ?></td>
+      <td><?= $pass ? '<span class="badge badge-ok">✓ PASS</span>' : '<span class="badge badge-bad">✗ FAIL</span>' ?></td>
+    </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+  <?php if (!$selfTestOk): ?>
+  <p class="flash flash-error mt">🚨 Server જૂનો code ચલાવે છે! Files ફરી upload કરો, ને hosting company ને પૂછો કે PHP OPcache/cache restart કરી શકે કે નહીં.</p>
+  <?php else: ?>
+  <p class="flash flash-success mt">✅ Server આજની files જ વાપરે છે. હજુ "Amount in words" ખોટું દેખાય તો, એ ચોક્કસ invoice નંબર મોકલો જેથી ડેટા સાથે ચેક કરી શકાય.</p>
+  <?php endif; ?>
 </div>
 <?php include __DIR__ . '/../includes/footer.php'; ?>

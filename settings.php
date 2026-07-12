@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'apply_update') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('settings.edit');
-    foreach (['app_name', 'wa_api_url', 'wa_session_id', 'wa_api_key', 'default_tax', 'wa_shop_number', 'review_api_url', 'review_api_key', 'razorpay_key_id', 'razorpay_key_secret'] as $k) {
+    foreach (['app_name', 'wa_api_url', 'wa_session_id', 'wa_api_key', 'default_tax', 'wa_shop_number', 'google_review_link', 'razorpay_key_id', 'razorpay_key_secret'] as $k) {
         set_setting($k, post($k));
     }
     set_setting('login_otp', post('login_otp') ? '1' : '0');
@@ -130,8 +130,8 @@ include __DIR__ . '/includes/header.php';
         <input type="tel" name="wa_shop_number" value="<?= e(setting('wa_shop_number')) ?>" placeholder="91XXXXXXXXXX"></div>
     </div>
     <div class="form-row cols-2">
-      <div><label>Google Review API URL</label><input type="text" name="review_api_url" value="<?= e(setting('review_api_url', 'https://review.akdwk.in/api/v1/trigger_invite.php')) ?>"></div>
-      <div><label>Review API Key</label><input type="text" name="review_api_key" value="<?= e(setting('review_api_key')) ?>"></div>
+      <div><label>Google Review Link <span class="muted" style="font-weight:normal">(bill પરથી "Review Invite" દબાવો એટલે આ link સીધો WhatsApp થાય)</span></label>
+        <input type="text" name="google_review_link" value="<?= e(setting('google_review_link')) ?>" placeholder="https://g.page/r/xxxxxxx/review"></div>
     </div>
     <div class="form-row cols-2">
       <div><label>Razorpay Key ID <span class="muted" style="font-weight:normal">(bill પર online payment link માટે, optional)</span></label><input type="text" name="razorpay_key_id" value="<?= e(setting('razorpay_key_id')) ?>" placeholder="rzp_live_..."></div>

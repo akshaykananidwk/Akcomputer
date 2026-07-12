@@ -62,6 +62,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     redirect('warranty.php?action=edit&id=' . $id);
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('warranty.delete');
+    $c = row('SELECT * FROM warranty_claims WHERE id = ?', [(int)post('id')]);
+    if ($c) {
+        q('DELETE FROM warranty_claims WHERE id = ?', [$c['id']]);
+        log_activity('warranty_delete', $c['claim_no']);
+        flash('Claim ' . $c['claim_no'] . ' deleted.');
+    }
+    redirect('warranty.php');
+}
+
 $suppliers = all("SELECT id, name, type FROM parties WHERE is_active = 1 AND type IN ('supplier','both','service_center') ORDER BY name");
 $itemsList = all('SELECT id, name FROM items WHERE is_active = 1 ORDER BY name');
 
@@ -202,7 +213,15 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($c['company_name'] ?: '-') ?></td>
       <td><?= status_badge($c['status']) ?></td>
       <td class="num"><?= $c['sent_date'] ? days_between($c['sent_date'], $c['back_date'] ?: null) . 'd' : '-' ?></td>
-      <td><?php if (can('warranty.edit')): ?><a class="btn btn-sm btn-outline" href="warranty.php?action=edit&id=<?= $c['id'] ?>">Open</a><?php endif; ?></td>
+      <td style="white-space:nowrap">
+        <?php if (can('warranty.edit')): ?><a class="btn btn-sm btn-outline" href="warranty.php?action=edit&id=<?= $c['id'] ?>">Open</a><?php endif; ?>
+        <?php if (can('warranty.delete')): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('Claim delete કરવો?')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $c['id'] ?>">
+          <button class="btn btn-sm btn-danger" type="submit">✕</button>
+        </form>
+        <?php endif; ?>
+      </td>
     </tr>
   <?php endforeach; ?>
   </tbody>

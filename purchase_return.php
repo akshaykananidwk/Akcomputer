@@ -93,6 +93,34 @@ if ($action === 'new') {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('purchase_return.delete');
+    $rid = (int)post('id');
+    $ret = row('SELECT * FROM purchase_returns WHERE id = ?', [$rid]);
+    if ($ret) {
+        $ritems = all('SELECT * FROM purchase_return_items WHERE return_id = ?', [$rid]);
+        $allowNeg = setting('allow_negative_stock', '1') === '1';
+        if (!$allowNeg) {
+            foreach ($ritems as $ri) {
+                $item = row('SELECT name FROM items WHERE id = ?', [$ri['item_id']]);
+                if (stock_qty($ri['item_id'], $ret['location_id']) + (float)$ri['qty'] < 0) {
+                    flash("Delete કરવાથી {$item['name']} નો stock negative થાય છે, અટકાવ્યું.", 'error');
+                    redirect('purchase_return.php');
+                }
+            }
+        }
+        $pdo = db();
+        $pdo->beginTransaction();
+        foreach ($ritems as $ri) adjust_stock($ri['item_id'], $ret['location_id'], (float)$ri['qty'], 'purchase_return_delete', $rid);
+        q('DELETE FROM purchase_return_items WHERE return_id = ?', [$rid]);
+        q('DELETE FROM purchase_returns WHERE id = ?', [$rid]);
+        $pdo->commit();
+        log_activity('purchase_return_delete', $ret['return_no']);
+        flash('Return ' . $ret['return_no'] . ' deleted, stock reversed. (Serial number status manually ચકાસી લેજો.)');
+    }
+    redirect('purchase_return.php');
+}
+
 $rets = all('SELECT pr.*, p.name party_name FROM purchase_returns pr JOIN parties p ON p.id = pr.party_id ORDER BY pr.id DESC LIMIT 300');
 $page_title = 'Purchase Returns';
 include __DIR__ . '/includes/header.php';
@@ -102,10 +130,15 @@ include __DIR__ . '/includes/header.php';
 </div>
 <div class="table-wrap">
 <table>
-  <thead><tr><th>No</th><th>Date</th><th>Supplier</th><th class="num">Total</th><th>Notes</th></tr></thead>
+  <thead><tr><th>No</th><th>Date</th><th>Supplier</th><th class="num">Total</th><th>Notes</th><th></th></tr></thead>
   <tbody><?php foreach ($rets as $r): ?>
     <tr><td><strong><?= e($r['return_no']) ?></strong></td><td><?= dmy($r['return_date']) ?></td>
-    <td><?= e($r['party_name']) ?></td><td class="num">₹<?= money($r['total']) ?></td><td><?= e($r['notes']) ?></td></tr>
+    <td><?= e($r['party_name']) ?></td><td class="num">₹<?= money($r['total']) ?></td><td><?= e($r['notes']) ?></td>
+    <td><?php if (can('purchase_return.delete')): ?>
+      <form method="post" onsubmit="return confirm('Return delete કરવો? Stock પાછો adjust થશે.')"><?= csrf_field() ?>
+      <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $r['id'] ?>">
+      <button class="btn btn-sm btn-danger" type="submit">✕</button></form>
+    <?php endif; ?></td></tr>
   <?php endforeach; ?></tbody>
 </table>
 </div>

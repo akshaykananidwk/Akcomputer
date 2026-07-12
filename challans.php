@@ -37,6 +37,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'cancel' && can('cha
     redirect('challans.php');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('challans.delete');
+    $cid = (int)post('id');
+    $ch = row('SELECT * FROM challans WHERE id = ?', [$cid]);
+    if ($ch) {
+        q('DELETE FROM challan_items WHERE challan_id = ?', [$cid]);
+        q('DELETE FROM challans WHERE id = ?', [$cid]);
+        log_activity('challan_delete', $ch['challan_no']);
+        flash('Challan ' . $ch['challan_no'] . ' deleted.');
+    }
+    redirect('challans.php');
+}
+
 $companies = all('SELECT * FROM companies WHERE is_active = 1 ORDER BY id');
 
 if ($action === 'new') {
@@ -144,7 +157,15 @@ include __DIR__ . '/includes/header.php';
       <td><?= dmy($c['challan_date']) ?></td>
       <td><?= e($c['customer_name']) ?></td>
       <td><?= status_badge($c['status']) ?></td>
-      <td><a class="btn btn-sm btn-outline" href="challans.php?action=view&id=<?= $c['id'] ?>">View</a></td>
+      <td style="white-space:nowrap">
+        <a class="btn btn-sm btn-outline" href="challans.php?action=view&id=<?= $c['id'] ?>">View</a>
+        <?php if (can('challans.delete')): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('Challan delete કરવો?')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $c['id'] ?>">
+          <button class="btn btn-sm btn-danger" type="submit">✕</button>
+        </form>
+        <?php endif; ?>
+      </td>
     </tr>
   <?php endforeach; if (!$rows): ?><tr><td colspan="5" class="muted">No challans yet.</td></tr><?php endif; ?></tbody>
 </table>

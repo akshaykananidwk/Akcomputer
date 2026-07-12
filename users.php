@@ -28,6 +28,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     redirect('users.php');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('users.delete');
+    $uid = (int)post('id');
+    if ($uid === current_user()['id']) {
+        flash('તમે પોતાને delete/deactivate ના કરી શકો.', 'error');
+        redirect('users.php');
+    }
+    // Users are referenced everywhere (sales.created_by, tasks.assigned_to,
+    // etc.) - deactivating (not hard-deleting) keeps that history intact.
+    q('UPDATE users SET is_active = 0 WHERE id = ?', [$uid]);
+    log_activity('user_delete', "#$uid");
+    flash('User deactivated (history સચવાયું).');
+    redirect('users.php');
+}
+
 $roles = all('SELECT * FROM roles ORDER BY name');
 $locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
 
@@ -102,7 +117,15 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($us['loc_name']) ?></td>
       <td><?= e($us['mobile']) ?></td>
       <td><?= $us['is_active'] ? '<span class="badge badge-ok">active</span>' : '<span class="badge badge-bad">off</span>' ?></td>
-      <td><?php if (can('users.edit')): ?><a class="btn btn-sm btn-outline" href="users.php?action=edit&id=<?= $us['id'] ?>">Edit</a><?php endif; ?></td>
+      <td style="white-space:nowrap">
+        <?php if (can('users.edit')): ?><a class="btn btn-sm btn-outline" href="users.php?action=edit&id=<?= $us['id'] ?>">Edit</a><?php endif; ?>
+        <?php if (can('users.delete') && $us['is_active']): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('User deactivate કરવો?')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $us['id'] ?>">
+          <button class="btn btn-sm btn-danger" type="submit">✕</button>
+        </form>
+        <?php endif; ?>
+      </td>
     </tr>
   <?php endforeach; ?></tbody>
 </table>

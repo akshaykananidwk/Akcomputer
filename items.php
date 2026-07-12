@@ -47,9 +47,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (post('do') === 'delete') {
         require_perm('items.delete');
-        q('UPDATE items SET is_active = 0 WHERE id = ?', [(int)post('id')]);
-        flash('Item deactivated.');
-        redirect('items.php');
+        $iid = (int)post('id');
+        $used = (int)val('SELECT (SELECT COUNT(*) FROM sale_items WHERE item_id=?) + (SELECT COUNT(*) FROM purchase_items WHERE item_id=?)
+                           + (SELECT COUNT(*) FROM stock_ledger WHERE item_id=?)', [$iid, $iid, $iid]);
+        if ($used > 0) {
+            q('UPDATE items SET is_active = 0 WHERE id = ?', [$iid]);
+            flash('Item ના transactions છે એટલે delete ના બદલે INACTIVE કરી (history સચવાઈ).', 'info');
+        } else {
+            q('DELETE FROM items WHERE id = ?', [$iid]);
+            flash('Item deleted.');
+        }
+        log_activity('item_delete', "#$iid");
+        redirect('items.php' . (get('show') === 'all' ? '?show=all' : ''));
     }
     if (post('do') === 'toggle_web') {
         require_perm('items.edit');
@@ -133,17 +142,19 @@ if ($action === 'new' || $action === 'edit') {
 }
 
 // ---- list ----
+$showAll = get('show') === 'all';
 $items = all('SELECT i.*, c.name AS cat_name, COALESCE(SUM(s.qty),0) AS total_stock
               FROM items i
               LEFT JOIN categories c ON c.id = i.category_id
               LEFT JOIN stock s ON s.item_id = i.id
-              WHERE i.is_active = 1
+              ' . (!$showAll ? 'WHERE i.is_active = 1' : '') . '
               GROUP BY i.id ORDER BY i.name');
 $page_title = 'Items';
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="page-actions">
   <?php if (can('items.add')): ?><a class="btn" href="items.php?action=new">+ New Item</a><?php endif; ?>
+  <a class="btn btn-outline" href="items.php<?= $showAll ? '' : '?show=all' ?>"><?= $showAll ? 'ફક્ત Active બતાવો' : 'Inactive પણ બતાવો' ?></a>
 </div>
 <div class="searchbox"><input type="text" id="itemFilter" placeholder="🔍 Search items..."></div>
 <div class="list-count"><?= count($items) ?> items</div>
@@ -156,6 +167,7 @@ include __DIR__ . '/includes/header.php';
       <td>
         <?php if ($it['photo']): ?><img src="<?= e($it['photo']) ?>" class="photo-thumb" alt=""> <?php endif; ?>
         <strong><?= e($it['name']) ?></strong>
+        <?php if (!$it['is_active']): ?> <span class="badge badge-bad">INACTIVE</span><?php endif; ?>
         <?php if ($it['brand'] || $it['model']): ?><br><span class="muted"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></span><?php endif; ?>
       </td>
       <td><?= e($it['cat_name'] ?? '-') ?></td>
@@ -175,6 +187,12 @@ include __DIR__ . '/includes/header.php';
         </form>
         <a class="btn btn-sm btn-outline" href="items.php?action=edit&id=<?= $it['id'] ?>">Edit</a>
         <?php elseif ($it['show_on_website']): ?><span class="badge badge-ok">WEB</span><?php endif; ?>
+        <?php if (can('items.delete')): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('Item delete કરવો? Transaction history હશે તો ખાલી inactive થશે.')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $it['id'] ?>">
+          <button class="btn btn-sm btn-danger" type="submit">✕</button>
+        </form>
+        <?php endif; ?>
       </td>
     </tr>
   <?php endforeach; ?>

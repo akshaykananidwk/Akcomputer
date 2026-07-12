@@ -29,6 +29,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     redirect('companies.php');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('companies.delete');
+    $cid = (int)post('id');
+    $activeCount = (int)val('SELECT COUNT(*) FROM companies WHERE is_active = 1');
+    if ($activeCount <= 1) {
+        flash('છેલ્લી active firm ને deactivate ના કરી શકાય - bill બનાવવા ઓછામાં ઓછી એક જોઈએ.', 'error');
+        redirect('companies.php');
+    }
+    // sales/purchases already reference this firm - deactivate (not hard
+    // delete) so old invoices keep showing the correct firm name.
+    q('UPDATE companies SET is_active = 0 WHERE id = ?', [$cid]);
+    log_activity('company_delete', "#$cid");
+    flash('Firm deactivated.');
+    redirect('companies.php');
+}
+
 $co = $id ? row('SELECT * FROM companies WHERE id = ?', [$id]) : null;
 $cos = all('SELECT * FROM companies ORDER BY id');
 $page_title = 'Companies / Firms';
@@ -73,7 +89,15 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($c['gstin'] ?: '-') ?></td>
       <td><?= $c['is_gst'] ? '<span class="badge badge-ok">GST</span>' : '<span class="badge badge-info">Non-GST</span>' ?></td>
       <td><?= e($c['invoice_prefix']) ?></td>
-      <td><?php if (can('companies.edit')): ?><a class="btn btn-sm btn-outline" href="companies.php?id=<?= $c['id'] ?>">Edit</a><?php endif; ?></td>
+      <td style="white-space:nowrap">
+        <?php if (can('companies.edit')): ?><a class="btn btn-sm btn-outline" href="companies.php?id=<?= $c['id'] ?>">Edit</a><?php endif; ?>
+        <?php if (can('companies.delete') && $c['is_active']): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('Firm deactivate કરવી?')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $c['id'] ?>">
+          <button class="btn btn-sm btn-danger" type="submit">✕</button>
+        </form>
+        <?php endif; ?>
+      </td>
     </tr>
   <?php endforeach; ?></tbody>
 </table>

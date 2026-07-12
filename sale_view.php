@@ -28,15 +28,15 @@ $items = all('SELECT si.*, i.name, i.unit, i.hsn FROM sale_items si JOIN items i
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
     $mobile = post('mobile') ?: $sale['customer_mobile'];
     $link = base_url('sale_view.php?id=' . $id . '&token=' . $sale['share_token']);
-    // WhatsApp needs a URL ending in .pdf, otherwise the document arrives
-    // named "sale_pdf.php" - so write a real .pdf file and send its link
-    require_once __DIR__ . '/includes/pdf.php';
-    $pdfDir = __DIR__ . '/uploads/invoices';
-    if (!is_dir($pdfDir)) mkdir($pdfDir, 0755, true);
-    $pdfName = preg_replace('/[^A-Za-z0-9\-]/', '_', $sale['invoice_no']) . '_' . substr($sale['share_token'], 0, 10) . '.pdf';
-    file_put_contents($pdfDir . '/' . $pdfName,
-        invoice_pdf($sale, all('SELECT si.*, i.name, i.unit FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$id])));
-    $pdfUrl = base_url('uploads/invoices/' . $pdfName);
+    // Sent as a photo (not a PDF document) so it opens inline in WhatsApp -
+    // WhatsApp needs a URL ending in .jpg to recognise it as an image.
+    require_once __DIR__ . '/includes/billimage.php';
+    $imgDir = __DIR__ . '/uploads/invoices';
+    if (!is_dir($imgDir)) mkdir($imgDir, 0755, true);
+    $imgName = preg_replace('/[^A-Za-z0-9\-]/', '_', $sale['invoice_no']) . '_' . substr($sale['share_token'], 0, 10) . '.jpg';
+    file_put_contents($imgDir . '/' . $imgName,
+        invoice_image_jpg($sale, all('SELECT si.*, i.name, i.unit FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$id])));
+    $imgUrl = base_url('uploads/invoices/' . $imgName);
     $due = $sale['total'] - $sale['paid'];
     $payLink = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no']) : null;
     $msg = wa_template('bill', [
@@ -46,10 +46,10 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
         'pay_link' => $payLink ? "💳 Pay online: $payLink\n" : '',
         'link' => $link, 'customer' => $sale['customer_name'],
     ]);
-    // bill goes as a PDF document with the message as caption
-    if ($mobile && send_whatsapp($mobile, $msg, $pdfUrl)) {
+    // bill goes as a photo with the message as caption
+    if ($mobile && send_whatsapp($mobile, $msg, $imgUrl)) {
         log_activity('sale_whatsapp', $sale['invoice_no'] . ' to ' . $mobile);
-        flash('Bill (PDF) sent on WhatsApp to ' . $mobile);
+        flash('Bill (photo) sent on WhatsApp to ' . $mobile);
     } else {
         flash('WhatsApp send failed. Check number & API settings.', 'error');
     }
@@ -69,19 +69,18 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'paylink
 }
 
 // ---------- Google review invite ----------
+// Sends the shop's Google review link directly to the customer's WhatsApp
+// (Settings > Google Review Link) - no external review-service API needed.
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'review') {
-    $rurl = setting('review_api_url'); $rkey = setting('review_api_key');
+    $reviewLink = setting('google_review_link');
     $mob = post('mobile') ?: $sale['customer_mobile'];
-    if ($rurl && $rkey && $mob) {
-        $ch = curl_init($rurl);
-        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 15,
-            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $rkey, 'Content-Type: application/json'],
-            CURLOPT_POSTFIELDS => json_encode(['name' => $sale['customer_name'] ?: 'Customer', 'mobile' => $mob])]);
-        $resp = curl_exec($ch);
-        $ok = $resp !== false && curl_getinfo($ch, CURLINFO_HTTP_CODE) < 400;
-        curl_close($ch);
-        flash($ok ? '⭐ Google review invite મોકલ્યું.' : 'Review API fail - Settings માં URL/Key ચકાસો.', $ok ? 'success' : 'error');
-    } else { flash('Review API Key/mobile ખૂટે છે (Settings).', 'error'); }
+    if ($reviewLink && $mob) {
+        $msg = wa_template('review', [
+            'shop' => $sale['company_name'], 'customer' => $sale['customer_name'] ?: 'Customer', 'link' => $reviewLink,
+        ]);
+        $ok = send_whatsapp($mob, $msg);
+        flash($ok ? '⭐ Review link WhatsApp પર મોકલ્યો.' : 'WhatsApp send failed.', $ok ? 'success' : 'error');
+    } else { flash('Google Review Link (Settings) અથવા mobile number ખૂટે છે.', 'error'); }
     redirect('sale_view.php?id=' . $id);
 }
 
@@ -115,7 +114,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
     <input type="tel" name="mobile" value="<?= e($sale['customer_mobile']) ?>" placeholder="WhatsApp no." style="width:150px">
     <button class="btn btn-wa" type="submit">📲 Send WhatsApp</button>
   </form>
-  <?php if (setting('review_api_key') && $sale['customer_mobile']): ?>
+  <?php if (setting('google_review_link') && $sale['customer_mobile']): ?>
   <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="review">
     <button class="btn btn-outline" type="submit">⭐ Review Invite</button></form>
   <?php endif; ?>

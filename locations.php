@@ -19,6 +19,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     redirect('locations.php');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('locations.delete');
+    $lid = (int)post('id');
+    $activeCount = (int)val('SELECT COUNT(*) FROM locations WHERE is_active = 1');
+    if ($activeCount <= 1) {
+        flash('છેલ્લી active location ને deactivate ના કરી શકાય - staff ને location જોઈએ જ.', 'error');
+        redirect('locations.php');
+    }
+    // stock/sales already reference this location - deactivate (not hard
+    // delete) so that history and stock ledger stay intact.
+    q('UPDATE locations SET is_active = 0 WHERE id = ?', [$lid]);
+    log_activity('location_delete', "#$lid");
+    flash('Location deactivated.');
+    redirect('locations.php');
+}
+
 $loc = $id ? row('SELECT * FROM locations WHERE id = ?', [$id]) : null;
 $locs = all('SELECT * FROM locations ORDER BY city, name');
 $page_title = 'Locations';
@@ -59,7 +75,15 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($l['city']) ?></td>
       <td><?= e($l['type']) ?></td>
       <td><?= $l['is_active'] ? '<span class="badge badge-ok">active</span>' : '<span class="badge badge-bad">off</span>' ?></td>
-      <td><?php if (can('locations.edit')): ?><a class="btn btn-sm btn-outline" href="locations.php?id=<?= $l['id'] ?>">Edit</a><?php endif; ?></td>
+      <td style="white-space:nowrap">
+        <?php if (can('locations.edit')): ?><a class="btn btn-sm btn-outline" href="locations.php?id=<?= $l['id'] ?>">Edit</a><?php endif; ?>
+        <?php if (can('locations.delete') && $l['is_active']): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('Location deactivate કરવી?')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $l['id'] ?>">
+          <button class="btn btn-sm btn-danger" type="submit">✕</button>
+        </form>
+        <?php endif; ?>
+      </td>
     </tr>
   <?php endforeach; ?></tbody>
 </table>

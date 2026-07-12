@@ -95,6 +95,42 @@ if ($action === 'new') {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('sales_return.delete');
+    $rid = (int)post('id');
+    $ret = row('SELECT * FROM sales_returns WHERE id = ?', [$rid]);
+    if ($ret) {
+        $ritems = all('SELECT * FROM sales_return_items WHERE return_id = ?', [$rid]);
+        foreach ($ritems as $ri) {
+            if (!$ri['serials']) continue;
+            foreach (explode(',', $ri['serials']) as $sn) {
+                $srow = row('SELECT status FROM item_serials WHERE item_id = ? AND serial_no = ?', [$ri['item_id'], trim($sn)]);
+                if ($srow && $srow['status'] !== 'in_stock') {
+                    flash('આ return ના serial ' . trim($sn) . ' પર પછીથી કંઈ થઈ ગયું છે, એટલે delete કરી શકાય એમ નથી.', 'error');
+                    redirect('sales_return.php');
+                }
+            }
+        }
+        $pdo = db();
+        $pdo->beginTransaction();
+        foreach ($ritems as $ri) {
+            adjust_stock($ri['item_id'], $ret['location_id'], -(float)$ri['qty'], 'sales_return_delete', $rid);
+            if ($ri['serials']) {
+                foreach (explode(',', $ri['serials']) as $sn) {
+                    q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL WHERE item_id=? AND serial_no=?",
+                      [$ret['sale_id'], $ri['item_id'], trim($sn)]);
+                }
+            }
+        }
+        q('DELETE FROM sales_return_items WHERE return_id = ?', [$rid]);
+        q('DELETE FROM sales_returns WHERE id = ?', [$rid]);
+        $pdo->commit();
+        log_activity('sales_return_delete', $ret['return_no']);
+        flash('Return ' . $ret['return_no'] . ' deleted, stock reversed.');
+    }
+    redirect('sales_return.php');
+}
+
 $rets = all('SELECT sr.*, u2.name staff_name FROM sales_returns sr JOIN users u2 ON u2.id = sr.created_by ORDER BY sr.id DESC LIMIT 300');
 $page_title = 'Sales Returns';
 include __DIR__ . '/includes/header.php';
@@ -104,11 +140,16 @@ include __DIR__ . '/includes/header.php';
 </div>
 <div class="table-wrap">
 <table>
-  <thead><tr><th>No</th><th>Date</th><th>Customer</th><th class="num">Refund</th><th>Mode</th><th>By</th></tr></thead>
+  <thead><tr><th>No</th><th>Date</th><th>Customer</th><th class="num">Refund</th><th>Mode</th><th>By</th><th></th></tr></thead>
   <tbody><?php foreach ($rets as $r): ?>
     <tr><td><strong><?= e($r['return_no']) ?></strong></td><td><?= dmy($r['return_date']) ?></td>
     <td><?= e($r['customer_name']) ?></td><td class="num">₹<?= money($r['total']) ?></td>
-    <td><?= e($r['refund_mode']) ?></td><td><?= e($r['staff_name']) ?></td></tr>
+    <td><?= e($r['refund_mode']) ?></td><td><?= e($r['staff_name']) ?></td>
+    <td><?php if (can('sales_return.delete')): ?>
+      <form method="post" onsubmit="return confirm('Return delete કરવો? Stock પાછો adjust થશે.')"><?= csrf_field() ?>
+      <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $r['id'] ?>">
+      <button class="btn btn-sm btn-danger" type="submit">✕</button></form>
+    <?php endif; ?></td></tr>
   <?php endforeach; ?></tbody>
 </table>
 </div>

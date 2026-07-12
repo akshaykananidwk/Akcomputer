@@ -76,6 +76,8 @@ function wa_template_defaults() {
                        '{shop} {order_no} {customer} {mobile} {address} {items} {total}', 'Website order alert (shop)'],
         'amc_bill' => ["*{firm}*\nAMC Renewal Invoice: *{invoice_no}*\nContract: {title}\nAmount: *₹{total}*\nNext renewal: {next_date}\nThank you for staying with us! 🙏",
                        '{firm} {invoice_no} {title} {total} {next_date}', 'AMC auto-renewal invoice'],
+        'review' => ["*{shop}*\nThank you for choosing us, {customer}! 🙏\nIf you liked our service, a quick Google review would mean a lot:\n{link}",
+                     '{shop} {customer} {link}', 'Google review invite (WhatsApp)'],
     ];
 }
 

@@ -61,6 +61,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'cancel' && can('est
     redirect('estimates.php');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    require_perm('estimates.delete');
+    $eid = (int)post('id');
+    $est = row('SELECT * FROM estimates WHERE id = ?', [$eid]);
+    if ($est) {
+        q('DELETE FROM estimate_items WHERE estimate_id = ?', [$eid]);
+        q('DELETE FROM estimates WHERE id = ?', [$eid]);
+        log_activity('estimate_delete', $est['estimate_no']);
+        flash('Estimate ' . $est['estimate_no'] . ' deleted.');
+    }
+    redirect('estimates.php');
+}
+
 $companies = all('SELECT * FROM companies WHERE is_active = 1 ORDER BY id');
 
 if ($action === 'new') {
@@ -193,7 +206,15 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($es['company_name']) ?></td>
       <td class="num">₹<?= money($es['total']) ?></td>
       <td><?= status_badge($es['status']) ?></td>
-      <td><a class="btn btn-sm btn-outline" href="estimates.php?action=view&id=<?= $es['id'] ?>">View</a></td>
+      <td style="white-space:nowrap">
+        <a class="btn btn-sm btn-outline" href="estimates.php?action=view&id=<?= $es['id'] ?>">View</a>
+        <?php if (can('estimates.delete')): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('Estimate delete કરવો?')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $es['id'] ?>">
+          <button class="btn btn-sm btn-danger" type="submit">✕</button>
+        </form>
+        <?php endif; ?>
+      </td>
     </tr>
   <?php endforeach; ?></tbody>
 </table>
