@@ -28,5 +28,10 @@ function base_url($path = '') {
         (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http') . '://' .
         ($_SERVER['HTTP_HOST'] ?? 'localhost') . rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/\\')
     );
+    // config.php's BASE_URL is easy to fill in as a bare domain (e.g.
+    // "shop.akdwk.in") instead of a full URL - that produced links with no
+    // scheme at all, which external services (WhatsApp media fetch, QR
+    // codes, share links) can't load. Default a missing scheme to https.
+    if (!preg_match('#^https?://#i', $base)) $base = 'https://' . $base;
     return rtrim($base, '/') . ($path ? '/' . ltrim($path, '/') : '');
 }
