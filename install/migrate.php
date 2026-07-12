@@ -23,53 +23,12 @@ $opcacheCleared = false;
 if (function_exists('opcache_reset')) { $opcacheCleared = opcache_reset(); }
 
 require_once __DIR__ . '/../includes/init.php';
+require_once __DIR__ . '/../includes/dbmigrate.php';
 require_perm('settings.edit');
-
-// MySQL error codes that simply mean "this was already applied"
-const ALREADY_APPLIED_CODES = [1050, 1060, 1061, 1062, 1091];
-
-function split_sql($sql) {
-    $stmts = preg_split('/;\s*\n/', $sql);
-    return array_values(array_filter(array_map('trim', $stmts)));
-}
-
-function run_migration_file($label, $sql, &$log) {
-    $pdo = db();
-    $applied = 0; $already = 0; $failed = 0;
-    foreach (split_sql($sql) as $stmt) {
-        if ($stmt === '') continue;
-        try {
-            $pdo->exec($stmt);
-            $applied++;
-        } catch (PDOException $e) {
-            $code = (int)($e->errorInfo[1] ?? 0);
-            if (in_array($code, ALREADY_APPLIED_CODES, true)) {
-                $already++;
-            } else {
-                $failed++;
-                $log[] = ['file' => $label, 'stmt' => mb_substr($stmt, 0, 120), 'error' => $e->getMessage()];
-            }
-        }
-    }
-    return [$applied, $already, $failed];
-}
 
 // Runs automatically on every visit to this page (GET or POST) - opening
 // the link IS the action, nothing to click.
-$log = [];
-$totals = ['applied' => 0, 'already' => 0, 'failed' => 0];
-$files = ['schema.sql' => file_get_contents(__DIR__ . '/schema.sql')];
-$upgradeFiles = glob(__DIR__ . '/upgrade_v*.sql');
-natsort($upgradeFiles);
-foreach ($upgradeFiles as $f) $files[basename($f)] = file_get_contents($f);
-
-foreach ($files as $label => $sql) {
-    list($a, $al, $f) = run_migration_file($label, $sql, $log);
-    $totals['applied'] += $a; $totals['already'] += $al; $totals['failed'] += $f;
-}
-set_setting('db_last_migrated', date('Y-m-d H:i:s'));
-log_activity('db_migrate', "applied={$totals['applied']} already={$totals['already']} failed={$totals['failed']}");
-$result = ['totals' => $totals, 'log' => $log];
+$result = run_all_migrations();
 
 // live status: which tables/columns from recent versions actually exist
 function schema_check() {

@@ -3,7 +3,27 @@
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/version.php';
 require_once __DIR__ . '/includes/updater.php';
+require_once __DIR__ . '/includes/gh_updater.php';
 require_perm('settings.view');
+
+// ---- GitHub update: save repo settings / check / apply ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_save') {
+    require_perm('settings.edit');
+    gh_save_settings(post('gh_repo'), post('gh_branch'), post('gh_token'));
+    flash('GitHub update settings saved.');
+    redirect('settings.php');
+}
+$ghCheck = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_check') {
+    require_perm('settings.edit');
+    $ghCheck = gh_check_update();
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_apply') {
+    require_perm('settings.edit');
+    list($ok, $msg) = gh_apply_update(post('sha'));
+    flash($msg, $ok ? 'success' : 'error');
+    redirect('settings.php');
+}
 
 // ---- software update: save key / apply package ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update_key') {
@@ -241,6 +261,41 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <div class="card">
+  <h3>🔗 GitHub Update <span class="badge badge-info">v<?= e(setting('app_version', APP_VERSION)) ?></span></h3>
+  <p class="muted mb">Repo/branch એકવાર set કરો, પછી ફક્ત "Check for Update" → "Update Now" — code GitHub પરથી સીધો server પર આવી જશે, database પણ આપોઆપ update થઈ જશે. <code>config.php</code> (database password વગેરે) અને <code>uploads/</code> (bills, photos) ને ક્યારેય touch નહીં કરે.</p>
+  <form method="post" class="form-row cols-3">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="gh_save">
+    <div><label>GitHub repo (owner/repo)</label><input type="text" name="gh_repo" value="<?= e(setting('gh_repo', 'akshaykananidwk/Akcomputer')) ?>" placeholder="akshaykananidwk/Akcomputer"></div>
+    <div><label>Branch</label><input type="text" name="gh_branch" value="<?= e(setting('gh_branch', 'claude/multi-location-billing-system-rs1ly6')) ?>" placeholder="main"></div>
+    <div><label>GitHub Token <span class="muted" style="font-weight:normal">(private repo હોય તો જરૂરી, ખાલી છોડો તો જૂનો રહેશે)</span></label><input type="password" name="gh_token" placeholder="ghp_xxxxxxxxxxxx"></div>
+    <div class="mt" style="grid-column:1/-1"><button class="btn btn-sm btn-outline" type="submit">Save Repo Settings</button></div>
+  </form>
+  <form method="post" class="mt" onsubmit="">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="gh_check">
+    <button class="btn btn-sm" type="submit">🔍 Check for Update</button>
+  </form>
+  <?php if ($ghCheck !== null): if (!$ghCheck['ok']): ?>
+    <p class="flash flash-error mt"><?= e($ghCheck['error']) ?></p>
+  <?php elseif (!$ghCheck['has_update']): ?>
+    <p class="flash flash-success mt">✅ તમે latest version પર જ છો (<?= e($ghCheck['short']) ?>).</p>
+  <?php else: ?>
+    <div class="card mt" style="background:var(--bg)">
+      <p><strong>🆕 નવું update ઉપલબ્ધ છે</strong></p>
+      <p class="muted">અત્યારે: <?= e($ghCheck['current_short'] ?: '(none)') ?> &nbsp;→&nbsp; નવું: <strong><?= e($ghCheck['short']) ?></strong></p>
+      <p class="muted">"<?= e($ghCheck['message']) ?>" — <?= e($ghCheck['author']) ?>, <?= dmyt($ghCheck['date']) ?></p>
+      <form method="post" onsubmit="return confirm('Update લગાડવું છે? Files replace થશે ને database migrate થશે. config.php/uploads touch નહીં થાય.')">
+        <?= csrf_field() ?>
+        <input type="hidden" name="do" value="gh_apply">
+        <input type="hidden" name="sha" value="<?= e($ghCheck['sha']) ?>">
+        <button class="btn btn-success btn-sm" type="submit">✅ Update Now</button>
+      </form>
+    </div>
+  <?php endif; endif; ?>
+</div>
+
+<div class="card">
   <h3>🛠️ Database Update <span class="badge badge-warn">Files FTP/cPanel થી upload કર્યા હોય તો</span></h3>
   <p class="muted mb">જો files સીધી server પર (FTP / cPanel File Manager થી) upload કરી હોય — "Apply Update" વાળી નીચેની રીતથી નહીં — તો database એ નવી files ને અનુરૂપ update કરવાનું ભૂલાઈ શકે, અને pages બરાબર ના ચાલે. નીચેની link ખોલો એટલે <strong>આપોઆપ</strong> database update થઈ જાય — કંઈ ક્લિક/button નહીં, ફક્ત link ખોલવાની. જૂનો ડેટા (bills, parties, બધું) સચવાય જ છે, ફક્ત ખૂટતું ઉમેરાય છે. આ link save/bookmark કરી રાખો — Files upload કર્યા પછી હંમેશા આ ખોલી લેવાની, ગમે એટલી વાર ખોલવામાં કંઈ નુકસાન નથી:</p>
   <a class="btn btn-outline" href="install/migrate.php" target="_blank">⚡ Database Update Link ખોલો</a>
@@ -265,7 +320,7 @@ include __DIR__ . '/includes/header.php';
   <h3 class="mt">Update history</h3>
   <table class="table-sm">
     <?php foreach (array_slice($hist, 0, 10) as $h): ?>
-    <tr><td><strong>v<?= e($h['version']) ?></strong></td><td><?= e($h['applied_at']) ?></td><td><?= (int)$h['files'] ?> files</td><td><?= e($h['by']) ?></td></tr>
+    <tr><td><strong><?= strpos($h['version'], 'gh:') === 0 ? e($h['version']) : 'v' . e($h['version']) ?></strong></td><td><?= e($h['applied_at']) ?></td><td><?= (int)$h['files'] ?> files</td><td><?= e($h['by']) ?></td></tr>
     <?php endforeach; ?>
   </table>
   <?php endif; ?>
