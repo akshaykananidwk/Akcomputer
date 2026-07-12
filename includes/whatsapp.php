@@ -9,16 +9,46 @@ function wa_normalize_number($mobile) {
 }
 
 /**
+ * The gateway (bulk.akdwk.in) always answers HTTP 200, even on failure -
+ * the real result is inside the JSON body: {"status":"success"|"error",
+ * "message": "..."}. Checking only the HTTP status code (as this used to)
+ * meant every failed send - bad number, unreachable media_url, WhatsApp
+ * session logged out, etc. - was silently reported back as a success.
+ */
+function wa_interpret_response($resp, $httpCode) {
+    $GLOBALS['_wa_last_error'] = '';
+    if ($resp === false || $httpCode >= 400) {
+        $GLOBALS['_wa_last_error'] = 'Server error (HTTP ' . $httpCode . ')';
+        return false;
+    }
+    $data = json_decode($resp, true);
+    if (is_array($data) && isset($data['status'])) {
+        if ($data['status'] === 'success' || $data['status'] === 'ok') return true;
+        $GLOBALS['_wa_last_error'] = $data['message'] ?? ('API એ error આપ્યો: ' . mb_substr($resp, 0, 300));
+        return false;
+    }
+    // Non-JSON 2xx response (some gateways just echo plain "OK") - accept it.
+    return true;
+}
+
+/** Human-readable reason for the last send_whatsapp() failure, or ''. */
+function whatsapp_last_error() { return $GLOBALS['_wa_last_error'] ?? ''; }
+
+/**
  * Send a WhatsApp message. Returns true on success.
  * $media_url (optional) sends an image/document with $message as caption.
  */
 function send_whatsapp($mobile, $message, $media_url = '') {
+    $GLOBALS['_wa_last_error'] = '';
     $api_url    = rtrim(setting('wa_api_url', 'https://bulk.akdwk.in/api.php'), '/');
     $session_id = setting('wa_session_id', '');
     $api_key    = setting('wa_api_key', '');
     $number     = wa_normalize_number($mobile);
 
-    if (!$api_url || !$session_id || !$api_key || strlen($number) < 12) return false;
+    if (!$api_url || !$session_id || !$api_key || strlen($number) < 12) {
+        $GLOBALS['_wa_last_error'] = 'WhatsApp API URL / Session ID / API Key (Settings) અથવા mobile number ખૂટે છે.';
+        return false;
+    }
 
     $params = [
         'number' => $number,
@@ -34,16 +64,23 @@ function send_whatsapp($mobile, $message, $media_url = '') {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 15,
+            CURLOPT_TIMEOUT => 20,
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
         $resp = curl_exec($ch);
-        $ok = $resp !== false && curl_getinfo($ch, CURLINFO_HTTP_CODE) < 400;
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+        $ok = wa_interpret_response($resp, $httpCode);
+        if (!$ok) log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
         return $ok;
     }
-    $ctx = stream_context_create(['http' => ['timeout' => 15]]);
-    return @file_get_contents($url, false, $ctx) !== false;
+    $ctx = stream_context_create(['http' => ['timeout' => 20, 'ignore_errors' => true]]);
+    $resp = @file_get_contents($url, false, $ctx);
+    $httpCode = 200;
+    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) $httpCode = (int)$m[1];
+    $ok = wa_interpret_response($resp, $httpCode);
+    if (!$ok) log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
+    return $ok;
 }
 
 // ---------- Customizable message templates ----------

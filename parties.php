@@ -101,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_ledger') {
         $bal = (float)post('balance');
         $balTxt = ($bal >= 0 ? '₹' . money($bal) . ' લેવાના' : '₹' . money(-$bal) . ' દેવાના');
         $ok = send_whatsapp($mobile, wa_template('ledger', ['party' => $p['name'], 'lines' => $lines, 'balance' => $balTxt]));
-        flash($ok ? 'Ledger WhatsApp પર મોકલ્યું.' : 'WhatsApp send fail - API settings ચકાસો.', $ok ? 'success' : 'error');
+        flash($ok ? 'Ledger WhatsApp પર મોકલ્યું.' : ('WhatsApp send fail. ' . whatsapp_last_error()), $ok ? 'success' : 'error');
     } else {
         flash('Mobile number નથી.', 'error');
     }

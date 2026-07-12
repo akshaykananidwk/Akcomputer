@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reminder_gap') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_test') {
     require_perm('settings.edit');
     $ok = send_whatsapp(post('test_mobile'), '✅ Test message from ' . setting('app_name', 'AK Computer') . ' billing system. WhatsApp API is working!');
-    flash($ok ? 'Test message sent - check WhatsApp.' : 'Send failed. Check API URL / session / key.', $ok ? 'success' : 'error');
+    flash($ok ? 'Test message sent - check WhatsApp.' : ('Send failed. ' . whatsapp_last_error()), $ok ? 'success' : 'error');
     redirect('settings.php');
 }
 

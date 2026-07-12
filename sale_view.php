@@ -51,7 +51,7 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
         log_activity('sale_whatsapp', $sale['invoice_no'] . ' to ' . $mobile);
         flash('Bill (photo) sent on WhatsApp to ' . $mobile);
     } else {
-        flash('WhatsApp send failed. Check number & API settings.', 'error');
+        flash('WhatsApp send failed' . ($mobile ? '' : ' - mobile number ખૂટે છે') . '. ' . whatsapp_last_error(), 'error');
     }
     redirect('sale_view.php?id=' . $id);
 }
@@ -79,7 +79,7 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'review'
             'shop' => $sale['company_name'], 'customer' => $sale['customer_name'] ?: 'Customer', 'link' => $reviewLink,
         ]);
         $ok = send_whatsapp($mob, $msg);
-        flash($ok ? '⭐ Review link WhatsApp પર મોકલ્યો.' : 'WhatsApp send failed.', $ok ? 'success' : 'error');
+        flash($ok ? '⭐ Review link WhatsApp પર મોકલ્યો.' : ('WhatsApp send failed. ' . whatsapp_last_error()), $ok ? 'success' : 'error');
     } else { flash('Google Review Link (Settings) અથવા mobile number ખૂટે છે.', 'error'); }
     redirect('sale_view.php?id=' . $id);
 }

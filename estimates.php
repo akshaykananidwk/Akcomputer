@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
         foreach ($eitems as $it) $itemsTxt .= '- ' . $it['name'] . ' x' . (float)$it['qty'] . ' = ₹' . money($it['total']) . "\n";
         $msg = wa_template('estimate', ['firm' => $est['company_name'], 'estimate_no' => $est['estimate_no'],
                                         'items' => trim($itemsTxt), 'total' => money($est['total'])]);
-        send_whatsapp($mobile, $msg) ? flash('Estimate sent on WhatsApp.') : flash('WhatsApp send failed.', 'error');
+        send_whatsapp($mobile, $msg) ? flash('Estimate sent on WhatsApp.') : flash('WhatsApp send failed. ' . whatsapp_last_error(), 'error');
     }
     redirect('estimates.php?action=view&id=' . (int)post('id'));
 }
