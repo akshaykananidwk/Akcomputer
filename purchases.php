@@ -100,18 +100,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     $purchase = row('SELECT * FROM purchases WHERE id = ?', [$pid]);
     $cancelOnly = post('mode') === 'cancel';
     if ($purchase) {
-        $moved = (int)val("SELECT COUNT(*) FROM item_serials WHERE purchase_id = ? AND status <> 'in_stock'", [$pid]);
-        if (!$purchase['is_cancelled'] && $moved > 0) {
-            flash('આ bill ના કેટલાક serial numbers પહેલેથી sold/issued/returned થઈ ગયા છે, એટલે ' . ($cancelOnly ? 'cancel' : 'delete') . ' કરી શકાય એમ નથી.', 'error');
-            redirect('purchase_view.php?id=' . $pid);
-        }
+        // Some serials from this purchase may already be sold/issued/
+        // returned elsewhere - delete/cancel is allowed anyway (by
+        // explicit request), but only the serials still sitting in stock
+        // are touched; serials that already moved on keep their own
+        // sold/issued/returned history intact instead of being erased.
         $pdo = db();
         $pdo->beginTransaction();
         foreach ($purchase['is_cancelled'] ? [] : all('SELECT * FROM purchase_items WHERE purchase_id = ?', [$pid]) as $pi) {
             adjust_stock($pi['item_id'], $purchase['location_id'], -(float)$pi['qty'], 'purchase_delete', $pid);
         }
         if (!$purchase['is_cancelled']) {
-            q('DELETE FROM item_serials WHERE purchase_id = ?', [$pid]);
+            q("DELETE FROM item_serials WHERE purchase_id = ? AND status = 'in_stock'", [$pid]);
         }
         q("DELETE FROM payments WHERE ref_type = 'purchase' AND ref_id = ?", [$pid]);
         if ($cancelOnly) {

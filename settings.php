@@ -6,23 +6,26 @@ require_once __DIR__ . '/includes/updater.php';
 require_once __DIR__ . '/includes/gh_updater.php';
 require_perm('settings.view');
 
+$cat = get('cat', '');
+
 // ---- GitHub update: save repo settings / check / apply ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_save') {
     require_perm('settings.edit');
     gh_save_settings(post('gh_repo'), post('gh_branch'), post('gh_token'));
     flash('GitHub update settings saved.');
-    redirect('settings.php');
+    redirect('settings.php?cat=backup');
 }
 $ghCheck = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_check') {
     require_perm('settings.edit');
     $ghCheck = gh_check_update();
+    $cat = 'backup';
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_apply') {
     require_perm('settings.edit');
     list($ok, $msg) = gh_apply_update(post('sha'));
     flash($msg, $ok ? 'success' : 'error');
-    redirect('settings.php');
+    redirect('settings.php?cat=backup');
 }
 
 // ---- software update: save key / apply package ----
@@ -30,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update_key') {
     require_perm('settings.edit');
     set_setting('update_key', post('update_key'));
     flash('Update Key saved.');
-    redirect('settings.php');
+    redirect('settings.php?cat=backup');
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'apply_update') {
     require_perm('settings.edit');
@@ -43,19 +46,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'apply_update') {
         list($ok, $msg) = akupd_apply($_FILES['pkg']['tmp_name'], $key);
         flash($msg, $ok ? 'success' : 'error');
     }
-    redirect('settings.php');
+    redirect('settings.php?cat=backup');
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_general') {
     require_perm('settings.edit');
-    foreach (['app_name', 'wa_api_url', 'wa_session_id', 'wa_api_key', 'default_tax', 'wa_shop_number', 'google_review_link', 'razorpay_key_id', 'razorpay_key_secret'] as $k) {
-        set_setting($k, post($k));
-    }
+    set_setting('app_name', post('app_name'));
+    set_setting('default_tax', post('default_tax'));
     set_setting('login_otp', post('login_otp') ? '1' : '0');
     set_setting('allow_negative_stock', post('allow_negative_stock') ? '1' : '0');
     log_activity('settings_save');
     flash('Settings saved.');
-    redirect('settings.php');
+    redirect('settings.php?cat=general');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_whatsapp') {
+    require_perm('settings.edit');
+    foreach (['wa_api_url', 'wa_session_id', 'wa_api_key', 'wa_shop_number'] as $k) set_setting($k, post($k));
+    log_activity('settings_save');
+    flash('WhatsApp settings saved.');
+    redirect('settings.php?cat=whatsapp');
 }
 
 // ---- WhatsApp message templates ----
@@ -66,14 +76,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'templates') {
     }
     log_activity('wa_templates_save');
     flash('Message templates saved.');
-    redirect('settings.php');
+    redirect('settings.php?cat=whatsapp');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_invoice') {
+    require_perm('settings.edit');
+    foreach (['google_review_link', 'razorpay_key_id', 'razorpay_key_secret'] as $k) set_setting($k, post($k));
+    log_activity('settings_save');
+    flash('Invoice settings saved.');
+    redirect('settings.php?cat=invoice');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'design') {
     require_perm('settings.edit');
     set_setting('invoice_theme', (int)post('invoice_theme'));
     flash('Bill design બદલાઈ ગઈ ✔ — કોઈ પણ bill ખોલીને જુઓ.');
-    redirect('settings.php');
+    redirect('settings.php?cat=invoice');
 }
 
 if (setting('cron_key', '') === '') set_setting('cron_key', bin2hex(random_bytes(12)));
@@ -81,14 +99,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reminder_gap') {
     require_perm('settings.edit');
     set_setting('reminder_gap_days', max(1, (int)post('gap')));
     flash('Reminder gap saved.');
-    redirect('settings.php');
+    redirect('settings.php?cat=reminders');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_test') {
     require_perm('settings.edit');
     $ok = send_whatsapp(post('test_mobile'), '✅ Test message from ' . setting('app_name', 'AK Computer') . ' billing system. WhatsApp API is working!');
     flash($ok ? 'Test message sent - check WhatsApp.' : ('Send failed. ' . whatsapp_last_error()), $ok ? 'success' : 'error');
-    redirect('settings.php');
+    redirect('settings.php?cat=whatsapp');
 }
 
 // full database backup download (plain PHP SQL dump - works on shared hosting)
@@ -118,28 +136,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'term_add') {
     require_perm('settings.edit');
     q('INSERT INTO credit_terms (days, label) VALUES (?, ?)', [(int)post('days'), post('label') ?: ((int)post('days') . ' days')]);
     flash('Credit term added.');
-    redirect('settings.php');
+    redirect('settings.php?cat=party');
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'term_del') {
     require_perm('settings.edit');
     q('DELETE FROM credit_terms WHERE id = ?', [(int)post('id')]);
     flash('Credit term removed.');
-    redirect('settings.php');
+    redirect('settings.php?cat=party');
 }
 
 $terms = all('SELECT * FROM credit_terms ORDER BY days');
 $page_title = 'Settings';
 include __DIR__ . '/includes/header.php';
+
+// Categories shown as a tappable list (like Vyapar's Settings screen) -
+// each opens its own section instead of one long confusing page.
+$categories = [
+    'general'   => ['⚙️', 'General', 'App name, GST %, login security'],
+    'whatsapp'  => ['💬', 'WhatsApp', 'API connection, templates, test send'],
+    'invoice'   => ['🎨', 'Invoice / Bill', 'Design, Google review, online payment'],
+    'reminders' => ['⏰', 'Reminders', 'Auto overdue payment reminders'],
+    'party'     => ['👥', 'Party', 'Credit term options'],
+    'backup'    => ['🔄', 'Backup & Updates', 'Backup, GitHub update, software update'],
+    'about'     => ['📱', 'About', 'Install as app'],
+];
+
+if ($cat === '' || !isset($categories[$cat])) {
 ?>
+<div class="settings-cat-list">
+  <?php foreach ($categories as $key => $c): ?>
+  <a class="settings-cat-row" href="settings.php?cat=<?= $key ?>">
+    <span class="sc-ico"><?= $c[0] ?></span>
+    <span class="sc-label"><?= e($c[1]) ?><span class="sc-sub"><?= e($c[2]) ?></span></span>
+    <span class="sc-chev">›</span>
+  </a>
+  <?php endforeach; ?>
+</div>
+<?php
+include __DIR__ . '/includes/footer.php';
+exit;
+}
+?>
+<a class="settings-back" href="settings.php">← Settings</a>
+
+<?php if ($cat === 'general'): ?>
 <div class="card">
-  <h2>General & WhatsApp API</h2>
+  <h2>⚙️ General</h2>
   <form method="post">
     <?= csrf_field() ?>
-    <input type="hidden" name="do" value="save">
+    <input type="hidden" name="do" value="save_general">
     <div class="form-row cols-2">
       <div><label>App / shop name</label><input type="text" name="app_name" value="<?= e(setting('app_name')) ?>"></div>
       <div><label>Default GST %</label><input type="number" step="any" name="default_tax" value="<?= e(setting('default_tax', '18')) ?>"></div>
     </div>
+    <label class="check-inline mb"><input type="checkbox" name="login_otp" value="1" <?= setting('login_otp') === '1' ? 'checked' : '' ?>> Login પર WhatsApp OTP ફરજિયાત (2-step)</label>
+    <label class="check-inline mb"><input type="checkbox" name="allow_negative_stock" value="1" <?= setting('allow_negative_stock', '1') === '1' ? 'checked' : '' ?>> Purchase વગર sale કરવા દેવું (negative stock allowed)</label>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</div>
+<?php endif; ?>
+
+<?php if ($cat === 'whatsapp'): ?>
+<div class="card">
+  <h2>💬 WhatsApp API</h2>
+  <form method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_whatsapp">
     <div class="form-row cols-3">
       <div><label>WhatsApp API URL</label><input type="text" name="wa_api_url" value="<?= e(setting('wa_api_url', 'https://bulk.akdwk.in/api.php')) ?>"></div>
       <div><label>Session ID</label><input type="text" name="wa_session_id" value="<?= e(setting('wa_session_id')) ?>"></div>
@@ -149,22 +211,20 @@ include __DIR__ . '/includes/header.php';
       <div><label>Shop WhatsApp number (website catalog ના "Order" button માટે)</label>
         <input type="tel" name="wa_shop_number" value="<?= e(setting('wa_shop_number')) ?>" placeholder="91XXXXXXXXXX"></div>
     </div>
-    <div class="form-row cols-2">
-      <div><label>Google Review Link <span class="muted" style="font-weight:normal">(bill પરથી "Review Invite" દબાવો એટલે આ link સીધો WhatsApp થાય)</span></label>
-        <input type="text" name="google_review_link" value="<?= e(setting('google_review_link')) ?>" placeholder="https://g.page/r/xxxxxxx/review"></div>
-    </div>
-    <div class="form-row cols-2">
-      <div><label>Razorpay Key ID <span class="muted" style="font-weight:normal">(bill પર online payment link માટે, optional)</span></label><input type="text" name="razorpay_key_id" value="<?= e(setting('razorpay_key_id')) ?>" placeholder="rzp_live_..."></div>
-      <div><label>Razorpay Key Secret</label><input type="password" name="razorpay_key_secret" value="<?= e(setting('razorpay_key_secret')) ?>"></div>
-    </div>
-    <label class="check-inline mb"><input type="checkbox" name="login_otp" value="1" <?= setting('login_otp') === '1' ? 'checked' : '' ?>> Login પર WhatsApp OTP ફરજિયાત (2-step)</label>
-    <label class="check-inline mb"><input type="checkbox" name="allow_negative_stock" value="1" <?= setting('allow_negative_stock', '1') === '1' ? 'checked' : '' ?>> Purchase વગર sale કરવા દેવું (negative stock allowed)</label>
-    <button class="btn" type="submit">Save Settings</button>
+    <button class="btn" type="submit">Save</button>
   </form>
 </div>
-
 <div class="card">
-  <h3>💬 WhatsApp Message Templates</h3>
+  <h3>Test WhatsApp API</h3>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="wa_test">
+    <div><input type="tel" name="test_mobile" placeholder="10-digit mobile" required></div>
+    <button class="btn btn-wa btn-sm" type="submit">Send test</button>
+  </form>
+</div>
+<div class="card">
+  <h3>💬 Message Templates</h3>
   <p class="muted mb">દરેક message તમારી રીતે લખો. Variables જેમ છે એમ જ રાખવા — મોકલતી વખતે સાચી value થી બદલાઈ જશે. ખાલી છોડો તો default વપરાશે.</p>
   <form method="post">
     <?= csrf_field() ?>
@@ -178,7 +238,9 @@ include __DIR__ . '/includes/header.php';
     <button class="btn" type="submit">Save Templates</button>
   </form>
 </div>
+<?php endif; ?>
 
+<?php if ($cat === 'invoice'): ?>
 <div class="card">
   <h3>🎨 Bill / Invoice Design (<?= count(invoice_themes()) ?> designs)</h3>
   <p class="muted mb">Design પસંદ કરો — બધા bills, estimates અને challans પર લાગુ થશે.</p>
@@ -204,7 +266,25 @@ include __DIR__ . '/includes/header.php';
     <button class="btn mt" type="submit">Apply Design</button>
   </form>
 </div>
+<div class="card">
+  <h3>Google Review & Online Payment</h3>
+  <form method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_invoice">
+    <div class="form-row cols-2">
+      <div><label>Google Review Link <span class="muted" style="font-weight:normal">(bill પરથી "Review Invite" દબાવો એટલે આ link સીધો WhatsApp થાય)</span></label>
+        <input type="text" name="google_review_link" value="<?= e(setting('google_review_link')) ?>" placeholder="https://g.page/r/xxxxxxx/review"></div>
+    </div>
+    <div class="form-row cols-2">
+      <div><label>Razorpay Key ID <span class="muted" style="font-weight:normal">(bill પર online payment link માટે, optional)</span></label><input type="text" name="razorpay_key_id" value="<?= e(setting('razorpay_key_id')) ?>" placeholder="rzp_live_..."></div>
+      <div><label>Razorpay Key Secret</label><input type="password" name="razorpay_key_secret" value="<?= e(setting('razorpay_key_secret')) ?>"></div>
+    </div>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</div>
+<?php endif; ?>
 
+<?php if ($cat === 'reminders'): ?>
 <div class="card">
   <h3>⏰ Auto Overdue Reminders (cron)</h3>
   <?php $cronUrl = base_url('cron.php?key=' . setting('cron_key')); ?>
@@ -219,23 +299,9 @@ include __DIR__ . '/includes/header.php';
     <a class="btn btn-sm btn-outline" href="<?= e($cronUrl) ?>" target="_blank">▶ અત્યારે Test Run</a>
   </form>
 </div>
+<?php endif; ?>
 
-<div class="card">
-  <h3>💾 Backup</h3>
-  <p class="muted mb">આખા database નો backup (.sql file) download કરો — Google Drive / pen drive માં સાચવી રાખો.</p>
-  <a class="btn btn-outline" href="settings.php?do=backup">⬇ Download full backup</a>
-</div>
-
-<div class="card">
-  <h3>Test WhatsApp API</h3>
-  <form method="post" class="filterbar">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="wa_test">
-    <div><input type="tel" name="test_mobile" placeholder="10-digit mobile" required></div>
-    <button class="btn btn-wa btn-sm" type="submit">Send test</button>
-  </form>
-</div>
-
+<?php if ($cat === 'party'): ?>
 <div class="card">
   <h3>Credit terms (dropdown options)</h3>
   <table class="table-sm mb">
@@ -259,6 +325,14 @@ include __DIR__ . '/includes/header.php';
     <button class="btn btn-sm" type="submit">Add term</button>
   </form>
 </div>
+<?php endif; ?>
+
+<?php if ($cat === 'backup'): ?>
+<div class="card">
+  <h3>💾 Backup</h3>
+  <p class="muted mb">આખા database નો backup (.sql file) download કરો — Google Drive / pen drive માં સાચવી રાખો.</p>
+  <a class="btn btn-outline" href="settings.php?do=backup">⬇ Download full backup</a>
+</div>
 
 <div class="card">
   <h3>🔗 GitHub Update <span class="badge badge-info">v<?= e(setting('app_version', APP_VERSION)) ?></span></h3>
@@ -271,7 +345,7 @@ include __DIR__ . '/includes/header.php';
     <div><label>GitHub Token <span class="muted" style="font-weight:normal">(private repo હોય તો જરૂરી, ખાલી છોડો તો જૂનો રહેશે)</span></label><input type="password" name="gh_token" placeholder="ghp_xxxxxxxxxxxx"></div>
     <div class="mt" style="grid-column:1/-1"><button class="btn btn-sm btn-outline" type="submit">Save Repo Settings</button></div>
   </form>
-  <form method="post" class="mt" onsubmit="">
+  <form method="post" class="mt">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="gh_check">
     <button class="btn btn-sm" type="submit">🔍 Check for Update</button>
@@ -325,9 +399,13 @@ include __DIR__ . '/includes/header.php';
   </table>
   <?php endif; ?>
 </div>
+<?php endif; ?>
 
+<?php if ($cat === 'about'): ?>
 <div class="card">
   <h3>📱 Install as app (PWA)</h3>
   <p class="muted">Mobile browser (Chrome) માં આ website ખોલી → menu → <strong>"Add to Home screen"</strong> → app જેવી રીતે open થશે, full screen.</p>
 </div>
+<?php endif; ?>
+
 <?php include __DIR__ . '/includes/footer.php'; ?>
