@@ -14,6 +14,14 @@
 // is opened (no button to click) - just bookmark this link and open it
 // after every file upload. Existing data is never touched; it only adds
 // whatever tables/columns are missing. Safe to open any number of times.
+// OPcache must be cleared BEFORE anything below requires helpers.php /
+// any other app file - otherwise this very request compiles/executes
+// whatever stale bytecode OPcache already had cached, and only takes
+// effect for requests AFTER this one. That ordering bug is why the
+// Code Self-Test below could show FAIL on the very run that fixes it.
+$opcacheCleared = false;
+if (function_exists('opcache_reset')) { $opcacheCleared = opcache_reset(); }
+
 require_once __DIR__ . '/../includes/init.php';
 require_perm('settings.edit');
 
@@ -45,17 +53,6 @@ function run_migration_file($label, $sql, &$log) {
     }
     return [$applied, $already, $failed];
 }
-
-// Some shared hosts run PHP with OPcache set to NOT re-check file
-// timestamps (opcache.validate_timestamps=0 or a long revalidate_freq) -
-// on those hosts, uploading new .php files has NO effect at all until the
-// cached compiled bytecode is cleared, because PHP keeps running the OLD
-// code from memory even though the file on disk is already correct. This
-// is invisible from the file manager/FTP side - everything LOOKS updated,
-// but old bugs keep happening. Clearing it here, every time this page is
-// opened, makes "upload files then open this link" actually reliable.
-$opcacheCleared = false;
-if (function_exists('opcache_reset')) { $opcacheCleared = opcache_reset(); }
 
 // Runs automatically on every visit to this page (GET or POST) - opening
 // the link IS the action, nothing to click.
