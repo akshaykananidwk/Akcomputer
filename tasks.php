@@ -68,6 +68,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'complete') {
           [post('work_done'), (float)post('service_charge'), $matTotal, $sig, $t['id']]);
         $pdo->commit();
         log_activity('task_complete', $t['task_no']);
+        if ($t['customer_mobile']) {
+            $link = feedback_link('task', $t['id'], $t['customer_name'], $t['customer_mobile']);
+            send_whatsapp($t['customer_mobile'], wa_template('feedback_request', [
+                'customer' => $t['customer_name'] ?: 'Customer', 'job_no' => $t['task_no'], 'link' => $link,
+            ]));
+        }
         flash('Task completed. Material used deducted from your stock.');
     } catch (Exception $ex) {
         $pdo->rollBack();

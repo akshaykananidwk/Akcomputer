@@ -33,6 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                 ]));
             }
         }
+        // job handed back to customer - ask for feedback once, separately
+        // from the status update above (its own message, own template)
+        if (post('status') === 'delivered' && post('customer_mobile')) {
+            $link = feedback_link('repair', $id, post('customer_name'), post('customer_mobile'));
+            send_whatsapp(post('customer_mobile'), wa_template('feedback_request', [
+                'customer' => post('customer_name') ?: 'Customer', 'job_no' => post('job_no'), 'link' => $link,
+            ]));
+        }
     } else {
         q('INSERT INTO repairs (party_id, customer_name, customer_mobile, device_type, brand_model, serial_no, accessories,
            problem, status, received_date, outsource_party_id, sent_date, received_back_date, estimate_cost, outsource_cost,

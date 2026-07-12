@@ -212,6 +212,18 @@ function loyalty_add($party_id, $points, $reason, $ref_type = '', $ref_id = null
       [$party_id, $points, $reason, $ref_type, $ref_id, $_SESSION['user_id'] ?? null]);
 }
 
+// ---------- Post-job feedback request ----------
+/** Creates (or reuses, if already sent for this job) a feedback row and
+ *  returns its public rating-page URL. */
+function feedback_link($ref_type, $ref_id, $customer_name, $mobile) {
+    $existing = row('SELECT token FROM feedback WHERE ref_type = ? AND ref_id = ?', [$ref_type, $ref_id]);
+    if ($existing) return base_url('feedback.php?token=' . $existing['token']);
+    $token = bin2hex(random_bytes(16));
+    q('INSERT INTO feedback (ref_type, ref_id, token, customer_name, mobile) VALUES (?,?,?,?,?)',
+      [$ref_type, $ref_id, $token, $customer_name, $mobile]);
+    return base_url('feedback.php?token=' . $token);
+}
+
 // ---------- Bank accounts / payment methods / QR ----------
 function default_bank_account() {
     static $b = false;
