@@ -13,15 +13,18 @@ $tabs = [
     'business' => '🏢 Business Report',
     'daily' => '📅 Daily Sales', 'sales' => '🧾 Sales', 'party_sales' => '👥 Party Sales',
     'aging' => '⏳ Aging / Collection',
-    'purchase' => '📦 Purchase', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
+    'purchase' => '📦 Purchase', 'vendor_perf' => '🚚 Vendor Performance', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
     'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Profit',
     'bill_profit' => '🧮 Bill Profit', 'staff' => '🎒 Staff Stock',
     'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'tech_sla' => '⏱️ Technician SLA', 'low' => '⚠️ Low Stock',
+    'activity' => '🔍 Activity Log',
 ];
 if (!can('reports.gst')) unset($tabs['gst']);
 if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); }
 if (!can('expenses.view')) unset($tabs['expense']);
+if (!can('users.view')) unset($tabs['activity']);
 if ($r === 'business' && !can('reports.profit')) $r = 'daily';
+if ($r === 'activity' && !can('users.view')) $r = 'daily';
 ?>
 <div class="page-actions" style="overflow-x:auto;flex-wrap:nowrap">
 <?php foreach ($tabs as $k => $label): ?>
@@ -148,6 +151,27 @@ if ($r === 'purchase') {
                  WHERE p.purchase_date BETWEEN ? AND ? GROUP BY p.party_id ORDER BY total DESC', [$from, $to]);
     echo '<div class="table-wrap"><table><thead><tr><th>Supplier</th><th class="num">Bills</th><th class="num">Total ₹</th><th class="num">Paid ₹</th><th class="num">Due ₹</th></tr></thead><tbody>';
     foreach ($rows as $x) echo '<tr><td>' . e($x['name']) . '</td><td class="num">' . $x['bills'] . '</td><td class="num">' . money($x['total']) . '</td><td class="num">' . money($x['paid']) . '</td><td class="num">' . money($x['total'] - $x['paid']) . '</td></tr>';
+    echo '</tbody></table></div>';
+}
+
+// ---------------- vendor performance ----------------
+if ($r === 'vendor_perf') {
+    $rows = all("SELECT pt.id, pt.name,
+                 COUNT(p.id) bills, COALESCE(SUM(p.total),0) spend,
+                 COALESCE((SELECT SUM(pr.total) FROM purchase_returns pr WHERE pr.party_id = pt.id AND pr.return_date BETWEEN ? AND ?),0) returns,
+                 MAX(p.purchase_date) last_purchase
+                 FROM parties pt JOIN purchases p ON p.party_id = pt.id
+                 WHERE p.purchase_date BETWEEN ? AND ?
+                 GROUP BY pt.id ORDER BY spend DESC", [$from, $to, $from, $to]);
+    echo '<div class="table-wrap"><table><thead><tr><th>Supplier</th><th class="num">Bills</th><th class="num">Total Spend ₹</th><th class="num">Avg Bill ₹</th><th class="num">Returns ₹</th><th class="num">Return %</th><th>Last Purchase</th></tr></thead><tbody>';
+    foreach ($rows as $x) {
+        $avg = $x['bills'] > 0 ? $x['spend'] / $x['bills'] : 0;
+        $retPct = $x['spend'] > 0 ? $x['returns'] / $x['spend'] * 100 : 0;
+        echo '<tr><td>' . e($x['name']) . '</td><td class="num">' . $x['bills'] . '</td><td class="num">' . money($x['spend']) . '</td>'
+           . '<td class="num">' . money($avg) . '</td><td class="num">' . money($x['returns']) . '</td>'
+           . '<td class="num">' . number_format($retPct, 1) . '%</td><td>' . dmy($x['last_purchase']) . '</td></tr>';
+    }
+    if (!$rows) echo '<tr><td colspan="7" class="muted">આ સમયગાળામાં કોઈ purchase નથી.</td></tr>';
     echo '</tbody></table></div>';
 }
 
@@ -447,6 +471,33 @@ if ($r === 'low') {
         }
         </script>';
     }
+}
+
+// ---------------- activity log (who did what, when) ----------------
+if ($r === 'activity' && can('users.view')) {
+    $logUser = (int)get('log_user');
+    $logQ = trim(get('log_q'));
+    $where = ['DATE(al.created_at) BETWEEN ? AND ?'];
+    $params = [$from, $to];
+    if ($logUser) { $where[] = 'al.user_id = ?'; $params[] = $logUser; }
+    if ($logQ !== '') { $where[] = '(al.action LIKE ? OR al.details LIKE ?)'; $params[] = "%$logQ%"; $params[] = "%$logQ%"; }
+    $logs = all("SELECT al.*, u2.name user_name FROM activity_log al LEFT JOIN users u2 ON u2.id = al.user_id
+                 WHERE " . implode(' AND ', $where) . " ORDER BY al.id DESC LIMIT 300", $params);
+    $staffAll = all('SELECT id, name FROM users ORDER BY name');
+    echo '<form method="get" class="filterbar"><input type="hidden" name="r" value="activity"><input type="hidden" name="from" value="' . e($from) . '"><input type="hidden" name="to" value="' . e($to) . '">';
+    echo '<div><label>Staff</label><select name="log_user"><option value="">બધા</option>';
+    foreach ($staffAll as $s) echo '<option value="' . $s['id'] . '" ' . ($logUser == $s['id'] ? 'selected' : '') . '>' . e($s['name']) . '</option>';
+    echo '</select></div>';
+    echo '<div><label>Search (action/details)</label><input type="text" name="log_q" value="' . e($logQ) . '"></div>';
+    echo '<button class="btn btn-sm" type="submit">Filter</button></form>';
+    echo '<p class="muted mb">છેલ્લા 300 records (' . e($from) . ' થી ' . e($to) . ').</p>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Date/Time</th><th>Staff</th><th>Action</th><th>Details</th></tr></thead><tbody>';
+    foreach ($logs as $l) {
+        echo '<tr><td>' . dmyt($l['created_at']) . '</td><td>' . e($l['user_name'] ?: 'System') . '</td>'
+           . '<td><code style="font-size:12px">' . e($l['action']) . '</code></td><td>' . e($l['details']) . '</td></tr>';
+    }
+    if (!$logs) echo '<tr><td colspan="4" class="muted">કંઈ મળ્યું નહીં.</td></tr>';
+    echo '</tbody></table></div>';
 }
 ?>
 <?php include __DIR__ . '/includes/footer.php'; ?>
