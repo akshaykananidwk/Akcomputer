@@ -35,6 +35,9 @@ if ($r === 'business' && !can('reports.profit')) $r = 'daily';
   <button class="btn btn-sm" type="submit">Apply</button>
   <button class="btn btn-sm btn-outline no-print" type="button" onclick="window.print()">🖨️ Print</button>
   <button class="btn btn-sm btn-outline no-print" type="button" onclick="exportCsv()">⬇ Excel/CSV</button>
+  <?php if ($r === 'sales' || $r === 'purchase'): ?>
+  <a class="btn btn-sm btn-outline no-print" href="tally_export.php?type=<?= $r ?>&from=<?= e($from) ?>&to=<?= e($to) ?>">⬇ Tally XML</a>
+  <?php endif; ?>
 </form>
 <script>
 function exportCsv() {
