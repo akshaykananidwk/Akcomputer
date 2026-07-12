@@ -16,7 +16,8 @@ $tabs = [
     'purchase' => '📦 Purchase', 'vendor_perf' => '🚚 Vendor Performance', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
     'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Profit',
     'bill_profit' => '🧮 Bill Profit', 'staff' => '🎒 Staff Stock',
-    'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'tech_sla' => '⏱️ Technician SLA', 'low' => '⚠️ Low Stock',
+    'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'tech_sla' => '⏱️ Technician SLA',
+    'forecast' => '🔮 AI Sales Forecast', 'low' => '⚠️ Low Stock',
     'activity' => '🔍 Activity Log',
 ];
 if (!can('reports.gst')) unset($tabs['gst']);
@@ -433,6 +434,50 @@ if ($r === 'tech_sla') {
            . '<td class="num">₹' . money($x['revenue']) . '</td></tr>';
     }
     if (!$rows) echo '<tr><td colspan="5" class="muted">No completed tasks in this period.</td></tr>';
+    echo '</tbody></table></div>';
+}
+
+// ---------------- AI sales forecast (weighted moving average) ----------------
+// Not a real ML model (no server-side ML stack on shared hosting) - a
+// weighted moving average over the last 3 full calendar months, weighted
+// 1:2:3 toward the most recent month, is a standard, well-understood
+// forecasting technique and good enough to guide "how much should I
+// reorder" without needing an external service or GPU.
+if ($r === 'forecast') {
+    $m3Start = date('Y-m-01', strtotime('first day of -3 months'));
+    $curMonthStart = date('Y-m-01');
+    $monthly = all("SELECT si.item_id, DATE_FORMAT(s.sale_date, '%Y-%m') ym, SUM(si.qty) qty
+                     FROM sale_items si JOIN sales s ON s.id = si.sale_id
+                     WHERE s.is_cancelled = 0 AND s.sale_date >= ? AND s.sale_date < ?
+                     GROUP BY si.item_id, ym", [$m3Start, $curMonthStart]);
+    $byItem = [];
+    foreach ($monthly as $m) $byItem[$m['item_id']][$m['ym']] = (float)$m['qty'];
+    $months = [];
+    for ($i = 3; $i >= 1; $i--) $months[] = date('Y-m', strtotime("-$i months"));
+
+    $items = all('SELECT i.*, COALESCE((SELECT SUM(qty) FROM stock WHERE item_id = i.id),0) stock
+                  FROM items i WHERE i.is_active = 1 AND i.item_type = "product" ORDER BY i.name');
+    $forecastRows = [];
+    foreach ($items as $it) {
+        $m = $byItem[$it['id']] ?? [];
+        $q1 = $m[$months[0]] ?? 0; $q2 = $m[$months[1]] ?? 0; $q3 = $m[$months[2]] ?? 0;
+        if ($q1 == 0 && $q2 == 0 && $q3 == 0) continue; // never sold recently - nothing to forecast
+        $forecast = ($q1 * 1 + $q2 * 2 + $q3 * 3) / 6;
+        $trend = $q3 > $q2 && $q2 > $q1 ? 'up' : ($q3 < $q2 && $q2 < $q1 ? 'down' : 'flat');
+        $suggest = max(0, ceil($forecast - (float)$it['stock']));
+        $forecastRows[] = ['it' => $it, 'q1' => $q1, 'q2' => $q2, 'q3' => $q3, 'forecast' => $forecast, 'trend' => $trend, 'suggest' => $suggest];
+    }
+    usort($forecastRows, fn($a, $b) => $b['forecast'] <=> $a['forecast']);
+    $trendIcon = ['up' => '📈', 'down' => '📉', 'flat' => '➡️'];
+    echo '<p class="muted mb">છેલ્લા 3 મહિનાના વેચાણ પરથી આગલા મહિનાનો અંદાજ (weighted average, તાજા મહિનાનું વજન વધારે) - true AI/ML નથી, પણ trend + reorder guidance માટે ઉપયોગી.</p>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Item</th><th class="num">' . $months[0] . '</th><th class="num">' . $months[1] . '</th><th class="num">' . $months[2] . '</th><th class="num">Forecast (next month)</th><th>Trend</th><th class="num">Current Stock</th><th class="num">Suggested Reorder</th></tr></thead><tbody>';
+    foreach ($forecastRows as $fr) {
+        echo '<tr><td>' . e($fr['it']['name']) . '</td><td class="num">' . $fr['q1'] . '</td><td class="num">' . $fr['q2'] . '</td><td class="num">' . $fr['q3'] . '</td>'
+           . '<td class="num"><strong>' . number_format($fr['forecast'], 1) . '</strong> ' . e($fr['it']['unit']) . '</td>'
+           . '<td>' . $trendIcon[$fr['trend']] . '</td><td class="num">' . (float)$fr['it']['stock'] . '</td>'
+           . '<td class="num">' . ($fr['suggest'] > 0 ? '<strong>' . $fr['suggest'] . '</strong>' : '<span class="muted">-</span>') . '</td></tr>';
+    }
+    if (!$forecastRows) echo '<tr><td colspan="8" class="muted">છેલ્લા 3 મહિનામાં કોઈ વેચાણ ડેટા નથી.</td></tr>';
     echo '</tbody></table></div>';
 }
 
