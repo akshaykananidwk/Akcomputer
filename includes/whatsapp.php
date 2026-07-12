@@ -2,8 +2,14 @@
 // WhatsApp API integration (bulk.akdwk.in)
 // API URL, session id and key are stored in settings (Settings page).
 
+// People type mobile numbers every possible way - with a leading 0 (old STD
+// habit), spaces/dashes, +91, 91, or even 0091. An Indian mobile number is
+// always exactly 10 digits, so no matter what prefix junk is in front of it,
+// keeping only the LAST 10 digits after stripping non-digits always recovers
+// the real number - then 91 is added once, consistently.
 function wa_normalize_number($mobile) {
     $n = preg_replace('/\D/', '', (string)$mobile);
+    if (strlen($n) >= 10) $n = substr($n, -10);
     if (strlen($n) === 10) $n = '91' . $n;
     return $n;
 }
