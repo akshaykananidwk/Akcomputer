@@ -6,61 +6,80 @@ $app_name = setting('app_name', 'AK Computer');
 // Menu: link => [href, icon, label, perm]
 // group => [id, icon, label, items[]] ; item = [href, label, perm, plus_href, plus_perm]
 $_navMenu = [
-    ['link', 'index.php', '🏠', 'Dashboard', 'dashboard.view'],
-    ['group', 'parties', '👥', 'Parties', [
+    ['link', 'index.php', 'home', 'Dashboard', 'dashboard.view'],
+    ['group', 'parties', 'users', 'Parties', [
         ['parties.php', 'All Parties', 'parties.view', 'parties.php?action=new', 'parties.add'],
         ['payments.php', 'Party Payments', 'payments.view', null, null],
     ]],
-    ['group', 'items', '🖥️', 'Items', [
+    ['group', 'items', 'box', 'Items', [
         ['items.php', 'All Items', 'items.view', 'items.php?action=new', 'items.add'],
         ['items_import.php', 'Import Excel/CSV', 'items.add', null, null],
         ['stock.php', 'Stock Levels', 'stock.view', null, null],
         ['barcode_labels.php', 'Barcode Label Printing', 'items.view', null, null],
         ['batches.php', 'Batch / Expiry Tracking', 'batches.view', 'batches.php?action=new', 'batches.add'],
     ]],
-    ['group', 'sale', '🧾', 'Sale', [
+    ['group', 'sale', 'receipt', 'Sale', [
         ['sales.php', 'Sale Invoices', 'sales.view', 'sales.php?action=new', 'sales.add'],
         ['estimates.php', 'Estimate / Quotation', 'estimates.view', 'estimates.php?action=new', 'estimates.add'],
         ['sales_return.php', 'Sale Return', 'sales_return.view', 'sales_return.php?action=new', 'sales_return.add'],
         ['challans.php', 'Delivery Challan', 'challans.view', 'challans.php?action=new', 'challans.add'],
     ]],
-    ['group', 'purchase', '📦', 'Purchase', [
+    ['group', 'purchase', 'box', 'Purchase', [
         ['purchases.php', 'Purchase Bills', 'purchases.view', 'purchases.php?action=new', 'purchases.add'],
         ['purchase_return.php', 'Purchase Return', 'purchase_return.view', 'purchase_return.php?action=new', 'purchase_return.add'],
     ]],
-    ['link', 'expenses.php', '💸', 'Expenses', 'expenses.view'],
-    ['group', 'cashbank', '🏦', 'Cash & Bank', [
+    ['link', 'expenses.php', 'wallet', 'Expenses', 'expenses.view'],
+    ['group', 'cashbank', 'card', 'Cash & Bank', [
         ['cash_bank.php', 'Cash & Bank Overview', 'payments.view', null, null],
         ['bank_accounts.php', 'Bank Accounts', 'settings.view', 'bank_accounts.php', 'settings.edit'],
         ['payment_methods.php', 'Payment Methods', 'settings.view', 'payment_methods.php', 'settings.edit'],
     ]],
-    ['group', 'godown', '🏬', 'Stock / Godown', [
+    ['group', 'godown', 'archive', 'Stock / Godown', [
         ['handover.php', 'Handover / Transfer', 'handover.view', 'handover.php?action=new', 'handover.add'],
         ['my_stock.php', 'My Stock', null, null, null],
         ['stock.php', 'Location Stock', 'stock.view', null, null],
     ]],
-    ['group', 'service', '🛠️', 'Repair & Service', [
+    ['group', 'service', 'tool', 'Repair & Service', [
         ['repairs.php', 'Repair Jobs', 'repairs.view', 'repairs.php?action=new', 'repairs.add'],
         ['tasks.php', 'Field Tasks', 'tasks.view', 'tasks.php?action=new', 'tasks.add'],
         ['warranty.php', 'Warranty Claims', 'warranty.view', 'warranty.php?action=new', 'warranty.add'],
         ['amc.php', 'AMC / Recurring Billing', 'amc.view', 'amc.php?action=new', 'amc.add'],
-        ['amc.php?action=calendar', '📅 AMC / Visit Calendar', 'amc.view', null, null],
+        ['amc.php?action=calendar', 'AMC / Visit Calendar', 'amc.view', null, null],
         ['sites.php', 'Customer Sites / DVR-NVR Vault', 'sites.view', 'sites.php?action=new', 'sites.add'],
     ]],
-    ['link', 'reports.php', '📈', 'Reports', 'reports.view'],
-    ['group', 'store', '🌐', 'My Online Store', [
+    ['link', 'reports.php', 'bar-chart', 'Reports', 'reports.view'],
+    ['group', 'store', 'globe', 'My Online Store', [
         ['catalog.php', 'View Website', null, null, null],
         ['web_orders.php', 'Website Orders', 'weborders.view', null, null],
-        ['items.php', 'Website Items (🌐 ON/OFF)', 'items.view', null, null],
+        ['items.php', 'Website Items (ON/OFF)', 'items.view', null, null],
     ]],
-    ['group', 'admin', '🧑‍💼', 'Staff & Company', [
+    ['group', 'admin', 'briefcase', 'Staff & Company', [
         ['users.php', 'Staff Users', 'users.view', 'users.php?action=new', 'users.add'],
         ['roles.php', 'Roles / Permissions', 'roles.view', 'roles.php?action=new', 'roles.add'],
         ['locations.php', 'Locations', 'locations.view', null, null],
         ['companies.php', 'Companies / Firms', 'companies.view', null, null],
     ]],
-    ['link', 'settings.php', '⚙️', 'Settings', 'settings.view'],
+    ['link', 'settings.php', 'gear', 'Settings', 'settings.view'],
 ];
+
+// Notification bell: a small real, aggregated count (not decorative) - low
+// stock items + this staff member's pending handovers + overdue unpaid
+// bills, each gated by the same permission that page itself requires.
+$_notifItems = [];
+if ($u) {
+    if (can('stock.view')) {
+        $_lowStock = (int)val("SELECT COUNT(*) FROM (SELECT i.id, i.min_stock, COALESCE(SUM(s.qty),0) q FROM items i LEFT JOIN stock s ON s.item_id = i.id
+                               WHERE i.is_active = 1 AND i.item_type <> 'service' AND i.min_stock > 0 GROUP BY i.id, i.min_stock HAVING q < i.min_stock) x");
+        if ($_lowStock) $_notifItems[] = ['label' => $_lowStock . ' item(s) low on stock', 'href' => 'reports.php?r=low'];
+    }
+    $_myHandoversN = (int)val("SELECT COUNT(*) FROM handovers WHERE staff_id = ? AND status = 'pending' AND type = 'issue'", [$u['id']]);
+    if ($_myHandoversN) $_notifItems[] = ['label' => $_myHandoversN . ' handover(s) pending your accept', 'href' => 'my_stock.php'];
+    if (can('payments.view')) {
+        $_overdue = (int)val("SELECT COUNT(*) FROM sales WHERE status <> 'paid' AND is_cancelled = 0 AND due_date IS NOT NULL AND due_date < CURDATE()");
+        if ($_overdue) $_notifItems[] = ['label' => $_overdue . ' bill(s) overdue', 'href' => 'payments.php'];
+    }
+}
+$_notifCount = count($_notifItems);
 
 $_navCur = basename($_SERVER['SCRIPT_NAME']);
 
@@ -89,11 +108,32 @@ function nav_visible_items($items) {
 <body>
 <?php if ($u): ?>
 <header class="topbar">
-  <button class="menu-btn" id="menuBtn" aria-label="Menu">☰</button>
+  <button class="menu-btn" id="menuBtn" aria-label="Menu"><?= icon('menu', 22) ?></button>
   <div class="topbar-title"><?= e($page_title) ?></div>
+  <div class="topbar-search no-print">
+    <?= icon('search', 16) ?>
+    <input type="text" id="navSearch" placeholder="Search menu..." autocomplete="off">
+    <div class="topbar-search-results" id="navSearchResults"></div>
+  </div>
   <div class="topbar-user">
-    <span class="topbar-loc"><?= e($u['location_name']) ?></span>
-    <a href="logout.php" class="logout-link" onclick="return confirm('Logout?')">⎋</a>
+    <div class="topbar-bell" id="bellBtn">
+      <?= icon('bell', 20) ?>
+      <?php if ($_notifCount): ?><span class="bell-badge"><?= $_notifCount > 9 ? '9+' : $_notifCount ?></span><?php endif; ?>
+      <div class="bell-panel" id="bellPanel">
+        <?php if ($_notifItems): foreach ($_notifItems as $_ni2): ?>
+          <a href="<?= e($_ni2['href']) ?>"><?= e($_ni2['label']) ?></a>
+        <?php endforeach; else: ?>
+          <div class="bell-empty">No notifications</div>
+        <?php endif; ?>
+      </div>
+    </div>
+    <div class="topbar-avatar" id="avatarBtn" title="<?= e($u['name']) ?>">
+      <?= e(mb_strtoupper(mb_substr($u['name'], 0, 1))) ?>
+      <div class="avatar-panel" id="avatarPanel">
+        <div class="avatar-panel-name"><?= e($u['name']) ?><span><?= e($u['role_name']) ?> · <?= e($u['location_name']) ?></span></div>
+        <a href="logout.php" onclick="return confirm('Logout?')"><?= icon('log-out', 16) ?> Logout</a>
+      </div>
+    </div>
   </div>
 </header>
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
@@ -109,7 +149,7 @@ function nav_visible_items($items) {
   <?php foreach ($_navMenu as $_nm): ?>
     <?php if ($_nm[0] === 'link'):
         if ($_nm[4] !== null && !can($_nm[4])) continue; ?>
-      <a href="<?= $_nm[1] ?>" class="nav-link <?= $_navCur === $_nm[1] ? 'active' : '' ?>"><span class="nav-ico"><?= $_nm[2] ?></span><?= $_nm[3] ?></a>
+      <a href="<?= $_nm[1] ?>" class="nav-link <?= $_navCur === $_nm[1] ? 'active' : '' ?>"><span class="nav-ico"><?= icon($_nm[2]) ?></span><?= $_nm[3] ?></a>
     <?php else:
         $_navItems = nav_visible_items($_nm[4]);
         if (!$_navItems) continue;
@@ -118,7 +158,7 @@ function nav_visible_items($items) {
     ?>
       <div class="nav-group <?= $_navOpen ? 'open' : '' ?>" data-group="<?= $_nm[1] ?>">
         <button type="button" class="nav-group-head <?= $_navOpen ? 'active' : '' ?>">
-          <span class="nav-ico"><?= $_nm[2] ?></span><?= $_nm[3] ?><span class="nav-chev">▾</span>
+          <span class="nav-ico"><?= icon($_nm[2]) ?></span><?= $_nm[3] ?><span class="nav-chev"><?= icon('chevron-right', 14) ?></span>
         </button>
         <div class="nav-sub">
         <?php foreach ($_navItems as $_ni): ?>
@@ -145,22 +185,22 @@ function nav_visible_items($items) {
   <div class="sheet-grid">
     <?php
     $_navQuick = [
-        ['sales.php?action=new', '🧾', 'New Bill', 'sales.add'],
-        ['estimates.php?action=new', '📋', 'Estimate', 'estimates.add'],
-        ['purchases.php?action=new', '📦', 'Purchase', 'purchases.add'],
-        ['payments.php?action=new&dir=in', '⬇️', 'Payment In', 'payments.add'],
-        ['payments.php?action=new&dir=out', '⬆️', 'Payment Out', 'payments.add'],
-        ['expenses.php', '💸', 'Expense', 'expenses.add'],
-        ['repairs.php?action=new', '🛠️', 'Repair Job', 'repairs.add'],
-        ['tasks.php?action=new', '🔧', 'Task', 'tasks.add'],
-        ['handover.php?action=new', '🤝', 'Handover', 'handover.add'],
-        ['challans.php?action=new', '🚚', 'Challan', 'challans.add'],
-        ['parties.php?action=new', '👥', 'Party', 'parties.add'],
-        ['items.php?action=new', '🖥️', 'Item', 'items.add'],
-        ['sales_return.php?action=new', '↩️', 'Sale Return', 'sales_return.add'],
+        ['sales.php?action=new', 'receipt', 'New Bill', 'sales.add'],
+        ['estimates.php?action=new', 'receipt', 'Estimate', 'estimates.add'],
+        ['purchases.php?action=new', 'box', 'Purchase', 'purchases.add'],
+        ['payments.php?action=new&dir=in', 'arrow-down', 'Payment In', 'payments.add'],
+        ['payments.php?action=new&dir=out', 'arrow-up', 'Payment Out', 'payments.add'],
+        ['expenses.php', 'wallet', 'Expense', 'expenses.add'],
+        ['repairs.php?action=new', 'tool', 'Repair Job', 'repairs.add'],
+        ['tasks.php?action=new', 'tool', 'Task', 'tasks.add'],
+        ['handover.php?action=new', 'handshake', 'Handover', 'handover.add'],
+        ['challans.php?action=new', 'truck', 'Challan', 'challans.add'],
+        ['parties.php?action=new', 'users', 'Party', 'parties.add'],
+        ['items.php?action=new', 'box', 'Item', 'items.add'],
+        ['sales_return.php?action=new', 'return', 'Sale Return', 'sales_return.add'],
     ];
     foreach ($_navQuick as $_nq): if (!can($_nq[3])) continue; ?>
-    <a href="<?= $_nq[0] ?>" class="sheet-item"><span><?= $_nq[1] ?></span><?= $_nq[2] ?></a>
+    <a href="<?= $_nq[0] ?>" class="sheet-item"><span><?= icon($_nq[1], 24) ?></span><?= $_nq[2] ?></a>
     <?php endforeach; ?>
   </div>
 </div>

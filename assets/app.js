@@ -1,5 +1,42 @@
 // AK Computer - app JS (menu, billing rows, item search)
 
+// ----- top bar: notification bell + avatar dropdowns -----
+function topbarDropdown(btnId, panelId) {
+  var btn = document.getElementById(btnId), panel = document.getElementById(panelId);
+  if (!btn || !panel) return;
+  btn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    var willOpen = !panel.classList.contains('show');
+    document.querySelectorAll('.bell-panel.show, .avatar-panel.show').forEach(function (p) { p.classList.remove('show'); });
+    if (willOpen) panel.classList.add('show');
+  });
+}
+topbarDropdown('bellBtn', 'bellPanel');
+topbarDropdown('avatarBtn', 'avatarPanel');
+document.addEventListener('click', function () {
+  document.querySelectorAll('.bell-panel.show, .avatar-panel.show').forEach(function (p) { p.classList.remove('show'); });
+});
+
+// ----- desktop top bar: quick nav search (filters the sidebar's own links,
+// no separate search backend needed - matches what's actually navigable) -----
+(function () {
+  var inp = document.getElementById('navSearch');
+  var box = document.getElementById('navSearchResults');
+  if (!inp || !box) return;
+  var links = Array.prototype.slice.call(document.querySelectorAll('.sidebar-links a')).map(function (a) {
+    return { text: a.textContent.trim(), href: a.getAttribute('href') };
+  });
+  inp.addEventListener('input', function () {
+    var q = inp.value.trim().toLowerCase();
+    if (!q) { box.classList.remove('show'); box.innerHTML = ''; return; }
+    var matches = links.filter(function (l) { return l.text.toLowerCase().indexOf(q) > -1; }).slice(0, 8);
+    box.innerHTML = matches.map(function (l) { return '<a href="' + l.href + '">' + l.text + '</a>'; }).join('') ||
+      '<div class="bell-empty">No matches</div>';
+    box.classList.add('show');
+  });
+  document.addEventListener('click', function (ev) { if (!ev.target.closest('.topbar-search')) box.classList.remove('show'); });
+})();
+
 // ----- sidebar -----
 var menuBtn = document.getElementById('menuBtn');
 var sidebar = document.getElementById('sidebar');

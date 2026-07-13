@@ -75,12 +75,12 @@ include __DIR__ . '/includes/header.php';
 <?php endif; ?>
 
 <div class="tile-grid">
-  <?php if (can('sales.view')): ?><a class="tile" href="sales.php"><span>🧾</span>Sale List</a><?php endif; ?>
-  <?php if (can('purchases.view')): ?><a class="tile" href="purchases.php"><span>📦</span>Purchase List</a><?php endif; ?>
-  <?php if (can('items.view')): ?><a class="tile" href="items.php"><span>🖥️</span>Stock Items</a><?php endif; ?>
-  <?php if (can('parties.view')): ?><a class="tile" href="parties.php"><span>👥</span>Parties</a><?php endif; ?>
-  <?php if (!can('sales.view') && can('tasks.view')): ?><a class="tile" href="tasks.php"><span>🔧</span>My Tasks</a><?php endif; ?>
-  <?php if (!can('purchases.view')): ?><a class="tile" href="my_stock.php"><span>🎒</span>My Stock</a><?php endif; ?>
+  <?php if (can('sales.view')): ?><a class="tile" href="sales.php"><span><?= icon('receipt', 26) ?></span>Sale List</a><?php endif; ?>
+  <?php if (can('purchases.view')): ?><a class="tile" href="purchases.php"><span><?= icon('box', 26) ?></span>Purchase List</a><?php endif; ?>
+  <?php if (can('items.view')): ?><a class="tile" href="items.php"><span><?= icon('archive', 26) ?></span>Stock Items</a><?php endif; ?>
+  <?php if (can('parties.view')): ?><a class="tile" href="parties.php"><span><?= icon('users', 26) ?></span>Parties</a><?php endif; ?>
+  <?php if (!can('sales.view') && can('tasks.view')): ?><a class="tile" href="tasks.php"><span><?= icon('tool', 26) ?></span>My Tasks</a><?php endif; ?>
+  <?php if (!can('purchases.view')): ?><a class="tile" href="my_stock.php"><span><?= icon('archive', 26) ?></span>My Stock</a><?php endif; ?>
 </div>
 
 <?php if ($myHandovers): ?>
@@ -89,7 +89,7 @@ include __DIR__ . '/includes/header.php';
 
 <?php if (can('sales.view')): ?>
 <div class="card">
-  <h2>📈 Sale Overview (Last 6 Months)</h2>
+  <h2>Sale Overview <span class="muted" style="font-weight:400;font-size:13px">(Last 6 Months)</span></h2>
   <p class="muted">This month: <strong>₹<?= money($monthSales['t']) ?></strong> · Today: <strong>₹<?= money($todaySales['t']) ?></strong> (<?= (int)$todaySales['c'] ?> bills)</p>
   <div class="chart-wrap">
     <svg viewBox="0 0 600 220" preserveAspectRatio="xMidYMid meet">
@@ -122,7 +122,7 @@ include __DIR__ . '/includes/header.php';
 <div class="grid-2">
 <?php if ($invCard): ?>
 <div class="card">
-  <h2>📊 Inventory</h2>
+  <h2>Inventory Summary</h2>
   <div class="grid-stats" style="margin-bottom:0">
     <?php if ($invCard['value'] !== null): ?>
     <div class="stat s-ok"><div class="stat-label">Stock Value</div><div class="stat-value">₹<?= money($invCard['value']) ?></div></div>
@@ -136,7 +136,7 @@ include __DIR__ . '/includes/header.php';
 
 <?php if ($openRepairs !== null || $openEst): ?>
 <div class="card">
-  <h2>🗂️ Open Transactions</h2>
+  <h2>Open Transactions</h2>
   <table class="table-sm">
     <?php if ($openEst && $openEst['c']): ?><tr><td>Open Estimates</td><td class="num"><?= $openEst['c'] ?> (₹<?= money($openEst['t']) ?>)</td></tr><?php endif; ?>
     <?php if ($openRepairs !== null): ?><tr><td>Open Repair Jobs</td><td class="num"><a href="repairs.php"><?= $openRepairs ?></a></td></tr><?php endif; ?>
@@ -147,7 +147,7 @@ include __DIR__ . '/includes/header.php';
 
 <?php if ($myTasks): ?>
 <div class="card">
-  <h2>🔧 My Pending Tasks</h2>
+  <h2>My Pending Tasks</h2>
   <?php foreach ($myTasks as $t): ?>
     <p><a href="tasks.php?action=view&id=<?= $t['id'] ?>"><strong><?= e($t['task_no']) ?></strong></a>
     - <?= e($t['customer_name']) ?> <?= status_badge($t['status']) ?><br>
@@ -158,7 +158,7 @@ include __DIR__ . '/includes/header.php';
 
 <?php if ($myStock): ?>
 <div class="card">
-  <h2>🎒 Stock In My Hand</h2>
+  <h2>Stock In My Hand</h2>
   <table class="table-sm">
     <?php foreach ($myStock as $s): ?>
     <tr><td><?= e($s['name']) ?></td><td class="num"><?= (float)$s['qty'] ?> <?= e($s['unit']) ?></td></tr>
