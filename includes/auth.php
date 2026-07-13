@@ -31,7 +31,7 @@ function permission_catalog() {
         'sites' => ['view', 'add', 'edit', 'delete'],
         'batches' => ['view', 'add', 'edit', 'delete'],
         'reports' => ['view', 'profit', 'gst'],
-        'users' => ['view', 'add', 'edit', 'delete'],
+        'users' => ['view', 'add', 'edit', 'delete', 'impersonate'],
         'roles' => ['view', 'add', 'edit', 'delete'],
         'locations' => ['view', 'add', 'edit', 'delete'],
         'companies' => ['view', 'add', 'edit', 'delete'],

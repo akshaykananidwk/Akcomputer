@@ -1,6 +1,24 @@
 <?php
 // Staff users: role + location + optional extra per-user permissions
 require_once __DIR__ . '/includes/init.php';
+
+// Must be reachable BEFORE require_perm('users.view') below - while
+// impersonating, the active session's permissions are the IMPERSONATED
+// user's, who may well have no users.* access at all. Without this
+// escape hatch working regardless of the current permission set, the
+// header's "return to admin" button would itself say Access Denied and
+// trap the admin in the impersonated session (only a full logout would
+// get them back out).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'stop_impersonate' && !empty($_SESSION['impersonator_id'])) {
+    require_login();
+    $wasUser = current_user();
+    $_SESSION['user_id'] = $_SESSION['impersonator_id'];
+    unset($_SESSION['impersonator_id']);
+    log_activity('impersonate_stop', 'back from ' . ($wasUser['name'] ?? '?'));
+    flash('Admin તરીકે પાછા આવ્યા.');
+    redirect('users.php');
+}
+
 require_perm('users.view');
 
 $action = get('action', 'list');
@@ -41,6 +59,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     log_activity('user_delete', "#$uid");
     flash('User deactivated (history સચવાયું).');
     redirect('users.php');
+}
+
+// ---------- login-as-user (impersonate) ----------
+// Lets an admin see the app exactly as a given staff member sees it -
+// same permission scoping, same "only my own bills" restrictions - to
+// verify what a role can/can't do without needing that person's password.
+// Fully logged (start + stop) since it's a real identity switch.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'impersonate') {
+    require_perm('users.impersonate');
+    $target = row('SELECT * FROM users WHERE id = ? AND is_active = 1', [(int)post('id')]);
+    if (!$target) { flash('User ના મળ્યો અથવા inactive છે.', 'error'); redirect('users.php'); }
+    if ($target['id'] == current_user()['id']) { flash('તમે પોતાના તરીકે જ છો.', 'error'); redirect('users.php'); }
+    if (!empty($_SESSION['impersonator_id'])) { flash('પહેલા હાલનું impersonation બંધ કરો.', 'error'); redirect('users.php'); }
+    log_activity('impersonate_start', current_user()['name'] . ' -> ' . $target['name']);
+    $_SESSION['impersonator_id'] = current_user()['id'];
+    $_SESSION['user_id'] = $target['id'];
+    redirect('index.php');
 }
 
 $roles = all('SELECT * FROM roles ORDER BY name');
@@ -119,6 +154,12 @@ include __DIR__ . '/includes/header.php';
       <td><?= $us['is_active'] ? '<span class="badge badge-ok">active</span>' : '<span class="badge badge-bad">off</span>' ?></td>
       <td style="white-space:nowrap">
         <?php if (can('users.edit')): ?><a class="btn btn-sm btn-outline" href="users.php?action=edit&id=<?= $us['id'] ?>">Edit</a><?php endif; ?>
+        <?php if (can('users.impersonate') && $us['is_active'] && $us['id'] != current_user()['id'] && empty($_SESSION['impersonator_id'])): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('<?= e($us['name']) ?> તરીકે login કરવું છે? તમે એ user ની આંખે app જોશો.')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="impersonate"><input type="hidden" name="id" value="<?= $us['id'] ?>">
+          <button class="btn btn-sm btn-outline" type="submit">👁️ Login as</button>
+        </form>
+        <?php endif; ?>
         <?php if (can('users.delete') && $us['is_active']): ?>
         <form method="post" style="display:inline" onsubmit="return confirm('User deactivate કરવો?')">
           <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $us['id'] ?>">

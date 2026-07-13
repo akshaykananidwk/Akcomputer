@@ -61,7 +61,7 @@ if ($action === 'new' || $action === 'edit') {
             <?php endforeach; ?>
           </div>
         <?php endforeach; ?>
-        <p class="muted">"all" = બીજા staff ના records પણ જુએ. "profit" = profit આંકડા દેખાય. "gst" = GST report access.</p>
+        <p class="muted">"all" = બીજા staff ના records પણ જુએ. "profit" = profit આંકડા દેખાય. "gst" = GST report access. "impersonate" (Staff Users) = Users list માંથી કોઈ પણ user તરીકે "Login as" કરી શકે — સામાન્ય રીતે ફક્ત Admin ને જ આપવું.</p>
         </div>
         <button class="btn" type="submit">Save Role</button>
         <a class="btn btn-muted" href="roles.php">Cancel</a>

@@ -168,6 +168,14 @@ function nav_visible_items($items) {
 <script src="assets/app.js?v=4"></script>
 <?php unset($_navMenu, $_navItems, $_navQuick, $_nm, $_ni, $_nq, $_navOpen); ?>
 <main class="content<?= $u ? '' : ' content-full' ?>">
+<?php if ($u && !empty($_SESSION['impersonator_id'])): ?>
+<div class="impersonate-bar">👁️ <?= e($u['name']) ?> (<?= e($u['role_name']) ?>) તરીકે જુઓ છો
+  <form method="post" action="users.php" style="display:inline">
+    <?= csrf_field() ?><input type="hidden" name="do" value="stop_impersonate">
+    <button type="submit" class="btn btn-sm">Admin તરીકે પાછા જાવ</button>
+  </form>
+</div>
+<?php endif; ?>
 <?php foreach (get_flashes() as $f): ?>
   <div class="flash flash-<?= e($f['type']) ?>"><?= e($f['msg']) ?></div>
 <?php endforeach; ?>

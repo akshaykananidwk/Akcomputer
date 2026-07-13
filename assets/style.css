@@ -388,3 +388,11 @@ td.num, th.num { text-align: right; white-space: nowrap; }
   .cal-cell { min-height: 50px; padding: 2px; }
   .cal-event { font-size: 9px; }
 }
+
+/* ---------- Admin impersonation ("Login as User") banner ---------- */
+.impersonate-bar {
+  background: #f59e0b; color: #451a03; padding: 10px 14px; border-radius: 10px;
+  margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; font-weight: 600; font-size: 13.5px;
+}
+.impersonate-bar .btn { background: #451a03; color: #fff; }
