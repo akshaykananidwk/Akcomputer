@@ -80,24 +80,47 @@ if ($tables->length === 0) {
         if ($colCount === 0) continue;
         $effCount = $selectedCols !== null ? count(array_filter($selectedCols, fn($i) => $i < $colCount)) : $colCount;
         if ($effCount === 0) continue;
-        $colW = $pageW / $effCount;
+
+        // Column width hints: a <th data-w="55"> means this column gets 55%
+        // of the table width instead of an equal share - used by reports
+        // like Bank Ledger where the Description column carries much longer
+        // text than the Amount/Balance columns. Falls back to an equal split
+        // (the old behaviour) when a table doesn't define any hints.
+        $widthHints = [];
+        foreach ($rowsNodes as $tr) {
+            if ($tr->getElementsByTagName('th')->length > 0) {
+                $i = 0;
+                foreach ($tr->childNodes as $c) {
+                    if ($c->nodeName === 'th') { $hint = $c->getAttribute('data-w'); if ($hint !== '') $widthHints[$i] = (float)$hint; $i++; }
+                }
+                break;
+            }
+        }
+        $colIdx = $selectedCols !== null ? array_values(array_filter(range(0, $colCount - 1), fn($i) => in_array($i, $selectedCols, true))) : range(0, $colCount - 1);
+        if (count($widthHints) === $colCount && array_sum($widthHints) > 0) {
+            $hintTotal = array_sum(array_map(fn($i) => $widthHints[$i] ?? 0, $colIdx));
+            $colWidths = array_map(fn($i) => $pageW * ($widthHints[$i] ?? 0) / $hintTotal, $colIdx);
+        } else {
+            $colWidths = array_fill(0, $effCount, $pageW / $effCount);
+        }
 
         // Draws one row at the CURRENT $y (top of the row) and advances $y past
         // it. Header rows get a shaded background band and an underline drawn
         // at the row's own bottom edge (not the following row's), and are
         // reprinted at the top of every new page so a table that spans pages
         // never loses its column labels.
-        $drawRow = function ($cells, $isHeader) use ($pdf, &$y, $M, $pageW, $colW) {
+        $drawRow = function ($cells, $isHeader) use ($pdf, &$y, $M, $pageW, $colWidths) {
             if ($isHeader) $pdf->rect($M, $y - 10, $pageW, 14, [0.90, 0.92, 0.96]);
             $x = $M;
-            foreach ($cells as $c) {
+            foreach ($cells as $i => $c) {
                 [$txt, $isNum] = $c;
+                $w = $colWidths[$i] ?? ($pageW / max(count($cells), 1));
                 if ($txt !== '') {
-                    $fit = $pdf->fit($txt, $colW - 4, 8, $isHeader ? 'B' : '');
-                    if ($isNum) $pdf->text_right($x + $colW - 2, $y, 8, $fit, $isHeader ? 'B' : '');
+                    $fit = $pdf->fit($txt, $w - 4, 8, $isHeader ? 'B' : '');
+                    if ($isNum) $pdf->text_right($x + $w - 2, $y, 8, $fit, $isHeader ? 'B' : '');
                     else $pdf->text($x + 2, $y, 8, $fit, $isHeader ? 'B' : '');
                 }
-                $x += $colW;
+                $x += $w;
             }
             if ($isHeader) {
                 // Underline sits just below the header's own baseline (clear

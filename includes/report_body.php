@@ -339,7 +339,7 @@ if ($r === 'bank_ledger' && can('payments.view')) {
         // staying a real <table> so report_pdf.php's DOMDocument-to-PDF
         // converter and the CSV exporter (both of which only understand
         // <table> markup) keep working unchanged.
-        echo '<div class="table-wrap list-style-table"><table><thead><tr><th>Description</th><th class="num">Amount ₹</th><th class="num">Balance ₹</th></tr></thead><tbody>';
+        echo '<div class="table-wrap list-style-table"><table><thead><tr><th data-w="54">Description</th><th class="num" data-w="23">Amount ₹</th><th class="num" data-w="23">Balance ₹</th></tr></thead><tbody>';
         echo '<tr><td><strong>Opening Balance</strong></td><td class="num"></td><td class="num"><strong>₹' . money($openingBal) . '</strong></td></tr>';
         foreach ($rows as $x) {
             $bal += $x['in'] - $x['out'];
