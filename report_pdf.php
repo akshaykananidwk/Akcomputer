@@ -14,6 +14,17 @@ $to = get('to', today());
 $fCompany = (int)get('f_company');
 $fParty = (int)get('f_party');
 $fStatus = get('f_status');
+$fname = get('fname');
+
+// Optional column picker from the "What to display?" export dialog: a
+// comma-separated list of 0-based column indices (matching the source
+// table's <th>/<td> position) to include. Absent/empty means "all columns",
+// so plain report_pdf.php links (e.g. from elsewhere in the app) keep working.
+$selectedCols = null;
+if (get('cols') !== '') {
+    $selectedCols = array_values(array_unique(array_map('intval', explode(',', get('cols')))));
+    sort($selectedCols);
+}
 
 ob_start();
 include __DIR__ . '/includes/report_body.php';
@@ -64,7 +75,9 @@ if ($tables->length === 0) {
         $colCount = 0;
         foreach ($rowsNodes as $tr) $colCount = max($colCount, $tr->getElementsByTagName('th')->length + $tr->getElementsByTagName('td')->length);
         if ($colCount === 0) continue;
-        $colW = $pageW / $colCount;
+        $effCount = $selectedCols !== null ? count(array_filter($selectedCols, fn($i) => $i < $colCount)) : $colCount;
+        if ($effCount === 0) continue;
+        $colW = $pageW / $effCount;
 
         // Draws one row at the CURRENT $y (top of the row) and advances $y past
         // it. Header rows get a shaded background band and an underline drawn
@@ -99,6 +112,9 @@ if ($tables->length === 0) {
         foreach ($rowsNodes as $ri => $tr) {
             $cellNodes = [];
             foreach ($tr->childNodes as $c) if (in_array($c->nodeName, ['th', 'td'], true)) $cellNodes[] = $c;
+            if ($selectedCols !== null) {
+                $cellNodes = array_values(array_filter($cellNodes, fn($c, $i) => in_array($i, $selectedCols, true), ARRAY_FILTER_USE_BOTH));
+            }
             $isHeader = $tr->getElementsByTagName('th')->length > 0;
             $cells = array_map(fn($c) => [pdf_cell_text($c), strpos((string)$c->getAttribute('class'), 'num') !== false], $cellNodes);
             if ($isHeader) $headerCells = $cells;
@@ -115,8 +131,10 @@ if ($tables->length === 0) {
 }
 
 $bytes = $pdf->output();
+$outName = $fname !== '' ? preg_replace('/[^A-Za-z0-9 _\-]/', '', $fname) : 'report_' . $r . '_' . $from . '_to_' . $to;
+if ($outName === '') $outName = 'report';
 header('Content-Type: application/pdf');
-header('Content-Disposition: inline; filename="report_' . $r . '_' . $from . '_to_' . $to . '.pdf"');
+header('Content-Disposition: inline; filename="' . $outName . '.pdf"');
 header('Content-Length: ' . strlen($bytes));
 echo $bytes;
 log_activity('report_pdf_export', "$r $from to $to");

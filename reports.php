@@ -64,12 +64,27 @@ $filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchas
   <?php endif; ?>
   <button class="btn btn-sm" type="submit">Apply</button>
   <button class="btn btn-sm btn-outline no-print" type="button" onclick="window.print()">🖨️ Print</button>
-  <button class="btn btn-sm btn-outline no-print" type="button" onclick="exportCsv()">⬇ Excel/CSV</button>
-  <a class="btn btn-sm btn-outline no-print" href="report_pdf.php?r=<?= e($r) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $filterExtra ?>" target="_blank">⬇ PDF</a>
+  <button class="btn btn-sm btn-outline no-print" type="button" onclick="openExportDialog('csv')">⬇ Excel/CSV</button>
+  <button class="btn btn-sm btn-outline no-print" type="button" onclick="openExportDialog('pdf')">⬇ PDF</button>
   <?php if ($r === 'sales' || $r === 'purchase'): ?>
   <a class="btn btn-sm btn-outline no-print" href="tally_export.php?type=<?= $r ?>&from=<?= e($from) ?>&to=<?= e($to) ?>">⬇ Tally XML</a>
   <?php endif; ?>
 </form>
+
+<div class="modal-overlay no-print" id="exportModal">
+  <div class="modal-box">
+    <h3>What to display?</h3>
+    <div id="exportCheckList"></div>
+    <div class="field">
+      <label>File name</label>
+      <input type="text" id="exportFname">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" type="button" onclick="closeExportDialog()">Cancel</button>
+      <button class="btn" type="button" onclick="applyExport()">Apply</button>
+    </div>
+  </div>
+</div>
 <?php if ($filterFamily): ?>
 <div class="card" id="filterPanel" style="display:none">
   <div class="form-row cols-3">
@@ -117,20 +132,57 @@ function applyPreset(p) {
   document.getElementById('fTo').value = fmt(to);
   document.getElementById('reportFilterForm').submit();
 }
-function exportCsv() {
+// "What to display?" dialog (Vyapar-style) - lets the user pick which
+// columns go into the export and rename the file, for both CSV and PDF.
+// The checkbox list is built from the currently-shown report table's own
+// <thead> so it always matches whatever columns that tab actually has.
+var exportType = 'csv';
+function openExportDialog(type) {
+  exportType = type;
+  var ths = document.querySelectorAll('.content table thead th');
+  var list = document.getElementById('exportCheckList');
+  list.innerHTML = '';
+  ths.forEach(function (th, i) {
+    var label = th.innerText.trim() || ('Column ' + (i + 1));
+    var row = document.createElement('label');
+    row.className = 'modal-check-row';
+    row.innerHTML = '<input type="checkbox" checked data-col="' + i + '"> <span>' + label + '</span>';
+    list.appendChild(row);
+  });
+  document.getElementById('exportFname').value = 'report-<?= e($r) ?>-<?= e($from) ?>-to-<?= e($to) ?>';
+  document.getElementById('exportModal').classList.add('show');
+}
+function closeExportDialog() {
+  document.getElementById('exportModal').classList.remove('show');
+}
+function applyExport() {
+  var cols = [];
+  document.querySelectorAll('#exportCheckList input:checked').forEach(function (c) { cols.push(parseInt(c.dataset.col, 10)); });
+  var fname = document.getElementById('exportFname').value.trim() || 'report';
+  closeExportDialog();
+  if (exportType === 'csv') exportCsv(cols, fname); else exportPdf(cols, fname);
+}
+function exportCsv(cols, fname) {
   var rows = [];
-  document.querySelectorAll('.content table tr').forEach(function (tr) {
-    var cells = [];
-    tr.querySelectorAll('th,td').forEach(function (c) {
-      cells.push('"' + c.innerText.trim().replace(/"/g, '""') + '"');
+  document.querySelectorAll('.content table').forEach(function (table) {
+    table.querySelectorAll('tr').forEach(function (tr) {
+      var cells = [];
+      tr.querySelectorAll('th,td').forEach(function (c, i) {
+        if (cols.indexOf(i) === -1) return;
+        cells.push('"' + c.innerText.trim().replace(/"/g, '""') + '"');
+      });
+      if (cells.length) rows.push(cells.join(','));
     });
-    if (cells.length) rows.push(cells.join(','));
   });
   var blob = new Blob(["﻿" + rows.join('\n')], {type: 'text/csv;charset=utf-8'});
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'report-<?= e($r) ?>-<?= e($from) ?>-to-<?= e($to) ?>.csv';
+  a.download = fname + '.csv';
   a.click();
+}
+function exportPdf(cols, fname) {
+  var url = 'report_pdf.php?r=<?= e($r) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $filterExtra ?>&cols=' + cols.join(',') + '&fname=' + encodeURIComponent(fname);
+  window.open(url, '_blank');
 }
 </script>
 
