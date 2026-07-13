@@ -212,15 +212,36 @@ foreach ($parties as $p) {
     if ($p['balance'] > 0.009) $totGet += $p['balance'];
     elseif ($p['balance'] < -0.009) $totGive += -$p['balance'];
 }
-$page_title = 'Parties';
+
+// Dashboard "To Receive" / "To Pay" drill-down: ?bal=get shows only parties
+// owed to us, ?bal=give shows only parties we owe, each sortable so the
+// biggest amount can be found first instead of scrolling the whole list.
+$balFilter = get('bal');
+$sortBy = get('sort', 'name');
+if ($balFilter === 'get') $parties = array_values(array_filter($parties, fn($p) => $p['balance'] > 0.009));
+elseif ($balFilter === 'give') $parties = array_values(array_filter($parties, fn($p) => $p['balance'] < -0.009));
+if ($sortBy === 'amount') usort($parties, fn($a, $b) => abs($b['balance']) <=> abs($a['balance']));
+else usort($parties, fn($a, $b) => strcasecmp($a['name'], $b['name']));
+
+$page_title = $balFilter === 'get' ? 'Parties to Receive From' : ($balFilter === 'give' ? 'Parties to Pay' : 'Parties');
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="duo-cards">
-  <div class="duo-card duo-get"><div class="duo-label">You'll Get</div><div class="duo-value">₹ <?= money($totGet) ?></div></div>
-  <div class="duo-card duo-give"><div class="duo-label">You'll Give</div><div class="duo-value">₹ <?= money($totGive) ?></div></div>
+  <a class="duo-card duo-get" href="parties.php?bal=get"><div class="duo-label">You'll Get</div><div class="duo-value">₹ <?= money($totGet) ?></div></a>
+  <a class="duo-card duo-give" href="parties.php?bal=give"><div class="duo-label">You'll Give</div><div class="duo-value">₹ <?= money($totGive) ?></div></a>
 </div>
+<?php if ($balFilter): ?>
+<div class="page-actions no-print" style="justify-content:space-between">
+  <h2 style="margin:0"><?= e($page_title) ?></h2>
+  <a class="btn btn-sm btn-outline" href="parties.php">✕ Clear filter</a>
+</div>
+<?php endif; ?>
 <div class="page-actions">
-  <?php if (can('parties.add')): ?><a class="btn" href="parties.php?action=new">+ New Party</a><?php endif; ?>
+  <?php if (can('parties.add') && !$balFilter): ?><a class="btn" href="parties.php?action=new">+ New Party</a><?php endif; ?>
+  <select class="btn btn-outline" style="cursor:pointer;margin-left:auto" onchange="var u=new URL(location.href);u.searchParams.set('sort',this.value);location.href=u;">
+    <option value="name" <?= $sortBy === 'name' ? 'selected' : '' ?>>Sort: Name-wise</option>
+    <option value="amount" <?= $sortBy === 'amount' ? 'selected' : '' ?>>Sort: Amount-wise</option>
+  </select>
 </div>
 <div class="searchbox"><input type="text" id="pFilter" placeholder="🔍 Search parties..."></div>
 <div class="list-count"><?= count($parties) ?> parties</div>

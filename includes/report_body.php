@@ -309,17 +309,25 @@ if ($r === 'bank_ledger' && can('payments.view')) {
         $pays = all("SELECT p.*, pt.name party_name FROM payments p LEFT JOIN parties pt ON pt.id = p.party_id
                      WHERE p.bank_account_id = ? AND p.pay_date BETWEEN ? AND ? ORDER BY p.pay_date, p.id", [$bankId, $from, $to]);
         foreach ($pays as $p) {
-            $refNo = '-';
-            if ($p['ref_type'] === 'sale' && $p['ref_id']) $refNo = val('SELECT invoice_no FROM sales WHERE id = ?', [$p['ref_id']]) ?: '-';
-            elseif ($p['ref_type'] === 'purchase' && $p['ref_id']) $refNo = val("SELECT IF(bill_no = '', CONCAT('#', id), bill_no) FROM purchases WHERE id = ?", [$p['ref_id']]) ?: '-';
+            $refNo = '-'; $link = null;
+            if ($p['ref_type'] === 'sale' && $p['ref_id']) {
+                $refNo = val('SELECT invoice_no FROM sales WHERE id = ?', [$p['ref_id']]) ?: '-';
+                $link = 'sale_view.php?id=' . (int)$p['ref_id'];
+            } elseif ($p['ref_type'] === 'purchase' && $p['ref_id']) {
+                $refNo = val("SELECT IF(bill_no = '', CONCAT('#', id), bill_no) FROM purchases WHERE id = ?", [$p['ref_id']]) ?: '-';
+                $link = 'purchase_view.php?id=' . (int)$p['ref_id'];
+            } elseif ($p['party_id']) {
+                $link = 'parties.php?action=ledger&id=' . (int)$p['party_id'];
+            }
             $rows[] = ['sort' => $p['pay_date'] . '-' . str_pad($p['id'], 8, '0', STR_PAD_LEFT),
                        'date' => $p['pay_date'], 'type' => $p['direction'] === 'in' ? 'Receipt' : 'Payment',
-                       'ref' => $refNo, 'name' => $p['party_name'] ?: 'Walk-in', 'mode' => $p['mode'],
+                       'ref' => $refNo, 'name' => $p['party_name'] ?: 'Walk-in', 'mode' => $p['mode'], 'link' => $link,
                        'in' => $p['direction'] === 'in' ? (float)$p['amount'] : 0, 'out' => $p['direction'] === 'out' ? (float)$p['amount'] : 0];
         }
         foreach (all('SELECT * FROM expenses WHERE bank_account_id = ? AND exp_date BETWEEN ? AND ? ORDER BY exp_date, id', [$bankId, $from, $to]) as $x) {
             $rows[] = ['sort' => $x['exp_date'] . '-9' . str_pad($x['id'], 8, '0', STR_PAD_LEFT),
                        'date' => $x['exp_date'], 'type' => 'Expense', 'ref' => '-', 'name' => $x['category'], 'mode' => $x['mode'],
+                       'link' => (can('expenses.view') ? 'expenses.php?from=' . $x['exp_date'] . '&to=' . $x['exp_date'] : null),
                        'in' => 0, 'out' => (float)$x['amount']];
         }
         usort($rows, fn($a, $b) => strcmp($a['sort'], $b['sort']));
@@ -340,7 +348,9 @@ if ($r === 'bank_ledger' && can('payments.view')) {
             $descBits = [$x['type']];
             if ($x['ref'] !== '-') $descBits[] = $x['ref'];
             if ($x['name'] && $x['name'] !== '-') $descBits[] = $x['name'];
-            echo '<tr><td><strong>' . e(implode(' - ', $descBits)) . '</strong> <span class="list-row-sub muted">' . dmy($x['date']) . ' · ' . e(ucfirst($x['mode'])) . '</span></td>'
+            $descText = e(implode(' - ', $descBits));
+            $descHtml = !empty($x['link']) ? '<a href="' . e($x['link']) . '">' . $descText . '</a>' : $descText;
+            echo '<tr><td><strong>' . $descHtml . '</strong> <span class="list-row-sub muted">' . dmy($x['date']) . ' · ' . e(ucfirst($x['mode'])) . '</span></td>'
                . '<td class="num" style="color:' . ($amt >= 0 ? 'var(--ok)' : 'var(--bad)') . '"><strong>' . ($amt >= 0 ? '+' : '-') . '₹' . money(abs($amt)) . '</strong></td>'
                . '<td class="num">₹' . money($bal) . '</td></tr>';
         }

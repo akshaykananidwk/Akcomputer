@@ -61,13 +61,14 @@ $myTasks = all("SELECT * FROM tasks WHERE assigned_to = ? AND status IN ('assign
 $myStock = all('SELECT ss.qty, i.name, i.unit FROM staff_stock ss JOIN items i ON i.id = ss.item_id WHERE ss.user_id = ? AND ss.qty > 0', [$u['id']]);
 $myHandovers = (int)val("SELECT COUNT(*) FROM handovers WHERE staff_id = ? AND status = 'pending' AND type = 'issue'", [$u['id']]);
 
+$partiesLink = can('parties.view');
 $page_title = 'Dashboard';
 include __DIR__ . '/includes/header.php';
 ?>
 <?php if ($canMoney): ?>
 <div class="duo-cards">
-  <a class="duo-card duo-get" href="payments.php?action=new&dir=in"><div class="duo-label">To Receive</div><div class="duo-value">₹ <?= money($recv) ?></div></a>
-  <a class="duo-card duo-give" href="payments.php?action=new&dir=out"><div class="duo-label">To Pay</div><div class="duo-value">₹ <?= money($paybl) ?></div></a>
+  <a class="duo-card duo-get" href="<?= $partiesLink ? 'parties.php?bal=get' : 'payments.php?action=new&dir=in' ?>"><div class="duo-label">To Receive</div><div class="duo-value">₹ <?= money($recv) ?></div></a>
+  <a class="duo-card duo-give" href="<?= $partiesLink ? 'parties.php?bal=give' : 'payments.php?action=new&dir=out' ?>"><div class="duo-label">To Pay</div><div class="duo-value">₹ <?= money($paybl) ?></div></a>
 </div>
 <?php if ($walkinDue > 0.009): ?>
 <p class="muted mt" style="margin-top:-6px;margin-bottom:14px">+ ₹<?= money($walkinDue) ?> due on walk-in bills (no party - collect directly from the Sale List)</p>
