@@ -103,7 +103,7 @@ function nav_visible_items($items) {
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon-192.png">
 <title><?= e($page_title) ?> - <?= e($app_name) ?></title>
-<link rel="stylesheet" href="assets/style.css?v=6">
+<link rel="stylesheet" href="assets/style.css?v=7">
 </head>
 <body>
 <?php if ($u): ?>

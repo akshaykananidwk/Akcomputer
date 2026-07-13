@@ -127,33 +127,48 @@ if ($action === 'ledger' && $id) {
     usort($entries, fn($a, $b) => strcmp($a['date'], $b['date']));
 
     $bal = (float)$p['opening_balance'];
+    $openingBal = $bal;
     $page_title = 'Ledger: ' . $p['name'];
     include __DIR__ . '/includes/header.php';
     ?>
     <div class="card">
-      <h2><?= e($p['name']) ?> <span class="muted">(credit <?= (int)$p['credit_days'] ?> days)</span></h2>
-      <p class="muted"><?= e($p['mobile']) ?> <?= $p['gstin'] ? '| GSTIN: ' . e($p['gstin']) : '' ?><?= setting('loyalty_enabled') === '1' ? ' | ⭐ ' . (int)$p['loyalty_points'] . ' points' : '' ?></p>
+      <div class="page-actions no-print" style="margin:0 0 10px;justify-content:space-between">
+        <h2 style="margin:0"><?= e($p['name']) ?></h2>
+        <span>
+          <?php if (can('parties.edit')): ?><a class="btn btn-sm btn-outline" href="parties.php?action=edit&id=<?= $p['id'] ?>">✏️ Edit</a><?php endif; ?>
+          <?php if (can('parties.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Delete this party? If it has transactions, it will just be made inactive.')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
+        </span>
+      </div>
+      <p class="muted">Credit: <?= (int)$p['credit_days'] ?> days · <?= e($p['mobile']) ?> <?= $p['gstin'] ? '| GSTIN: ' . e($p['gstin']) : '' ?><?= setting('loyalty_enabled') === '1' ? ' | ⭐ ' . (int)$p['loyalty_points'] . ' points' : '' ?></p>
       <?php if (can('sites.view')): $siteCount = (int)val('SELECT COUNT(*) FROM sites WHERE party_id = ?', [$id]); ?>
-      <p class="mt"><a class="btn btn-sm btn-outline" href="sites.php?party_id=<?= $id ?>">🌐 Sites (<?= $siteCount ?>)</a></p>
+      <p class="mt no-print"><a class="btn btn-sm btn-outline" href="sites.php?party_id=<?= $id ?>">🌐 Sites (<?= $siteCount ?>)</a></p>
       <?php endif; ?>
+      <?php
+      // closing balance shown up-front (computed once here from the same
+      // running total the list below builds, so the two never disagree)
+      $closingBal = $bal;
+      foreach ($entries as $en) $closingBal += $en['dr'] - $en['cr'];
+      ?>
+      <div class="mt" style="font-size:28px;font-weight:800;color:<?= $closingBal >= 0 ? 'var(--ok)' : 'var(--bad)' ?>">
+        ₹<?= money(abs($closingBal)) ?>
+        <span class="muted" style="font-size:13px;font-weight:400"><?= $closingBal >= 0 ? '(to receive)' : '(to pay)' ?></span>
+      </div>
     </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Date</th><th>Description</th><th class="num">Debit (bill)</th><th class="num">Credit (pay)</th><th class="num">Balance</th></tr></thead>
-        <tbody>
-          <tr><td>-</td><td>Opening balance</td><td class="num"></td><td class="num"></td><td class="num"><?= money($bal) ?></td></tr>
-          <?php foreach ($entries as $en): $bal += $en['dr'] - $en['cr']; ?>
-          <tr>
-            <td><?= dmy($en['date']) ?></td><td><?= e($en['desc']) ?></td>
-            <td class="num"><?= $en['dr'] ? money($en['dr']) : '' ?></td>
-            <td class="num"><?= $en['cr'] ? money($en['cr']) : '' ?></td>
-            <td class="num"><?= money($bal) ?></td>
-          </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
+    <div class="card list-card">
+      <div class="list-row" style="cursor:default">
+        <div class="list-row-main"><strong>Opening Balance</strong></div>
+        <div class="list-row-val"><span class="muted">₹<?= money($openingBal) ?></span></div>
+      </div>
+      <?php foreach ($entries as $en): $bal += $en['dr'] - $en['cr']; ?>
+      <div class="list-row" style="cursor:default">
+        <div class="list-row-main"><strong><?= e($en['desc']) ?></strong><div class="muted list-row-sub"><?= dmy($en['date']) ?></div></div>
+        <div class="list-row-val">
+          <?php if ($en['dr'] > 0): ?><span class="bal-get">+₹<?= money($en['dr']) ?></span>
+          <?php else: ?><span class="bal-give">-₹<?= money($en['cr']) ?></span><?php endif; ?>
+        </div>
+      </div>
+      <?php endforeach; ?>
     </div>
-    <div class="card"><strong>Closing balance: ₹<?= money(abs($bal)) ?> <?= $bal >= 0 ? '(to receive)' : '(to pay)' ?></strong></div>
     <div class="card no-print">
       <div class="page-actions" style="margin:0">
         <?php if (can('payments.add')): ?>
@@ -208,34 +223,33 @@ include __DIR__ . '/includes/header.php';
   <?php if (can('parties.add')): ?><a class="btn" href="parties.php?action=new">+ New Party</a><?php endif; ?>
 </div>
 <div class="searchbox"><input type="text" id="pFilter" placeholder="🔍 Search parties..."></div>
-<div class="table-wrap">
-<table id="pTable">
-  <thead><tr><th>Name</th><th class="num">Balance</th><th>Mobile</th><th>City</th><th>Credit</th><th></th></tr></thead>
-  <tbody>
+<div class="list-count"><?= count($parties) ?> parties</div>
+<div class="card list-card" id="pList">
   <?php foreach ($parties as $p): ?>
-    <tr>
-      <td><strong><?= e($p['name']) ?></strong><?= !$p['is_active'] ? ' <span class="badge badge-bad">INACTIVE - has balance</span>' : '' ?><?= $p['gstin'] ? '<br><span class="muted">' . e($p['gstin']) . '</span>' : '' ?></td>
-      <td class="num">
-        <?php if ($p['balance'] > 0.009): ?>
-          <span class="bal-get">₹<?= money($p['balance']) ?><span class="bal-sub">You'll Get</span></span>
-        <?php elseif ($p['balance'] < -0.009): ?>
-          <span class="bal-give">₹<?= money(-$p['balance']) ?><span class="bal-sub">You'll Give</span></span>
-        <?php else: ?>
-          <span class="muted">₹0.00</span>
-        <?php endif; ?>
-      </td>
-      <td><a href="tel:<?= e($p['mobile']) ?>"><?= e($p['mobile']) ?></a></td>
-      <td><?= e($p['city']) ?></td>
-      <td><?= (int)$p['credit_days'] ?> days</td>
-      <td>
-        <a class="btn btn-sm btn-outline" href="parties.php?action=ledger&id=<?= $p['id'] ?>">Ledger</a>
-        <?php if (can('parties.edit')): ?><a class="btn btn-sm btn-outline" href="parties.php?action=edit&id=<?= $p['id'] ?>">Edit</a><?php endif; ?>
-        <?php if (can('parties.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Delete this party? If it has transactions, it will just be made inactive.')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
-      </td>
-    </tr>
+  <a href="parties.php?action=ledger&id=<?= $p['id'] ?>" class="list-row" data-search="<?= e(mb_strtolower($p['name'] . ' ' . $p['mobile'] . ' ' . $p['city'])) ?>">
+    <div class="list-row-main">
+      <strong><?= e($p['name']) ?></strong><?= !$p['is_active'] ? ' <span class="badge badge-bad">INACTIVE</span>' : '' ?>
+      <div class="muted list-row-sub"><?= e(trim($p['mobile'] . ($p['city'] ? ' · ' . $p['city'] : ''))) ?: '&nbsp;' ?></div>
+    </div>
+    <div class="list-row-val">
+      <?php if ($p['balance'] > 0.009): ?>
+        <span class="bal-get">₹<?= money($p['balance']) ?><span class="bal-sub">You'll Get</span></span>
+      <?php elseif ($p['balance'] < -0.009): ?>
+        <span class="bal-give">₹<?= money(-$p['balance']) ?><span class="bal-sub">You'll Give</span></span>
+      <?php else: ?>
+        <span class="muted">₹0.00</span>
+      <?php endif; ?>
+    </div>
+  </a>
   <?php endforeach; ?>
-  </tbody>
-</table>
+  <?php if (!$parties): ?><p class="muted" style="padding:14px 4px">No parties yet.</p><?php endif; ?>
 </div>
-<script>tableFilter('pFilter', 'pTable');</script>
+<script>
+document.getElementById('pFilter').addEventListener('input', function () {
+  var q = this.value.trim().toLowerCase();
+  document.querySelectorAll('#pList .list-row').forEach(function (row) {
+    row.style.display = row.dataset.search.indexOf(q) > -1 ? '' : 'none';
+  });
+});
+</script>
 <?php include __DIR__ . '/includes/footer.php'; ?>

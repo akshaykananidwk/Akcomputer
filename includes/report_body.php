@@ -326,16 +326,26 @@ if ($r === 'bank_ledger' && can('payments.view')) {
 
         $bal = $openingBal; $totalIn = 0; $totalOut = 0;
         echo '<h3>' . e($bank['account_name']) . ' - ' . e($bank['bank_name']) . ($bank['account_number'] ? ' (A/C: ' . e($bank['account_number']) . ')' : '') . '</h3>';
-        echo '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Invoice/Ref No.</th><th>Name</th><th>Mode</th><th class="num">In ₹</th><th class="num">Out ₹</th><th class="num">Balance ₹</th></tr></thead><tbody>';
-        echo '<tr><td><strong>Opening Balance</strong></td><td></td><td></td><td></td><td></td><td class="num"></td><td class="num"></td><td class="num"><strong>' . money($openingBal) . '</strong></td></tr>';
+        // 3 columns (Description+date combined, signed Amount, running Balance)
+        // instead of 8 - reads as a clean passbook-style list on screen, while
+        // staying a real <table> so report_pdf.php's DOMDocument-to-PDF
+        // converter and the CSV exporter (both of which only understand
+        // <table> markup) keep working unchanged.
+        echo '<div class="table-wrap list-style-table"><table><thead><tr><th>Description</th><th class="num">Amount ₹</th><th class="num">Balance ₹</th></tr></thead><tbody>';
+        echo '<tr><td><strong>Opening Balance</strong></td><td class="num"></td><td class="num"><strong>₹' . money($openingBal) . '</strong></td></tr>';
         foreach ($rows as $x) {
             $bal += $x['in'] - $x['out'];
             $totalIn += $x['in']; $totalOut += $x['out'];
-            echo '<tr><td>' . dmy($x['date']) . '</td><td>' . e($x['type']) . '</td><td>' . e($x['ref']) . '</td><td>' . e($x['name']) . '</td><td>' . e(ucfirst($x['mode'])) . '</td>' .
-                 '<td class="num">' . ($x['in'] ? money($x['in']) : '') . '</td><td class="num">' . ($x['out'] ? money($x['out']) : '') . '</td><td class="num">' . money($bal) . '</td></tr>';
+            $amt = $x['in'] ?: -$x['out'];
+            $descBits = [$x['type']];
+            if ($x['ref'] !== '-') $descBits[] = $x['ref'];
+            if ($x['name'] && $x['name'] !== '-') $descBits[] = $x['name'];
+            echo '<tr><td><strong>' . e(implode(' - ', $descBits)) . '</strong> <span class="list-row-sub muted">' . dmy($x['date']) . ' · ' . e(ucfirst($x['mode'])) . '</span></td>'
+               . '<td class="num" style="color:' . ($amt >= 0 ? 'var(--ok)' : 'var(--bad)') . '"><strong>' . ($amt >= 0 ? '+' : '-') . '₹' . money(abs($amt)) . '</strong></td>'
+               . '<td class="num">₹' . money($bal) . '</td></tr>';
         }
-        if (!$rows) echo '<tr><td colspan="8" class="muted">No transactions in this period.</td></tr>';
-        echo '<tr><td><strong>Total</strong></td><td></td><td></td><td></td><td></td><td class="num"><strong>' . money($totalIn) . '</strong></td><td class="num"><strong>' . money($totalOut) . '</strong></td><td class="num"><strong>' . money($bal) . '</strong></td></tr>';
+        if (!$rows) echo '<tr><td colspan="3" class="muted">No transactions in this period.</td></tr>';
+        echo '<tr><td><strong>Total</strong></td><td class="num"><strong>' . ($totalIn - $totalOut >= 0 ? '+' : '-') . '₹' . money(abs($totalIn - $totalOut)) . '</strong></td><td class="num"><strong>₹' . money($bal) . '</strong></td></tr>';
         echo '</tbody></table></div>';
     }
 }
