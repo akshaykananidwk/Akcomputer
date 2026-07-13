@@ -174,7 +174,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
     <div class="inv-meta">
       <div class="inv-title"><?= $sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE' ?></div>
       <div><strong><?= e($sale['invoice_no']) ?></strong></div>
-      <div>Date: <?= dmy($sale['sale_date']) ?></div>
+      <div>Date: <?= dmy($sale['sale_date']) ?><?= setting('add_time_transactions', '1') === '1' && $sale['created_at'] ? ' &nbsp;Time: ' . date('h:i A', strtotime($sale['created_at'])) : '' ?></div>
       <?php if ($sale['due_date']): ?><div>Due: <?= dmy($sale['due_date']) ?></div><?php endif; ?>
     </div>
   </div>
@@ -218,6 +218,12 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
     <?php endif; ?>
     <?php if (!empty($sale['loyalty_points_used']) && $sale['loyalty_points_used'] > 0): ?>
     <div class="t-line"><span>⭐ Points Discount (<?= (int)$sale['loyalty_points_used'] ?> pts)</span><span>- ₹<?= money($sale['loyalty_discount']) ?></span></div>
+    <?php endif; ?>
+    <?php if (!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009): ?>
+    <div class="t-line"><span>Adjustment</span><span><?= $sale['adjustment'] > 0 ? '' : '- ' ?>₹<?= money(abs($sale['adjustment'])) ?></span></div>
+    <?php endif; ?>
+    <?php if (!empty($sale['round_off']) && abs($sale['round_off']) > 0.004): ?>
+    <div class="t-line"><span>Round Off</span><span><?= $sale['round_off'] > 0 ? '' : '- ' ?>₹<?= money(abs($sale['round_off'])) ?></span></div>
     <?php endif; ?>
     <div class="t-line t-grand"><span>Total</span><span>₹<?= money($sale['total']) ?></span></div>
     <div class="t-line"><span>Paid (<?= e($sale['payment_mode']) ?>)</span><span>₹<?= money($sale['paid']) ?></span></div>

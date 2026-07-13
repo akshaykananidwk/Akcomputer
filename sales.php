@@ -38,7 +38,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $tax = 0;
     foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
     $shipping = max(0, (float)post('shipping'));
-    $total = $subtotal - $discount + $tax + $shipping;
+    $adjustment = (float)post('adjustment');
+    $total = $subtotal - $discount + $tax + $shipping + $adjustment;
+    // Round Off Total is computed server-side from the checkbox flag only
+    // (never trusting a client-posted round-off amount) so it always
+    // matches "nearest rupee" exactly, regardless of what the browser sent.
+    $roundOff = 0;
+    if (post('round_off_on') === '1') {
+        $rounded = round($total);
+        $roundOff = round($rounded - $total, 2);
+        $total = $rounded;
+    }
 
     // Loyalty points redemption - only for an explicitly picked party (one
     // auto-created below from a typed mobile number has 0 points anyway,
@@ -84,13 +94,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $pdo->beginTransaction();
     try {
         q('INSERT INTO sales (company_id, party_id, customer_name, customer_mobile, location_id, sale_date, price_type,
-           credit_days, due_date, subtotal, discount, loyalty_points_used, loyalty_discount, discount_type, discount_pct, tax_amount, shipping, total, paid, payment_mode,
+           credit_days, due_date, subtotal, discount, loyalty_points_used, loyalty_discount, discount_type, discount_pct, tax_amount, shipping, adjustment, round_off, total, paid, payment_mode,
            bank_account_id, payment_method_id, status, notes, created_by, share_token)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
           [$company['id'], $party_id, post('customer_name'), post('customer_mobile'), $loc_id,
            post('sale_date', today()), post('price_type', 'retail'), $credit_days,
            $credit_days ? date('Y-m-d', strtotime(post('sale_date', today()) . " +$credit_days days")) : null,
-           $subtotal, $discount, $loyaltyPointsUsed, $loyaltyDiscount, $discType, $discPct, $tax, $shipping, $total, $paid, post('payment_mode', 'cash'),
+           $subtotal, $discount, $loyaltyPointsUsed, $loyaltyDiscount, $discType, $discPct, $tax, $shipping, $adjustment, $roundOff, $total, $paid, post('payment_mode', 'cash'),
            $bankAccId, $pmId, payment_status($total, $paid), post('notes'), $u['id'], share_token()]);
         $sale_id = insert_id();
         $invoice_no = $company['invoice_prefix'] . '-' . date('y') . '-' . str_pad($sale_id, 5, '0', STR_PAD_LEFT);
@@ -249,7 +259,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $tax = 0;
     foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
     $shipping = max(0, (float)post('shipping'));
-    $total = $subtotal - $discount + $tax + $shipping;
+    $adjustment = (float)post('adjustment');
+    $total = $subtotal - $discount + $tax + $shipping + $adjustment;
+    $roundOff = 0;
+    if (post('round_off_on') === '1') {
+        $rounded = round($total);
+        $roundOff = round($rounded - $total, 2);
+        $total = $rounded;
+    }
     // Paid amount is now editable (staff often need to correct a mistyped
     // amount) - clamped to [0, total]. The DIFFERENCE from the old paid
     // value is posted as its own payments-ledger entry (direction 'in' for
@@ -321,12 +338,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         }
 
         q('UPDATE sales SET company_id=?, party_id=?, customer_name=?, customer_mobile=?, location_id=?, sale_date=?, price_type=?,
-           credit_days=?, due_date=?, subtotal=?, discount=?, discount_type=?, discount_pct=?, tax_amount=?, shipping=?, total=?, paid=?,
+           credit_days=?, due_date=?, subtotal=?, discount=?, discount_type=?, discount_pct=?, tax_amount=?, shipping=?, adjustment=?, round_off=?, total=?, paid=?,
            status=?, notes=? WHERE id=?',
           [$company['id'], $party_id, post('customer_name'), post('customer_mobile'), $loc_id,
            $sale_date, post('price_type', 'retail'), $credit_days,
            $credit_days ? date('Y-m-d', strtotime("$sale_date +$credit_days days")) : null,
-           $subtotal, $discount, $discType, $discPct, $tax, $shipping, $total, $paid,
+           $subtotal, $discount, $discType, $discPct, $tax, $shipping, $adjustment, $roundOff, $total, $paid,
            payment_status($total, $paid), post('notes'), $sid]);
 
         if (abs($paidDelta) > 0.009) {
@@ -390,8 +407,8 @@ if ($action === 'new' || $action === 'edit') {
       <?php if (!$isEdit): ?>
       <div class="page-actions" style="justify-content:center">
         <div class="cc-toggle">
-          <button type="button" id="ccCredit" onclick="setCC('credit')">Credit</button>
-          <button type="button" id="ccCash" class="on-cash" onclick="setCC('cash')">Cash</button>
+          <button type="button" id="ccCredit" class="<?= setting('cash_sale_default', '1') === '1' ? '' : 'on-credit' ?>" onclick="setCC('credit')">Credit</button>
+          <button type="button" id="ccCash" class="<?= setting('cash_sale_default', '1') === '1' ? 'on-cash' : '' ?>" onclick="setCC('cash')">Cash</button>
         </div>
       </div>
       <?php endif; ?>
@@ -453,6 +470,7 @@ if ($action === 'new' || $action === 'edit') {
             <input type="hidden" name="discount_type" id="discount_type" value="amount">
           </div>
           <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= $isEdit ? money($editSale['shipping']) : '0' ?>" oninput="Bill.totals()"></div>
+          <div><label>Adjustment (₹, +/-)</label><input type="number" step="any" name="adjustment" id="adjustment" value="<?= $isEdit ? money($editSale['adjustment']) : '0' ?>" oninput="Bill.totals()"></div>
           <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
           <div><label>⭐ Redeem Points <span class="muted" id="pointsAvail" style="font-weight:normal"></span></label>
             <input type="number" step="1" min="0" name="redeem_points" id="redeem_points" value="0" oninput="Bill.totals()"></div>
@@ -468,7 +486,7 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Payment mode</label>
             <select name="payment_mode" id="payment_mode" onchange="pmChange()">
               <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
-              <option value="credit">Credit / Udhar</option>
+              <option value="credit" <?= setting('cash_sale_default', '1') === '1' ? '' : 'selected' ?>>Credit / Udhar</option>
             </select></div>
           <div id="bankAccBox" style="display:none"><label>Bank Account</label>
             <select name="bank_account_id">
@@ -481,10 +499,17 @@ if ($action === 'new' || $action === 'edit') {
           <div class="t-line"><span>Subtotal</span><span>₹ <span id="t_sub">0.00</span></span></div>
           <div class="t-line"><span>GST</span><span>₹ <span id="t_tax">0.00</span></span></div>
           <div class="t-line"><span>Shipping</span><span>₹ <span id="t_ship">0.00</span></span></div>
+          <div class="t-line" id="adjRow" style="display:none"><span>Adjustment</span><span>₹ <span id="t_adj">0.00</span></span></div>
           <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
           <div class="t-line" id="loyaltyRow" style="display:none"><span>⭐ Points Discount</span><span>- ₹ <span id="t_loyalty">0.00</span></span></div>
           <?php endif; ?>
+          <div class="t-line" id="roundRow" style="display:none"><span>Round Off</span><span>₹ <span id="t_round">0.00</span></span></div>
           <div class="t-line t-grand"><span>Total</span><span>₹ <span id="t_grand">0.00</span></span></div>
+          <?php if (!$isEdit && setting('show_profit_billing') === '1'): ?>
+          <div class="t-line" id="profitRow"><span>Estimated Profit</span><span>₹ <span id="t_profit">0.00</span></span></div>
+          <?php endif; ?>
+          <label class="check-inline"><input type="checkbox" name="round_off_on" id="round_off_chk" value="1" <?= (!$isEdit && setting('round_off_default', '1') === '1') || ($isEdit && abs((float)$editSale['round_off']) > 0.004) ? 'checked' : '' ?> onchange="Bill.totals()"> Round Off Total</label>
+          <input type="hidden" name="round_off" id="round_off" value="0">
           <?php if (!$isEdit): ?><div class="t-line"><span>Balance due</span><span>₹ <span id="t_due">0.00</span></span></div><?php endif; ?>
         </div>
         <div class="form-row cols-2 mt">
@@ -499,7 +524,8 @@ if ($action === 'new' || $action === 'edit') {
       </div>
     </form>
     <script>
-      Bill.init({mode: 'sale', serials: true, freeQty: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1<?= $isEdit ? ', editSaleId: ' . (int)$editSale['id'] : '' ?>});
+      Bill.init({mode: 'sale', serials: true, freeQty: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1,
+        showPurchasePrice: <?= json_encode(setting('show_purchase_price_billing') === '1') ?><?= $isEdit ? ', editSaleId: ' . (int)$editSale['id'] : '' ?>});
       <?php if ($est && $estItems): ?>
       // prefill rows from estimate
       (function () {
@@ -574,7 +600,7 @@ if ($action === 'new' || $action === 'edit') {
         Bill.cfg.gst = this.options[this.selectedIndex].dataset.gst == 1;
         Bill.totals();
       });
-      var ccMode = 'cash';
+      var ccMode = <?= json_encode(!$isEdit && setting('cash_sale_default', '1') !== '1' ? 'credit' : 'cash') ?>;
       function setCC(m) {
         ccMode = m;
         document.getElementById('ccCash').className = m === 'cash' ? 'on-cash' : '';
@@ -606,24 +632,54 @@ if ($action === 'new' || $action === 'edit') {
       var _origTotals = Bill.totals.bind(Bill);
       Bill.totals = function () {
         _origTotals();
+        var g = document.getElementById('t_grand');
+        var adjInp = document.getElementById('adjustment');
+        var adj = adjInp ? (parseFloat(adjInp.value) || 0) : 0;
+        var grand = (parseFloat(g.textContent) || 0) + adj;
+        var adjRow = document.getElementById('adjRow'); if (adjRow) adjRow.style.display = Math.abs(adj) > 0.004 ? '' : 'none';
+        var adjT = document.getElementById('t_adj'); if (adjT) adjT.textContent = (adj >= 0 ? '' : '- ') + Math.abs(adj).toFixed(2);
+
+        var profitEl = document.getElementById('t_profit');
+        if (profitEl) {
+          var sub = parseFloat(document.getElementById('t_sub').textContent) || 0;
+          var cost = 0;
+          document.querySelectorAll('#billItems .bill-row').forEach(function (div) {
+            var qty = parseFloat(div.querySelector('.i-qty').value) || 0;
+            cost += qty * (parseFloat(div.dataset.cost) || 0);
+          });
+          profitEl.textContent = (sub - cost).toFixed(2);
+        }
+
         var redeemInp = document.getElementById('redeem_points');
         if (redeemInp) {
           var avail = parseInt(document.getElementById('party_id').selectedOptions[0].dataset.points || 0, 10);
-          var g = document.getElementById('t_grand');
-          var grand = parseFloat(g.textContent) || 0;
           var pts = Math.max(0, Math.min(parseInt(redeemInp.value, 10) || 0, avail, Math.floor(grand / LOYALTY_REDEEM_VALUE)));
           redeemInp.value = pts;
           var loyaltyDisc = pts * LOYALTY_REDEEM_VALUE;
           var row = document.getElementById('loyaltyRow');
           if (row) row.style.display = loyaltyDisc > 0 ? '' : 'none';
           var ld = document.getElementById('t_loyalty'); if (ld) ld.textContent = loyaltyDisc.toFixed(2);
-          g.textContent = (grand - loyaltyDisc).toFixed(2);
-          var due = document.getElementById('t_due');
-          if (due) { var paid = parseFloat((document.getElementById('paid') || {}).value) || 0; due.textContent = (grand - loyaltyDisc - paid).toFixed(2); }
+          grand -= loyaltyDisc;
         }
+
+        var roundChk = document.getElementById('round_off_chk');
+        var roundOffVal = 0;
+        if (roundChk && roundChk.checked) {
+          var rounded = Math.round(grand);
+          roundOffVal = rounded - grand;
+          grand = rounded;
+        }
+        var roInp = document.getElementById('round_off'); if (roInp) roInp.value = roundOffVal.toFixed(2);
+        var roRow = document.getElementById('roundRow'); if (roRow) roRow.style.display = Math.abs(roundOffVal) > 0.004 ? '' : 'none';
+        var roT = document.getElementById('t_round'); if (roT) roT.textContent = (roundOffVal >= 0 ? '' : '- ') + Math.abs(roundOffVal).toFixed(2);
+
+        g.textContent = grand.toFixed(2);
+        var due = document.getElementById('t_due');
+        if (due) { var paid = parseFloat((document.getElementById('paid') || {}).value) || 0; due.textContent = (grand - paid).toFixed(2); }
+
         if (ccMode === 'cash') {
-          var g2 = document.getElementById('t_grand'), p = document.getElementById('paid');
-          if (g2 && p) { p.value = g2.textContent; var d = document.getElementById('t_due'); if (d) d.textContent = '0.00'; }
+          var p = document.getElementById('paid');
+          if (p) { p.value = grand.toFixed(2); if (due) due.textContent = '0.00'; }
         }
       };
       document.getElementById('party_id').addEventListener('change', function () {

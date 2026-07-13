@@ -48,7 +48,8 @@ function invoice_image_jpg($sale, $items) {
     $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
 
     $H = 210 + $itemsHeight + 40 + (($sale['discount'] > 0) ? 24 : 0) + (($sale['is_gst']) ? 48 : 0)
-       + (($sale['shipping'] > 0) ? 24 : 0) + 90 + ($qrPath ? 180 : 30) + 60;
+       + (($sale['shipping'] > 0) ? 24 : 0) + ((!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009) ? 24 : 0)
+       + ((!empty($sale['round_off']) && abs($sale['round_off']) > 0.004) ? 24 : 0) + 90 + ($qrPath ? 180 : 30) + 60;
 
     $img = imagecreatetruecolor($W, $H);
     $white = imagecolorallocate($img, 255, 255, 255);
@@ -74,6 +75,7 @@ function invoice_image_jpg($sale, $items) {
     $ibox = imagettfbbox(13, 0, bi_font(false), $sale['invoice_no']);
     imagettftext($img, 13, 0, $titleR - ($ibox[2] - $ibox[0]), $margin + 35, $black, bi_font(false), $sale['invoice_no']);
     $dtxt = 'Date: ' . dmy($sale['sale_date']);
+    if (setting('add_time_transactions', '1') === '1' && !empty($sale['created_at'])) $dtxt .= '  Time: ' . date('h:i A', strtotime($sale['created_at']));
     $dbox = imagettfbbox(11, 0, bi_font(false), $dtxt);
     imagettftext($img, 11, 0, $titleR - ($dbox[2] - $dbox[0]), $margin + 53, $gray, bi_font(false), $dtxt);
 
@@ -120,6 +122,8 @@ function invoice_image_jpg($sale, $items) {
         $totalsRow('SGST', money($sale['tax_amount'] / 2));
     }
     if (!empty($sale['shipping']) && $sale['shipping'] > 0) $totalsRow('Shipping', money($sale['shipping']));
+    if (!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009) $totalsRow('Adjustment', ($sale['adjustment'] > 0 ? '' : '-') . money(abs($sale['adjustment'])));
+    if (!empty($sale['round_off']) && abs($sale['round_off']) > 0.004) $totalsRow('Round Off', ($sale['round_off'] > 0 ? '' : '-') . money(abs($sale['round_off'])));
     imageline($img, $margin, $y, $W - $margin, $y, $lightLine);
     $y += 10;
     $totalsRow('TOTAL', money($sale['total']), true, $accent);

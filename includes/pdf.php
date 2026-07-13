@@ -195,7 +195,9 @@ function invoice_pdf($sale, $items) {
     $pdf->text($L, $y + 27, 9, trim(($sale['c_phone'] ? 'Ph: ' . $sale['c_phone'] . '  ' : '') . ($sale['is_gst'] && $sale['gstin'] ? 'GSTIN: ' . $sale['gstin'] : '')), '', [1, 1, 1]);
     $pdf->text_right($R, $y, 15, $sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE', 'B', [1, 1, 1]);
     $pdf->text_right($R, $y + 16, 10, $sale['invoice_no'], 'B', [1, 1, 1]);
-    $pdf->text_right($R, $y + 27, 9, 'Date: ' . dmy($sale['sale_date']), '', [1, 1, 1]);
+    $dateLine = 'Date: ' . dmy($sale['sale_date']);
+    if (setting('add_time_transactions', '1') === '1' && !empty($sale['created_at'])) $dateLine .= '  Time: ' . date('h:i A', strtotime($sale['created_at']));
+    $pdf->text_right($R, $y + 27, 9, $dateLine, '', [1, 1, 1]);
 
     $y += 60;
     $pdf->text($L, $y, 10, 'Bill To: ' . ($sale['customer_name'] ?: $sale['party_name'] ?: 'Walk-in Customer'), 'B');
@@ -257,6 +259,16 @@ function invoice_pdf($sale, $items) {
     if (!empty($sale['shipping']) && $sale['shipping'] > 0) {
         $pdf->text($tx, $y, 10, 'Shipping');
         $pdf->text_right($R, $y, 10, 'Rs ' . money($sale['shipping']));
+        $y += 14;
+    }
+    if (!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009) {
+        $pdf->text($tx, $y, 10, 'Adjustment');
+        $pdf->text_right($R, $y, 10, ($sale['adjustment'] > 0 ? '' : '- ') . 'Rs ' . money(abs($sale['adjustment'])));
+        $y += 14;
+    }
+    if (!empty($sale['round_off']) && abs($sale['round_off']) > 0.004) {
+        $pdf->text($tx, $y, 10, 'Round Off');
+        $pdf->text_right($R, $y, 10, ($sale['round_off'] > 0 ? '' : '- ') . 'Rs ' . money(abs($sale['round_off'])));
         $y += 14;
     }
     $pdf->line($tx, $y - 8, $R, $y - 8, 1.1);
