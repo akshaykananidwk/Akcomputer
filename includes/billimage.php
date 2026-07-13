@@ -184,15 +184,6 @@ function bi_icon_check(&$ops, $cx, $cy, $r, $rgb) {
     bi_line($ops, $cx - $r * 0.5, $cy + $r * 0.02, $cx - $r * 0.12, $cy + $r * 0.42, $rgb, 2.4);
     bi_line($ops, $cx - $r * 0.12, $cy + $r * 0.42, $cx + $r * 0.55, $cy - $r * 0.38, $rgb, 2.4);
 }
-function bi_icon_bolt(&$ops, $cx, $cy, $r, $rgb) {
-    bi_poly($ops, [[$cx + $r * 0.15, $cy - $r * 0.65], [$cx - $r * 0.45, $cy + $r * 0.1], [$cx - $r * 0.05, $cy + $r * 0.1],
-                   [$cx - $r * 0.2, $cy + $r * 0.65], [$cx + $r * 0.5, $cy - $r * 0.12], [$cx + $r * 0.08, $cy - $r * 0.12]], $rgb);
-}
-function bi_icon_heart(&$ops, $cx, $cy, $r, $rgb) {
-    bi_circle($ops, $cx - $r * 0.28, $cy - $r * 0.15, $r * 0.36, $rgb);
-    bi_circle($ops, $cx + $r * 0.28, $cy - $r * 0.15, $r * 0.36, $rgb);
-    bi_poly($ops, [[$cx - $r * 0.6, $cy - $r * 0.05], [$cx + $r * 0.6, $cy - $r * 0.05], [$cx, $cy + $r * 0.65]], $rgb);
-}
 function bi_icon_star(&$ops, $cx, $cy, $r, $rgb) {
     $pts = [];
     for ($i = 0; $i < 10; $i++) {
@@ -266,16 +257,24 @@ function invoice_image_jpg($sale, $items) {
         bi_txt_center($ops, ($logoX1 + $logoX2) / 2, ($logoY1 + $logoY2) / 2 + 9, 22, $initials, true, $white);
     }
 
+    $invX1 = 470; $invX2 = $W - $margin; $invY1 = 20; $invY2 = $invY1 + 76;
+
     $tx = $logoX2 + 14;
     bi_txt($ops, $tx, 44, 22, $companyName, true, $navy);
     $addrLine = trim(($sale['c_address'] ?? '') . ' ' . ($sale['loc_name'] ?? '') . ($sale['loc_city'] ? ', ' . $sale['loc_city'] : ''));
+    // wrap (not truncate to one line) - a shop address is information the
+    // owner wants fully visible, not silently cut off; only ellipsis if it
+    // still doesn't fit after 2 lines. Bounded by where the invoice box
+    // starts on the right so it can never run underneath it.
+    $addrLines = [];
     if ($addrLine !== '') {
+        $addrMaxW = $invX1 - ($tx + 16) - 14;
+        $addrLines = bi_wrap($addrLine, 12, false, $addrMaxW);
+        if (count($addrLines) > 2) $addrLines = [$addrLines[0], bi_fit(implode(' ', array_slice($addrLines, 1)), $addrMaxW, 12)];
         bi_icon_pin($ops, $tx + 5, 65, 6, $blue);
-        bi_txt($ops, $tx + 16, 69, 12, $addrLine, false, $gray);
+        foreach ($addrLines as $i => $ln) bi_txt($ops, $tx + 16, 69 + $i * 16, 12, $ln, false, $gray);
     }
-    if (!empty($sale['c_phone'])) bi_txt($ops, $tx, 90, 12, 'Ph: ' . $sale['c_phone'], false, $gray);
-
-    $invX1 = 470; $invX2 = $W - $margin; $invY1 = 20; $invY2 = $invY1 + 76;
+    if (!empty($sale['c_phone'])) bi_txt($ops, $tx, 69 + max(1, count($addrLines)) * 16 + 5, 12, 'Ph: ' . $sale['c_phone'], false, $gray);
     bi_vgrad_rrect($ops, $invX1, $invY1, $invX2, $invY2, 14, $blue, $blueDark);
     $title = $sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE';
     bi_txt_center($ops, ($invX1 + $invX2) / 2, $invY1 + 30, 19, $title, true, $white);
@@ -393,44 +392,27 @@ function invoice_image_jpg($sale, $items) {
 
     // ================= PAYMENT / QR =================
     if ($qrPath && is_file($qrPath) && $bank) {
-        $secH = 190;
-        $panelX1 = $margin; $panelX2 = 330;
-        bi_vgrad_rrect($ops, $panelX1, $y, $panelX2, $y + $secH, 16, $purple, $purpleDark);
-        $features = [
-            ['check', '100% Secure', 'Safe & Trusted Payment'],
-            ['bolt', 'Instant Payment', 'Quick & Hassle Free'],
-            ['heart', 'Thank You!', 'We Value Your Support'],
-        ];
-        $fy = $y + 20;
-        foreach ($features as $f) {
-            bi_circle($ops, $panelX1 + 30, $fy + 14, 15, $white);
-            $iconFn = 'bi_icon_' . $f[0];
-            $iconFn($ops, $panelX1 + 30, $fy + 14, 13, $purpleDark);
-            bi_txt($ops, $panelX1 + 56, $fy + 12, 13, $f[1], true, $white);
-            bi_txt($ops, $panelX1 + 56, $fy + 30, 11, $f[2], false, [222, 216, 250]);
-            $fy += 54;
-        }
-
-        $rx1 = 350;
-        bi_txt($ops, $rx1, $y + 20, 15, 'Scan & Pay ₹' . money($sale['total']), true, $navy);
-        $qrSize = 128;
-        $ops[] = function ($img, $S) use ($qrPath, $rx1, $y, $qrSize) {
+        $secH = 176;
+        bi_rrect_border($ops, $margin, $y, $W - $margin, $y + $secH, 16, $lightGray, $white, 1.5);
+        $qrX = $margin + 24; $qrSize = 130;
+        bi_txt($ops, $qrX, $y + 30, 16, 'Scan & Pay ₹' . money($sale['total']), true, $navy);
+        $ops[] = function ($img, $S) use ($qrPath, $qrX, $y, $qrSize) {
             $qr = @imagecreatefrompng($qrPath);
             if (!$qr) return;
-            imagecopyresampled($img, $qr, (int)($rx1 * $S), (int)(($y + 32) * $S), 0, 0, $qrSize * $S, $qrSize * $S, imagesx($qr), imagesy($qr));
+            imagecopyresampled($img, $qr, (int)($qrX * $S), (int)(($y + 44) * $S), 0, 0, $qrSize * $S, $qrSize * $S, imagesx($qr), imagesy($qr));
             imagedestroy($qr);
         };
-        $bx = $rx1 + $qrSize + 18;
-        $bTextW = ($W - $margin) - ($bx + 40); // remaining width to the right margin
-        bi_circle($ops, $bx + 16, $y + 58, 16, $navy);
-        bi_icon_bank($ops, $bx + 16, $y + 58, 13, $white);
-        bi_txt($ops, $bx + 40, $y + 54, 13, bi_fit($bank['account_name'], $bTextW, 13, true), true, $black);
-        bi_txt($ops, $bx + 40, $y + 72, 12, bi_fit($bank['bank_name'], $bTextW, 12), false, $gray);
-        bi_txt($ops, $bx + 40, $y + 90, 12, bi_fit('A/C: ' . $bank['account_number'], $bTextW, 12), false, $gray);
-        bi_circle($ops, $bx + 16, $y + 112, 12, $green);
-        bi_icon_check($ops, $bx + 16, $y + 112, 10, $white);
-        foreach (bi_wrap('Thank you for your payment!', 11, false, $bTextW + 4) as $i => $ln) {
-            bi_txt($ops, $bx + 36, $y + 114 + $i * 16, 11, $ln, false, $gray);
+        $bx = $qrX + $qrSize + 26;
+        $bTextW = ($W - $margin) - ($bx + 42) - 10; // remaining width to the right margin
+        bi_circle($ops, $bx + 17, $y + 78, 17, $navy);
+        bi_icon_bank($ops, $bx + 17, $y + 78, 14, $white);
+        bi_txt($ops, $bx + 44, $y + 74, 14, bi_fit($bank['account_name'], $bTextW, 14, true), true, $black);
+        bi_txt($ops, $bx + 44, $y + 94, 13, bi_fit($bank['bank_name'], $bTextW, 13), false, $gray);
+        bi_txt($ops, $bx + 44, $y + 114, 13, bi_fit('A/C: ' . $bank['account_number'], $bTextW, 13), false, $gray);
+        bi_circle($ops, $bx + 17, $y + 142, 13, $green);
+        bi_icon_check($ops, $bx + 17, $y + 142, 11, $white);
+        foreach (bi_wrap('Thank you for your payment!', 12, false, $bTextW + 6) as $i => $ln) {
+            bi_txt($ops, $bx + 40, $y + 146 + $i * 16, 12, $ln, false, $gray);
         }
 
         $y += $secH + 20;

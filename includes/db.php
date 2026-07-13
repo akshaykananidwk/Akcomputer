@@ -13,6 +13,14 @@ function db() {
                 PDO::ATTR_EMULATE_PREPARES => false,
             ]
         );
+        // MySQL's own NOW()/CURRENT_TIMESTAMP defaults (e.g. every table's
+        // created_at) run in the server's OWN time zone, which on most
+        // hosting is UTC - not the Asia/Kolkata zone PHP is set to above.
+        // Left unset, timestamps written by MySQL itself drift ~5:30 hours
+        // from what date()/today() compute in PHP, showing the wrong time
+        // (and, near midnight IST, sometimes the wrong day) on invoices.
+        // India has a single fixed +05:30 offset year-round (no DST).
+        $pdo->exec("SET time_zone = '+05:30'");
     }
     return $pdo;
 }
