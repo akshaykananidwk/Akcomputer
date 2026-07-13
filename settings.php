@@ -134,6 +134,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'term_del') {
     flash('Credit term removed.');
     redirect('settings.php?cat=party');
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'custom_field_add') {
+    require_perm('settings.edit');
+    $label = trim(post('label'));
+    if ($label !== '') {
+        $next = (int)val('SELECT COALESCE(MAX(sort_order),0)+1 FROM item_custom_fields');
+        q('INSERT INTO item_custom_fields (label, sort_order, is_active) VALUES (?, ?, 1)', [$label, $next]);
+        flash('Custom field added.');
+    }
+    redirect('settings.php?cat=transaction');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'custom_field_del') {
+    require_perm('settings.edit');
+    q('DELETE FROM item_custom_fields WHERE id = ?', [(int)post('id')]);
+    flash('Custom field removed.');
+    redirect('settings.php?cat=transaction');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_loyalty') {
     require_perm('settings.edit');
     set_setting('loyalty_enabled', post('loyalty_enabled') ? '1' : '0');
@@ -144,6 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_loyalty') {
 }
 
 $terms = all('SELECT * FROM credit_terms ORDER BY days');
+$customFields = all('SELECT * FROM item_custom_fields ORDER BY sort_order, id');
 $page_title = 'Settings';
 include __DIR__ . '/includes/header.php';
 
@@ -208,6 +226,31 @@ exit;
     <label class="check-inline mb"><input type="checkbox" name="show_purchase_price_billing" value="1" <?= setting('show_purchase_price_billing') === '1' ? 'checked' : '' ?>> Display Purchase Price of Items <span class="muted" style="font-weight:normal">(in the item search list while billing)</span></label>
     <label class="check-inline mb"><input type="checkbox" name="add_time_transactions" value="1" <?= setting('add_time_transactions', '1') === '1' ? 'checked' : '' ?>> Add Time on Transactions <span class="muted" style="font-weight:normal">(shows Time next to the bill's Date - view, PDF, WhatsApp image)</span></label>
     <button class="btn" type="submit">Save</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Item Custom Fields</h3>
+  <p class="muted mb">Extra labeled fields (e.g. "Exp. Date", "Brand") that show up under every item while adding it to a sale. Add as many as you need.</p>
+  <table class="table-sm mb">
+    <?php foreach ($customFields as $cf): ?>
+    <tr>
+      <td><?= e($cf['label']) ?></td>
+      <td class="right">
+        <form method="post" style="display:inline"><?= csrf_field() ?>
+          <input type="hidden" name="do" value="custom_field_del"><input type="hidden" name="id" value="<?= $cf['id'] ?>">
+          <button class="btn btn-sm btn-danger" type="submit" onclick="return confirm('Remove this custom field?')">✕</button>
+        </form>
+      </td>
+    </tr>
+    <?php endforeach; ?>
+    <?php if (!$customFields): ?><tr><td class="muted">No custom fields yet.</td></tr><?php endif; ?>
+  </table>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="custom_field_add">
+    <div><input type="text" name="label" placeholder="Field label, e.g. Brand" required></div>
+    <button class="btn btn-sm" type="submit">Add field</button>
   </form>
 </div>
 <?php endif; ?>

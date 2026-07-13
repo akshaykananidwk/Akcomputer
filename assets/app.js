@@ -107,15 +107,106 @@ var Bill = {
   init: function (cfg) {
     this.cfg = cfg;
     var self = this;
-    var addBtn = document.getElementById('addRowBtn');
-    if (addBtn) addBtn.addEventListener('click', function () { self.addRow(); });
-    this.addRow();
+    // Vyapar-style 2-step flow: an "Add Items" button opens a full-screen
+    // panel (the "second page") for one item at a time instead of showing
+    // every item's fields inline on page 1. Only wired up when the page
+    // actually has that panel markup (sales.php) - purchases.php and other
+    // Bill.init() callers keep the classic always-inline row list.
+    var addPanelBtn = document.getElementById('addItemsBtn');
+    if (addPanelBtn) {
+      addPanelBtn.addEventListener('click', function () { self.openAddPanel(); });
+      var closeBtn = document.getElementById('aipClose');
+      if (closeBtn) closeBtn.addEventListener('click', function () { self.closeAddPanel(true); });
+      var saveBtn = document.getElementById('aipSave');
+      if (saveBtn) saveBtn.addEventListener('click', function () { self.closeAddPanel(false); });
+      var saveNewBtn = document.getElementById('aipSaveNew');
+      if (saveNewBtn) saveNewBtn.addEventListener('click', function () { self.closeAddPanel(false); self.openAddPanel(); });
+      this.renderSummary();
+    } else {
+      var addBtn = document.getElementById('addRowBtn');
+      if (addBtn) addBtn.addEventListener('click', function () { self.addRow(); });
+      this.addRow();
+    }
     ['discount', 'paid'].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.addEventListener('input', function () { self.totals(); });
     });
     var pt = document.getElementById('price_type');
     if (pt) pt.addEventListener('change', function () { self.repriceAll(); });
+  },
+
+  // ----- 2-step "Add Items" panel (page 1 keeps just a summary list) -----
+  openAddPanel: function (div) {
+    var panel = document.getElementById('addItemPanel');
+    if (!panel) return null;
+    if (!div) div = this.addRow();
+    div.classList.add('panel-mode');
+    document.getElementById('aipBody').insertBefore(div, document.getElementById('aipTotalsBox'));
+    panel.classList.add('show');
+    panel.dataset.activeN = div.dataset.n;
+    document.body.style.overflow = 'hidden';
+    this.updatePanelTotal(div);
+    div.querySelector('.i-search').focus();
+    return div;
+  },
+
+  closeAddPanel: function (discardIfEmpty) {
+    var panel = document.getElementById('addItemPanel');
+    if (!panel) return;
+    var div = document.querySelector('.bill-row[data-n="' + panel.dataset.activeN + '"]');
+    panel.classList.remove('show');
+    document.body.style.overflow = '';
+    if (!div) return;
+    div.classList.remove('panel-mode');
+    if (discardIfEmpty && !div.querySelector('.i-id').value) {
+      div.remove();
+    } else {
+      document.getElementById('billItems').appendChild(div);
+    }
+    this.renderSummary();
+    this.totals();
+  },
+
+  updatePanelTotal: function (div) {
+    var box = document.getElementById('aipTotalsBox');
+    if (!box) return;
+    var qty = parseFloat(div.querySelector('.i-qty').value) || 0;
+    var price = parseFloat(div.querySelector('.i-price').value) || 0;
+    box.querySelector('.aip-sub').textContent = (qty * price).toFixed(2);
+  },
+
+  renderSummary: function () {
+    var list = document.getElementById('billSummaryList');
+    if (!list) return;
+    var rows = document.querySelectorAll('#billItems .bill-row');
+    var self = this;
+    if (!rows.length) { list.innerHTML = '<div class="bsum-empty">No items added yet.</div>'; return; }
+    list.innerHTML = '';
+    rows.forEach(function (div) {
+      var name = div.querySelector('.i-search').value || '(item)';
+      var qty = parseFloat(div.querySelector('.i-qty').value) || 0;
+      var price = parseFloat(div.querySelector('.i-price').value) || 0;
+      var unit = div.dataset.unit || '';
+      var desc = div.querySelector('.i-desc') ? div.querySelector('.i-desc').value : '';
+      var row = document.createElement('div');
+      row.className = 'bsum-row';
+      row.innerHTML =
+        '<div class="bsum-main"><strong></strong><div class="muted">' + qty + ' ' + unit + ' × ₹' + price.toFixed(2) + (desc ? ' · ' + '<span class="bsum-desc"></span>' : '') + '</div></div>' +
+        '<div class="bsum-val">₹' + (qty * price).toFixed(2) + '</div>' +
+        '<button type="button" class="bsum-del" title="Remove">✕</button>';
+      row.querySelector('strong').textContent = name;
+      if (desc) row.querySelector('.bsum-desc').textContent = desc;
+      row.addEventListener('click', function (ev) {
+        if (ev.target.classList.contains('bsum-del')) return;
+        self.openAddPanel(div);
+      });
+      row.querySelector('.bsum-del').addEventListener('click', function () {
+        div.remove();
+        self.renderSummary();
+        self.totals();
+      });
+      list.appendChild(row);
+    });
   },
 
   priceField: function () {
@@ -130,10 +221,14 @@ var Bill = {
     var div = document.createElement('div');
     div.className = 'bill-row';
     div.dataset.n = n;
+    var cfFields = (this.cfg.customFields || []).map(function (f) {
+      var safeLabel = f.label.replace(/</g, '&lt;');
+      return '<div><label>' + safeLabel + '</label><input type="text" class="i-cf" name="cf_' + f.id + '[]" data-label="' + safeLabel.replace(/"/g, '&quot;') + '"></div>';
+    }).join('');
     div.innerHTML =
       '<div class="row-line">' +
       '<div class="cell-item isearch-wrap">' +
-      '  <label>Item</label>' +
+      '  <label>Item Name</label>' +
       '  <div style="display:flex;gap:4px">' +
       '  <input type="text" class="i-search" placeholder="Type item name..." autocomplete="off" style="flex:1">' +
       (('BarcodeDetector' in window) ? '  <button type="button" class="btn btn-sm btn-outline i-scanbtn" title="Scan barcode with camera" style="flex-shrink:0">📷</button>' : '') +
@@ -142,14 +237,16 @@ var Bill = {
       '  <input type="hidden" name="tax_rate[]" class="i-tax" value="0">' +
       '  <div class="isearch-results"></div>' +
       '</div>' +
-      '<div><label>Qty</label><input type="number" step="any" min="0" name="qty[]" class="i-qty" value="1"></div>' +
-      (this.cfg.freeQty ? '<div><label>Free</label><input type="number" step="any" min="0" name="free_qty[]" class="i-freeq" value="0" title="Free quantity (scheme)"></div>' : '') +
-      '<div><label>Price</label><input type="number" step="any" min="0" name="price[]" class="i-price" value="0"></div>' +
-      '<div><label>Total</label><input type="text" class="i-total" value="0.00" readonly tabindex="-1"></div>' +
+      '<div><label>Quantity</label><input type="number" step="any" min="0" name="qty[]" class="i-qty" value="1"></div>' +
+      (this.cfg.freeQty ? '<div><label>Free Quantity</label><input type="number" step="any" min="0" name="free_qty[]" class="i-freeq" value="0" title="Free quantity (scheme)"></div>' : '') +
+      '<div><label>Rate (Price/Unit)</label><input type="number" step="any" min="0" name="price[]" class="i-price" value="0"></div>' +
+      '<div class="i-total-wrap"><label>Total</label><input type="text" class="i-total" value="0.00" readonly tabindex="-1"></div>' +
       '<div><button type="button" class="row-del" title="Remove">✕</button></div>' +
       '</div>' +
       '<div class="i-extra"></div>' +
-      '<div class="muted i-stockinfo"></div>';
+      '<div class="muted i-stockinfo"></div>' +
+      (this.cfg.mode === 'sale' ? '<div><label>Description</label><input type="text" class="i-desc" name="description[]" placeholder="Optional note for this item"></div>' : '') +
+      (this.cfg.mode === 'sale' && cfFields ? '<div class="cf-section"><h4>Custom Fields</h4>' + cfFields + '</div>' : '');
     wrap.appendChild(div);
 
     div.querySelector('.row-del').addEventListener('click', function () {
@@ -158,9 +255,12 @@ var Bill = {
     ['.i-qty', '.i-price'].forEach(function (sel) {
       div.querySelector(sel).addEventListener('input', function () { self.rowTotal(div); });
     });
+    var descInp = div.querySelector('.i-desc');
+    if (descInp) descInp.addEventListener('input', function () { self.renderSummary(); });
     this.attachSearch(div);
     var scanBtn = div.querySelector('.i-scanbtn');
     if (scanBtn) scanBtn.addEventListener('click', function () { self.scanBarcode(div.querySelector('.i-search')); });
+    return div;
   },
 
   attachSearch: function (div) {
@@ -281,8 +381,10 @@ var Bill = {
     div.dataset.serialTracked = it.serial_tracked;
     div.dataset.stock = it.stock;
     div.dataset.cost = it.purchase_price || 0;
+    div.dataset.unit = it.unit || '';
     div.querySelector('.i-stockinfo').textContent =
       (it.item_type !== 'service' && (this.cfg.mode === 'sale' || this.cfg.mode === 'staff')) ? 'Available: ' + it.stock + ' ' + it.unit : '';
+    if (div.classList.contains('panel-mode')) this.updatePanelTotal(div);
 
     var extra = div.querySelector('.i-extra');
     extra.innerHTML = '';
@@ -359,6 +461,7 @@ var Bill = {
     var qty = parseFloat(div.querySelector('.i-qty').value) || 0;
     var price = parseFloat(div.querySelector('.i-price').value) || 0;
     div.querySelector('.i-total').value = (qty * price).toFixed(2);
+    if (div.classList.contains('panel-mode')) this.updatePanelTotal(div);
     this.totals();
   },
 

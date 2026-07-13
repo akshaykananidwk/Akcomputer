@@ -6,6 +6,20 @@ $u = current_user();
 
 $action = get('action', 'list');
 
+// Per-item custom fields (Settings > Transaction > Item Custom Fields) are
+// posted as parallel arrays cf_<field id>[], indexed the same way as
+// item_id[]/qty[]/price[] - collapsed here into one {label: value} JSON
+// blob per row (only non-blank values, keyed by label text since that's
+// what the invoice/edit form displays regardless of field id).
+function sale_item_custom_data($activeCF, $i) {
+    $d = [];
+    foreach ($activeCF as $cf) {
+        $v = trim((string)(post('cf_' . $cf['id'], [])[$i] ?? ''));
+        if ($v !== '') $d[$cf['label']] = $v;
+    }
+    return $d ? json_encode($d) : null;
+}
+
 // ---------- save new bill ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('sales.add');
@@ -17,6 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $taxes = post('tax_rate', []);
     $serialSel = post('serial_sel', []);
     $freeQtys = post('free_qty', []);
+    $descriptions = post('description', []);
+    $activeCF = all('SELECT id, label FROM item_custom_fields WHERE is_active = 1');
 
     $rows = [];
     foreach ($item_ids as $i => $iid) {
@@ -26,7 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $price = (float)($prices[$i] ?? 0);
         $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'free' => (float)($freeQtys[$i] ?? 0),
-                   'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $i + 1];
+                   'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $i + 1,
+                   'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=new'); }
 
@@ -118,8 +135,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             if ($item['serial_tracked'] && !$serials && !$allowNeg) {
                 throw new Exception("Select serial number(s) for {$item['name']}.");
             }
-            q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, serials) VALUES (?,?,?,?,?,?,?,?,?)',
-              [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null]);
+            q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+              [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null,
+               $r['description'], $r['custom_data']]);
 
             if ($item['item_type'] === 'service') { continue; } // service: no stock effect
             if (!$allowNeg && stock_qty($r['item_id'], $loc_id) < $r['qty']) {
@@ -238,6 +256,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $taxes = post('tax_rate', []);
     $serialSel = post('serial_sel', []);
     $freeQtys = post('free_qty', []);
+    $descriptions = post('description', []);
+    $activeCF = all('SELECT id, label FROM item_custom_fields WHERE is_active = 1');
 
     $rows = [];
     foreach ($item_ids as $i => $iid) {
@@ -247,7 +267,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         $price = (float)($prices[$i] ?? 0);
         $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'free' => (float)($freeQtys[$i] ?? 0),
-                   'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $i + 1];
+                   'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $i + 1,
+                   'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=edit&id=' . $sid); }
 
@@ -317,8 +338,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
             if ($item['serial_tracked'] && !$serials && !$allowNeg) {
                 throw new Exception("Select serial number(s) for {$item['name']}.");
             }
-            q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, serials) VALUES (?,?,?,?,?,?,?,?,?)',
-              [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null]);
+            q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+              [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null,
+               $r['description'], $r['custom_data']]);
 
             if ($item['item_type'] === 'service') { continue; }
             if (!$allowNeg && stock_qty($r['item_id'], $loc_id) < $r['qty']) {
@@ -381,6 +403,7 @@ if ($action === 'new' || $action === 'edit') {
         $editItems = all('SELECT si.*, i.name, i.serial_tracked FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$editSale['id']]);
     }
     $parties = all("SELECT id, name, mobile, credit_days, loyalty_points FROM parties WHERE is_active = 1 ORDER BY name");
+    $customFields = all('SELECT id, label FROM item_custom_fields WHERE is_active = 1 ORDER BY sort_order, id');
     // prefill from estimate or delivery challan (convert to bill)
     $est = null; $estItems = []; $chal = null;
     if (!$isEdit && (int)get('from_estimate')) {
@@ -415,44 +438,71 @@ if ($action === 'new' || $action === 'edit') {
       <?php if ($est && $est['id']): ?><input type="hidden" name="estimate_id" value="<?= $est['id'] ?>"><?php endif; ?>
       <?php if ($chal): ?><input type="hidden" name="challan_id" value="<?= $chal['id'] ?>"><?php endif; ?>
       <div class="card">
-        <div class="form-row cols-4">
-          <div><label>Firm / Company</label>
+        <div class="form-row cols-3">
+          <div><label>Invoice No.</label><input type="text" value="<?= $isEdit ? e($editSale['invoice_no']) : 'Auto' ?>" disabled></div>
+          <div><label>Date</label><input type="date" name="sale_date" value="<?= today() ?>"></div>
+          <div><label>Time</label><input type="text" id="saleTimeDisplay" value="<?= date('h:i A') ?>" disabled></div>
+        </div>
+        <div class="form-row cols-2">
+          <div><label>Firm Name</label>
             <select name="company_id" id="company_id">
               <?php foreach ($companies as $c): ?>
               <option value="<?= $c['id'] ?>" data-gst="<?= $c['is_gst'] ?>"><?= e($c['name']) ?><?= $c['is_gst'] ? ' (GST)' : '' ?></option>
               <?php endforeach; ?>
             </select></div>
-          <div><label>Location</label>
+          <div><label>Godown Name</label>
             <select name="location_id" id="location_id">
               <?php foreach ($locations as $l): ?>
               <option value="<?= $l['id'] ?>" <?= $l['id'] == $u['location_id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option>
               <?php endforeach; ?>
             </select></div>
-          <div><label>Date</label><input type="date" name="sale_date" value="<?= today() ?>"></div>
-          <div><label>Price type</label>
-            <select name="price_type" id="price_type"><option value="retail">Retail</option><option value="b2b">B2B</option></select></div>
         </div>
-        <div class="form-row cols-4">
-          <div><label>Party (optional)</label>
-            <select name="party_id" id="party_id">
-              <option value="">-- Walk-in customer --</option>
-              <?php foreach ($parties as $p): ?>
-              <option value="<?= $p['id'] ?>" data-mobile="<?= e($p['mobile']) ?>" data-credit="<?= $p['credit_days'] ?>" data-points="<?= (int)$p['loyalty_points'] ?>"><?= e($p['name']) ?></option>
-              <?php endforeach; ?>
-            </select></div>
-          <div><label>Customer name</label><input type="text" name="customer_name" id="customer_name"></div>
-          <div><label>Customer mobile (WhatsApp)</label><input type="tel" name="customer_mobile" id="customer_mobile"></div>
-          <div><label>Credit term</label>
+        <div class="form-row cols-2">
+          <div><label>Pmt. Terms</label>
             <select name="credit_days" id="credit_days">
               <?php foreach ($terms as $t): ?><option value="<?= $t['days'] ?>"><?= e($t['label']) ?></option><?php endforeach; ?>
             </select></div>
+          <div><label>Due On</label><input type="text" id="dueOnDisplay" disabled></div>
         </div>
+        <div class="field"><label>Price type</label>
+          <select name="price_type" id="price_type"><option value="retail">Retail</option><option value="b2b">B2B</option></select></div>
+        <div class="field"><label>Party (pick an existing customer, optional)</label>
+          <select name="party_id" id="party_id">
+            <option value="">-- Walk-in customer --</option>
+            <?php foreach ($parties as $p): ?>
+            <option value="<?= $p['id'] ?>" data-mobile="<?= e($p['mobile']) ?>" data-credit="<?= $p['credit_days'] ?>" data-points="<?= (int)$p['loyalty_points'] ?>"><?= e($p['name']) ?></option>
+            <?php endforeach; ?>
+          </select></div>
+        <div class="field"><label>Customer</label><input type="text" name="customer_name" id="customer_name" placeholder="Customer name (leave blank for walk-in)"></div>
+        <div class="field"><label>Phone Number</label><input type="tel" name="customer_mobile" id="customer_mobile" placeholder="WhatsApp number"></div>
       </div>
 
       <div class="card">
         <h3>Items</h3>
-        <div class="bill-items" id="billItems"></div>
-        <button type="button" class="btn btn-outline btn-sm" id="addRowBtn">+ Add item</button>
+        <div class="bill-summary-list" id="billSummaryList"></div>
+        <div class="page-actions">
+          <button type="button" class="btn btn-outline btn-sm" id="addItemsBtn">+ Add Items <span class="muted" style="font-weight:normal">(optional)</span></button>
+          <button type="button" class="btn btn-outline btn-sm" id="scanItemBtn" style="display:none">📷 Scan</button>
+        </div>
+        <div class="bill-items" id="billItems" style="display:none"></div>
+      </div>
+
+      <!-- "second page" - the Vyapar-style full-screen Add Item panel -->
+      <div class="add-item-panel" id="addItemPanel">
+        <div class="aip-header">
+          <button type="button" id="aipClose">←</button>
+          <h2>Add Items to Sale</h2>
+        </div>
+        <div class="aip-body" id="aipBody">
+          <div class="aip-totals" id="aipTotalsBox">
+            <h4>Totals &amp; Taxes</h4>
+            <div class="t-line"><span>Subtotal (Rate x Qty)</span><span>₹ <span class="aip-sub">0.00</span></span></div>
+          </div>
+        </div>
+        <div class="aip-footer">
+          <button type="button" class="aip-savenew" id="aipSaveNew">Save &amp; New</button>
+          <button type="button" class="aip-save" id="aipSave">Save</button>
+        </div>
       </div>
 
       <div class="card">
@@ -525,7 +575,32 @@ if ($action === 'new' || $action === 'edit') {
     </form>
     <script>
       Bill.init({mode: 'sale', serials: true, freeQty: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1,
-        showPurchasePrice: <?= json_encode(setting('show_purchase_price_billing') === '1') ?><?= $isEdit ? ', editSaleId: ' . (int)$editSale['id'] : '' ?>});
+        showPurchasePrice: <?= json_encode(setting('show_purchase_price_billing') === '1') ?>,
+        customFields: <?= json_encode(array_map(fn($f) => ['id' => $f['id'], 'label' => $f['label']], $customFields)) ?><?= $isEdit ? ', editSaleId: ' . (int)$editSale['id'] : '' ?>});
+      // barcode scan shortcut next to "+ Add Items" - opens a fresh item
+      // row already in the panel and starts the camera scan immediately
+      var scanItemBtn = document.getElementById('scanItemBtn');
+      if (scanItemBtn && 'BarcodeDetector' in window) {
+        scanItemBtn.style.display = '';
+        scanItemBtn.addEventListener('click', function () {
+          var div = Bill.openAddPanel();
+          Bill.scanBarcode(div.querySelector('.i-search'));
+        });
+      }
+      // "Due On" is a read-only preview computed from Date + Pmt. Terms;
+      // the server independently recomputes the real due_date at save time.
+      function updateDueOn() {
+        var days = parseInt(document.getElementById('credit_days').value, 10) || 0;
+        var dateInp = document.querySelector('input[name=sale_date]');
+        var due = document.getElementById('dueOnDisplay');
+        if (!dateInp.value || !days) { due.value = days ? '' : 'N/A'; return; }
+        var d = new Date(dateInp.value + 'T00:00:00');
+        d.setDate(d.getDate() + days);
+        due.value = ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + d.getFullYear();
+      }
+      document.getElementById('credit_days').addEventListener('change', updateDueOn);
+      document.querySelector('input[name=sale_date]').addEventListener('change', updateDueOn);
+      updateDueOn();
       <?php if ($est && $estItems): ?>
       // prefill rows from estimate
       (function () {
@@ -537,10 +612,8 @@ if ($action === 'new' || $action === 'edit') {
         document.getElementById('customer_mobile').value = <?= json_encode($est['customer_mobile']) ?>;
         <?php if ($est['party_id']): ?>document.getElementById('party_id').value = '<?= (int)$est['party_id'] ?>';<?php endif; ?>
         document.getElementById('discount_val').value = '<?= (float)$est['discount'] ?>';
-        pre.forEach(function (it, idx) {
-          if (idx > 0) Bill.addRow();
-          var rows = document.querySelectorAll('#billItems .bill-row');
-          var div = rows[rows.length - 1];
+        pre.forEach(function (it) {
+          var div = Bill.addRow();
           div.querySelector('.i-search').value = it.name;
           div.querySelector('.i-id').value = it.id;
           div.querySelector('.i-tax').value = it.tax;
@@ -548,6 +621,7 @@ if ($action === 'new' || $action === 'edit') {
           div.querySelector('.i-price').value = it.price;
           Bill.rowTotal(div);
         });
+        Bill.renderSummary();
       })();
       <?php endif; ?>
       <?php if ($isEdit): ?>
@@ -558,6 +632,8 @@ if ($action === 'new' || $action === 'edit') {
             'free' => (float)($x['free_qty'] ?? 0), 'price' => (float)$x['price'], 'tax' => (float)$x['tax_rate'],
             'serialTracked' => (int)$x['serial_tracked'],
             'serials' => $x['serials'] ? array_values(array_filter(array_map('trim', explode(',', $x['serials'])))) : [],
+            'description' => $x['description'] ?? '',
+            'customData' => $x['custom_data'] ? json_decode($x['custom_data'], true) : [],
         ], $editItems)) ?>;
         document.getElementById('company_id').value = '<?= (int)$editSale['company_id'] ?>';
         document.getElementById('location_id').value = '<?= (int)$editSale['location_id'] ?>';
@@ -572,10 +648,8 @@ if ($action === 'new' || $action === 'edit') {
         document.getElementById('discAmt').className = <?= json_encode($editSale['discount_type']) ?> === 'amount' ? 'on-cash' : '';
         document.getElementById('discPct').className = <?= json_encode($editSale['discount_type']) ?> === 'percent' ? 'on-cash' : '';
         Bill.cfg.gst = document.querySelector('#company_id option:checked').dataset.gst == 1;
-        pre.forEach(function (it, idx) {
-          if (idx > 0) Bill.addRow();
-          var rows = document.querySelectorAll('#billItems .bill-row');
-          var div = rows[rows.length - 1];
+        pre.forEach(function (it) {
+          var div = Bill.addRow();
           div.querySelector('.i-qty').value = it.qty;
           var fq = div.querySelector('.i-freeq'); if (fq) fq.value = it.free;
           if (it.serialTracked) {
@@ -591,8 +665,13 @@ if ($action === 'new' || $action === 'edit') {
             div.querySelector('.i-tax').value = it.tax;
             div.querySelector('.i-price').value = it.price;
           }
+          var descInp = div.querySelector('.i-desc'); if (descInp) descInp.value = it.description;
+          div.querySelectorAll('.i-cf').forEach(function (cf) {
+            if (it.customData && it.customData[cf.dataset.label] !== undefined) cf.value = it.customData[cf.dataset.label];
+          });
           Bill.rowTotal(div);
         });
+        Bill.renderSummary();
         Bill.totals();
       })();
       <?php endif; ?>

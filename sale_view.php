@@ -191,7 +191,12 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
       <?php foreach ($items as $n => $it): ?>
         <tr>
           <td><?= $n + 1 ?></td>
-          <td><?= e($it['name']) ?><?= $it['serials'] ? '<br><small>SN: ' . e($it['serials']) . '</small>' : '' ?></td>
+          <td><?= e($it['name']) ?><?= $it['serials'] ? '<br><small>SN: ' . e($it['serials']) . '</small>' : '' ?>
+            <?php if (!empty($it['description'])): ?><br><small class="muted"><?= e($it['description']) ?></small><?php endif; ?>
+            <?php if (!empty($it['custom_data'])): $cd = json_decode($it['custom_data'], true) ?: []; foreach ($cd as $cfLabel => $cfVal): ?>
+            <br><small class="muted"><?= e($cfLabel) ?>: <?= e($cfVal) ?></small>
+            <?php endforeach; endif; ?>
+          </td>
           <?php if ($sale['is_gst']): ?><td><?= e($it['hsn']) ?></td><?php endif; ?>
           <td class="num"><?= (float)$it['qty'] ?><?= !empty($it['free_qty']) && $it['free_qty'] > 0 ? ' <span class="badge badge-ok">+' . (float)$it['free_qty'] . ' free</span>' : '' ?> <?= e($it['unit']) ?></td>
           <td class="num"><?= money($it['price']) ?></td>
