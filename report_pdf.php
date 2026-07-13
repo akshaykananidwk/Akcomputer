@@ -66,22 +66,48 @@ if ($tables->length === 0) {
         if ($colCount === 0) continue;
         $colW = $pageW / $colCount;
 
-        foreach ($rowsNodes as $ri => $tr) {
-            if ($y > MiniPDF::H - $M - 20) { $pdf->new_page(); $y = $M; }
-            $cells = [];
-            foreach ($tr->childNodes as $c) if (in_array($c->nodeName, ['th', 'td'], true)) $cells[] = $c;
-            $isHeader = $tr->getElementsByTagName('th')->length > 0;
+        // Draws one row at the CURRENT $y (top of the row) and advances $y past
+        // it. Header rows get a shaded background band and an underline drawn
+        // at the row's own bottom edge (not the following row's), and are
+        // reprinted at the top of every new page so a table that spans pages
+        // never loses its column labels.
+        $drawRow = function ($cells, $isHeader) use ($pdf, &$y, $M, $pageW, $colW) {
+            if ($isHeader) $pdf->rect($M, $y - 10, $pageW, 14, [0.90, 0.92, 0.96]);
             $x = $M;
             foreach ($cells as $c) {
-                $txt = pdf_cell_text($c);
+                [$txt, $isNum] = $c;
                 if ($txt !== '') {
                     $fit = $pdf->fit($txt, $colW - 4, 8, $isHeader ? 'B' : '');
-                    $pdf->text($x + 2, $y, 8, $fit, $isHeader ? 'B' : '');
+                    if ($isNum) $pdf->text_right($x + $colW - 2, $y, 8, $fit, $isHeader ? 'B' : '');
+                    else $pdf->text($x + 2, $y, 8, $fit, $isHeader ? 'B' : '');
                 }
                 $x += $colW;
             }
-            $y += 14;
-            if ($isHeader) { $pdf->line($M, $y - 3, $M + $pageW, $y - 3); $y += 2; }
+            if ($isHeader) {
+                // Underline sits just below the header's own baseline (clear
+                // of its descenders) rather than at the row-height boundary,
+                // which used to land right at the next row's cap-height and
+                // strike through its text.
+                $pdf->line($M, $y + 4, $M + $pageW, $y + 4);
+                $y += 18;
+            } else {
+                $y += 14;
+            }
+        };
+
+        $headerCells = null;
+        foreach ($rowsNodes as $ri => $tr) {
+            $cellNodes = [];
+            foreach ($tr->childNodes as $c) if (in_array($c->nodeName, ['th', 'td'], true)) $cellNodes[] = $c;
+            $isHeader = $tr->getElementsByTagName('th')->length > 0;
+            $cells = array_map(fn($c) => [pdf_cell_text($c), strpos((string)$c->getAttribute('class'), 'num') !== false], $cellNodes);
+            if ($isHeader) $headerCells = $cells;
+
+            if ($y > MiniPDF::H - $M - 20) {
+                $pdf->new_page(); $y = $M;
+                if (!$isHeader && $headerCells) $drawRow($headerCells, true);
+            }
+            $drawRow($cells, $isHeader);
         }
         $y += 16; // gap between multiple tables (e.g. GST tab has one per firm)
         if ($y > MiniPDF::H - $M - 20) { $pdf->new_page(); $y = $M; }
