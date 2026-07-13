@@ -133,7 +133,7 @@ include __DIR__ . '/includes/header.php';
   <thead><tr><th>No</th><th>Date</th><th>Supplier</th><th class="num">Total</th><th>Notes</th><th></th></tr></thead>
   <tbody><?php foreach ($rets as $r): ?>
     <tr><td><strong><?= e($r['return_no']) ?></strong></td><td><?= dmy($r['return_date']) ?></td>
-    <td><?= e($r['party_name']) ?></td><td class="num">₹<?= money($r['total']) ?></td><td><?= e($r['notes']) ?></td>
+    <td><a href="parties.php?action=ledger&id=<?= $r['party_id'] ?>"><?= e($r['party_name']) ?></a></td><td class="num">₹<?= money($r['total']) ?></td><td><?= e($r['notes']) ?></td>
     <td><?php if (can('purchase_return.delete')): ?>
       <form method="post" onsubmit="return confirm('Delete this return? Stock will be adjusted back.')"><?= csrf_field() ?>
       <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $r['id'] ?>">

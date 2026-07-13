@@ -266,11 +266,14 @@ if ($r === 'stockval' && can('reports.profit')) {
 // ---------------- cashbook (day-wise in/out) ----------------
 if ($r === 'cashbook') {
     $in = [];
-    foreach (all("SELECT pay_date d, SUM(amount) a, mode FROM payments WHERE direction='in' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode", [$from, $to]) as $x)
+    // mode <> 'contra' - a Contra/Settle entry (payments.php?action=contra)
+    // nets a party's sales due against their purchase due with no real cash
+    // or bank movement, so it must never show up as actual cash flow here.
+    foreach (all("SELECT pay_date d, SUM(amount) a, mode FROM payments WHERE direction='in' AND mode <> 'contra' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode", [$from, $to]) as $x)
         $in[] = ['d' => $x['d'], 'desc' => 'Party receipt (' . $x['mode'] . ')', 'in' => $x['a'], 'out' => 0];
     foreach (all("SELECT sale_date d, SUM(paid) a FROM sales WHERE party_id IS NULL AND paid > 0 AND sale_date BETWEEN ? AND ? GROUP BY sale_date", [$from, $to]) as $x)
         $in[] = ['d' => $x['d'], 'desc' => 'Walk-in sales collection', 'in' => $x['a'], 'out' => 0];
-    foreach (all("SELECT pay_date d, SUM(amount) a, mode FROM payments WHERE direction='out' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode", [$from, $to]) as $x)
+    foreach (all("SELECT pay_date d, SUM(amount) a, mode FROM payments WHERE direction='out' AND mode <> 'contra' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode", [$from, $to]) as $x)
         $in[] = ['d' => $x['d'], 'desc' => 'Supplier payment (' . $x['mode'] . ')', 'in' => 0, 'out' => $x['a']];
     if (can('expenses.view')) {
         foreach (all("SELECT exp_date d, SUM(amount) a FROM expenses WHERE exp_date BETWEEN ? AND ? GROUP BY exp_date", [$from, $to]) as $x)

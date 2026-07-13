@@ -815,7 +815,7 @@ include __DIR__ . '/includes/header.php';
     <tr>
       <td><a href="sale_view.php?id=<?= $s['id'] ?>"><strong><?= e($s['invoice_no']) ?></strong></a><br><span class="muted"><?= e($s['staff_name']) ?></span></td>
       <td><?= dmy($s['sale_date']) ?></td>
-      <td><?= e($s['customer_name'] ?: 'Walk-in') ?><br><span class="muted"><?= e($s['customer_mobile']) ?></span></td>
+      <td><?= $s['party_id'] ? '<a href="parties.php?action=ledger&id=' . $s['party_id'] . '">' . e($s['customer_name'] ?: 'Walk-in') . '</a>' : e($s['customer_name'] ?: 'Walk-in') ?><br><span class="muted"><?= e($s['customer_mobile']) ?></span></td>
       <td><?= e($s['company_name']) ?></td>
       <td class="num">₹<?= money($s['total']) ?></td>
       <td><?= $s['is_cancelled'] ? '<span class="badge badge-bad">CANCELLED</span>' : status_badge($s['status']) ?></td>

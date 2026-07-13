@@ -174,6 +174,12 @@ if ($action === 'ledger' && $id) {
         <?php if (can('payments.add')): ?>
         <a class="btn btn-success" href="payments.php?action=new&dir=in&party=<?= $p['id'] ?>">⬇ Receive Payment</a>
         <a class="btn btn-danger" href="payments.php?action=new&dir=out&party=<?= $p['id'] ?>">⬆ Pay</a>
+        <?php
+        $saleDue = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0", [$id]);
+        $purchDue = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE party_id = ? AND status <> 'paid'", [$id]);
+        if ($saleDue > 0.009 && $purchDue > 0.009): ?>
+        <a class="btn btn-outline" href="payments.php?action=contra&party=<?= $p['id'] ?>" title="They owe you ₹<?= money($saleDue) ?>, you owe them ₹<?= money($purchDue) ?> - settle directly, no cash needed">🔄 Contra / Settle</a>
+        <?php endif; ?>
         <?php endif; ?>
         <button class="btn btn-outline" onclick="window.print()">🖨️ Print</button>
         <form method="post" style="display:inline-flex;gap:6px">

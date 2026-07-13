@@ -54,8 +54,9 @@ include __DIR__ . '/includes/header.php';
   <?php if (!$banks): ?><p class="muted">No bank account added yet. <a href="bank_accounts.php">+ Add Bank Account</a></p><?php else: ?>
   <table class="table-sm">
     <?php foreach ($banks as $b): ?>
-    <tr><td><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?><?= $b['is_default'] ? ' <span class="badge badge-ok">DEFAULT</span>' : '' ?></td>
-    <td class="num">₹<?= money($b['balance']) ?></td></tr>
+    <tr><td><a href="reports.php?r=bank_ledger&bank_id=<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></a><?= $b['is_default'] ? ' <span class="badge badge-ok">DEFAULT</span>' : '' ?></td>
+    <td class="num">₹<?= money($b['balance']) ?></td>
+    <td><a class="btn btn-sm btn-outline" href="reports.php?r=bank_ledger&bank_id=<?= $b['id'] ?>">📒 Ledger</a></td></tr>
     <?php endforeach; ?>
   </table>
   <?php endif; ?>
@@ -68,7 +69,7 @@ include __DIR__ . '/includes/header.php';
     <tbody><?php foreach ($recentCash as $c): ?>
     <tr>
       <td><?= dmy($c['pay_date']) ?></td>
-      <td><?= e($c['party_name'] ?: 'Walk-in') ?></td>
+      <td><?= $c['party_id'] ? '<a href="parties.php?action=ledger&id=' . $c['party_id'] . '">' . e($c['party_name']) . '</a>' : e($c['party_name'] ?: 'Walk-in') ?></td>
       <td><?= $c['direction'] === 'in' ? '<span class="badge badge-ok">IN</span>' : '<span class="badge badge-bad">OUT</span>' ?></td>
       <td class="num">₹<?= money($c['amount']) ?></td>
       <td><?= e($c['notes']) ?></td>

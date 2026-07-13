@@ -483,7 +483,7 @@ include __DIR__ . '/includes/header.php';
     <tr>
       <td><?= $p['id'] ?></td>
       <td><?= dmy($p['purchase_date']) ?></td>
-      <td><?= e($p['party_name']) ?></td>
+      <td><a href="parties.php?action=ledger&id=<?= $p['party_id'] ?>"><?= e($p['party_name']) ?></a></td>
       <td><?= e($p['bill_no']) ?></td>
       <td class="num">₹<?= money($p['total']) ?></td>
       <td><?= dmy($p['due_date']) ?><?= $p['status'] !== 'paid' && $p['due_date'] && $p['due_date'] < today() ? ' <span class="badge badge-bad">overdue</span>' : '' ?></td>

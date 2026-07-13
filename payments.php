@@ -98,6 +98,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     redirect('payments.php');
 }
 
+// ---------- Contra / Settle: net a sale due against a purchase due for the
+// same party (they're both a customer and a supplier) with no real cash or
+// bank movement - the standard "contra entry" from double-entry bookkeeping.
+// Recorded as a matched pair of payments (mode='contra', no bank_account_id)
+// so the party's ledger balance updates correctly but cashbook/bank ledger
+// reports (which only count real money movement) exclude them.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_contra') {
+    require_perm('payments.add');
+    $party_id = (int)post('party_id');
+    $party = row('SELECT * FROM parties WHERE id = ?', [$party_id]);
+    if (!$party) { flash('Party required.', 'error'); redirect('payments.php?action=contra'); }
+
+    $saleAllocIds = post('sale_alloc_id', []);
+    $saleAllocAmts = post('sale_alloc_amt', []);
+    $purchAllocIds = post('purch_alloc_id', []);
+    $purchAllocAmts = post('purch_alloc_amt', []);
+    $pay_date = post('pay_date', today());
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $saleTotal = 0; $saleNotes = [];
+        foreach ($saleAllocIds as $i => $bid) {
+            $bid = (int)$bid;
+            $amt = round((float)($saleAllocAmts[$i] ?? 0), 2);
+            if (!$bid || $amt <= 0) continue;
+            $bill = row('SELECT * FROM sales WHERE id = ? AND party_id = ?', [$bid, $party_id]);
+            if (!$bill) continue;
+            $amt = min($amt, $bill['total'] - $bill['paid']);
+            if ($amt <= 0) continue;
+            q('UPDATE sales SET paid = paid + ?, status = ? WHERE id = ?',
+              [$amt, payment_status($bill['total'], $bill['paid'] + $amt), $bid]);
+            $saleNotes[] = $bill['invoice_no'] . ': ₹' . money($amt);
+            $saleTotal += $amt;
+        }
+        $purchTotal = 0; $purchNotes = [];
+        foreach ($purchAllocIds as $i => $bid) {
+            $bid = (int)$bid;
+            $amt = round((float)($purchAllocAmts[$i] ?? 0), 2);
+            if (!$bid || $amt <= 0) continue;
+            $bill = row('SELECT * FROM purchases WHERE id = ? AND party_id = ?', [$bid, $party_id]);
+            if (!$bill) continue;
+            $amt = min($amt, $bill['total'] - $bill['paid']);
+            if ($amt <= 0) continue;
+            q('UPDATE purchases SET paid = paid + ?, status = ? WHERE id = ?',
+              [$amt, payment_status($bill['total'], $bill['paid'] + $amt), $bid]);
+            $purchNotes[] = ($bill['bill_no'] ?: '#' . $bid) . ': ₹' . money($amt);
+            $purchTotal += $amt;
+        }
+        if ($saleTotal <= 0 || $purchTotal <= 0) throw new Exception('Select at least one bill on each side to settle.');
+        if (abs($saleTotal - $purchTotal) > 0.009) {
+            throw new Exception('Sales-side (₹' . money($saleTotal) . ') and purchase-side (₹' . money($purchTotal) . ') amounts must match exactly - a contra settlement has no leftover cash. Use "Auto-balance" to fix this.');
+        }
+
+        $amount = $saleTotal;
+        $note = 'Contra settlement — Sales [' . implode(', ', $saleNotes) . '] = Purchases [' . implode(', ', $purchNotes) . ']';
+        q("INSERT INTO payments (party_id, direction, amount, mode, pay_date, notes, created_by) VALUES (?, 'in', ?, 'contra', ?, ?, ?)",
+          [$party_id, $amount, $pay_date, $note, $u['id']]);
+        q("INSERT INTO payments (party_id, direction, amount, mode, pay_date, notes, created_by) VALUES (?, 'out', ?, 'contra', ?, ?, ?)",
+          [$party_id, $amount, $pay_date, $note, $u['id']]);
+        $pdo->commit();
+        log_activity('contra_add', "party={$party['name']} amount=$amount");
+        flash('Contra settlement of ₹' . money($amount) . ' recorded for ' . $party['name'] . ' — both sides\' dues reduced, no cash moved.');
+        redirect('parties.php?action=ledger&id=' . $party_id);
+    } catch (Exception $ex) {
+        $pdo->rollBack();
+        flash('Error: ' . $ex->getMessage(), 'error');
+        redirect('payments.php?action=contra&party=' . $party_id);
+    }
+}
+
 // ---------- Payment-In / Payment-Out form ----------
 if ($action === 'new') {
     require_perm('payments.add');
@@ -221,6 +292,124 @@ if ($action === 'new') {
     exit;
 }
 
+// ---------- Contra / Settle form ----------
+// For a party that is BOTH a customer and a supplier: net their sales due
+// against their purchase due directly, no cash/bank involved. Only parties
+// carrying a due on both sides at once are useful here, so those are
+// listed first (same "pending first" pattern as the Payment-In/Out form).
+if ($action === 'contra') {
+    require_perm('payments.add');
+    $presetParty = (int)get('party');
+    $parties = all("SELECT p.id, p.name,
+                     COALESCE((SELECT SUM(total - paid) FROM sales WHERE party_id = p.id AND status <> 'paid' AND is_cancelled = 0), 0) sale_due,
+                     COALESCE((SELECT SUM(total - paid) FROM purchases WHERE party_id = p.id AND status <> 'paid'), 0) purch_due
+                     FROM parties p WHERE p.is_active = 1
+                     ORDER BY (sale_due > 0.009 AND purch_due > 0.009) DESC, p.name");
+    $bothCount = count(array_filter($parties, fn($p) => $p['sale_due'] > 0.009 && $p['purch_due'] > 0.009));
+    $page_title = 'Contra / Settle';
+    include __DIR__ . '/includes/header.php';
+    ?>
+    <div class="card">
+      <p class="muted mb">For a party you both <strong>buy from and sell to</strong>: settle what they owe you against what you owe them directly - no cash or bank account is touched, only both sides' outstanding bills go down.</p>
+      <?php if ($bothCount === 0): ?>
+      <div class="flash flash-info">ℹ️ No party currently has a due on both sides - but you can still pick any party below if that changes.</div>
+      <?php endif; ?>
+    </div>
+    <form method="post" id="contraForm">
+      <?= csrf_field() ?>
+      <input type="hidden" name="do" value="save_contra">
+      <div class="card">
+        <div class="form-row cols-2">
+          <div><label>Party *</label>
+            <select name="party_id" id="party_id" required>
+              <option value="">-- select party --</option>
+              <?php if ($bothCount): ?><optgroup label="Due on both sides"><?php endif; ?>
+              <?php $inGroup = true; foreach ($parties as $p):
+                $both = $p['sale_due'] > 0.009 && $p['purch_due'] > 0.009;
+                if ($inGroup && $bothCount && !$both) { echo '</optgroup><optgroup label="All other parties">'; $inGroup = false; } ?>
+              <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?><?= $both ? ' (Sales due ₹' . money($p['sale_due']) . ' · Purchase due ₹' . money($p['purch_due']) . ')' : '' ?></option>
+              <?php endforeach; ?>
+              <?php if ($bothCount): ?></optgroup><?php endif; ?>
+            </select></div>
+          <div><label>Date</label><input type="date" name="pay_date" value="<?= today() ?>"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>They owe us (Sales)</h3>
+        <div id="saleBillList" class="muted">Select a party first.</div>
+      </div>
+      <div class="card">
+        <h3>We owe them (Purchases)</h3>
+        <div id="purchBillList" class="muted">Select a party first.</div>
+      </div>
+      <div class="card">
+        <button type="button" class="btn btn-sm btn-outline" id="autoBalance" style="display:none">⚡ Auto-balance</button>
+        <p class="mt" id="settleSummary"></p>
+        <button class="btn btn-block" type="submit">💾 Save Contra Settlement</button>
+      </div>
+    </form>
+    <script>
+    function renderBills(box, bills, idName, amtName) {
+      if (!bills.length) { box.innerHTML = '<span class="muted">No due bills on this side.</span>'; return; }
+      var h = '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>Bill</th><th>Date</th><th class="num">Due ₹</th><th style="width:130px">Settle ₹</th></tr></thead><tbody>';
+      bills.forEach(function (bl) {
+        h += '<tr><td>' + bl.no + '<input type="hidden" name="' + idName + '" value="' + bl.id + '"></td>' +
+             '<td>' + bl.date + '</td><td class="num">' + bl.due.toFixed(2) + '</td>' +
+             '<td><input type="number" step="any" min="0" max="' + bl.due + '" name="' + amtName + '" value="0" class="alloc-inp" data-due="' + bl.due + '"></td></tr>';
+      });
+      box.innerHTML = h + '</tbody></table></div>';
+    }
+    function updateSummary() {
+      var saleTot = 0, purchTot = 0;
+      document.querySelectorAll('#saleBillList .alloc-inp').forEach(function (i) { saleTot += parseFloat(i.value) || 0; });
+      document.querySelectorAll('#purchBillList .alloc-inp').forEach(function (i) { purchTot += parseFloat(i.value) || 0; });
+      var el = document.getElementById('settleSummary');
+      var match = Math.abs(saleTot - purchTot) < 0.01;
+      el.innerHTML = 'Sales side: <strong>₹' + saleTot.toFixed(2) + '</strong> &nbsp; Purchase side: <strong>₹' + purchTot.toFixed(2) + '</strong> &nbsp; ' +
+        (match && saleTot > 0 ? '<span class="badge badge-ok">✓ Balanced - settling ₹' + saleTot.toFixed(2) + '</span>' : '<span class="badge badge-warn">Not balanced yet</span>');
+    }
+    function loadContraBills() {
+      var pid = document.getElementById('party_id').value;
+      var saleBox = document.getElementById('saleBillList'), purchBox = document.getElementById('purchBillList');
+      document.getElementById('autoBalance').style.display = 'none';
+      document.getElementById('settleSummary').innerHTML = '';
+      if (!pid) { saleBox.textContent = 'Select a party first.'; purchBox.textContent = 'Select a party first.'; return; }
+      Promise.all([
+        fetch('ajax.php?a=party_bills&dir=in&party_id=' + pid).then(function (r) { return r.json(); }),
+        fetch('ajax.php?a=party_bills&dir=out&party_id=' + pid).then(function (r) { return r.json(); })
+      ]).then(function (res) {
+        renderBills(saleBox, res[0].bills, 'sale_alloc_id[]', 'sale_alloc_amt[]');
+        renderBills(purchBox, res[1].bills, 'purch_alloc_id[]', 'purch_alloc_amt[]');
+        if (res[0].bills.length && res[1].bills.length) document.getElementById('autoBalance').style.display = '';
+        document.querySelectorAll('.alloc-inp').forEach(function (inp) { inp.addEventListener('input', updateSummary); });
+        updateSummary();
+      });
+    }
+    document.getElementById('party_id').addEventListener('change', loadContraBills);
+    document.getElementById('autoBalance').addEventListener('click', function () {
+      var saleInps = Array.prototype.slice.call(document.querySelectorAll('#saleBillList .alloc-inp'));
+      var purchInps = Array.prototype.slice.call(document.querySelectorAll('#purchBillList .alloc-inp'));
+      var saleDue = saleInps.reduce(function (s, i) { return s + (parseFloat(i.dataset.due) || 0); }, 0);
+      var purchDue = purchInps.reduce(function (s, i) { return s + (parseFloat(i.dataset.due) || 0); }, 0);
+      var settle = Math.min(saleDue, purchDue);
+      [saleInps, purchInps].forEach(function (inps) {
+        var left = settle;
+        inps.forEach(function (inp) {
+          var due = parseFloat(inp.dataset.due) || 0;
+          var use = Math.min(left, due);
+          inp.value = use > 0 ? use.toFixed(2) : 0;
+          left -= use;
+        });
+      });
+      updateSummary();
+    });
+    if (document.getElementById('party_id').value) loadContraBills();
+    </script>
+    <?php
+    include __DIR__ . '/includes/footer.php';
+    exit;
+}
+
 // ---------- list ----------
 $parties = all('SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name');
 $recent = all('SELECT p.*, pt.name party_name, u2.name by_name FROM payments p
@@ -238,6 +427,7 @@ include __DIR__ . '/includes/header.php';
   <?php if (can('payments.add')): ?>
   <a class="btn btn-success" href="payments.php?action=new&dir=in">⬇ Payment-In</a>
   <a class="btn btn-danger" href="payments.php?action=new&dir=out">⬆ Payment-Out</a>
+  <a class="btn btn-outline" href="payments.php?action=contra">🔄 Contra / Settle</a>
   <?php endif; ?>
 </div>
 
@@ -249,7 +439,7 @@ include __DIR__ . '/includes/header.php';
     <tbody><?php foreach ($dueSales as $s): $d = $s['total'] - $s['paid']; ?>
       <tr>
         <td><a href="sale_view.php?id=<?= $s['id'] ?>"><?= e($s['invoice_no']) ?></a></td>
-        <td><?= e($s['customer_name'] ?: 'Walk-in') ?></td>
+        <td><?= $s['party_id'] ? '<a href="parties.php?action=ledger&id=' . $s['party_id'] . '">' . e($s['customer_name'] ?: 'Walk-in') . '</a>' : e($s['customer_name'] ?: 'Walk-in') ?></td>
         <td class="num">₹<?= money($d) ?></td>
         <td><?= dmy($s['due_date']) ?><?= $s['due_date'] && $s['due_date'] < today() ? ' <span class="badge badge-bad">overdue</span>' : '' ?></td>
         <td style="white-space:nowrap">
@@ -275,7 +465,7 @@ include __DIR__ . '/includes/header.php';
     <tbody><?php foreach ($duePurchases as $p): ?>
       <tr>
         <td><a href="purchase_view.php?id=<?= $p['id'] ?>">#<?= $p['id'] ?> <?= e($p['bill_no']) ?></a></td>
-        <td><?= e($p['party_name']) ?></td>
+        <td><a href="parties.php?action=ledger&id=<?= $p['party_id'] ?>"><?= e($p['party_name']) ?></a></td>
         <td class="num">₹<?= money($p['total'] - $p['paid']) ?></td>
         <td><?= dmy($p['due_date']) ?><?= $p['due_date'] && $p['due_date'] < today() ? ' <span class="badge badge-bad">overdue</span>' : '' ?></td>
         <td><?php if (can('payments.add')): ?><a class="btn btn-sm btn-danger" href="payments.php?action=new&dir=out&party=<?= $p['party_id'] ?>">Pay</a><?php endif; ?></td>

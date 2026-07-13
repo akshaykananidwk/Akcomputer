@@ -82,13 +82,14 @@ include __DIR__ . '/includes/header.php';
 </div>
 <div class="table-wrap">
 <table>
-  <thead><tr><th>Account</th><th>Bank</th><th>A/C No</th><th class="num">Balance</th><th></th><th></th></tr></thead>
+  <thead><tr><th>Account</th><th>Bank</th><th>A/C No</th><th class="num">Balance</th><th></th><th></th><th></th></tr></thead>
   <tbody><?php foreach ($accounts as $b): ?>
     <tr>
-      <td><?= e($b['account_name']) ?><?= $b['is_default'] ? ' <span class="badge badge-ok">DEFAULT</span>' : '' ?></td>
+      <td><a href="reports.php?r=bank_ledger&bank_id=<?= $b['id'] ?>"><?= e($b['account_name']) ?></a><?= $b['is_default'] ? ' <span class="badge badge-ok">DEFAULT</span>' : '' ?></td>
       <td><?= e($b['bank_name']) ?></td>
       <td><?= e($b['account_number']) ?></td>
       <td class="num">₹<?= money(bank_balance($b['id'])) ?></td>
+      <td><a class="btn btn-sm btn-outline" href="reports.php?r=bank_ledger&bank_id=<?= $b['id'] ?>">📒 Ledger</a></td>
       <td><a class="btn btn-sm btn-outline" href="bank_accounts.php?id=<?= $b['id'] ?>">Edit</a></td>
       <td style="white-space:nowrap"><?php if (!$b['is_default']): ?>
         <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="set_default"><input type="hidden" name="id" value="<?= $b['id'] ?>">
@@ -97,7 +98,7 @@ include __DIR__ . '/includes/header.php';
         <button class="btn btn-sm btn-danger" type="submit">✕</button></form>
       <?php endif; ?></td>
     </tr>
-  <?php endforeach; if (!$accounts): ?><tr><td colspan="6" class="muted">No bank account added yet.</td></tr><?php endif; ?></tbody>
+  <?php endforeach; if (!$accounts): ?><tr><td colspan="7" class="muted">No bank account added yet.</td></tr><?php endif; ?></tbody>
 </table>
 </div>
 <?php include __DIR__ . '/includes/footer.php'; ?>
