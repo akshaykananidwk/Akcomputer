@@ -103,7 +103,7 @@ function nav_visible_items($items) {
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon-192.png">
 <title><?= e($page_title) ?> - <?= e($app_name) ?></title>
-<link rel="stylesheet" href="assets/style.css?v=4">
+<link rel="stylesheet" href="assets/style.css?v=6">
 </head>
 <body>
 <?php if ($u): ?>
@@ -205,7 +205,7 @@ function nav_visible_items($items) {
   </div>
 </div>
 <?php endif; ?>
-<script src="assets/app.js?v=4"></script>
+<script src="assets/app.js?v=6"></script>
 <?php unset($_navMenu, $_navItems, $_navQuick, $_nm, $_ni, $_nq, $_navOpen); ?>
 <main class="content<?= $u ? '' : ' content-full' ?>">
 <?php if ($u && !empty($_SESSION['impersonator_id'])): ?>

@@ -37,16 +37,102 @@ if (!can('payments.view')) unset($tabs['bank_ledger']);
 if ($r === 'business' && !can('reports.profit')) $r = 'daily';
 if ($r === 'activity' && !can('users.view')) $r = 'daily';
 if ($r === 'bank_ledger' && !can('payments.view')) $r = 'daily';
+
+// Grouped the same way Vyapar's own Reports screen groups its report list -
+// a vertical, categorized list (not a horizontal scrolling tab strip) so
+// nothing is hidden off-screen to the side.
+$tabCategories = [
+    'Transaction' => ['business', 'daily', 'sales', 'purchase'],
+    'Party Reports' => ['party_sales', 'aging', 'vendor_perf'],
+    'GST' => ['gst'],
+    'Item / Stock Reports' => ['stockval', 'low', 'forecast'],
+    'Business Status' => ['cashbook', 'bank_ledger', 'profit', 'bill_profit'],
+    'Expense Reports' => ['expense'],
+    'Staff & Service Reports' => ['staff', 'repair_tat', 'warranty_tat', 'tech_sla'],
+    'Activity' => ['activity'],
+];
 ?>
 <?php
 $filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&bank_id=' . $bankId;
 $filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchase', 'vendor_perf', 'gst', 'profit', 'bill_profit'], true);
+$curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
 ?>
-<div class="page-actions" style="overflow-x:auto;flex-wrap:nowrap">
-<?php foreach ($tabs as $k => $label): ?>
-  <a class="btn btn-sm <?= $r === $k ? '' : 'btn-outline' ?>" href="reports.php?r=<?= $k ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $filterExtra ?>" style="white-space:nowrap"><?= $label ?></a>
-<?php endforeach; ?>
+<div class="page-actions no-print" style="flex-wrap:wrap;align-items:center">
+  <button type="button" class="btn btn-sm btn-outline" id="toggleReportsList">📋 <?= e($curLabel) ?> ▾</button>
+  <span id="favChips" class="fav-chips"></span>
 </div>
+
+<div class="card" id="reportsListPanel" style="display:none">
+  <div class="report-cat" id="favCat" style="display:none">
+    <h4 class="report-cat-h">⭐ Favorites</h4>
+    <div id="favRows"></div>
+  </div>
+  <?php foreach ($tabCategories as $catName => $catKeys):
+      $catTabs = array_intersect_key($tabs, array_flip($catKeys));
+      if (!$catTabs) continue; ?>
+  <div class="report-cat">
+    <h4 class="report-cat-h"><?= e($catName) ?></h4>
+    <?php foreach ($catTabs as $k => $label): ?>
+    <div class="report-row" data-key="<?= $k ?>">
+      <a href="reports.php?r=<?= $k ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $filterExtra ?>" class="report-row-link <?= $r === $k ? 'active' : '' ?>"><?= e(preg_replace('/^\S+\s/u', '', $label)) ?></a>
+      <button type="button" class="star-btn" data-key="<?= $k ?>" title="Favorite - pins to the top">☆</button>
+    </div>
+    <?php endforeach; ?>
+  </div>
+  <?php endforeach; ?>
+</div>
+<script>
+(function () {
+  var KEY = 'reportFavorites';
+  function getFavs() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return []; } }
+  function setFavs(f) { localStorage.setItem(KEY, JSON.stringify(f)); }
+  var favCat = document.getElementById('favCat');
+  var favRows = document.getElementById('favRows');
+  var favChips = document.getElementById('favChips');
+
+  function bindStar(b) {
+    b.addEventListener('click', function (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      var k = b.dataset.key;
+      var f = getFavs();
+      var i = f.indexOf(k);
+      if (i > -1) f.splice(i, 1); else f.push(k);
+      setFavs(f);
+      render();
+    });
+  }
+
+  function render() {
+    var favs = getFavs();
+    document.querySelectorAll('.star-btn').forEach(function (b) {
+      var on = favs.indexOf(b.dataset.key) > -1;
+      b.textContent = on ? '★' : '☆';
+      b.classList.toggle('is-fav', on);
+    });
+    favRows.innerHTML = '';
+    var chipsHtml = '';
+    favs.forEach(function (k) {
+      var row = document.querySelector('.report-cat:not(#favCat) .report-row[data-key="' + k + '"]');
+      if (!row) return;
+      var clone = row.cloneNode(true);
+      favRows.appendChild(clone);
+      var link = row.querySelector('.report-row-link');
+      chipsHtml += '<a class="btn btn-sm btn-outline fav-chip" href="' + link.getAttribute('href') + '">' + link.textContent + '</a>';
+    });
+    favCat.style.display = favs.length ? '' : 'none';
+    favRows.querySelectorAll('.star-btn').forEach(bindStar);
+    favChips.innerHTML = chipsHtml;
+  }
+  document.querySelectorAll('.star-btn').forEach(bindStar);
+  render();
+
+  document.getElementById('toggleReportsList').addEventListener('click', function () {
+    var p = document.getElementById('reportsListPanel');
+    p.style.display = p.style.display === 'none' ? '' : 'none';
+  });
+})();
+</script>
+
 <form method="get" class="filterbar" id="reportFilterForm">
   <input type="hidden" name="r" value="<?= e($r) ?>">
   <div><label>Period</label>
