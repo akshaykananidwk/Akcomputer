@@ -46,10 +46,9 @@ function invoice_image_jpg($sale, $items) {
     }
 
     $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
-    $wordsLines = bi_wrap('Amount in words: ' . amount_in_words($sale['total']), 14, false, $contentW);
 
     $H = 210 + $itemsHeight + 40 + (($sale['discount'] > 0) ? 24 : 0) + (($sale['is_gst']) ? 48 : 0)
-       + (($sale['shipping'] > 0) ? 24 : 0) + 90 + (count($wordsLines) * 18) + ($qrPath ? 180 : 30) + 60;
+       + (($sale['shipping'] > 0) ? 24 : 0) + 90 + ($qrPath ? 180 : 30) + 60;
 
     $img = imagecreatetruecolor($W, $H);
     $white = imagecolorallocate($img, 255, 255, 255);
@@ -126,10 +125,7 @@ function invoice_image_jpg($sale, $items) {
     $totalsRow('TOTAL', money($sale['total']), true, $accent);
     $totalsRow('Paid', money($sale['paid']));
     if ($due > 0.009) { $bad = imagecolorallocate($img, 200, 40, 40); $totalsRow('Balance Due', money($due), true, $bad); }
-    $y += 6;
-
-    foreach ($wordsLines as $wl) { imagettftext($img, 12, 0, $margin, $y, $gray, bi_font(false), $wl); $y += 18; }
-    $y += 10;
+    $y += 16;
 
     if ($qrPath && is_file($qrPath)) {
         imageline($img, $margin, $y, $W - $margin, $y, $lightLine);

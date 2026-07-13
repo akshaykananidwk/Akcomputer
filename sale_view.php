@@ -223,7 +223,6 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
     <div class="t-line"><span>Paid (<?= e($sale['payment_mode']) ?>)</span><span>₹<?= money($sale['paid']) ?></span></div>
     <?php if ($due > 0.009): ?><div class="t-line"><span><strong>Balance Due</strong></span><span><strong>₹<?= money($due) ?></strong></span></div><?php endif; ?>
   </div>
-  <p class="mt" style="font-size:13px"><strong>Amount in words:</strong> <?= e(amount_in_words($sale['total'])) ?></p>
 
   <?php if ($sale['is_gst'] && $sale['tax_amount'] > 0):
       $slabs = [];

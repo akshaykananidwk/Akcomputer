@@ -272,9 +272,7 @@ function invoice_pdf($sale, $items) {
         $pdf->text_right($R, $y, 11, 'Rs ' . money($due), 'B', [0.8, 0.15, 0.15]);
         $y += 14;
     }
-    $y += 4;
-    $pdf->text($L, $y, 9, $pdf->fit('Amount in words: ' . amount_in_words($sale['total']), $R - $L, 9), 'B');
-    $y += 16;
+    $y += 8;
 
     // GST slab breakdown
     if ($sale['is_gst'] && $sale['tax_amount'] > 0) {
