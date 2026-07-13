@@ -22,6 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
     try {
         $allocated = 0;
         $allocNotes = [];
+        $allocRows = []; // structured record of which bills this payment settles, so a later delete can be reversed correctly
         foreach ($allocIds as $i => $bid) {
             $bid = (int)$bid;
             $amt = round((float)($allocAmts[$i] ?? 0), 2);
@@ -34,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
                 q('UPDATE sales SET paid = paid + ?, status = ? WHERE id = ?',
                   [$amt, payment_status($bill['total'], $bill['paid'] + $amt), $bid]);
                 $allocNotes[] = $bill['invoice_no'] . ': ₹' . money($amt);
+                $allocRows[] = ['ref_type' => 'sale', 'ref_id' => $bid, 'amount' => $amt];
             } else {
                 $bill = row('SELECT * FROM purchases WHERE id = ? AND party_id = ?', [$bid, $party_id]);
                 if (!$bill) continue;
@@ -42,6 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
                 q('UPDATE purchases SET paid = paid + ?, status = ? WHERE id = ?',
                   [$amt, payment_status($bill['total'], $bill['paid'] + $amt), $bid]);
                 $allocNotes[] = ($bill['bill_no'] ?: '#' . $bid) . ': ₹' . money($amt);
+                $allocRows[] = ['ref_type' => 'purchase', 'ref_id' => $bid, 'amount' => $amt];
             }
             $allocated += $amt;
         }
@@ -53,6 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
           [$party_id, $dir, $amount, post('mode', 'cash'), (int)post('bank_account_id') ?: null, (int)post('payment_method_id') ?: null,
            post('pay_date', today()), $notes, $u['id']]);
         $pid = insert_id();
+        foreach ($allocRows as $a) {
+            q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $a['ref_type'], $a['ref_id'], $a['amount']]);
+        }
         $pdo->commit();
         log_activity('payment_add', "P-$pid party={$party['name']} $dir $amount");
 
@@ -91,10 +97,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remind') {
     redirect('payments.php');
 }
 
+// Deleting a payment now correctly reverses whatever it paid down - both a
+// direct bill link (the "paid now" amount recorded when a sale/purchase was
+// created, via payments.ref_type/ref_id) and any bills it was linked to via
+// the "Link to a Bill" allocator or a Contra settlement (payment_allocations
+// rows). Previously the bill's own `paid` figure just stayed inflated
+// forever after a delete, silently drifting from the party's real ledger.
+function reverse_bill_paid($ref_type, $ref_id, $amt) {
+    $table = $ref_type === 'sale' ? 'sales' : 'purchases';
+    $bill = row("SELECT total, paid FROM $table WHERE id = ?", [$ref_id]);
+    if (!$bill) return;
+    $newPaid = max(0, round($bill['paid'] - $amt, 2));
+    q("UPDATE $table SET paid = ?, status = ? WHERE id = ?", [$newPaid, payment_status($bill['total'], $newPaid), $ref_id]);
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('payments.delete');
-    q('DELETE FROM payments WHERE id = ?', [(int)post('id')]);
-    flash('Payment entry deleted. (Note: linked bill paid amounts are not reversed automatically.)');
+    $pid = (int)post('id');
+    $pay = row('SELECT * FROM payments WHERE id = ?', [$pid]);
+    if ($pay) {
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
+            if ($pay['ref_type'] && $pay['ref_id']) reverse_bill_paid($pay['ref_type'], $pay['ref_id'], (float)$pay['amount']);
+            foreach (all('SELECT * FROM payment_allocations WHERE payment_id = ?', [$pid]) as $a) {
+                reverse_bill_paid($a['ref_type'], $a['ref_id'], (float)$a['amount']);
+            }
+            q('DELETE FROM payment_allocations WHERE payment_id = ?', [$pid]);
+            q('DELETE FROM payments WHERE id = ?', [$pid]);
+            $pdo->commit();
+            log_activity('payment_delete', "P-$pid");
+            flash('Payment entry deleted - any bill(s) it was linked to have had their paid amount reversed.');
+        } catch (Exception $ex) {
+            $pdo->rollBack();
+            flash('Error deleting payment: ' . $ex->getMessage(), 'error');
+        }
+    }
     redirect('payments.php');
 }
 
@@ -119,7 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_contra') {
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        $saleTotal = 0; $saleNotes = [];
+        $saleTotal = 0; $saleNotes = []; $saleAllocRows = [];
         foreach ($saleAllocIds as $i => $bid) {
             $bid = (int)$bid;
             $amt = round((float)($saleAllocAmts[$i] ?? 0), 2);
@@ -131,9 +168,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_contra') {
             q('UPDATE sales SET paid = paid + ?, status = ? WHERE id = ?',
               [$amt, payment_status($bill['total'], $bill['paid'] + $amt), $bid]);
             $saleNotes[] = $bill['invoice_no'] . ': ₹' . money($amt);
+            $saleAllocRows[] = ['ref_id' => $bid, 'amount' => $amt];
             $saleTotal += $amt;
         }
-        $purchTotal = 0; $purchNotes = [];
+        $purchTotal = 0; $purchNotes = []; $purchAllocRows = [];
         foreach ($purchAllocIds as $i => $bid) {
             $bid = (int)$bid;
             $amt = round((float)($purchAllocAmts[$i] ?? 0), 2);
@@ -145,6 +183,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_contra') {
             q('UPDATE purchases SET paid = paid + ?, status = ? WHERE id = ?',
               [$amt, payment_status($bill['total'], $bill['paid'] + $amt), $bid]);
             $purchNotes[] = ($bill['bill_no'] ?: '#' . $bid) . ': ₹' . money($amt);
+            $purchAllocRows[] = ['ref_id' => $bid, 'amount' => $amt];
             $purchTotal += $amt;
         }
         if ($saleTotal <= 0 || $purchTotal <= 0) throw new Exception('Select at least one bill on each side to settle.');
@@ -156,8 +195,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_contra') {
         $note = 'Contra settlement — Sales [' . implode(', ', $saleNotes) . '] = Purchases [' . implode(', ', $purchNotes) . ']';
         q("INSERT INTO payments (party_id, direction, amount, mode, pay_date, notes, created_by) VALUES (?, 'in', ?, 'contra', ?, ?, ?)",
           [$party_id, $amount, $pay_date, $note, $u['id']]);
+        $inPid = insert_id();
+        foreach ($saleAllocRows as $a) q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?, ?, ?, ?)', [$inPid, 'sale', $a['ref_id'], $a['amount']]);
         q("INSERT INTO payments (party_id, direction, amount, mode, pay_date, notes, created_by) VALUES (?, 'out', ?, 'contra', ?, ?, ?)",
           [$party_id, $amount, $pay_date, $note, $u['id']]);
+        $outPid = insert_id();
+        foreach ($purchAllocRows as $a) q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?, ?, ?, ?)', [$outPid, 'purchase', $a['ref_id'], $a['amount']]);
         $pdo->commit();
         log_activity('contra_add', "party={$party['name']} amount=$amount");
         flash('Contra settlement of ₹' . money($amount) . ' recorded for ' . $party['name'] . ' — both sides\' dues reduced, no cash moved.');
