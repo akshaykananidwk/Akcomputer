@@ -43,12 +43,12 @@ $invCard = null;
 if (can('stock.view')) {
     $invCard = [
         'items' => (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1'),
-        'low' => (int)val('SELECT COUNT(*) FROM (SELECT i.id, i.min_stock, COALESCE(SUM(s.qty),0) q FROM items i LEFT JOIN stock s ON s.item_id = i.id
-                           WHERE i.is_active = 1 AND i.min_stock > 0 GROUP BY i.id, i.min_stock HAVING q < i.min_stock) x'),
+        'low' => (int)val("SELECT COUNT(*) FROM (SELECT i.id, i.min_stock, COALESCE(SUM(s.qty),0) q FROM items i LEFT JOIN stock s ON s.item_id = i.id
+                           WHERE i.is_active = 1 AND i.item_type <> 'service' AND i.min_stock > 0 GROUP BY i.id, i.min_stock HAVING q < i.min_stock) x"),
         'value' => can('reports.profit')
-            ? (float)val('SELECT COALESCE(SUM(sq.q * i.purchase_price),0) FROM
+            ? (float)val("SELECT COALESCE(SUM(sq.q * i.purchase_price),0) FROM
                           (SELECT item_id, SUM(qty) q FROM (SELECT item_id, qty FROM stock UNION ALL SELECT item_id, qty FROM staff_stock) z GROUP BY item_id) sq
-                          JOIN items i ON i.id = sq.item_id')
+                          JOIN items i ON i.id = sq.item_id WHERE i.item_type <> 'service'")
             : null,
     ];
 }

@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     redirect('batches.php');
 }
 
-$items = all('SELECT id, name, unit FROM items WHERE is_active = 1 ORDER BY name');
+$items = all("SELECT id, name, unit FROM items WHERE is_active = 1 AND item_type <> 'service' ORDER BY name");
 $locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
 
 if ($action === 'new' || $action === 'edit') {

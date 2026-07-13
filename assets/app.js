@@ -153,7 +153,7 @@ var Bill = {
             items.forEach(function (it) {
               var d = document.createElement('div');
               d.className = 'ir';
-              d.innerHTML = '<strong>' + it.name + '</strong><small>Stock: ' + it.stock +
+              d.innerHTML = '<strong>' + it.name + '</strong><small>' + (it.item_type === 'service' ? 'Service' : 'Stock: ' + it.stock) +
                 ' | Retail: ' + it.selling_price + ' | B2B: ' + it.b2b_price +
                 (it.serial_tracked == 1 ? ' | Serial-tracked' : '') + '</small>';
               d.addEventListener('click', function () { self.pickItem(div, it); });
@@ -243,7 +243,7 @@ var Bill = {
     div.dataset.serialTracked = it.serial_tracked;
     div.dataset.stock = it.stock;
     div.querySelector('.i-stockinfo').textContent =
-      (this.cfg.mode === 'sale' || this.cfg.mode === 'staff') ? 'Available: ' + it.stock + ' ' + it.unit : '';
+      (it.item_type !== 'service' && (this.cfg.mode === 'sale' || this.cfg.mode === 'staff')) ? 'Available: ' + it.stock + ' ' + it.unit : '';
 
     var extra = div.querySelector('.i-extra');
     extra.innerHTML = '';

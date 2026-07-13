@@ -172,10 +172,10 @@ include __DIR__ . '/includes/header.php';
       <td class="num"><?= money($it['purchase_price']) ?></td>
       <td class="num"><?= money($it['selling_price']) ?></td>
       <td class="num"><?= money($it['b2b_price']) ?></td>
-      <td class="num"><?= (float)$it['total_stock'] ?> <?= e($it['unit']) ?></td>
+      <td class="num"><?= $it['item_type'] === 'service' ? '<span class="muted">-</span>' : (float)$it['total_stock'] . ' ' . e($it['unit']) ?></td>
       <td>
         <?php if ($it['serial_tracked']): ?><span class="badge badge-info">SN</span><?php endif; ?>
-        <?php if ($it['min_stock'] > 0 && $it['total_stock'] < $it['min_stock']): ?><span class="badge badge-bad">LOW</span><?php endif; ?>
+        <?php if ($it['item_type'] !== 'service' && $it['min_stock'] > 0 && $it['total_stock'] < $it['min_stock']): ?><span class="badge badge-bad">LOW</span><?php endif; ?>
       </td>
       <td style="white-space:nowrap">
         <?php if (can('items.edit')): ?>

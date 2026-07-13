@@ -54,7 +54,7 @@ if ($action === 'ledger') {
 
 // main stock matrix
 $loc_filter = (int)get('loc');
-$stockRows = all('SELECT i.id, i.name, i.unit, i.min_stock, i.serial_tracked FROM items i WHERE i.is_active = 1 ORDER BY i.name');
+$stockRows = all("SELECT i.id, i.name, i.unit, i.min_stock, i.serial_tracked FROM items i WHERE i.is_active = 1 AND i.item_type <> 'service' ORDER BY i.name");
 $stockMap = [];
 foreach (all('SELECT * FROM stock') as $s) $stockMap[$s['item_id']][$s['location_id']] = (float)$s['qty'];
 $staffHeld = [];

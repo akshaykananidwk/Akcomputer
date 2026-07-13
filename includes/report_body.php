@@ -235,7 +235,7 @@ if ($r === 'stockval' && can('reports.profit')) {
     foreach (all('SELECT * FROM stock') as $s) $stockMap[$s['item_id']][$s['location_id']] = (float)$s['qty'];
     $staffHeld = [];
     foreach (all('SELECT item_id, SUM(qty) q FROM staff_stock GROUP BY item_id') as $s) $staffHeld[$s['item_id']] = (float)$s['q'];
-    $items = all('SELECT * FROM items WHERE is_active = 1 ORDER BY name');
+    $items = all("SELECT * FROM items WHERE is_active = 1 AND item_type <> 'service' ORDER BY name");
     $grandQty = 0; $grandVal = 0; $grandSale = 0;
     echo '<div class="table-wrap"><table><thead><tr><th>Item</th>';
     foreach ($locs as $l) echo '<th class="num">' . e($l['code']) . '</th>';
@@ -441,7 +441,7 @@ if ($r === 'low') {
                   JOIN parties pt ON pt.id = pu.party_id WHERE pi2.item_id = i.id AND pu.is_cancelled = 0
                   ORDER BY pu.purchase_date DESC, pu.id DESC LIMIT 1) last_supplier
                  FROM items i LEFT JOIN stock s ON s.item_id = i.id
-                 WHERE i.is_active = 1 AND i.min_stock > 0 GROUP BY i.id HAVING q < i.min_stock ORDER BY q");
+                 WHERE i.is_active = 1 AND i.item_type <> 'service' AND i.min_stock > 0 GROUP BY i.id HAVING q < i.min_stock ORDER BY q");
     $canReorder = can('purchases.add') && $rows;
     if ($canReorder) echo '<p class="muted mb">Item(s) પસંદ કરીને નીચે "🛒 Create Purchase for Selected" દબાવો - New Purchase form માં item/qty આપોઆપ ભરાઈને ખૂલશે, party ફક્ત તમારે પસંદ કરવાની.</p>';
     echo '<div class="table-wrap"><table><thead><tr>' . ($canReorder ? '<th></th>' : '') . '<th>Item</th><th class="num">In stock</th><th class="num">Min level</th><th class="num">To order</th><th>Last Supplier</th></tr></thead><tbody>';

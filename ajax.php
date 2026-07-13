@@ -9,8 +9,8 @@ $a = get('a');
 if ($a === 'item_search') {
     $qs = '%' . get('q') . '%';
     $loc = (int)get('loc');
-    $items = all("SELECT i.id, i.name, i.unit, i.tax_rate, i.purchase_price, i.selling_price, i.b2b_price, i.serial_tracked, i.barcode,
-                  COALESCE((SELECT qty FROM stock s WHERE s.item_id = i.id AND s.location_id = ?), 0) AS stock
+    $items = all("SELECT i.id, i.name, i.unit, i.tax_rate, i.purchase_price, i.selling_price, i.b2b_price, i.serial_tracked, i.barcode, i.item_type,
+                  IF(i.item_type = 'service', NULL, COALESCE((SELECT qty FROM stock s WHERE s.item_id = i.id AND s.location_id = ?), 0)) AS stock
                   FROM items i
                   WHERE i.is_active = 1 AND (i.name LIKE ? OR i.brand LIKE ? OR i.model LIKE ? OR i.barcode LIKE ?)
                   ORDER BY i.name LIMIT 15", [$loc, $qs, $qs, $qs, $qs]);
