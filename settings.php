@@ -57,6 +57,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'templates') {
     redirect('settings.php?cat=whatsapp');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_transaction') {
+    require_perm('settings.edit');
+    set_setting('cash_sale_default', post('cash_sale_default') ? '1' : '0');
+    set_setting('round_off_default', post('round_off_default') ? '1' : '0');
+    set_setting('show_profit_billing', post('show_profit_billing') ? '1' : '0');
+    set_setting('show_purchase_price_billing', post('show_purchase_price_billing') ? '1' : '0');
+    set_setting('add_time_transactions', post('add_time_transactions') ? '1' : '0');
+    log_activity('settings_save');
+    flash('Transaction settings saved.');
+    redirect('settings.php?cat=transaction');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_invoice') {
     require_perm('settings.edit');
     foreach (['google_review_link', 'razorpay_key_id', 'razorpay_key_secret'] as $k) set_setting($k, post($k));
@@ -139,6 +151,7 @@ include __DIR__ . '/includes/header.php';
 // each opens its own section instead of one long confusing page.
 $categories = [
     'general'   => ['⚙️', 'General', 'App name, GST %, login security'],
+    'transaction' => ['🧾', 'Transaction', 'Cash sale default, round off, profit, purchase price, time'],
     'whatsapp'  => ['💬', 'WhatsApp', 'API connection, templates, test send'],
     'invoice'   => ['🎨', 'Invoice / Bill', 'Design, Google review, online payment'],
     'reminders' => ['⏰', 'Reminders', 'Auto overdue payment reminders'],
@@ -177,6 +190,23 @@ exit;
     </div>
     <label class="check-inline mb"><input type="checkbox" name="login_otp" value="1" <?= setting('login_otp') === '1' ? 'checked' : '' ?>> Login પર WhatsApp OTP ફરજિયાત (2-step)</label>
     <label class="check-inline mb"><input type="checkbox" name="allow_negative_stock" value="1" <?= setting('allow_negative_stock', '1') === '1' ? 'checked' : '' ?>> Purchase વગર sale કરવા દેવું (negative stock allowed)</label>
+    <button class="btn" type="submit">Save</button>
+  </form>
+</div>
+<?php endif; ?>
+
+<?php if ($cat === 'transaction'): ?>
+<div class="card">
+  <h2>🧾 Transaction Settings</h2>
+  <p class="muted mb">Sale bill બનાવતી વખતે default behavior - Vyapar ના transaction settings જેવું.</p>
+  <form method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_transaction">
+    <label class="check-inline mb"><input type="checkbox" name="cash_sale_default" value="1" <?= setting('cash_sale_default', '1') === '1' ? 'checked' : '' ?>> Cash Sale by default <span class="muted" style="font-weight:normal">(નવું bill ખોલો ત્યારે Cash/Credit ટોગલ Cash પર જ રહે)</span></label>
+    <label class="check-inline mb"><input type="checkbox" name="round_off_default" value="1" <?= setting('round_off_default', '1') === '1' ? 'checked' : '' ?>> Round Off Total <span class="muted" style="font-weight:normal">(bill નો Total આપોઆપ નજીકના રૂપિયામાં round થાય - checkbox દરેક bill પર બદલી પણ શકાય)</span></label>
+    <label class="check-inline mb"><input type="checkbox" name="show_profit_billing" value="1" <?= setting('show_profit_billing') === '1' ? 'checked' : '' ?>> Show Profit while making Sale Invoice</label>
+    <label class="check-inline mb"><input type="checkbox" name="show_purchase_price_billing" value="1" <?= setting('show_purchase_price_billing') === '1' ? 'checked' : '' ?>> Display Purchase Price of Items <span class="muted" style="font-weight:normal">(item search list માં billing વખતે)</span></label>
+    <label class="check-inline mb"><input type="checkbox" name="add_time_transactions" value="1" <?= setting('add_time_transactions', '1') === '1' ? 'checked' : '' ?>> Add Time on Transactions <span class="muted" style="font-weight:normal">(bill ની Date સાથે Time પણ બતાવવો - view, PDF, WhatsApp image)</span></label>
     <button class="btn" type="submit">Save</button>
   </form>
 </div>
