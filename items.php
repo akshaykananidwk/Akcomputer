@@ -164,7 +164,7 @@ include __DIR__ . '/includes/header.php';
     <tr>
       <td>
         <?php if ($it['photo']): ?><img src="<?= e($it['photo']) ?>" class="photo-thumb" alt=""> <?php endif; ?>
-        <strong><?= e($it['name']) ?></strong>
+        <a href="item_view.php?id=<?= $it['id'] ?>"><strong><?= e($it['name']) ?></strong></a>
         <?php if (!$it['is_active']): ?> <span class="badge badge-bad">INACTIVE</span><?php endif; ?>
         <?php if ($it['brand'] || $it['model']): ?><br><span class="muted"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></span><?php endif; ?>
       </td>
