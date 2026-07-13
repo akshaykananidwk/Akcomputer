@@ -9,6 +9,8 @@ $to = get('to', today());
 $fCompany = (int)get('f_company');
 $fParty = (int)get('f_party');
 $fStatus = get('f_status'); // '', 'paid', 'partial', 'due'
+$banksAll = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
+$bankId = (int)get('bank_id') ?: (int)($banksAll[0]['id'] ?? 0);
 $page_title = 'Reports';
 include __DIR__ . '/includes/header.php';
 
@@ -20,6 +22,7 @@ $tabs = [
     'daily' => '📅 Daily Sales', 'sales' => '🧾 Sales', 'party_sales' => '👥 Party Sales',
     'aging' => '⏳ Aging / Collection',
     'purchase' => '📦 Purchase', 'vendor_perf' => '🚚 Vendor Performance', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
+    'bank_ledger' => '🏦 Bank Ledger',
     'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Profit',
     'bill_profit' => '🧮 Bill Profit', 'staff' => '🎒 Staff Stock',
     'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'tech_sla' => '⏱️ Technician SLA',
@@ -30,11 +33,13 @@ if (!can('reports.gst')) unset($tabs['gst']);
 if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); }
 if (!can('expenses.view')) unset($tabs['expense']);
 if (!can('users.view')) unset($tabs['activity']);
+if (!can('payments.view')) unset($tabs['bank_ledger']);
 if ($r === 'business' && !can('reports.profit')) $r = 'daily';
 if ($r === 'activity' && !can('users.view')) $r = 'daily';
+if ($r === 'bank_ledger' && !can('payments.view')) $r = 'daily';
 ?>
 <?php
-$filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus);
+$filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&bank_id=' . $bankId;
 $filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchase', 'vendor_perf', 'gst', 'profit', 'bill_profit'], true);
 ?>
 <div class="page-actions" style="overflow-x:auto;flex-wrap:nowrap">
@@ -56,6 +61,15 @@ $filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchas
   </div>
   <div><label>From</label><input type="date" name="from" id="fFrom" value="<?= e($from) ?>"></div>
   <div><label>To</label><input type="date" name="to" id="fTo" value="<?= e($to) ?>"></div>
+  <?php if ($r === 'bank_ledger'): ?>
+  <div><label>Bank Account</label>
+    <select name="bank_id" onchange="document.getElementById('reportFilterForm').submit()">
+      <?php if (!$banksAll): ?><option value="0">-- કોઈ bank account નથી --</option><?php endif; ?>
+      <?php foreach ($banksAll as $b): ?>
+      <option value="<?= $b['id'] ?>" <?= $bankId == $b['id'] ? 'selected' : '' ?>><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option>
+      <?php endforeach; ?>
+    </select></div>
+  <?php endif; ?>
   <?php if ($filterFamily): ?>
   <input type="hidden" name="f_company" id="f_company_h" value="<?= $fCompany ?>">
   <input type="hidden" name="f_party" id="f_party_h" value="<?= $fParty ?>">

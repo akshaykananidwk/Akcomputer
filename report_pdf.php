@@ -14,6 +14,7 @@ $to = get('to', today());
 $fCompany = (int)get('f_company');
 $fParty = (int)get('f_party');
 $fStatus = get('f_status');
+$bankId = (int)get('bank_id');
 $fname = get('fname');
 
 // Optional column picker from the "What to display?" export dialog: a
@@ -34,6 +35,7 @@ $tabLabels = [
     'business' => 'Business Report', 'daily' => 'Daily Sales', 'sales' => 'Item-wise Sales',
     'party_sales' => 'Party-wise Sales', 'aging' => 'Aging / Collection', 'purchase' => 'Purchase',
     'vendor_perf' => 'Vendor Performance', 'stockval' => 'Stock Report', 'cashbook' => 'Cashbook',
+    'bank_ledger' => 'Bank Ledger',
     'expense' => 'Expenses', 'gst' => 'GST', 'profit' => 'Profit', 'bill_profit' => 'Bill Profit',
     'staff' => 'Staff Stock', 'repair_tat' => 'Repair TAT', 'warranty_tat' => 'Warranty TAT',
     'tech_sla' => 'Technician SLA', 'forecast' => 'AI Sales Forecast', 'low' => 'Low Stock',
@@ -62,6 +64,7 @@ $filterBits = [];
 if ($fCompany) { $c = row('SELECT name FROM companies WHERE id=?', [$fCompany]); if ($c) $filterBits[] = 'Firm: ' . $c['name']; }
 if ($fParty) { $p = row('SELECT name FROM parties WHERE id=?', [$fParty]); if ($p) $filterBits[] = 'Party: ' . $p['name']; }
 if ($fStatus) $filterBits[] = 'Status: ' . ucfirst($fStatus);
+if ($r === 'bank_ledger' && $bankId) { $b = row('SELECT account_name, bank_name FROM bank_accounts WHERE id=?', [$bankId]); if ($b) $filterBits[] = 'Bank: ' . $b['account_name'] . ' - ' . $b['bank_name']; }
 if ($filterBits) { $pdf->text($M, $y, 9, 'Filters: ' . implode(' | ', $filterBits), '', [0.4, 0.4, 0.4]); $y += 14; }
 $y += 6;
 

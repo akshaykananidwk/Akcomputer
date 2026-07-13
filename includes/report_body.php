@@ -288,6 +288,58 @@ if ($r === 'cashbook') {
     echo '<p class="muted">Note: party વાળા sales bills ની વસૂલી "Party receipt" માં ગણાય છે; walk-in ની અલગ.</p>';
 }
 
+// ---------------- bank account ledger (Vyapar-style passbook) ----------------
+// Every payment-in/out and expense already carries a bank_account_id - this
+// just filters to one account, adds an opening balance carried forward from
+// before $from, and enriches each row with the actual invoice/bill number
+// and customer/party/category name so it reads like a real bank statement
+// instead of a raw payments dump.
+if ($r === 'bank_ledger' && can('payments.view')) {
+    $bank = $bankId ? row('SELECT * FROM bank_accounts WHERE id = ?', [$bankId]) : null;
+    if (!$bank) {
+        echo '<p class="muted">પહેલા Settings &gt; Bank Accounts માંથી એક bank account ઉમેરો.</p>';
+    } else {
+        $openingBal = (float)val("SELECT b.opening_balance
+            + COALESCE((SELECT SUM(amount) FROM payments WHERE bank_account_id=? AND direction='in' AND pay_date < ?),0)
+            - COALESCE((SELECT SUM(amount) FROM payments WHERE bank_account_id=? AND direction='out' AND pay_date < ?),0)
+            - COALESCE((SELECT SUM(amount) FROM expenses WHERE bank_account_id=? AND exp_date < ?),0)
+            FROM bank_accounts b WHERE b.id=?", [$bankId, $from, $bankId, $from, $bankId, $from, $bankId]);
+
+        $rows = [];
+        $pays = all("SELECT p.*, pt.name party_name FROM payments p LEFT JOIN parties pt ON pt.id = p.party_id
+                     WHERE p.bank_account_id = ? AND p.pay_date BETWEEN ? AND ? ORDER BY p.pay_date, p.id", [$bankId, $from, $to]);
+        foreach ($pays as $p) {
+            $refNo = '-';
+            if ($p['ref_type'] === 'sale' && $p['ref_id']) $refNo = val('SELECT invoice_no FROM sales WHERE id = ?', [$p['ref_id']]) ?: '-';
+            elseif ($p['ref_type'] === 'purchase' && $p['ref_id']) $refNo = val("SELECT IF(bill_no = '', CONCAT('#', id), bill_no) FROM purchases WHERE id = ?", [$p['ref_id']]) ?: '-';
+            $rows[] = ['sort' => $p['pay_date'] . '-' . str_pad($p['id'], 8, '0', STR_PAD_LEFT),
+                       'date' => $p['pay_date'], 'type' => $p['direction'] === 'in' ? 'Receipt' : 'Payment',
+                       'ref' => $refNo, 'name' => $p['party_name'] ?: 'Walk-in', 'mode' => $p['mode'],
+                       'in' => $p['direction'] === 'in' ? (float)$p['amount'] : 0, 'out' => $p['direction'] === 'out' ? (float)$p['amount'] : 0];
+        }
+        foreach (all('SELECT * FROM expenses WHERE bank_account_id = ? AND exp_date BETWEEN ? AND ? ORDER BY exp_date, id', [$bankId, $from, $to]) as $x) {
+            $rows[] = ['sort' => $x['exp_date'] . '-9' . str_pad($x['id'], 8, '0', STR_PAD_LEFT),
+                       'date' => $x['exp_date'], 'type' => 'Expense', 'ref' => '-', 'name' => $x['category'], 'mode' => $x['mode'],
+                       'in' => 0, 'out' => (float)$x['amount']];
+        }
+        usort($rows, fn($a, $b) => strcmp($a['sort'], $b['sort']));
+
+        $bal = $openingBal; $totalIn = 0; $totalOut = 0;
+        echo '<h3>' . e($bank['account_name']) . ' - ' . e($bank['bank_name']) . ($bank['account_number'] ? ' (A/C: ' . e($bank['account_number']) . ')' : '') . '</h3>';
+        echo '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Invoice/Ref No.</th><th>Name</th><th>Mode</th><th class="num">In ₹</th><th class="num">Out ₹</th><th class="num">Balance ₹</th></tr></thead><tbody>';
+        echo '<tr><td><strong>Opening Balance</strong></td><td></td><td></td><td></td><td></td><td class="num"></td><td class="num"></td><td class="num"><strong>' . money($openingBal) . '</strong></td></tr>';
+        foreach ($rows as $x) {
+            $bal += $x['in'] - $x['out'];
+            $totalIn += $x['in']; $totalOut += $x['out'];
+            echo '<tr><td>' . dmy($x['date']) . '</td><td>' . e($x['type']) . '</td><td>' . e($x['ref']) . '</td><td>' . e($x['name']) . '</td><td>' . e(ucfirst($x['mode'])) . '</td>' .
+                 '<td class="num">' . ($x['in'] ? money($x['in']) : '') . '</td><td class="num">' . ($x['out'] ? money($x['out']) : '') . '</td><td class="num">' . money($bal) . '</td></tr>';
+        }
+        if (!$rows) echo '<tr><td colspan="8" class="muted">આ period માં કોઈ transaction નથી.</td></tr>';
+        echo '<tr><td><strong>Total</strong></td><td></td><td></td><td></td><td></td><td class="num"><strong>' . money($totalIn) . '</strong></td><td class="num"><strong>' . money($totalOut) . '</strong></td><td class="num"><strong>' . money($bal) . '</strong></td></tr>';
+        echo '</tbody></table></div>';
+    }
+}
+
 // ---------------- expense report ----------------
 if ($r === 'expense' && can('expenses.view')) {
     $rows = all('SELECT category, COUNT(*) cnt, SUM(amount) total FROM expenses WHERE exp_date BETWEEN ? AND ? GROUP BY category ORDER BY total DESC', [$from, $to]);
