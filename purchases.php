@@ -117,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         if ($cancelOnly) {
             q('UPDATE purchases SET is_cancelled = 1, paid = 0, status = ? WHERE id = ?', ['due', $pid]);
             log_activity('purchase_cancel', $purchase['bill_no'] ?: "#$pid");
-            flash('Purchase bill CANCELLED - stock પાછો ઓછો થયો, record સચવાયો.');
+            flash('Purchase bill CANCELLED - stock reduced back, record kept.');
         } else {
             q('DELETE FROM purchase_items WHERE purchase_id = ?', [$pid]);
             q('DELETE FROM purchases WHERE id = ?', [$pid]);
@@ -136,11 +136,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $pid = (int)post('id');
     $purchase = row('SELECT * FROM purchases WHERE id = ?', [$pid]);
     if (!$purchase) { flash('Purchase not found.', 'error'); redirect('purchases.php'); }
-    if ($purchase['is_cancelled']) { flash('Cancelled bill ને edit કરી શકાય નહીં.', 'error'); redirect('purchase_view.php?id=' . $pid); }
+    if ($purchase['is_cancelled']) { flash('A cancelled bill cannot be edited.', 'error'); redirect('purchase_view.php?id=' . $pid); }
 
     $moved = (int)val("SELECT COUNT(*) FROM item_serials WHERE purchase_id = ? AND status <> 'in_stock'", [$pid]);
     if ($moved > 0) {
-        flash('આ bill ના કેટલાક serial numbers પહેલેથી sold/issued/returned થઈ ગયા છે, એટલે edit કરી શકાય એમ નથી.', 'error');
+        flash('Some serial numbers on this bill have already been sold/issued/returned, so it cannot be edited.', 'error');
         redirect('purchase_view.php?id=' . $pid);
     }
 
@@ -216,7 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
 
         $pdo->commit();
         log_activity('purchase_edit', ($purchase['bill_no'] ?: "#$pid") . " total $total");
-        flash('Purchase bill update થઈ ગયું.');
+        flash('Purchase bill updated.');
         redirect('purchase_view.php?id=' . $pid);
     } catch (Exception $ex) {
         $pdo->rollBack();
@@ -237,7 +237,7 @@ if ($action === 'new' || $action === 'edit') {
         $editPurchase = row('SELECT * FROM purchases WHERE id = ?', [(int)get('id')]);
         if (!$editPurchase) die('Purchase not found.');
         if (!can('purchases.all') && $editPurchase['created_by'] != $u['id']) die('Access denied.');
-        if ($editPurchase['is_cancelled']) { flash('Cancelled bill ને edit કરી શકાય નહીં.', 'error'); redirect('purchase_view.php?id=' . $editPurchase['id']); }
+        if ($editPurchase['is_cancelled']) { flash('A cancelled bill cannot be edited.', 'error'); redirect('purchase_view.php?id=' . $editPurchase['id']); }
         $editItems = all('SELECT pi.*, i.name, i.serial_tracked FROM purchase_items pi JOIN items i ON i.id = pi.item_id WHERE pi.purchase_id = ?', [$editPurchase['id']]);
         foreach ($editItems as &$_ei) {
             if ($_ei['serial_tracked']) {
@@ -250,7 +250,7 @@ if ($action === 'new' || $action === 'edit') {
     $page_title = $isEdit ? 'Edit Purchase #' . $editPurchase['id'] : 'New Purchase';
     include __DIR__ . '/includes/header.php';
     ?>
-    <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serial_tracked'])): ?><div class="flash flash-info">Serial-tracked items ના serial numbers pre-filled છે - જરૂર હોય તો બદલી શકો છો.</div><?php endif; ?>
+    <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serial_tracked'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers are pre-filled - you can change them if needed.</div><?php endif; ?>
     <form method="post">
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">
@@ -289,7 +289,7 @@ if ($action === 'new' || $action === 'edit') {
         <h3>Items</h3>
         <div class="bill-items" id="billItems"></div>
         <button type="button" class="btn btn-outline btn-sm" id="addRowBtn">+ Add item</button>
-        <p class="muted mt">Serial-tracked item select કરો એટલે serial numbers લખવાનું box આવશે (દરેક line પર એક).</p>
+        <p class="muted mt">Selecting a serial-tracked item shows a box to type serial numbers (one per line).</p>
       </div>
 
       <div class="card">
@@ -308,7 +308,7 @@ if ($action === 'new' || $action === 'edit') {
           </div>
           <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= $isEdit ? money($editPurchase['shipping']) : '0' ?>" oninput="Bill.totals()"></div>
           <?php if ($isEdit): ?>
-          <div><label>Already paid</label><input type="text" value="₹<?= money($editPurchase['paid']) ?> (edit થી બદલાશે નહીં)" disabled></div>
+          <div><label>Already paid</label><input type="text" value="₹<?= money($editPurchase['paid']) ?> (unaffected by this edit)" disabled></div>
           <?php else: ?>
           <div><label>Paid now (₹)</label><input type="number" step="any" name="paid" id="paid" value="0"></div>
           <div><label>Payment mode</label>

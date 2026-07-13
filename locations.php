@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     $lid = (int)post('id');
     $activeCount = (int)val('SELECT COUNT(*) FROM locations WHERE is_active = 1');
     if ($activeCount <= 1) {
-        flash('છેલ્લી active location ને deactivate ના કરી શકાય - staff ને location જોઈએ જ.', 'error');
+        flash('Cannot deactivate the last active location - staff need a location.', 'error');
         redirect('locations.php');
     }
     // stock/sales already reference this location - deactivate (not hard
@@ -78,7 +78,7 @@ include __DIR__ . '/includes/header.php';
       <td style="white-space:nowrap">
         <?php if (can('locations.edit')): ?><a class="btn btn-sm btn-outline" href="locations.php?id=<?= $l['id'] ?>">Edit</a><?php endif; ?>
         <?php if (can('locations.delete') && $l['is_active']): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('Location deactivate કરવી?')">
+        <form method="post" style="display:inline" onsubmit="return confirm('Deactivate this location?')">
           <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $l['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit">✕</button>
         </form>

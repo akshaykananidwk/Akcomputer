@@ -118,7 +118,7 @@ if ($r === 'vendor_perf') {
            . '<td class="num">' . money($avg) . '</td><td class="num">' . money($x['returns']) . '</td>'
            . '<td class="num">' . number_format($retPct, 1) . '%</td><td>' . dmy($x['last_purchase']) . '</td></tr>';
     }
-    if (!$rows) echo '<tr><td colspan="7" class="muted">આ સમયગાળામાં કોઈ purchase નથી.</td></tr>';
+    if (!$rows) echo '<tr><td colspan="7" class="muted">No purchases in this period.</td></tr>';
     echo '</tbody></table></div>';
 }
 
@@ -205,8 +205,8 @@ if ($r === 'aging') {
         $agg[$key]['total'] += $x['due'];
     }
     usort($agg, fn($a, $b) => $b['total'] <=> $a['total']);
-    echo '<p class="muted mb">આજની તારીખ પ્રમાણે - date filter ને લાગુ પડતું નથી (કેટલા દિવસથી due છે એ પ્રમાણે).</p>';
-    echo '<div class="table-wrap"><table><thead><tr><th>Customer / Party</th><th class="num">0-30 દિવસ</th><th class="num">31-60 દિવસ</th><th class="num">61-90 દિવસ</th><th class="num">90+ દિવસ</th><th class="num">Total Due ₹</th><th></th></tr></thead><tbody>';
+    echo '<p class="muted mb">As of today - the date filter does not apply here (based on how many days overdue).</p>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Customer / Party</th><th class="num">0-30 days</th><th class="num">31-60 days</th><th class="num">61-90 days</th><th class="num">90+ days</th><th class="num">Total Due ₹</th><th></th></tr></thead><tbody>';
     $tot = ['b1' => 0, 'b2' => 0, 'b3' => 0, 'b4' => 0, 'total' => 0];
     foreach ($agg as $x) {
         foreach (['b1', 'b2', 'b3', 'b4', 'total'] as $k) $tot[$k] += $x[$k];
@@ -221,10 +221,10 @@ if ($r === 'aging') {
     if (!$agg) echo '<tr><td colspan="7" class="muted">All clear 🎉</td></tr>';
     echo '</tbody></table></div>';
     echo '<div class="grid-stats">';
-    echo '<div class="stat"><div class="stat-label">0-30 દિવસ</div><div class="stat-value">₹' . money($tot['b1']) . '</div></div>';
-    echo '<div class="stat"><div class="stat-label">31-60 દિવસ</div><div class="stat-value">₹' . money($tot['b2']) . '</div></div>';
-    echo '<div class="stat"><div class="stat-label">61-90 દિવસ</div><div class="stat-value">₹' . money($tot['b3']) . '</div></div>';
-    echo '<div class="stat s-bad"><div class="stat-label">90+ દિવસ (જોખમી)</div><div class="stat-value">₹' . money($tot['b4']) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">0-30 days</div><div class="stat-value">₹' . money($tot['b1']) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">31-60 days</div><div class="stat-value">₹' . money($tot['b2']) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">61-90 days</div><div class="stat-value">₹' . money($tot['b3']) . '</div></div>';
+    echo '<div class="stat s-bad"><div class="stat-label">90+ days (risky)</div><div class="stat-value">₹' . money($tot['b4']) . '</div></div>';
     echo '</div>';
 }
 
@@ -257,9 +257,9 @@ if ($r === 'stockval' && can('reports.profit')) {
     }
     echo '</tbody></table></div>';
     echo '<div class="grid-stats">';
-    echo '<div class="stat"><div class="stat-label">કુલ સ્ટોક રોકાણ (purchase ભાવે)</div><div class="stat-value">₹' . money($grandVal) . '</div></div>';
-    echo '<div class="stat s-ok"><div class="stat-label">સ્ટોક ની બજાર કિંમત (selling ભાવે)</div><div class="stat-value">₹' . money($grandSale) . '</div></div>';
-    echo '<div class="stat"><div class="stat-label">શક્ય નફો stock પર</div><div class="stat-value">₹' . money($grandSale - $grandVal) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">Total Stock Investment (at purchase price)</div><div class="stat-value">₹' . money($grandVal) . '</div></div>';
+    echo '<div class="stat s-ok"><div class="stat-label">Stock Market Value (at selling price)</div><div class="stat-value">₹' . money($grandSale) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">Potential Profit on Stock</div><div class="stat-value">₹' . money($grandSale - $grandVal) . '</div></div>';
     echo '</div>';
 }
 
@@ -285,7 +285,7 @@ if ($r === 'cashbook') {
     }
     if (!$in) echo '<tr><td colspan="5" class="muted">No entries in this period.</td></tr>';
     echo '</tbody></table></div>';
-    echo '<p class="muted">Note: party વાળા sales bills ની વસૂલી "Party receipt" માં ગણાય છે; walk-in ની અલગ.</p>';
+    echo '<p class="muted">Note: collection on sales bills with a party is counted under "Party receipt"; walk-in is separate.</p>';
 }
 
 // ---------------- bank account ledger (Vyapar-style passbook) ----------------
@@ -297,7 +297,7 @@ if ($r === 'cashbook') {
 if ($r === 'bank_ledger' && can('payments.view')) {
     $bank = $bankId ? row('SELECT * FROM bank_accounts WHERE id = ?', [$bankId]) : null;
     if (!$bank) {
-        echo '<p class="muted">પહેલા Settings &gt; Bank Accounts માંથી એક bank account ઉમેરો.</p>';
+        echo '<p class="muted">First add a bank account from Settings &gt; Bank Accounts.</p>';
     } else {
         $openingBal = (float)val("SELECT b.opening_balance
             + COALESCE((SELECT SUM(amount) FROM payments WHERE bank_account_id=? AND direction='in' AND pay_date < ?),0)
@@ -334,7 +334,7 @@ if ($r === 'bank_ledger' && can('payments.view')) {
             echo '<tr><td>' . dmy($x['date']) . '</td><td>' . e($x['type']) . '</td><td>' . e($x['ref']) . '</td><td>' . e($x['name']) . '</td><td>' . e(ucfirst($x['mode'])) . '</td>' .
                  '<td class="num">' . ($x['in'] ? money($x['in']) : '') . '</td><td class="num">' . ($x['out'] ? money($x['out']) : '') . '</td><td class="num">' . money($bal) . '</td></tr>';
         }
-        if (!$rows) echo '<tr><td colspan="8" class="muted">આ period માં કોઈ transaction નથી.</td></tr>';
+        if (!$rows) echo '<tr><td colspan="8" class="muted">No transactions in this period.</td></tr>';
         echo '<tr><td><strong>Total</strong></td><td></td><td></td><td></td><td></td><td class="num"><strong>' . money($totalIn) . '</strong></td><td class="num"><strong>' . money($totalOut) . '</strong></td><td class="num"><strong>' . money($bal) . '</strong></td></tr>';
         echo '</tbody></table></div>';
     }
@@ -365,7 +365,7 @@ if ($r === 'bill_profit' && can('reports.profit')) {
     }
     echo '<tr><td colspan="5"><strong>Total profit</strong></td><td class="num"><strong>' . money($tp) . '</strong></td><td></td></tr>';
     echo '</tbody></table></div>';
-    echo '<p class="muted">Cost = bill વખતનો purchase ભાવ (item દીઠ સાચવેલો). જૂના bills માટે હાલનો purchase ભાવ વપરાય છે.</p>';
+    echo '<p class="muted">Cost = the purchase price at the time of the bill (saved per item). For old bills, the current purchase price is used.</p>';
 }
 
 // ---------------- staff stock ----------------
@@ -394,7 +394,7 @@ if ($r === 'repair_tat') {
                  FROM repairs r JOIN parties pt ON pt.id = r.outsource_party_id
                  WHERE r.sent_date IS NOT NULL AND r.sent_date BETWEEN ? AND ?
                  GROUP BY r.outsource_party_id ORDER BY avg_days DESC', [$from, $to]);
-    echo '<div class="card"><p class="muted">કઈ repairing party કેટલા દિવસ લગાડે છે — outsourced jobs નું analysis.</p></div>';
+    echo '<div class="card"><p class="muted">How many days each repairing party takes — analysis of outsourced jobs.</p></div>';
     echo '<div class="table-wrap"><table><thead><tr><th>Repair party</th><th class="num">Jobs</th><th class="num">Avg days</th><th class="num">Max days</th><th class="num">Still with them</th></tr></thead><tbody>';
     foreach ($rows as $x) echo '<tr><td>' . e($x['party']) . '</td><td class="num">' . $x['jobs'] . '</td><td class="num">' . round($x['avg_days'], 1) . '</td><td class="num">' . $x['max_days'] . '</td><td class="num">' . $x['still_out'] . '</td></tr>';
     if (!$rows) echo '<tr><td colspan="5" class="muted">No outsourced jobs in this period.</td></tr>';
@@ -410,7 +410,7 @@ if ($r === 'warranty_tat') {
                  FROM warranty_claims w JOIN parties pt ON pt.id = w.party_id
                  WHERE w.sent_date IS NOT NULL AND w.sent_date BETWEEN ? AND ?
                  GROUP BY w.party_id ORDER BY avg_days DESC', [$from, $to]);
-    echo '<div class="card"><p class="muted">કઈ company warranty claim માં કેટલો ટાઈમ લે છે — sent થી back સુધીના દિવસ.</p></div>';
+    echo '<div class="card"><p class="muted">How long each company takes on warranty claims — days from sent to back.</p></div>';
     echo '<div class="table-wrap"><table><thead><tr><th>Company</th><th class="num">Claims</th><th class="num">Avg days</th><th class="num">Max days</th><th class="num">Pending</th></tr></thead><tbody>';
     foreach ($rows as $x) echo '<tr><td>' . e($x['company']) . '</td><td class="num">' . $x['claims'] . '</td><td class="num">' . round($x['avg_days'], 1) . '</td><td class="num">' . $x['max_days'] . '</td><td class="num">' . $x['pending'] . '</td></tr>';
     if (!$rows) echo '<tr><td colspan="5" class="muted">No claims sent in this period.</td></tr>';
@@ -427,7 +427,7 @@ if ($r === 'tech_sla') {
                  FROM tasks t JOIN users u2 ON u2.id = t.assigned_to
                  WHERE t.status = 'completed' AND DATE(t.end_time) BETWEEN ? AND ?
                  GROUP BY t.assigned_to ORDER BY jobs DESC", [$from, $to]);
-    echo '<div class="card"><p class="muted">Field task / installation job નું completion time અને scheduled date પ્રમાણે on-time % - technician પ્રમાણે.</p></div>';
+    echo '<div class="card"><p class="muted">On-time % per technician, based on field task/installation job completion time vs. scheduled date.</p></div>';
     echo '<div class="table-wrap"><table><thead><tr><th>Technician</th><th class="num">Jobs Completed</th><th class="num">Avg Duration</th><th class="num">On-Time %</th><th class="num">Revenue ₹</th></tr></thead><tbody>';
     foreach ($rows as $x) {
         $avgMin = $x['avg_min'] !== null ? round($x['avg_min']) : null;
@@ -474,7 +474,7 @@ if ($r === 'forecast') {
     }
     usort($forecastRows, fn($a, $b) => $b['forecast'] <=> $a['forecast']);
     $trendIcon = ['up' => '📈', 'down' => '📉', 'flat' => '➡️'];
-    echo '<p class="muted mb">છેલ્લા 3 મહિનાના વેચાણ પરથી આગલા મહિનાનો અંદાજ (weighted average, તાજા મહિનાનું વજન વધારે) - true AI/ML નથી, પણ trend + reorder guidance માટે ઉપયોગી.</p>';
+    echo '<p class="muted mb">Estimate for next month based on the last 3 months\' sales (weighted average, recent months weighted higher) - not true AI/ML, but useful for trend + reorder guidance.</p>';
     echo '<div class="table-wrap"><table><thead><tr><th>Item</th><th class="num">' . $months[0] . '</th><th class="num">' . $months[1] . '</th><th class="num">' . $months[2] . '</th><th class="num">Forecast (next month)</th><th>Trend</th><th class="num">Current Stock</th><th class="num">Suggested Reorder</th></tr></thead><tbody>';
     foreach ($forecastRows as $fr) {
         echo '<tr><td>' . e($fr['it']['name']) . '</td><td class="num">' . $fr['q1'] . '</td><td class="num">' . $fr['q2'] . '</td><td class="num">' . $fr['q3'] . '</td>'
@@ -482,7 +482,7 @@ if ($r === 'forecast') {
            . '<td>' . $trendIcon[$fr['trend']] . '</td><td class="num">' . (float)$fr['it']['stock'] . '</td>'
            . '<td class="num">' . ($fr['suggest'] > 0 ? '<strong>' . $fr['suggest'] . '</strong>' : '<span class="muted">-</span>') . '</td></tr>';
     }
-    if (!$forecastRows) echo '<tr><td colspan="8" class="muted">છેલ્લા 3 મહિનામાં કોઈ વેચાણ ડેટા નથી.</td></tr>';
+    if (!$forecastRows) echo '<tr><td colspan="8" class="muted">No sales data in the last 3 months.</td></tr>';
     echo '</tbody></table></div>';
 }
 
@@ -495,7 +495,7 @@ if ($r === 'low') {
                  FROM items i LEFT JOIN stock s ON s.item_id = i.id
                  WHERE i.is_active = 1 AND i.item_type <> 'service' AND i.min_stock > 0 GROUP BY i.id HAVING q < i.min_stock ORDER BY q");
     $canReorder = can('purchases.add') && $rows;
-    if ($canReorder) echo '<p class="muted mb">Item(s) પસંદ કરીને નીચે "🛒 Create Purchase for Selected" દબાવો - New Purchase form માં item/qty આપોઆપ ભરાઈને ખૂલશે, party ફક્ત તમારે પસંદ કરવાની.</p>';
+    if ($canReorder) echo '<p class="muted mb">Select item(s) and press "🛒 Create Purchase for Selected" below - the New Purchase form opens with item/qty pre-filled, you just need to pick the party.</p>';
     echo '<div class="table-wrap"><table><thead><tr>' . ($canReorder ? '<th></th>' : '') . '<th>Item</th><th class="num">In stock</th><th class="num">Min level</th><th class="num">To order</th><th>Last Supplier</th></tr></thead><tbody>';
     foreach ($rows as $x) {
         $toOrder = max((float)$x['min_stock'] * 2 - (float)$x['q'], (float)$x['min_stock']);
@@ -515,7 +515,7 @@ if ($r === 'low') {
           document.querySelectorAll(".reorder-cb:checked").forEach(function (cb) {
             items.push({id: cb.dataset.id, name: cb.dataset.name, qty: cb.dataset.qty, tax: cb.dataset.tax, price: cb.dataset.price});
           });
-          if (!items.length) { alert("ઓછામાં ઓછો એક item પસંદ કરો."); return; }
+          if (!items.length) { alert("Select at least one item."); return; }
           sessionStorage.setItem("reorderItems", JSON.stringify(items));
           location = "purchases.php?action=new&reorder=1";
         }
@@ -535,17 +535,17 @@ if ($r === 'activity' && can('users.view')) {
                  WHERE " . implode(' AND ', $where) . " ORDER BY al.id DESC LIMIT 300", $params);
     $staffAll = all('SELECT id, name FROM users ORDER BY name');
     echo '<form method="get" class="filterbar"><input type="hidden" name="r" value="activity"><input type="hidden" name="from" value="' . e($from) . '"><input type="hidden" name="to" value="' . e($to) . '">';
-    echo '<div><label>Staff</label><select name="log_user"><option value="">બધા</option>';
+    echo '<div><label>Staff</label><select name="log_user"><option value="">All</option>';
     foreach ($staffAll as $s) echo '<option value="' . $s['id'] . '" ' . ($logUser == $s['id'] ? 'selected' : '') . '>' . e($s['name']) . '</option>';
     echo '</select></div>';
     echo '<div><label>Search (action/details)</label><input type="text" name="log_q" value="' . e($logQ) . '"></div>';
     echo '<button class="btn btn-sm" type="submit">Filter</button></form>';
-    echo '<p class="muted mb">છેલ્લા 300 records (' . e($from) . ' થી ' . e($to) . ').</p>';
+    echo '<p class="muted mb">Last 300 records (' . e($from) . ' to ' . e($to) . ').</p>';
     echo '<div class="table-wrap"><table><thead><tr><th>Date/Time</th><th>Staff</th><th>Action</th><th>Details</th></tr></thead><tbody>';
     foreach ($logs as $l) {
         echo '<tr><td>' . dmyt($l['created_at']) . '</td><td>' . e($l['user_name'] ?: 'System') . '</td>'
            . '<td><code style="font-size:12px">' . e($l['action']) . '</code></td><td>' . e($l['details']) . '</td></tr>';
     }
-    if (!$logs) echo '<tr><td colspan="4" class="muted">કંઈ મળ્યું નહીં.</td></tr>';
+    if (!$logs) echo '<tr><td colspan="4" class="muted">Nothing found.</td></tr>';
     echo '</tbody></table></div>';
 }

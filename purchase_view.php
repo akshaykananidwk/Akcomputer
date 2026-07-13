@@ -29,7 +29,7 @@ $due = $p['is_cancelled'] ? 0 : $p['total'] - $p['paid'];
 $page_title = 'Purchase #' . $id;
 include __DIR__ . '/includes/header.php';
 ?>
-<?php if ($p['is_cancelled']): ?><div class="flash flash-error">🚫 આ PURCHASE BILL CANCELLED છે.</div><?php endif; ?>
+<?php if ($p['is_cancelled']): ?><div class="flash flash-error">🚫 This PURCHASE BILL is CANCELLED.</div><?php endif; ?>
 <div class="page-actions no-print">
   <button class="btn" onclick="window.print()">🖨️ Print</button>
   <a class="btn btn-outline" href="purchases.php">← Back</a>
@@ -38,12 +38,12 @@ include __DIR__ . '/includes/header.php';
   <?php endif; ?>
   <?php if (can('purchases.delete')): ?>
   <?php if (!$p['is_cancelled']): ?>
-  <form method="post" action="purchases.php" onsubmit="return confirm('Purchase bill CANCEL કરવું? (Record રહેશે, stock ઓછો થશે)')" style="display:inline">
+  <form method="post" action="purchases.php" onsubmit="return confirm('Cancel this purchase bill? (Record stays, stock is reduced)')" style="display:inline">
     <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="mode" value="cancel"><input type="hidden" name="id" value="<?= $id ?>">
     <button class="btn btn-muted" type="submit">🚫 Cancel Bill</button>
   </form>
   <?php endif; ?>
-  <form method="post" action="purchases.php" onsubmit="return confirm('પૂરેપૂરું DELETE કરવું? Record પણ જતો રહેશે!')" style="display:inline">
+  <form method="post" action="purchases.php" onsubmit="return confirm('DELETE completely? The record will be gone too!')" style="display:inline">
     <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="mode" value="delete"><input type="hidden" name="id" value="<?= $id ?>">
     <button class="btn btn-danger" type="submit">Delete</button>
   </form>

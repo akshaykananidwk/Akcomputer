@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_invoice') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'design') {
     require_perm('settings.edit');
     set_setting('invoice_theme', (int)post('invoice_theme'));
-    flash('Bill design બદલાઈ ગઈ ✔ — કોઈ પણ bill ખોલીને જુઓ.');
+    flash('Bill design changed ✔ — open any bill to see it.');
     redirect('settings.php?cat=invoice');
 }
 
@@ -188,8 +188,8 @@ exit;
       <div><label>App / shop name</label><input type="text" name="app_name" value="<?= e(setting('app_name')) ?>"></div>
       <div><label>Default GST %</label><input type="number" step="any" name="default_tax" value="<?= e(setting('default_tax', '18')) ?>"></div>
     </div>
-    <label class="check-inline mb"><input type="checkbox" name="login_otp" value="1" <?= setting('login_otp') === '1' ? 'checked' : '' ?>> Login પર WhatsApp OTP ફરજિયાત (2-step)</label>
-    <label class="check-inline mb"><input type="checkbox" name="allow_negative_stock" value="1" <?= setting('allow_negative_stock', '1') === '1' ? 'checked' : '' ?>> Purchase વગર sale કરવા દેવું (negative stock allowed)</label>
+    <label class="check-inline mb"><input type="checkbox" name="login_otp" value="1" <?= setting('login_otp') === '1' ? 'checked' : '' ?>> Require WhatsApp OTP on login (2-step)</label>
+    <label class="check-inline mb"><input type="checkbox" name="allow_negative_stock" value="1" <?= setting('allow_negative_stock', '1') === '1' ? 'checked' : '' ?>> Allow sale without purchase (negative stock allowed)</label>
     <button class="btn" type="submit">Save</button>
   </form>
 </div>
@@ -198,15 +198,15 @@ exit;
 <?php if ($cat === 'transaction'): ?>
 <div class="card">
   <h2>🧾 Transaction Settings</h2>
-  <p class="muted mb">Sale bill બનાવતી વખતે default behavior - Vyapar ના transaction settings જેવું.</p>
+  <p class="muted mb">Default behavior when creating a sale bill - similar to Vyapar's transaction settings.</p>
   <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save_transaction">
-    <label class="check-inline mb"><input type="checkbox" name="cash_sale_default" value="1" <?= setting('cash_sale_default', '1') === '1' ? 'checked' : '' ?>> Cash Sale by default <span class="muted" style="font-weight:normal">(નવું bill ખોલો ત્યારે Cash/Credit ટોગલ Cash પર જ રહે)</span></label>
-    <label class="check-inline mb"><input type="checkbox" name="round_off_default" value="1" <?= setting('round_off_default', '1') === '1' ? 'checked' : '' ?>> Round Off Total <span class="muted" style="font-weight:normal">(bill નો Total આપોઆપ નજીકના રૂપિયામાં round થાય - checkbox દરેક bill પર બદલી પણ શકાય)</span></label>
+    <label class="check-inline mb"><input type="checkbox" name="cash_sale_default" value="1" <?= setting('cash_sale_default', '1') === '1' ? 'checked' : '' ?>> Cash Sale by default <span class="muted" style="font-weight:normal">(new bill's Cash/Credit toggle stays on Cash)</span></label>
+    <label class="check-inline mb"><input type="checkbox" name="round_off_default" value="1" <?= setting('round_off_default', '1') === '1' ? 'checked' : '' ?>> Round Off Total <span class="muted" style="font-weight:normal">(bill total auto-rounds to the nearest rupee - the checkbox can still be changed per bill)</span></label>
     <label class="check-inline mb"><input type="checkbox" name="show_profit_billing" value="1" <?= setting('show_profit_billing') === '1' ? 'checked' : '' ?>> Show Profit while making Sale Invoice</label>
-    <label class="check-inline mb"><input type="checkbox" name="show_purchase_price_billing" value="1" <?= setting('show_purchase_price_billing') === '1' ? 'checked' : '' ?>> Display Purchase Price of Items <span class="muted" style="font-weight:normal">(item search list માં billing વખતે)</span></label>
-    <label class="check-inline mb"><input type="checkbox" name="add_time_transactions" value="1" <?= setting('add_time_transactions', '1') === '1' ? 'checked' : '' ?>> Add Time on Transactions <span class="muted" style="font-weight:normal">(bill ની Date સાથે Time પણ બતાવવો - view, PDF, WhatsApp image)</span></label>
+    <label class="check-inline mb"><input type="checkbox" name="show_purchase_price_billing" value="1" <?= setting('show_purchase_price_billing') === '1' ? 'checked' : '' ?>> Display Purchase Price of Items <span class="muted" style="font-weight:normal">(in the item search list while billing)</span></label>
+    <label class="check-inline mb"><input type="checkbox" name="add_time_transactions" value="1" <?= setting('add_time_transactions', '1') === '1' ? 'checked' : '' ?>> Add Time on Transactions <span class="muted" style="font-weight:normal">(shows Time next to the bill's Date - view, PDF, WhatsApp image)</span></label>
     <button class="btn" type="submit">Save</button>
   </form>
 </div>
@@ -224,7 +224,7 @@ exit;
       <div><label>API Key</label><input type="text" name="wa_api_key" value="<?= e(setting('wa_api_key')) ?>"></div>
     </div>
     <div class="form-row cols-2">
-      <div><label>Shop WhatsApp number (website catalog ના "Order" button માટે)</label>
+      <div><label>Shop WhatsApp number (for the website catalog's "Order" button)</label>
         <input type="tel" name="wa_shop_number" value="<?= e(setting('wa_shop_number')) ?>" placeholder="91XXXXXXXXXX"></div>
     </div>
     <button class="btn" type="submit">Save</button>
@@ -241,7 +241,7 @@ exit;
 </div>
 <div class="card">
   <h3>💬 Message Templates</h3>
-  <p class="muted mb">દરેક message તમારી રીતે લખો. Variables જેમ છે એમ જ રાખવા — મોકલતી વખતે સાચી value થી બદલાઈ જશે. ખાલી છોડો તો default વપરાશે.</p>
+  <p class="muted mb">Write each message however you like. Keep the variables as-is — they get replaced with the real value when sending. Leave blank to use the default.</p>
   <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="templates">
@@ -259,7 +259,7 @@ exit;
 <?php if ($cat === 'invoice'): ?>
 <div class="card">
   <h3>🎨 Bill / Invoice Design (<?= count(invoice_themes()) ?> designs)</h3>
-  <p class="muted mb">Design પસંદ કરો — બધા bills, estimates અને challans પર લાગુ થશે.</p>
+  <p class="muted mb">Pick a design — it applies to all bills, estimates, and challans.</p>
   <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="design">
@@ -288,11 +288,11 @@ exit;
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save_invoice">
     <div class="form-row cols-2">
-      <div><label>Google Review Link <span class="muted" style="font-weight:normal">(bill પરથી "Review Invite" દબાવો એટલે આ link સીધો WhatsApp થાય)</span></label>
+      <div><label>Google Review Link <span class="muted" style="font-weight:normal">(pressing "Review Invite" on a bill sends this link straight to WhatsApp)</span></label>
         <input type="text" name="google_review_link" value="<?= e(setting('google_review_link')) ?>" placeholder="https://g.page/r/xxxxxxx/review"></div>
     </div>
     <div class="form-row cols-2">
-      <div><label>Razorpay Key ID <span class="muted" style="font-weight:normal">(bill પર online payment link માટે, optional)</span></label><input type="text" name="razorpay_key_id" value="<?= e(setting('razorpay_key_id')) ?>" placeholder="rzp_live_..."></div>
+      <div><label>Razorpay Key ID <span class="muted" style="font-weight:normal">(for the online payment link on bills, optional)</span></label><input type="text" name="razorpay_key_id" value="<?= e(setting('razorpay_key_id')) ?>" placeholder="rzp_live_..."></div>
       <div><label>Razorpay Key Secret</label><input type="password" name="razorpay_key_secret" value="<?= e(setting('razorpay_key_secret')) ?>"></div>
     </div>
     <button class="btn" type="submit">Save</button>
@@ -304,15 +304,15 @@ exit;
 <div class="card">
   <h3>⏰ Auto Overdue Reminders (cron)</h3>
   <?php $cronUrl = base_url('cron.php?key=' . setting('cron_key')); ?>
-  <p class="muted mb">Due date વીતી ગયેલા unpaid bills પર આપોઆપ WhatsApp reminder જાય. Hosting ના cPanel → Cron Jobs માં રોજ એક વાર આ URL ચલાવવા મૂકો:</p>
+  <p class="muted mb">Unpaid bills past their due date automatically get a WhatsApp reminder. In your hosting's cPanel → Cron Jobs, set this URL to run once a day:</p>
   <p class="mb"><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block"><?= e($cronUrl) ?></code></p>
-  <p class="muted mb">cPanel command: <code>wget -qO- "<?= e($cronUrl) ?>"</code> (દા.ત. રોજ સવારે 10:00)</p>
+  <p class="muted mb">cPanel command: <code>wget -qO- "<?= e($cronUrl) ?>"</code> (e.g. every day at 10:00 AM)</p>
   <form method="post" class="filterbar">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="reminder_gap">
-    <div><label>એક જ bill પર ફરી reminder કેટલા દિવસે?</label><input type="number" name="gap" min="1" value="<?= (int)setting('reminder_gap_days', '3') ?>"></div>
+    <div><label>Days before re-reminding the same bill?</label><input type="number" name="gap" min="1" value="<?= (int)setting('reminder_gap_days', '3') ?>"></div>
     <button class="btn btn-sm" type="submit">Save</button>
-    <a class="btn btn-sm btn-outline" href="<?= e($cronUrl) ?>" target="_blank">▶ અત્યારે Test Run</a>
+    <a class="btn btn-sm btn-outline" href="<?= e($cronUrl) ?>" target="_blank">▶ Test Run Now</a>
   </form>
 </div>
 <?php endif; ?>
@@ -344,14 +344,14 @@ exit;
 
 <div class="card">
   <h3>⭐ Loyalty Points</h3>
-  <p class="muted mb">ON કરો તો દરેક bill પર party ને points મળે, અને bill બનાવતી વખતે જૂના points વાપરીને discount લઈ શકે.</p>
+  <p class="muted mb">When ON, the party earns points on every bill, and can redeem old points for a discount while billing.</p>
   <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save_loyalty">
-    <label class="check-inline mb"><input type="checkbox" name="loyalty_enabled" value="1" <?= setting('loyalty_enabled') === '1' ? 'checked' : '' ?>> Loyalty Points ચાલુ કરો</label>
+    <label class="check-inline mb"><input type="checkbox" name="loyalty_enabled" value="1" <?= setting('loyalty_enabled') === '1' ? 'checked' : '' ?>> Enable Loyalty Points</label>
     <div class="form-row cols-2">
-      <div><label>₹100 ના bill પર કેટલા points મળે?</label><input type="number" step="any" name="loyalty_earn_rate" value="<?= e(setting('loyalty_earn_rate', '1')) ?>"></div>
-      <div><label>1 point ની કિંમત (₹, redeem કરતી વખતે)</label><input type="number" step="any" name="loyalty_redeem_value" value="<?= e(setting('loyalty_redeem_value', '1')) ?>"></div>
+      <div><label>Points earned per ₹100 bill</label><input type="number" step="any" name="loyalty_earn_rate" value="<?= e(setting('loyalty_earn_rate', '1')) ?>"></div>
+      <div><label>Value of 1 point (₹, when redeeming)</label><input type="number" step="any" name="loyalty_redeem_value" value="<?= e(setting('loyalty_redeem_value', '1')) ?>"></div>
     </div>
     <button class="btn" type="submit">Save</button>
   </form>
@@ -361,19 +361,19 @@ exit;
 <?php if ($cat === 'backup'): ?>
 <div class="card">
   <h3>💾 Backup</h3>
-  <p class="muted mb">આખા database નો backup (.sql file) download કરો — Google Drive / pen drive માં સાચવી રાખો.</p>
+  <p class="muted mb">Download a backup of the whole database (.sql file) — keep it saved on Google Drive / a pen drive.</p>
   <a class="btn btn-outline" href="settings.php?do=backup">⬇ Download full backup</a>
 </div>
 
 <div class="card">
   <h3>🔗 GitHub Update <span class="badge badge-info">v<?= e(setting('app_version', APP_VERSION)) ?></span></h3>
-  <p class="muted mb">Repo/branch એકવાર set કરો, પછી ફક્ત "Check for Update" → "Update Now" — code GitHub પરથી સીધો server પર આવી જશે, database પણ આપોઆપ update થઈ જશે. <code>config.php</code> (database password વગેરે) અને <code>uploads/</code> (bills, photos) ને ક્યારેય touch નહીં કરે.</p>
+  <p class="muted mb">Set the repo/branch once, then just "Check for Update" → "Update Now" — code comes straight from GitHub to the server, and the database updates automatically too. <code>config.php</code> (database password etc.) and <code>uploads/</code> (bills, photos) are never touched.</p>
   <form method="post" class="form-row cols-3">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="gh_save">
     <div><label>GitHub repo (owner/repo)</label><input type="text" name="gh_repo" value="<?= e(setting('gh_repo', 'akshaykananidwk/Akcomputer')) ?>" placeholder="akshaykananidwk/Akcomputer"></div>
     <div><label>Branch</label><input type="text" name="gh_branch" value="<?= e(setting('gh_branch', 'claude/multi-location-billing-system-rs1ly6')) ?>" placeholder="main"></div>
-    <div><label>GitHub Token <span class="muted" style="font-weight:normal">(private repo હોય તો જરૂરી, ખાલી છોડો તો જૂનો રહેશે)</span></label><input type="password" name="gh_token" placeholder="ghp_xxxxxxxxxxxx"></div>
+    <div><label>GitHub Token <span class="muted" style="font-weight:normal">(required for a private repo, leave blank to keep the existing one)</span></label><input type="password" name="gh_token" placeholder="ghp_xxxxxxxxxxxx"></div>
     <div class="mt" style="grid-column:1/-1"><button class="btn btn-sm btn-outline" type="submit">Save Repo Settings</button></div>
   </form>
   <form method="post" class="mt">
@@ -384,13 +384,13 @@ exit;
   <?php if ($ghCheck !== null): if (!$ghCheck['ok']): ?>
     <p class="flash flash-error mt"><?= e($ghCheck['error']) ?></p>
   <?php elseif (!$ghCheck['has_update']): ?>
-    <p class="flash flash-success mt">✅ તમે latest version પર જ છો (<?= e($ghCheck['short']) ?>).</p>
+    <p class="flash flash-success mt">✅ You're already on the latest version (<?= e($ghCheck['short']) ?>).</p>
   <?php else: ?>
     <div class="card mt" style="background:var(--bg)">
-      <p><strong>🆕 નવું update ઉપલબ્ધ છે</strong></p>
-      <p class="muted">અત્યારે: <?= e($ghCheck['current_short'] ?: '(none)') ?> &nbsp;→&nbsp; નવું: <strong><?= e($ghCheck['short']) ?></strong></p>
+      <p><strong>🆕 A new update is available</strong></p>
+      <p class="muted">Current: <?= e($ghCheck['current_short'] ?: '(none)') ?> &nbsp;→&nbsp; New: <strong><?= e($ghCheck['short']) ?></strong></p>
       <p class="muted">"<?= e($ghCheck['message']) ?>" — <?= e($ghCheck['author']) ?>, <?= dmyt($ghCheck['date']) ?></p>
-      <form method="post" onsubmit="return confirm('Update લગાડવું છે? Files replace થશે ને database migrate થશે. config.php/uploads touch નહીં થાય.')">
+      <form method="post" onsubmit="return confirm('Apply the update? Files will be replaced and the database migrated. config.php/uploads will not be touched.')">
         <?= csrf_field() ?>
         <input type="hidden" name="do" value="gh_apply">
         <input type="hidden" name="sha" value="<?= e($ghCheck['sha']) ?>">
@@ -412,7 +412,7 @@ exit;
 <?php if ($cat === 'about'): ?>
 <div class="card">
   <h3>📱 Install as app (PWA)</h3>
-  <p class="muted">Mobile browser (Chrome) માં આ website ખોલી → menu → <strong>"Add to Home screen"</strong> → app જેવી રીતે open થશે, full screen.</p>
+  <p class="muted">Open this website in a mobile browser (Chrome) → menu → <strong>"Add to Home screen"</strong> → it will open full screen, like an app.</p>
 </div>
 <?php endif; ?>
 

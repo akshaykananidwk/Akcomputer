@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         require_perm('items.edit');
         q('UPDATE items SET show_on_website = 1 - show_on_website WHERE id = ?', [(int)post('id')]);
         $on = val('SELECT show_on_website FROM items WHERE id = ?', [(int)post('id')]);
-        flash($on ? 'Item હવે website પર દેખાશે ✔' : 'Item website પરથી હટાવી.');
+        flash($on ? 'Item will now show on the website ✔' : 'Item removed from the website.');
         redirect('items.php');
     }
 }
@@ -97,10 +97,10 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Type</label>
             <select name="item_type" onchange="document.getElementById('marginBox').style.display=this.value==='service'?'none':''">
               <option value="product" <?= ($it['item_type'] ?? 'product') === 'product' ? 'selected' : '' ?>>Product</option>
-              <option value="service" <?= ($it['item_type'] ?? '') === 'service' ? 'selected' : '' ?>>Service (stock નહીં)</option>
+              <option value="service" <?= ($it['item_type'] ?? '') === 'service' ? 'selected' : '' ?>>Service (no stock)</option>
             </select></div>
           <div><label>Purchase Price</label><input type="number" step="any" name="purchase_price" id="f_pp" value="<?= e($it['purchase_price'] ?? '0') ?>" oninput="mCalc()"></div>
-          <div id="marginBox"><label>Margin % (ભરો એટલે selling આપોઆપ)</label><input type="number" step="any" name="margin_pct" id="f_mg" value="<?= e($it['margin_pct'] ?? '0') ?>" oninput="mCalc()"></div>
+          <div id="marginBox"><label>Margin % (fill this and Selling auto-calculates)</label><input type="number" step="any" name="margin_pct" id="f_mg" value="<?= e($it['margin_pct'] ?? '0') ?>" oninput="mCalc()"></div>
           <div><label>Selling Price (Retail)</label><input type="number" step="any" name="selling_price" id="f_sp" value="<?= e($it['selling_price'] ?? '0') ?>"></div>
           <div><label>B2B Price</label><input type="number" step="any" name="b2b_price" value="<?= e($it['b2b_price'] ?? '0') ?>"></div>
         </div>
@@ -152,7 +152,7 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="page-actions">
   <?php if (can('items.add')): ?><a class="btn" href="items.php?action=new">+ New Item</a><?php endif; ?>
-  <a class="btn btn-outline" href="items.php<?= $showAll ? '' : '?show=all' ?>"><?= $showAll ? 'ફક્ત Active બતાવો' : 'Inactive પણ બતાવો' ?></a>
+  <a class="btn btn-outline" href="items.php<?= $showAll ? '' : '?show=all' ?>"><?= $showAll ? 'Show Active only' : 'Show Inactive too' ?></a>
 </div>
 <div class="searchbox"><input type="text" id="itemFilter" placeholder="🔍 Search items..."></div>
 <div class="list-count"><?= count($items) ?> items</div>
@@ -181,12 +181,12 @@ include __DIR__ . '/includes/header.php';
         <?php if (can('items.edit')): ?>
         <form method="post" style="display:inline"><?= csrf_field() ?>
           <input type="hidden" name="do" value="toggle_web"><input type="hidden" name="id" value="<?= $it['id'] ?>">
-          <button class="btn btn-sm <?= $it['show_on_website'] ? 'btn-success' : 'btn-muted' ?>" type="submit" title="Website પર બતાવવું on/off">🌐 <?= $it['show_on_website'] ? 'ON' : 'OFF' ?></button>
+          <button class="btn btn-sm <?= $it['show_on_website'] ? 'btn-success' : 'btn-muted' ?>" type="submit" title="Toggle on the website">🌐 <?= $it['show_on_website'] ? 'ON' : 'OFF' ?></button>
         </form>
         <a class="btn btn-sm btn-outline" href="items.php?action=edit&id=<?= $it['id'] ?>">Edit</a>
         <?php elseif ($it['show_on_website']): ?><span class="badge badge-ok">WEB</span><?php endif; ?>
         <?php if (can('items.delete')): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('Item delete કરવો? Transaction history હશે તો ખાલી inactive થશે.')">
+        <form method="post" style="display:inline" onsubmit="return confirm('Delete this item? If it has transaction history, it will just be made inactive.')">
           <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $it['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit">✕</button>
         </form>

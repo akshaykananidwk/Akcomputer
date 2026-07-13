@@ -36,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'set_default') {
     require_perm('settings.edit');
     q('UPDATE bank_accounts SET is_default = 0');
     q('UPDATE bank_accounts SET is_default = 1 WHERE id = ?', [(int)post('id')]);
-    flash('Default account set - એ જ invoice પર દેખાશે.');
+    flash('Default account set - it will show on invoices.');
     redirect('bank_accounts.php');
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
@@ -57,7 +57,7 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="card">
   <h2><?= $acc ? 'Edit Bank Account' : 'Add Bank Account' ?></h2>
-  <p class="muted mb">"Default" account ની details + UPI QR દરેક invoice પર દેખાય છે.</p>
+  <p class="muted mb">The "Default" account's details + UPI QR appear on every invoice.</p>
   <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save">
@@ -69,11 +69,11 @@ include __DIR__ . '/includes/header.php';
     <div class="form-row cols-3">
       <div><label>Account number</label><input type="text" name="account_number" value="<?= e($acc['account_number'] ?? '') ?>"></div>
       <div><label>IFSC</label><input type="text" name="ifsc" value="<?= e($acc['ifsc'] ?? '') ?>"></div>
-      <div><label>UPI ID (QR માટે)</label><input type="text" name="upi_id" value="<?= e($acc['upi_id'] ?? '') ?>" placeholder="name@okhdfcbank"></div>
+      <div><label>UPI ID (for QR)</label><input type="text" name="upi_id" value="<?= e($acc['upi_id'] ?? '') ?>" placeholder="name@okhdfcbank"></div>
     </div>
     <div class="form-row cols-3">
       <div><label>Opening balance (₹)</label><input type="number" step="any" name="opening_balance" value="<?= e($acc['opening_balance'] ?? '0') ?>"></div>
-      <div><label class="check-inline mt"><input type="checkbox" name="is_default" value="1" <?= !empty($acc['is_default']) ? 'checked' : '' ?>> Default (invoice પર બતાવવું)</label></div>
+      <div><label class="check-inline mt"><input type="checkbox" name="is_default" value="1" <?= !empty($acc['is_default']) ? 'checked' : '' ?>> Default (show on invoice)</label></div>
       <div><label class="check-inline mt"><input type="checkbox" name="is_active" value="1" <?= ($acc === null || $acc['is_active']) ? 'checked' : '' ?>> Active</label></div>
     </div>
     <button class="btn" type="submit">Save</button>
@@ -93,11 +93,11 @@ include __DIR__ . '/includes/header.php';
       <td style="white-space:nowrap"><?php if (!$b['is_default']): ?>
         <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="set_default"><input type="hidden" name="id" value="<?= $b['id'] ?>">
         <button class="btn btn-sm" type="submit">Make Default</button></form>
-        <form method="post" style="display:inline" onsubmit="return confirm('Bank account deactivate કરવું?')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $b['id'] ?>">
+        <form method="post" style="display:inline" onsubmit="return confirm('Deactivate this bank account?')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $b['id'] ?>">
         <button class="btn btn-sm btn-danger" type="submit">✕</button></form>
       <?php endif; ?></td>
     </tr>
-  <?php endforeach; if (!$accounts): ?><tr><td colspan="6" class="muted">હજી કોઈ bank account ઉમેર્યું નથી.</td></tr><?php endif; ?></tbody>
+  <?php endforeach; if (!$accounts): ?><tr><td colspan="6" class="muted">No bank account added yet.</td></tr><?php endif; ?></tbody>
 </table>
 </div>
 <?php include __DIR__ . '/includes/footer.php'; ?>

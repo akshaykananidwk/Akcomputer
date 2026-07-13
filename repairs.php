@@ -190,7 +190,7 @@ include __DIR__ . '/includes/header.php';
       <td style="white-space:nowrap">
         <?php if (can('repairs.edit')): ?><a class="btn btn-sm btn-outline" href="repairs.php?action=edit&id=<?= $j['id'] ?>">Open</a><?php endif; ?>
         <?php if (can('repairs.delete')): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('Job sheet delete કરવો?')">
+        <form method="post" style="display:inline" onsubmit="return confirm('Delete this job sheet?')">
           <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $j['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit">✕</button>
         </form>

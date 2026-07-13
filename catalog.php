@@ -97,9 +97,9 @@ body { padding-bottom: 90px; }
 <?php if ($orderOk): ?>
   <div class="card ok-box">
     <div class="big">✅</div>
-    <h2>Order મળી ગયો! (<?= e($orderOk) ?>)</h2>
-    <p class="muted mt">અમે તમને જલદી WhatsApp/call કરીશું. આભાર! 🙏</p>
-    <a class="btn mt" href="catalog.php">← Store પર પાછા</a>
+    <h2>Order received! (<?= e($orderOk) ?>)</h2>
+    <p class="muted mt">We'll WhatsApp/call you soon. Thank you! 🙏</p>
+    <a class="btn mt" href="catalog.php">← Back to Store</a>
   </div>
 <?php else: ?>
   <div class="searchbox"><input type="text" id="cFilter" placeholder="🔍 Search products..."></div>
@@ -128,29 +128,29 @@ body { padding-bottom: 90px; }
   <?php if (!$items): ?><p class="muted">No products listed yet.</p><?php endif; ?>
   </div>
 
-  <div class="cartbar" id="cartBar"><span id="cartInfo"></span><span>Order કરો →</span></div>
+  <div class="cartbar" id="cartBar"><span id="cartInfo"></span><span>Place Order →</span></div>
 
   <div class="order-modal" id="orderModal">
     <div class="order-box">
-      <h2>🛒 તમારો Order</h2>
+      <h2>🛒 Your Order</h2>
       <div id="orderLines" class="mb mt"></div>
       <form method="post">
         <?= csrf_field() ?>
         <input type="hidden" name="do" value="order">
         <input type="hidden" name="cart_json" id="cartJson">
-        <div class="field"><label>તમારું નામ *</label><input type="text" name="customer_name" required></div>
+        <div class="field"><label>Your Name *</label><input type="text" name="customer_name" required></div>
         <div class="field"><label>Mobile (WhatsApp) *</label><input type="tel" name="mobile" required pattern="[0-9]{10,12}"></div>
-        <div class="field"><label>Address / વિસ્તાર</label><input type="text" name="address"></div>
-        <div class="field"><label>કંઈ ખાસ કહેવું છે?</label><input type="text" name="order_notes"></div>
-        <button class="btn btn-success btn-block" type="submit">✅ Order મોકલો</button>
-        <button class="btn btn-muted btn-block mt" type="button" onclick="document.getElementById('orderModal').classList.remove('show')">બંધ કરો</button>
+        <div class="field"><label>Address / Area</label><input type="text" name="address"></div>
+        <div class="field"><label>Anything specific to mention?</label><input type="text" name="order_notes"></div>
+        <button class="btn btn-success btn-block" type="submit">✅ Send Order</button>
+        <button class="btn btn-muted btn-block mt" type="button" onclick="document.getElementById('orderModal').classList.remove('show')">Close</button>
       </form>
     </div>
   </div>
 <?php endif; ?>
-  <?php if ($waShop): ?><p class="muted mt" style="text-align:center">📞 સીધો સંપર્ક: <a href="https://wa.me/<?= e($waShop) ?>" target="_blank" rel="noopener">WhatsApp કરો</a></p><?php endif; ?>
+  <?php if ($waShop): ?><p class="muted mt" style="text-align:center">📞 Contact directly: <a href="https://wa.me/<?= e($waShop) ?>" target="_blank" rel="noopener">WhatsApp us</a></p><?php endif; ?>
   <?php if (current_user() && can('items.edit')): $hidden = (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 0'); ?>
-    <?php if ($hidden): ?><p class="muted mt" style="text-align:center">ℹ️ (Admin: <?= $hidden ?> items website પર OFF છે — Items page પર 🌐 થી ON કરો.)</p><?php endif; ?>
+    <?php if ($hidden): ?><p class="muted mt" style="text-align:center">ℹ️ (Admin: <?= $hidden ?> items are OFF on the website — turn them ON via 🌐 on the Items page.)</p><?php endif; ?>
   <?php endif; ?>
 </div>
 <script>

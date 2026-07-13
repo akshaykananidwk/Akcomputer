@@ -32,13 +32,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     $pid = (int)post('id');
     $bal = party_balance($pid);
     if (abs($bal) > 0.009) {
-        flash('આ party નું ₹' . money(abs($bal)) . ' (' . ($bal > 0 ? 'લેવાના' : 'દેવાના') . ') બાકી છે - પહેલા balance ચૂકતે કરો, પછી જ delete/inactive કરી શકાશે (નહીં તો એ રકમ ક્યાંય દેખાવાની બંધ થઈ જાય).', 'error');
+        flash('This party has ₹' . money(abs($bal)) . ' (' . ($bal > 0 ? 'receivable' : 'payable') . ') outstanding - settle the balance first, then it can be deleted/made inactive (otherwise that amount would stop showing up anywhere).', 'error');
         redirect('parties.php');
     }
     $tx = (int)val('SELECT (SELECT COUNT(*) FROM sales WHERE party_id=?) + (SELECT COUNT(*) FROM purchases WHERE party_id=?) + (SELECT COUNT(*) FROM payments WHERE party_id=?)', [$pid,$pid,$pid]);
     if ($tx > 0) {
         q('UPDATE parties SET is_active = 0 WHERE id = ?', [$pid]);
-        flash('Party ના વ્યવહારો છે એટલે delete ના બદલે INACTIVE કરી (ledger સચવાયું).', 'info');
+        flash('This party has transactions, so it was made INACTIVE instead of deleted (ledger preserved).', 'info');
     } else {
         q('DELETE FROM parties WHERE id = ?', [$pid]);
         flash('Party deleted.');
@@ -72,7 +72,7 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>City</label><input type="text" name="city" value="<?= e($p['city'] ?? '') ?>"></div>
         </div>
         <div class="form-row cols-2">
-          <div><label>Birthday <span class="muted" style="font-weight:normal">(દર વર્ષે આપોઆપ WhatsApp wish જાય)</span></label><input type="date" name="dob" value="<?= e($p['dob'] ?? '') ?>"></div>
+          <div><label>Birthday <span class="muted" style="font-weight:normal">(automatic WhatsApp wish every year)</span></label><input type="date" name="dob" value="<?= e($p['dob'] ?? '') ?>"></div>
           <div><label>Anniversary</label><input type="date" name="anniversary" value="<?= e($p['anniversary'] ?? '') ?>"></div>
         </div>
         <div class="form-row cols-2">
@@ -100,11 +100,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_ledger') {
     if ($p && $mobile) {
         $lines = post('lines');
         $bal = (float)post('balance');
-        $balTxt = ($bal >= 0 ? '₹' . money($bal) . ' લેવાના' : '₹' . money(-$bal) . ' દેવાના');
+        $balTxt = ($bal >= 0 ? '₹' . money($bal) . ' receivable' : '₹' . money(-$bal) . ' payable');
         $ok = send_whatsapp($mobile, wa_template('ledger', ['party' => $p['name'], 'lines' => $lines, 'balance' => $balTxt]));
-        flash($ok ? 'Ledger WhatsApp પર મોકલ્યું.' : ('WhatsApp send fail. ' . whatsapp_last_error()), $ok ? 'success' : 'error');
+        flash($ok ? 'Ledger sent on WhatsApp.' : ('WhatsApp send failed. ' . whatsapp_last_error()), $ok ? 'success' : 'error');
     } else {
-        flash('Mobile number નથી.', 'error');
+        flash('No mobile number.', 'error');
     }
     redirect('parties.php?action=ledger&id=' . (int)post('id'));
 }
@@ -153,7 +153,7 @@ if ($action === 'ledger' && $id) {
         </tbody>
       </table>
     </div>
-    <div class="card"><strong>Closing balance: ₹<?= money(abs($bal)) ?> <?= $bal >= 0 ? '(લેવાના / to receive)' : '(દેવાના / to pay)' ?></strong></div>
+    <div class="card"><strong>Closing balance: ₹<?= money(abs($bal)) ?> <?= $bal >= 0 ? '(to receive)' : '(to pay)' ?></strong></div>
     <div class="card no-print">
       <div class="page-actions" style="margin:0">
         <?php if (can('payments.add')): ?>
@@ -171,7 +171,7 @@ if ($action === 'ledger' && $id) {
           $waLines = '';
           foreach (array_slice($entries, -10) as $en) {
               $waLines .= dmy($en['date']) . ' ' . $en['desc'] . ': ' .
-                          ($en['dr'] ? '₹' . money($en['dr']) . ' (bill)' : '₹' . money($en['cr']) . ' (jama)') . "\n";
+                          ($en['dr'] ? '₹' . money($en['dr']) . ' (bill)' : '₹' . money($en['cr']) . ' (paid)') . "\n";
           }
           ?>
           <input type="hidden" name="lines" value="<?= e(trim($waLines)) ?>">
@@ -201,8 +201,8 @@ $page_title = 'Parties';
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="duo-cards">
-  <div class="duo-card duo-get"><div class="duo-label">લેવાના (You'll Get)</div><div class="duo-value">₹ <?= money($totGet) ?></div></div>
-  <div class="duo-card duo-give"><div class="duo-label">દેવાના (You'll Give)</div><div class="duo-value">₹ <?= money($totGive) ?></div></div>
+  <div class="duo-card duo-get"><div class="duo-label">You'll Get</div><div class="duo-value">₹ <?= money($totGet) ?></div></div>
+  <div class="duo-card duo-give"><div class="duo-label">You'll Give</div><div class="duo-value">₹ <?= money($totGive) ?></div></div>
 </div>
 <div class="page-actions">
   <?php if (can('parties.add')): ?><a class="btn" href="parties.php?action=new">+ New Party</a><?php endif; ?>
@@ -214,7 +214,7 @@ include __DIR__ . '/includes/header.php';
   <tbody>
   <?php foreach ($parties as $p): ?>
     <tr>
-      <td><strong><?= e($p['name']) ?></strong><?= !$p['is_active'] ? ' <span class="badge badge-bad">INACTIVE - બાકી છે</span>' : '' ?><?= $p['gstin'] ? '<br><span class="muted">' . e($p['gstin']) . '</span>' : '' ?></td>
+      <td><strong><?= e($p['name']) ?></strong><?= !$p['is_active'] ? ' <span class="badge badge-bad">INACTIVE - has balance</span>' : '' ?><?= $p['gstin'] ? '<br><span class="muted">' . e($p['gstin']) . '</span>' : '' ?></td>
       <td class="num">
         <?php if ($p['balance'] > 0.009): ?>
           <span class="bal-get">₹<?= money($p['balance']) ?><span class="bal-sub">You'll Get</span></span>
@@ -230,7 +230,7 @@ include __DIR__ . '/includes/header.php';
       <td>
         <a class="btn btn-sm btn-outline" href="parties.php?action=ledger&id=<?= $p['id'] ?>">Ledger</a>
         <?php if (can('parties.edit')): ?><a class="btn btn-sm btn-outline" href="parties.php?action=edit&id=<?= $p['id'] ?>">Edit</a><?php endif; ?>
-        <?php if (can('parties.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Party delete કરવી? વ્યવહાર હશે તો ખાલી inactive થશે.')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
+        <?php if (can('parties.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Delete this party? If it has transactions, it will just be made inactive.')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
       </td>
     </tr>
   <?php endforeach; ?>

@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $data = [(int)post('party_id'), (int)post('item_id'), (int)post('company_id', 1), (int)post('location_id') ?: $u['location_id'],
               post('title'), (float)post('amount'), $cycle, post('start_date', today()), post('next_bill_date', today()),
               post('end_date') ?: null, post('notes')];
-    if (!$data[0] || !$data[1] || $data[5] <= 0) { flash('Party, item અને amount જરૂરી છે.', 'error'); redirect('amc.php?action=' . ($id ? "edit&id=$id" : 'new')); }
+    if (!$data[0] || !$data[1] || $data[5] <= 0) { flash('Party, item, and amount are required.', 'error'); redirect('amc.php?action=' . ($id ? "edit&id=$id" : 'new')); }
     if ($id) {
         q('UPDATE amc_contracts SET party_id=?, item_id=?, company_id=?, location_id=?, title=?, amount=?, billing_cycle=?,
            start_date=?, next_bill_date=?, end_date=?, notes=? WHERE id=?', array_merge($data, [$id]));
@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'status') {
     require_perm('amc.edit');
     $st = in_array(post('status'), ['active', 'paused', 'cancelled'], true) ? post('status') : 'active';
     q('UPDATE amc_contracts SET status = ? WHERE id = ?', [$st, (int)post('id')]);
-    flash('Status બદલાયું.');
+    flash('Status changed.');
     redirect('amc.php');
 }
 
@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'generate') {
     require_perm('amc.edit');
     $c = row('SELECT * FROM amc_contracts WHERE id = ?', [(int)post('id')]);
-    if (!$c || $c['status'] !== 'active') { flash('Contract active નથી.', 'error'); redirect('amc.php'); }
+    if (!$c || $c['status'] !== 'active') { flash('Contract is not active.', 'error'); redirect('amc.php'); }
     $res = amc_generate_invoice($c);
     if ($res) {
         q('UPDATE amc_contracts SET next_bill_date = ? WHERE id = ?', [amc_advance_date($c['next_bill_date'], $c['billing_cycle']), $c['id']]);
@@ -59,9 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'generate') {
             ]));
         }
         log_activity('amc_generate', $res['invoice_no']);
-        flash('Invoice ' . $res['invoice_no'] . ' બની ગયું, next renewal date આગળ વધારી.');
+        flash('Invoice ' . $res['invoice_no'] . ' created, next renewal date advanced.');
     } else {
-        flash('Invoice બનાવવામાં ભૂલ આવી.', 'error');
+        flash('Error creating invoice.', 'error');
     }
     redirect('amc.php');
 }
@@ -130,7 +130,7 @@ if ($action === 'new' || $action === 'edit') {
     if ($action === 'edit' && !$c) die('Contract not found.');
     $parties = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 ORDER BY name");
     if (!$serviceItems) {
-        flash('પહેલા Items માં "Service" type નો item બનાવો (દા.ત. "CCTV AMC", "Computer AMC") - AMC contract એ item સાથે link થાય છે.', 'error');
+        flash('First create a "Service" type item in Items (e.g. "CCTV AMC", "Computer AMC") - an AMC contract links to that item.', 'error');
         redirect('items.php?action=new');
     }
     $page_title = $c ? 'Edit AMC Contract' : 'New AMC Contract';
@@ -156,12 +156,12 @@ if ($action === 'new' || $action === 'edit') {
               <?php endforeach; ?>
             </select></div>
         </div>
-        <div class="field"><label>Title / description</label><input type="text" name="title" value="<?= e($c['title'] ?? '') ?>" placeholder="દા.ત. CCTV AMC - 4 Camera, Dwarka branch"></div>
+        <div class="field"><label>Title / description</label><input type="text" name="title" value="<?= e($c['title'] ?? '') ?>" placeholder="e.g. CCTV AMC - 4 Camera, Dwarka branch"></div>
         <div class="form-row cols-4">
           <div><label>Amount per cycle (₹) *</label><input type="number" step="any" name="amount" value="<?= e($c['amount'] ?? '0') ?>" required></div>
           <div><label>Billing Cycle</label>
             <select name="billing_cycle">
-              <?php foreach (['monthly' => 'Monthly', 'quarterly' => 'Quarterly (3 મહિને)', 'half_yearly' => 'Half-Yearly (6 મહિને)', 'yearly' => 'Yearly (વર્ષે)'] as $k => $l): ?>
+              <?php foreach (['monthly' => 'Monthly', 'quarterly' => 'Quarterly (every 3 months)', 'half_yearly' => 'Half-Yearly (every 6 months)', 'yearly' => 'Yearly (every year)'] as $k => $l): ?>
               <option value="<?= $k ?>" <?= ($c['billing_cycle'] ?? 'yearly') === $k ? 'selected' : '' ?>><?= $l ?></option>
               <?php endforeach; ?>
             </select></div>
@@ -173,7 +173,7 @@ if ($action === 'new' || $action === 'edit') {
         <div class="form-row cols-3">
           <div><label>Start date</label><input type="date" name="start_date" value="<?= e($c['start_date'] ?? today()) ?>"></div>
           <div><label>Next renewal date *</label><input type="date" name="next_bill_date" value="<?= e($c['next_bill_date'] ?? today()) ?>" required></div>
-          <div><label>End date (ખાલી = ongoing)</label><input type="date" name="end_date" value="<?= e($c['end_date'] ?? '') ?>"></div>
+          <div><label>End date (blank = ongoing)</label><input type="date" name="end_date" value="<?= e($c['end_date'] ?? '') ?>"></div>
         </div>
         <div class="field"><label>Notes</label><input type="text" name="notes" value="<?= e($c['notes'] ?? '') ?>"></div>
         <button class="btn btn-block mt" type="submit">💾 Save Contract</button>
@@ -204,7 +204,7 @@ include __DIR__ . '/includes/header.php';
   <a class="btn btn-outline" href="amc.php?action=calendar">📅 Calendar</a>
 </div>
 <?php if ($dueCount): ?>
-<div class="flash flash-info">⏰ <?= $dueCount ?> contract(s) નું renewal due છે. cron ચાલુ હોય તો આપોઆપ bill બની જશે, નહીં તો નીચે "⚡ Generate Now" દબાવો.</div>
+<div class="flash flash-info">⏰ <?= $dueCount ?> contract(s) have a renewal due. If the cron is running the bill is created automatically, otherwise press "⚡ Generate Now" below.</div>
 <?php endif; ?>
 <div class="table-wrap">
 <table>
@@ -226,18 +226,18 @@ include __DIR__ . '/includes/header.php';
         <?php if (can('amc.edit')): ?>
         <a class="btn btn-sm btn-outline" href="amc.php?action=edit&id=<?= $c['id'] ?>">Edit</a>
         <?php if ($c['status'] === 'active'): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('Invoice હમણાં જ generate કરવું?')"><?= csrf_field() ?><input type="hidden" name="do" value="generate"><input type="hidden" name="id" value="<?= $c['id'] ?>"><button class="btn btn-sm btn-success" type="submit">⚡ Generate Now</button></form>
+        <form method="post" style="display:inline" onsubmit="return confirm('Generate the invoice now?')"><?= csrf_field() ?><input type="hidden" name="do" value="generate"><input type="hidden" name="id" value="<?= $c['id'] ?>"><button class="btn btn-sm btn-success" type="submit">⚡ Generate Now</button></form>
         <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="status"><input type="hidden" name="status" value="paused"><input type="hidden" name="id" value="<?= $c['id'] ?>"><button class="btn btn-sm btn-muted" type="submit">Pause</button></form>
         <?php else: ?>
         <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="status"><input type="hidden" name="status" value="active"><input type="hidden" name="id" value="<?= $c['id'] ?>"><button class="btn btn-sm btn-success" type="submit">Resume</button></form>
         <?php endif; ?>
         <?php endif; ?>
         <?php if (can('amc.delete')): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('Contract delete કરવો?')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $c['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form>
+        <form method="post" style="display:inline" onsubmit="return confirm('Delete this contract?')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $c['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form>
         <?php endif; ?>
       </td>
     </tr>
-  <?php endforeach; if (!$contracts): ?><tr><td colspan="7" class="muted">કોઈ AMC contract નથી. "+ New AMC Contract" દબાવીને શરૂ કરો.</td></tr><?php endif; ?>
+  <?php endforeach; if (!$contracts): ?><tr><td colspan="7" class="muted">No AMC contracts yet. Press "+ New AMC Contract" to get started.</td></tr><?php endif; ?>
   </tbody>
 </table>
 </div>

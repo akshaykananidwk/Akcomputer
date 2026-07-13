@@ -99,7 +99,7 @@ var Bill = {
       '  <label>Item</label>' +
       '  <div style="display:flex;gap:4px">' +
       '  <input type="text" class="i-search" placeholder="Type item name..." autocomplete="off" style="flex:1">' +
-      (('BarcodeDetector' in window) ? '  <button type="button" class="btn btn-sm btn-outline i-scanbtn" title="Camera થી barcode scan કરો" style="flex-shrink:0">📷</button>' : '') +
+      (('BarcodeDetector' in window) ? '  <button type="button" class="btn btn-sm btn-outline i-scanbtn" title="Scan barcode with camera" style="flex-shrink:0">📷</button>' : '') +
       '  </div>' +
       '  <input type="hidden" name="item_id[]" class="i-id">' +
       '  <input type="hidden" name="tax_rate[]" class="i-tax" value="0">' +
@@ -163,7 +163,7 @@ var Bill = {
             // Vyapar-style: "Add New Item" link at the bottom of results
             var addNew = document.createElement('div');
             addNew.className = 'ir';
-            addNew.innerHTML = '<strong style="color:var(--primary)">＋ Add New Item</strong><small>"' + qy + '" નવી item બનાવો</small>';
+            addNew.innerHTML = '<strong style="color:var(--primary)">＋ Add New Item</strong><small>Create a new item "' + qy + '"</small>';
             addNew.addEventListener('click', function () {
               window.open('items.php?action=new', '_blank');
               res.classList.remove('show');
@@ -194,7 +194,7 @@ var Bill = {
     closeBtn.className = 'btn btn-danger';
     closeBtn.style.cssText = 'margin-top:14px';
     var hint = document.createElement('div');
-    hint.textContent = 'Barcode ને camera સામે રાખો...';
+    hint.textContent = 'Hold the barcode in front of the camera...';
     hint.style.cssText = 'color:#fff;margin-bottom:10px;font-size:14px';
     overlay.appendChild(hint);
     overlay.appendChild(video);
@@ -229,7 +229,7 @@ var Bill = {
       }
       requestAnimationFrame(tick);
     }).catch(function () {
-      hint.textContent = 'Camera access ના મળી - permission ચેક કરો.';
+      hint.textContent = 'Could not access camera - check permissions.';
       hint.style.color = '#f87171';
     });
   },
@@ -276,7 +276,7 @@ var Bill = {
               '<label>Select Serial No. <span class="sp-count badge badge-warn">0 / ' + (parseFloat(div.querySelector('.i-qty').value) || 1) + ' entered</span></label>' +
               '<div class="sp-scan"><input type="text" class="sp-inp" placeholder="Type / scan serial no.">' +
               '<button type="button" class="btn btn-sm sp-add">Add</button></div>' +
-              '<div class="sp-list">' + (boxes || '<span class="muted">Stock માં serial નથી (advance billing ચાલશે)</span>') + '</div>' +
+              '<div class="sp-list">' + (boxes || '<span class="muted">No serials in stock (advance billing will proceed)</span>') + '</div>' +
               '</div>';
             function updCount() {
               var c = extra.querySelectorAll('input[type=checkbox]:checked').length;
@@ -297,7 +297,7 @@ var Bill = {
               extra.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
                 if (cb.value.toLowerCase() === v.toLowerCase()) { cb.checked = true; found = true; }
               });
-              if (!found) alert('Serial "' + v + '" stock માં નથી.');
+              if (!found) alert('Serial "' + v + '" is not in stock.');
               spInp.value = '';
               updCount();
             });

@@ -176,8 +176,8 @@ function invoice_theme_class() {
 }
 
 // ---------- Party running-account balance (single source of truth) ----------
-// Positive = party owes shop ("લેવાના" / You'll Get). Negative = shop owes
-// party ("દેવાના" / You'll Give) - this also covers customer ADVANCES: a
+// Positive = party owes shop (You'll Get). Negative = shop owes
+// party (You'll Give) - this also covers customer ADVANCES: a
 // payment received with no bill against it simply pushes the balance
 // negative, exactly like a real khata/ledger book. Used everywhere (party
 // list, party ledger, Payment-In/Out, dashboard) so the numbers never

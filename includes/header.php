@@ -141,7 +141,7 @@ function nav_visible_items($items) {
 <div class="sheet-overlay" id="sheetOverlay"></div>
 <div class="action-sheet" id="actionSheet">
   <div class="sheet-handle"></div>
-  <h3>ઝડપી કામ</h3>
+  <h3>Quick Actions</h3>
   <div class="sheet-grid">
     <?php
     $_navQuick = [
@@ -169,10 +169,10 @@ function nav_visible_items($items) {
 <?php unset($_navMenu, $_navItems, $_navQuick, $_nm, $_ni, $_nq, $_navOpen); ?>
 <main class="content<?= $u ? '' : ' content-full' ?>">
 <?php if ($u && !empty($_SESSION['impersonator_id'])): ?>
-<div class="impersonate-bar">👁️ <?= e($u['name']) ?> (<?= e($u['role_name']) ?>) તરીકે જુઓ છો
+<div class="impersonate-bar">👁️ Viewing as <?= e($u['name']) ?> (<?= e($u['role_name']) ?>)
   <form method="post" action="users.php" style="display:inline">
     <?= csrf_field() ?><input type="hidden" name="do" value="stop_impersonate">
-    <button type="submit" class="btn btn-sm">Admin તરીકે પાછા જાવ</button>
+    <button type="submit" class="btn btn-sm">Back to Admin</button>
   </form>
 </div>
 <?php endif; ?>

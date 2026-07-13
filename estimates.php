@@ -209,7 +209,7 @@ include __DIR__ . '/includes/header.php';
       <td style="white-space:nowrap">
         <a class="btn btn-sm btn-outline" href="estimates.php?action=view&id=<?= $es['id'] ?>">View</a>
         <?php if (can('estimates.delete')): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('Estimate delete કરવો?')">
+        <form method="post" style="display:inline" onsubmit="return confirm('Delete this estimate?')">
           <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $es['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit">✕</button>
         </form>

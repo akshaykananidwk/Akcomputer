@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'stop_impersonate' &
     $_SESSION['user_id'] = $_SESSION['impersonator_id'];
     unset($_SESSION['impersonator_id']);
     log_activity('impersonate_stop', 'back from ' . ($wasUser['name'] ?? '?'));
-    flash('Admin તરીકે પાછા આવ્યા.');
+    flash('Back to Admin.');
     redirect('users.php');
 }
 
@@ -50,14 +50,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('users.delete');
     $uid = (int)post('id');
     if ($uid === current_user()['id']) {
-        flash('તમે પોતાને delete/deactivate ના કરી શકો.', 'error');
+        flash('You cannot delete/deactivate yourself.', 'error');
         redirect('users.php');
     }
     // Users are referenced everywhere (sales.created_by, tasks.assigned_to,
     // etc.) - deactivating (not hard-deleting) keeps that history intact.
     q('UPDATE users SET is_active = 0 WHERE id = ?', [$uid]);
     log_activity('user_delete', "#$uid");
-    flash('User deactivated (history સચવાયું).');
+    flash('User deactivated (history preserved).');
     redirect('users.php');
 }
 
@@ -69,9 +69,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'impersonate') {
     require_perm('users.impersonate');
     $target = row('SELECT * FROM users WHERE id = ? AND is_active = 1', [(int)post('id')]);
-    if (!$target) { flash('User ના મળ્યો અથવા inactive છે.', 'error'); redirect('users.php'); }
-    if ($target['id'] == current_user()['id']) { flash('તમે પોતાના તરીકે જ છો.', 'error'); redirect('users.php'); }
-    if (!empty($_SESSION['impersonator_id'])) { flash('પહેલા હાલનું impersonation બંધ કરો.', 'error'); redirect('users.php'); }
+    if (!$target) { flash('User not found or inactive.', 'error'); redirect('users.php'); }
+    if ($target['id'] == current_user()['id']) { flash('You are already logged in as yourself.', 'error'); redirect('users.php'); }
+    if (!empty($_SESSION['impersonator_id'])) { flash('Stop the current impersonation first.', 'error'); redirect('users.php'); }
     log_activity('impersonate_start', current_user()['name'] . ' -> ' . $target['name']);
     $_SESSION['impersonator_id'] = current_user()['id'];
     $_SESSION['user_id'] = $target['id'];
@@ -113,7 +113,7 @@ if ($action === 'new' || $action === 'edit') {
           <div><label class="check-inline mt"><input type="checkbox" name="is_active" value="1" <?= ($usr === null || $usr['is_active']) ? 'checked' : '' ?>> Active</label></div>
         </div>
         <h3 class="mt">Extra permissions (on top of role)</h3>
-        <p class="muted mb">Role ના rights ઉપરાંત આ user ને વધારાની permission આપવી હોય તો tick કરો.</p>
+        <p class="muted mb">Tick to grant this user extra permissions beyond their role's rights.</p>
         <?php foreach (permission_catalog() as $mod => $acts): ?>
           <div class="field">
             <label><?= e(permission_labels()[$mod]) ?></label>
@@ -155,13 +155,13 @@ include __DIR__ . '/includes/header.php';
       <td style="white-space:nowrap">
         <?php if (can('users.edit')): ?><a class="btn btn-sm btn-outline" href="users.php?action=edit&id=<?= $us['id'] ?>">Edit</a><?php endif; ?>
         <?php if (can('users.impersonate') && $us['is_active'] && $us['id'] != current_user()['id'] && empty($_SESSION['impersonator_id'])): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('<?= e($us['name']) ?> તરીકે login કરવું છે? તમે એ user ની આંખે app જોશો.')">
+        <form method="post" style="display:inline" onsubmit="return confirm('Log in as <?= e($us['name']) ?>? You will see the app through that user\'s eyes.')">
           <?= csrf_field() ?><input type="hidden" name="do" value="impersonate"><input type="hidden" name="id" value="<?= $us['id'] ?>">
           <button class="btn btn-sm btn-outline" type="submit">👁️ Login as</button>
         </form>
         <?php endif; ?>
         <?php if (can('users.delete') && $us['is_active']): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('User deactivate કરવો?')">
+        <form method="post" style="display:inline" onsubmit="return confirm('Deactivate this user?')">
           <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $us['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit">✕</button>
         </form>

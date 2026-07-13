@@ -14,7 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
               post('ip_address'), post('port'), post('dvr_username'), vault_encrypt(post('dvr_password')),
               post('remote_app'), post('remote_id'), post('install_date') ?: null, post('warranty_till') ?: null,
               post('next_visit_date') ?: null, post('notes'), post('is_active') ? 1 : 0];
-    if (!$data[0] || !$data[1]) { flash('Party અને Site name જરૂરી છે.', 'error'); redirect('sites.php?action=' . ($id ? "edit&id=$id" : 'new')); }
+    if (!$data[0] || !$data[1]) { flash('Party and Site name are required.', 'error'); redirect('sites.php?action=' . ($id ? "edit&id=$id" : 'new')); }
     if ($id) {
         // keep existing password if the field was left blank (edit form shows a placeholder, not the real value)
         if (post('dvr_password') === '') {
@@ -72,7 +72,7 @@ if ($action === 'new' || $action === 'edit') {
               <option value="<?= $p['id'] ?>" <?= ($s['party_id'] ?? $presetParty) == $p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?></option>
               <?php endforeach; ?>
             </select></div>
-          <div><label>Site name *</label><input type="text" name="name" value="<?= e($s['name'] ?? '') ?>" placeholder="દા.ત. Shop - Dwarka Main Road" required></div>
+          <div><label>Site name *</label><input type="text" name="name" value="<?= e($s['name'] ?? '') ?>" placeholder="e.g. Shop - Dwarka Main Road" required></div>
         </div>
         <div class="form-row cols-2">
           <div><label>Address</label><input type="text" name="address" value="<?= e($s['address'] ?? '') ?>"></div>
@@ -86,8 +86,8 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Username</label><input type="text" name="dvr_username" value="<?= e($s['dvr_username'] ?? '') ?>"></div>
         </div>
         <div class="form-row cols-3">
-          <div><label>Password <?= $s ? '(ખાલી છોડો = બદલવું નથી)' : '' ?></label><input type="password" name="dvr_password" autocomplete="new-password" placeholder="<?= $s ? '••••••••' : '' ?>"></div>
-          <div><label>Remote App (CMS/Cloud)</label><input type="text" name="remote_app" value="<?= e($s['remote_app'] ?? '') ?>" placeholder="દા.ત. V380, XMEYE, Hik-Connect"></div>
+          <div><label>Password <?= $s ? '(leave blank to keep unchanged)' : '' ?></label><input type="password" name="dvr_password" autocomplete="new-password" placeholder="<?= $s ? '••••••••' : '' ?>"></div>
+          <div><label>Remote App (CMS/Cloud)</label><input type="text" name="remote_app" value="<?= e($s['remote_app'] ?? '') ?>" placeholder="e.g. V380, XMEYE, Hik-Connect"></div>
           <div><label>Remote / Cloud ID</label><input type="text" name="remote_id" value="<?= e($s['remote_id'] ?? '') ?>"></div>
         </div>
         <div class="form-row cols-4">
@@ -116,7 +116,7 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="page-actions">
   <?php if (can('sites.add')): ?><a class="btn" href="sites.php?action=new<?= $partyFilter ? '&party_id=' . $partyFilter : '' ?>">+ New Site</a><?php endif; ?>
-  <?php if ($partyFilter): ?><a class="btn btn-outline" href="sites.php">બધા sites જુઓ</a><?php endif; ?>
+  <?php if ($partyFilter): ?><a class="btn btn-outline" href="sites.php">View all sites</a><?php endif; ?>
 </div>
 <div class="searchbox"><input type="text" id="sFilter" placeholder="🔍 Search sites/customer..."></div>
 <div class="table-wrap">
@@ -140,10 +140,10 @@ include __DIR__ . '/includes/header.php';
         <?php else: ?><span class="muted">-</span><?php endif; ?></td>
       <td style="white-space:nowrap">
         <?php if (can('sites.edit')): ?><a class="btn btn-sm btn-outline" href="sites.php?action=edit&id=<?= $s['id'] ?>">Edit</a><?php endif; ?>
-        <?php if (can('sites.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Site delete કરવી?')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $s['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
+        <?php if (can('sites.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Delete this site?')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $s['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
       </td>
     </tr>
-  <?php endforeach; if (!$sites): ?><tr><td colspan="7" class="muted">કોઈ site નથી. "+ New Site" દબાવીને CCTV/DVR site ઉમેરો.</td></tr><?php endif; ?>
+  <?php endforeach; if (!$sites): ?><tr><td colspan="7" class="muted">No sites yet. Press "+ New Site" to add a CCTV/DVR site.</td></tr><?php endif; ?>
   </tbody>
 </table>
 </div>
@@ -163,7 +163,7 @@ include __DIR__ . '/includes/header.php';
     fd.append('do', 'reveal');
     fd.append('id', id);
     fetch('sites.php', {method: 'POST', body: fd}).then(r => r.json()).then(function (d) {
-      box.innerHTML = '<code>' + (d.password ? d.password.replace(/[<>&]/g, '') : '(ખાલી)') + '</code> <a href="#" onclick="return false" class="muted">shown</a>';
+      box.innerHTML = '<code>' + (d.password ? d.password.replace(/[<>&]/g, '') : '(empty)') + '</code> <a href="#" onclick="return false" class="muted">shown</a>';
     });
   }
   window.revealPw = revealPw;

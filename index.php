@@ -66,11 +66,11 @@ include __DIR__ . '/includes/header.php';
 ?>
 <?php if ($canMoney): ?>
 <div class="duo-cards">
-  <a class="duo-card duo-get" href="payments.php?action=new&dir=in"><div class="duo-label">લેવાના (To Receive)</div><div class="duo-value">₹ <?= money($recv) ?></div></a>
-  <a class="duo-card duo-give" href="payments.php?action=new&dir=out"><div class="duo-label">દેવાના (To Pay)</div><div class="duo-value">₹ <?= money($paybl) ?></div></a>
+  <a class="duo-card duo-get" href="payments.php?action=new&dir=in"><div class="duo-label">To Receive</div><div class="duo-value">₹ <?= money($recv) ?></div></a>
+  <a class="duo-card duo-give" href="payments.php?action=new&dir=out"><div class="duo-label">To Pay</div><div class="duo-value">₹ <?= money($paybl) ?></div></a>
 </div>
 <?php if ($walkinDue > 0.009): ?>
-<p class="muted mt" style="margin-top:-6px;margin-bottom:14px">+ ₹<?= money($walkinDue) ?> walk-in bills માં બાકી (party વગર - Sale List માંથી સીધું collect કરો)</p>
+<p class="muted mt" style="margin-top:-6px;margin-bottom:14px">+ ₹<?= money($walkinDue) ?> due on walk-in bills (no party - collect directly from the Sale List)</p>
 <?php endif; ?>
 <?php endif; ?>
 
@@ -84,13 +84,13 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <?php if ($myHandovers): ?>
-<div class="flash flash-info">🤝 તમારા માટે <?= $myHandovers ?> stock handover pending છે. <a href="my_stock.php">OTP થી Accept કરો →</a></div>
+<div class="flash flash-info">🤝 You have <?= $myHandovers ?> stock handover(s) pending. <a href="my_stock.php">Accept with OTP →</a></div>
 <?php endif; ?>
 
 <?php if (can('sales.view')): ?>
 <div class="card">
-  <h2>📈 Sale Overview (છેલ્લા 6 મહિના)</h2>
-  <p class="muted">આ મહિને: <strong>₹<?= money($monthSales['t']) ?></strong> · આજે: <strong>₹<?= money($todaySales['t']) ?></strong> (<?= (int)$todaySales['c'] ?> bills)</p>
+  <h2>📈 Sale Overview (Last 6 Months)</h2>
+  <p class="muted">This month: <strong>₹<?= money($monthSales['t']) ?></strong> · Today: <strong>₹<?= money($todaySales['t']) ?></strong> (<?= (int)$todaySales['c'] ?> bills)</p>
   <div class="chart-wrap">
     <svg viewBox="0 0 600 220" preserveAspectRatio="xMidYMid meet">
       <?php
@@ -130,7 +130,7 @@ include __DIR__ . '/includes/header.php';
     <div class="stat"><div class="stat-label">No. of Items</div><div class="stat-value"><?= $invCard['items'] ?></div></div>
     <div class="stat <?= $invCard['low'] ? 's-bad' : '' ?>"><div class="stat-label">Low Stock Items</div><div class="stat-value"><?= $invCard['low'] ?></div></div>
   </div>
-  <p class="mt"><a href="reports.php?r=low">Low stock જુઓ →</a></p>
+  <p class="mt"><a href="reports.php?r=low">View low stock →</a></p>
 </div>
 <?php endif; ?>
 

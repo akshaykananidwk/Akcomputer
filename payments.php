@@ -119,7 +119,7 @@ if ($action === 'new') {
     $wDue = $dir === 'in' ? walkin_due() : 0;
     $pms = active_payment_methods();
     $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
-    $page_title = $dir === 'in' ? 'Payment-In (વસૂલી)' : 'Payment-Out (ચુકવણી)';
+    $page_title = $dir === 'in' ? 'Payment-In' : 'Payment-Out';
     include __DIR__ . '/includes/header.php';
     ?>
     <form method="post">
@@ -128,20 +128,20 @@ if ($action === 'new') {
       <input type="hidden" name="direction" value="<?= $dir ?>">
       <div class="card">
         <?php if ($pendingCount === 0): ?>
-        <div class="flash flash-info">ℹ️ કોઈ party <?= $dir === 'in' ? 'લેવાના' : 'દેવાના' ?> બાકી નથી — છતાં નીચેથી ગમે તે party પસંદ કરી <strong>advance payment</strong> નોંધી શકો છો.</div>
+        <div class="flash flash-info">ℹ️ No party has anything <?= $dir === 'in' ? 'receivable' : 'payable' ?> right now — but you can still pick any party below and record an <strong>advance payment</strong>.</div>
         <?php endif; ?>
         <?php if ($wDue > 0.009): ?>
-        <div class="flash flash-info">ℹ️ Walk-in (party વગરના) bills માં ₹<?= money($wDue) ?> બાકી છે — એ અહીં નહીં, સીધું એ bill ખોલીને collect કરો (Sale List માંથી).</div>
+        <div class="flash flash-info">ℹ️ Walk-in (no party) bills have ₹<?= money($wDue) ?> due — collect that directly from the bill itself (via Sale List), not here.</div>
         <?php endif; ?>
         <div class="form-row cols-3">
           <div><label><?= $dir === 'in' ? 'Customer / Party *' : 'Supplier / Party *' ?></label>
             <select name="party_id" id="party_id" required>
               <option value="">-- select party --</option>
-              <?php if ($pendingCount): ?><optgroup label="<?= $dir === 'in' ? 'લેવાના બાકી' : 'દેવાના બાકી' ?>"><?php endif; ?>
+              <?php if ($pendingCount): ?><optgroup label="<?= $dir === 'in' ? 'Receivable' : 'Payable' ?>"><?php endif; ?>
               <?php $inGroup = true; foreach ($parties as $p):
                 $pending = $dir === 'in' ? $p['balance'] > 0.009 : $p['balance'] < -0.009;
-                if ($inGroup && $pendingCount && !$pending) { echo '</optgroup><optgroup label="બીજી બધી parties">'; $inGroup = false; } ?>
-              <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?><?= abs($p['balance']) > 0.009 ? ' (₹' . money(abs($p['balance'])) . ($p['balance'] > 0 ? ' લેવાના' : ' દેવાના') . ')' : '' ?></option>
+                if ($inGroup && $pendingCount && !$pending) { echo '</optgroup><optgroup label="All other parties">'; $inGroup = false; } ?>
+              <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?><?= abs($p['balance']) > 0.009 ? ' (₹' . money(abs($p['balance'])) . ($p['balance'] > 0 ? ' receivable' : ' payable') . ')' : '' ?></option>
               <?php endforeach; ?>
               <?php if ($pendingCount): ?></optgroup><?php endif; ?>
             </select>
@@ -161,14 +161,14 @@ if ($action === 'new') {
           <div><label>Notes</label><input type="text" name="notes"></div>
         </div>
         <?php if ($dir === 'in'): ?>
-        <label class="check-inline"><input type="checkbox" name="send_wa" value="1" checked> Party ને WhatsApp receipt મોકલવી</label>
+        <label class="check-inline"><input type="checkbox" name="send_wa" value="1" checked> Send WhatsApp receipt to party</label>
         <?php endif; ?>
       </div>
 
       <div class="card">
-        <h3>🔗 Bill સાથે link કરો (optional)</h3>
-        <p class="muted mb">Party select કરો એટલે એના બાકી bills દેખાશે. "Auto" દબાવો તો જૂનામાં જૂના bill થી આપોઆપ વહેંચાઈ જશે. Link ના કરો તો પણ payment ledger માં જમા થશે જ.</p>
-        <div id="billList" class="muted">પહેલા party select કરો.</div>
+        <h3>🔗 Link to a Bill (optional)</h3>
+        <p class="muted mb">Select a party to see their due bills. Press "Auto" to allocate automatically starting from the oldest bill. Even without linking, the payment still gets recorded in the ledger.</p>
+        <div id="billList" class="muted">Select a party first.</div>
         <button type="button" class="btn btn-sm btn-outline mt" id="autoAlloc" style="display:none">⚡ Auto-link (oldest first)</button>
       </div>
       <button class="btn btn-block <?= $dir === 'in' ? 'btn-success' : '' ?>" type="submit">💾 Save <?= $dir === 'in' ? 'Payment-In' : 'Payment-Out' ?></button>
@@ -185,15 +185,15 @@ if ($action === 'new') {
       var box = document.getElementById('billList');
       document.getElementById('balInfo').textContent = '';
       document.getElementById('autoAlloc').style.display = 'none';
-      if (!pid) { box.textContent = 'પહેલા party select કરો.'; return; }
+      if (!pid) { box.textContent = 'Select a party first.'; return; }
       fetch('ajax.php?a=party_bills&dir=' + DIR + '&party_id=' + pid)
         .then(function (r) { return r.json(); })
         .then(function (d) {
           var b = d.balance;
           document.getElementById('balInfo').innerHTML = 'Party Balance: <strong style="color:' +
             (b > 0 ? 'var(--ok)' : (b < 0 ? 'var(--bad)' : 'inherit')) + '">₹' +
-            Math.abs(b).toFixed(2) + (b > 0 ? ' લેવાના' : (b < 0 ? ' દેવાના' : '')) + '</strong>';
-          if (!d.bills.length) { box.innerHTML = '<span class="muted">કોઈ બાકી bill નથી - payment ખાલી ledger માં જમા થશે.</span>'; return; }
+            Math.abs(b).toFixed(2) + (b > 0 ? ' receivable' : (b < 0 ? ' payable' : '')) + '</strong>';
+          if (!d.bills.length) { box.innerHTML = '<span class="muted">No due bills - the payment will just be recorded in the ledger.</span>'; return; }
           var h = '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>Bill</th><th>Date</th><th class="num">Due ₹</th><th style="width:130px">Link ₹</th></tr></thead><tbody>';
           d.bills.forEach(function (bl) {
             h += '<tr><td>' + bl.no + '<input type="hidden" name="alloc_id[]" value="' + bl.id + '"></td>' +
@@ -236,13 +236,13 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="page-actions">
   <?php if (can('payments.add')): ?>
-  <a class="btn btn-success" href="payments.php?action=new&dir=in">⬇ Payment-In (વસૂલી)</a>
-  <a class="btn btn-danger" href="payments.php?action=new&dir=out">⬆ Payment-Out (ચુકવણી)</a>
+  <a class="btn btn-success" href="payments.php?action=new&dir=in">⬇ Payment-In</a>
+  <a class="btn btn-danger" href="payments.php?action=new&dir=out">⬆ Payment-Out</a>
   <?php endif; ?>
 </div>
 
 <div class="card">
-  <h2>💰 Receivables (લેવાના)</h2>
+  <h2>💰 Receivables</h2>
   <div class="table-wrap" style="box-shadow:none">
   <table>
     <thead><tr><th>Invoice</th><th>Customer</th><th class="num">Due ₹</th><th>Due date</th><th></th></tr></thead>
@@ -268,7 +268,7 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <div class="card">
-  <h2>📤 Payables (દેવાના)</h2>
+  <h2>📤 Payables</h2>
   <div class="table-wrap" style="box-shadow:none">
   <table>
     <thead><tr><th>Bill</th><th>Supplier</th><th class="num">Due ₹</th><th>Due date</th><th></th></tr></thead>

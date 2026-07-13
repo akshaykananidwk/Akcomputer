@@ -64,7 +64,7 @@ $filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchas
   <?php if ($r === 'bank_ledger'): ?>
   <div><label>Bank Account</label>
     <select name="bank_id" onchange="document.getElementById('reportFilterForm').submit()">
-      <?php if (!$banksAll): ?><option value="0">-- કોઈ bank account નથી --</option><?php endif; ?>
+      <?php if (!$banksAll): ?><option value="0">-- No bank account --</option><?php endif; ?>
       <?php foreach ($banksAll as $b): ?>
       <option value="<?= $b['id'] ?>" <?= $bankId == $b['id'] ? 'selected' : '' ?>><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option>
       <?php endforeach; ?>

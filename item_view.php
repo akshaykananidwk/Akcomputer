@@ -99,7 +99,7 @@ include __DIR__ . '/includes/header.php';
     <div class="stat-label">Stock Quantity <?= $item['min_stock'] > 0 && $totalQty < $item['min_stock'] ? '<span class="badge badge-bad">LOW</span>' : '' ?></div>
     <div class="stat-value"><?= $totalQty ?> <?= e($item['unit']) ?></div>
   </div>
-  <div class="stat s-ok"><div class="stat-label">Stock Value (purchase ભાવે)</div><div class="stat-value">₹<?= money($stockValue) ?></div></div>
+  <div class="stat s-ok"><div class="stat-label">Stock Value (at purchase price)</div><div class="stat-value">₹<?= money($stockValue) ?></div></div>
   <?php endif; ?>
 </div>
 
@@ -134,7 +134,7 @@ include __DIR__ . '/includes/header.php';
       <td class="num"><?= $le['price'] !== null ? '₹' . money($le['price']) : '-' ?></td>
       <td><?= $le['status'] ? status_badge($le['status']) : '-' ?></td>
     </tr>
-    <?php endforeach; if (!$ledger): ?><tr><td colspan="7" class="muted">કોઈ transaction નથી.</td></tr><?php endif; ?>
+    <?php endforeach; if (!$ledger): ?><tr><td colspan="7" class="muted">No transactions.</td></tr><?php endif; ?>
     </tbody>
   </table>
   </div>

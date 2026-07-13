@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
             foreach ($ritems as $ri) {
                 $item = row('SELECT name FROM items WHERE id = ?', [$ri['item_id']]);
                 if (stock_qty($ri['item_id'], $ret['location_id']) + (float)$ri['qty'] < 0) {
-                    flash("Delete કરવાથી {$item['name']} નો stock negative થાય છે, અટકાવ્યું.", 'error');
+                    flash("Deleting would make {$item['name']}'s stock negative, so it was blocked.", 'error');
                     redirect('purchase_return.php');
                 }
             }
@@ -116,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         q('DELETE FROM purchase_returns WHERE id = ?', [$rid]);
         $pdo->commit();
         log_activity('purchase_return_delete', $ret['return_no']);
-        flash('Return ' . $ret['return_no'] . ' deleted, stock reversed. (Serial number status manually ચકાસી લેજો.)');
+        flash('Return ' . $ret['return_no'] . ' deleted, stock reversed. (Please manually verify serial number status.)');
     }
     redirect('purchase_return.php');
 }
@@ -135,7 +135,7 @@ include __DIR__ . '/includes/header.php';
     <tr><td><strong><?= e($r['return_no']) ?></strong></td><td><?= dmy($r['return_date']) ?></td>
     <td><?= e($r['party_name']) ?></td><td class="num">₹<?= money($r['total']) ?></td><td><?= e($r['notes']) ?></td>
     <td><?php if (can('purchase_return.delete')): ?>
-      <form method="post" onsubmit="return confirm('Return delete કરવો? Stock પાછો adjust થશે.')"><?= csrf_field() ?>
+      <form method="post" onsubmit="return confirm('Delete this return? Stock will be adjusted back.')"><?= csrf_field() ?>
       <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $r['id'] ?>">
       <button class="btn btn-sm btn-danger" type="submit">✕</button></form>
     <?php endif; ?></td></tr>

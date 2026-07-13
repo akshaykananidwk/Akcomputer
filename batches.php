@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $id = (int)post('id');
     $data = [(int)post('item_id'), (int)post('location_id') ?: $u['location_id'], post('batch_no'),
               post('expiry_date') ?: null, (float)post('qty'), post('notes')];
-    if (!$data[0]) { flash('Item જરૂરી છે.', 'error'); redirect('batches.php?action=' . ($id ? "edit&id=$id" : 'new')); }
+    if (!$data[0]) { flash('Item is required.', 'error'); redirect('batches.php?action=' . ($id ? "edit&id=$id" : 'new')); }
     if ($id) {
         q('UPDATE item_batches SET item_id=?, location_id=?, batch_no=?, expiry_date=?, qty=?, notes=? WHERE id=?', array_merge($data, [$id]));
         flash('Batch updated.');
@@ -105,10 +105,10 @@ include __DIR__ . '/includes/header.php';
       </td>
       <td style="white-space:nowrap">
         <?php if (can('batches.edit')): ?><a class="btn btn-sm btn-outline" href="batches.php?action=edit&id=<?= $b['id'] ?>">Edit</a><?php endif; ?>
-        <?php if (can('batches.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Batch delete કરવો?')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $b['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
+        <?php if (can('batches.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Delete this batch?')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $b['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
       </td>
     </tr>
-  <?php endforeach; if (!$batches): ?><tr><td colspan="6" class="muted">કોઈ batch નથી. "+ New Batch" દબાવીને શરૂ કરો.</td></tr><?php endif; ?>
+  <?php endforeach; if (!$batches): ?><tr><td colspan="6" class="muted">No batches yet. Press "+ New Batch" to get started.</td></tr><?php endif; ?>
   </tbody>
 </table>
 </div>

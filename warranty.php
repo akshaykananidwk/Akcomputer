@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                   [$old['item_id'], $repl, $old['status'] === 'sold' || $old['status'] === 'claim' ? 'sold' : 'in_stock',
                    $old['purchase_id'], $old['sale_id'], $old['warranty_months'], $old['warranty_expiry']]);
                 q("UPDATE item_serials SET status = 'replaced' WHERE id = ?", [$old['id']]);
-                flash("Replacement serial $repl database માં ઉમેરાયો (જૂનો $origSn 'replaced' થયો).", 'info');
+                flash("Replacement serial $repl added to the database (old $origSn marked 'replaced').", 'info');
             }
         }
 
@@ -216,7 +216,7 @@ include __DIR__ . '/includes/header.php';
       <td style="white-space:nowrap">
         <?php if (can('warranty.edit')): ?><a class="btn btn-sm btn-outline" href="warranty.php?action=edit&id=<?= $c['id'] ?>">Open</a><?php endif; ?>
         <?php if (can('warranty.delete')): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('Claim delete કરવો?')">
+        <form method="post" style="display:inline" onsubmit="return confirm('Delete this claim?')">
           <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $c['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit">✕</button>
         </form>

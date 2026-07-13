@@ -96,13 +96,13 @@ $page_title = 'Database Update';
 include __DIR__ . '/../includes/header.php';
 ?>
 <div class="card">
-  <h2><?= $result['totals']['failed'] ? '⚠️ થોડું ધ્યાન આપવા જેવું' : '✅ Database Update થઈ ગયું' ?></h2>
-  <p class="muted mb">આ link ખોલો એટલે આપોઆપ ડેટાબેસ update થઈ જાય — કંઈ ક્લિક કરવાની જરૂર નથી. જૂનો ડેટા (bills, parties, stock — બધું) જેમનું તેમ રહે છે, ફક્ત code ને જોઈતા નવા tables/columns જ ઉમેરાય છે. Server પર files upload કર્યા પછી આ link ફરી ખોલી લેવાની — ગમે એટલી વાર ખોલવામાં કંઈ નુકસાન નથી.</p>
+  <h2><?= $result['totals']['failed'] ? '⚠️ A few things need attention' : '✅ Database Update Done' ?></h2>
+  <p class="muted mb">Opening this link auto-updates the database — nothing to click. Old data (bills, parties, stock — everything) stays exactly as it is; only whatever new tables/columns the code needs get added. Re-open this link after uploading files to the server — opening it any number of times causes no harm.</p>
   <p class="muted mb">Last run: <?= e(setting('db_last_migrated')) ?></p>
-  <p class="mb"><?= $opcacheCleared ? '✅ PHP code cache પણ ક્લિયર કરી દીધું - server હવે તરત જ નવી files વાપરશે.' : '<span class="muted">PHP code cache (OPcache) આ server પર enabled નથી - files upload કરો કે તરત જ effect થાય છે, અહીં કંઈ કરવાની જરૂર નથી.</span>' ?></p>
+  <p class="mb"><?= $opcacheCleared ? '✅ Also cleared the PHP code cache - the server will use the new files immediately.' : '<span class="muted">PHP code cache (OPcache) is not enabled on this server - uploaded files take effect immediately, nothing needed here.</span>' ?></p>
   <div class="grid-stats" style="margin-bottom:0">
-    <div class="stat s-ok"><div class="stat-label">લાગુ થયું</div><div class="stat-value"><?= $result['totals']['applied'] ?></div></div>
-    <div class="stat"><div class="stat-label">પહેલેથી હતું</div><div class="stat-value"><?= $result['totals']['already'] ?></div></div>
+    <div class="stat s-ok"><div class="stat-label">Applied</div><div class="stat-value"><?= $result['totals']['applied'] ?></div></div>
+    <div class="stat"><div class="stat-label">Already existed</div><div class="stat-value"><?= $result['totals']['already'] ?></div></div>
     <div class="stat <?= $result['totals']['failed'] ? 's-bad' : '' ?>"><div class="stat-label">Failed</div><div class="stat-value"><?= $result['totals']['failed'] ?></div></div>
   </div>
   <?php if ($result['log']): ?>
@@ -113,25 +113,25 @@ include __DIR__ . '/../includes/header.php';
     <?php endforeach; ?></tbody>
   </table>
   <?php endif; ?>
-  <a class="btn btn-outline mt" href="<?= e($_SERVER['REQUEST_URI']) ?>">🔄 ફરી ચેક કરો</a>
+  <a class="btn btn-outline mt" href="<?= e($_SERVER['REQUEST_URI']) ?>">🔄 Check Again</a>
 </div>
 
 <div class="card">
   <h2><?= $allOk ? '✅' : '⚠️' ?> Schema Status (live check)</h2>
-  <p class="muted mb">આ list જોઈને ખબર પડે કે server ના database માં ખરેખર શું છે અત્યારે.</p>
+  <p class="muted mb">This list shows what's actually in the server's database right now.</p>
   <table class="table-sm">
     <?php foreach ($status as $label => $ok): ?>
-    <tr><td><?= e($label) ?></td><td class="right"><?= $ok ? '<span class="badge badge-ok">✓ છે</span>' : '<span class="badge badge-bad">✗ ખૂટે છે</span>' ?></td></tr>
+    <tr><td><?= e($label) ?></td><td class="right"><?= $ok ? '<span class="badge badge-ok">✓ present</span>' : '<span class="badge badge-bad">✗ missing</span>' ?></td></tr>
     <?php endforeach; ?>
   </table>
-  <?php if (!$allOk): ?><p class="flash flash-error mt">આ page હમણાં જ auto-update run કરી ચૂક્યું છે છતાં ઉપર કંઈ ✗ ખૂટે છે દેખાય છે — ઉપર "Failed" table માં error જુઓ, અથવા "🔄 ફરી ચેક કરો" દબાવો.</p><?php endif; ?>
+  <?php if (!$allOk): ?><p class="flash flash-error mt">This page just ran the auto-update, yet something ✗ missing shows above — check the "Failed" table above, or press "🔄 Check Again".</p><?php endif; ?>
 </div>
 
 <div class="card">
-  <h2><?= $selfTestOk ? '✅' : '🚨' ?> Code Self-Test (server ખરેખર નવો code વાપરે છે કે નહીં)</h2>
-  <p class="muted mb">આ ટેસ્ટ સાબિત કરે છે કે server આ folder ની આજની files જ ચલાવે છે, જૂનો cached code નહીં. "Amount in words" ની ફરિયાદ વારંવાર આવે છે છતાં code માં ભૂલ મળતી નથી - જો નીચે ❌ FAIL દેખાય, તો ખાતરી થઈ જશે કે server જૂનો code ચલાવે છે (files ફરી upload કરો + hosting support ને "OPcache/PHP cache restart" કરવા કહો). જો બધે ✅ PASS હોય, તો code સાચો જ છે.</p>
+  <h2><?= $selfTestOk ? '✅' : '🚨' ?> Code Self-Test (is the server actually running the new code?)</h2>
+  <p class="muted mb">This test proves whether the server is running this folder's current files, not old cached code. The "Amount in words" complaint keeps coming back even though no bug is found in the code - if ❌ FAIL shows below, that confirms the server is running old code (re-upload the files + ask hosting support to "restart OPcache/PHP cache"). If everything shows ✅ PASS, the code is correct.</p>
   <table class="table-sm">
-    <thead><tr><th>Test</th><th>Server એ ગણેલું</th><th>સાચું હોવું જોઈએ</th><th></th></tr></thead>
+    <thead><tr><th>Test</th><th>Server computed</th><th>Should be</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($selfTests as $t): $pass = $t['got'] === $t['want']; ?>
     <tr>
@@ -144,9 +144,9 @@ include __DIR__ . '/../includes/header.php';
     </tbody>
   </table>
   <?php if (!$selfTestOk): ?>
-  <p class="flash flash-error mt">🚨 Server જૂનો code ચલાવે છે! Files ફરી upload કરો, ને hosting company ને પૂછો કે PHP OPcache/cache restart કરી શકે કે નહીં.</p>
+  <p class="flash flash-error mt">🚨 The server is running old code! Re-upload the files, and ask the hosting company whether they can restart PHP OPcache/cache.</p>
   <?php else: ?>
-  <p class="flash flash-success mt">✅ Server આજની files જ વાપરે છે. હજુ "Amount in words" ખોટું દેખાય તો, એ ચોક્કસ invoice નંબર મોકલો જેથી ડેટા સાથે ચેક કરી શકાય.</p>
+  <p class="flash flash-success mt">✅ The server is using today's files. If "Amount in words" still looks wrong, send the exact invoice number so it can be checked against the data.</p>
   <?php endif; ?>
 </div>
 <?php include __DIR__ . '/../includes/footer.php'; ?>

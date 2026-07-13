@@ -8,7 +8,7 @@ $action = get('action', 'pick');
 if ($action === 'print') {
     $qtys = post('qty', []);
     $ids = array_keys(array_filter($qtys, fn($q) => (int)$q > 0));
-    if (!$ids) { flash('ઓછામાં ઓછો એક item ને qty આપો.', 'error'); redirect('barcode_labels.php'); }
+    if (!$ids) { flash('Give a qty to at least one item.', 'error'); redirect('barcode_labels.php'); }
     $items = all('SELECT * FROM items WHERE id IN (' . implode(',', array_map('intval', $ids)) . ')');
     $byId = [];
     foreach ($items as $it) $byId[$it['id']] = $it;
@@ -68,7 +68,7 @@ include __DIR__ . '/includes/header.php';
         <td class="num">₹<?= money($it['selling_price']) ?></td>
         <td class="num"><input type="number" min="0" step="1" name="qty[<?= $it['id'] ?>]" value="0" style="width:80px"></td>
       </tr>
-    <?php endforeach; if (!$items): ?><tr><td colspan="4" class="muted">કોઈ item ના મળ્યો.</td></tr><?php endif; ?>
+    <?php endforeach; if (!$items): ?><tr><td colspan="4" class="muted">No item found.</td></tr><?php endif; ?>
     </tbody>
   </table>
   </div>

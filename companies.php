@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     $cid = (int)post('id');
     $activeCount = (int)val('SELECT COUNT(*) FROM companies WHERE is_active = 1');
     if ($activeCount <= 1) {
-        flash('છેલ્લી active firm ને deactivate ના કરી શકાય - bill બનાવવા ઓછામાં ઓછી એક જોઈએ.', 'error');
+        flash('Cannot deactivate the last active firm - at least one is needed to create bills.', 'error');
         redirect('companies.php');
     }
     // sales/purchases already reference this firm - deactivate (not hard
@@ -52,7 +52,7 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="card">
   <h2><?= $co ? 'Edit Firm' : 'Add Firm' ?></h2>
-  <p class="muted mb">બે firm રાખી શકો — એક GST વાળી, એક વગરની. Bill બનાવતી વખતે firm select થાય અને invoice series અલગ ચાલે.</p>
+  <p class="muted mb">You can keep two firms — one with GST, one without. The firm is selected while creating a bill and each runs its own invoice series.</p>
   <form method="post" enctype="multipart/form-data">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save">
@@ -69,7 +69,7 @@ include __DIR__ . '/includes/header.php';
     </div>
     <div class="field"><label>Invoice footer terms</label><textarea name="terms" rows="2" placeholder="Goods once sold..."><?= e($co['terms'] ?? '') ?></textarea></div>
     <div class="form-row cols-2">
-      <div><label>Logo (invoice પર દેખાશે)</label><input type="file" name="logo" accept="image/*"></div>
+      <div><label>Logo (shown on invoice)</label><input type="file" name="logo" accept="image/*"></div>
       <?php if (!empty($co['logo'])): ?><div><img src="<?= e($co['logo']) ?>" alt="logo" style="max-height:60px"></div><?php endif; ?>
     </div>
     <div class="form-row cols-2">
@@ -92,7 +92,7 @@ include __DIR__ . '/includes/header.php';
       <td style="white-space:nowrap">
         <?php if (can('companies.edit')): ?><a class="btn btn-sm btn-outline" href="companies.php?id=<?= $c['id'] ?>">Edit</a><?php endif; ?>
         <?php if (can('companies.delete') && $c['is_active']): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('Firm deactivate કરવી?')">
+        <form method="post" style="display:inline" onsubmit="return confirm('Deactivate this firm?')">
           <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $c['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit">✕</button>
         </form>

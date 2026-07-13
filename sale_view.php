@@ -54,7 +54,7 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
         // Include the exact image URL that was sent to the gateway - lets
         // you paste it straight into a browser (or the bulk.akdwk.in test
         // link) to check whether it's actually reachable from outside.
-        flash('WhatsApp send failed' . ($mobile ? '' : ' - mobile number ખૂટે છે') . '. ' . whatsapp_last_error() . ' | Image URL: ' . $imgUrl, 'error');
+        flash('WhatsApp send failed' . ($mobile ? '' : ' - missing mobile number') . '. ' . whatsapp_last_error() . ' | Image URL: ' . $imgUrl, 'error');
     }
     redirect('sale_view.php?id=' . $id);
 }
@@ -64,9 +64,9 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'paylink
     $due = $sale['total'] - $sale['paid'];
     $link = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no']) : null;
     if ($link) {
-        flash('Payment Link: ' . $link . ' (copy કરી લો)');
+        flash('Payment Link: ' . $link . ' (copy it)');
     } else {
-        flash('Link બની ના શકી - Settings માં Razorpay Key ID/Secret ચકાસો, અથવા bill પૂરું ભરાઈ ગયું છે.', 'error');
+        flash('Could not create the link - check the Razorpay Key ID/Secret in Settings, or the bill is already fully paid.', 'error');
     }
     redirect('sale_view.php?id=' . $id);
 }
@@ -82,8 +82,8 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'review'
             'shop' => $sale['company_name'], 'customer' => $sale['customer_name'] ?: 'Customer', 'link' => $reviewLink,
         ]);
         $ok = send_whatsapp($mob, $msg);
-        flash($ok ? '⭐ Review link WhatsApp પર મોકલ્યો.' : ('WhatsApp send failed. ' . whatsapp_last_error()), $ok ? 'success' : 'error');
-    } else { flash('Google Review Link (Settings) અથવા mobile number ખૂટે છે.', 'error'); }
+        flash($ok ? '⭐ Review link sent on WhatsApp.' : ('WhatsApp send failed. ' . whatsapp_last_error()), $ok ? 'success' : 'error');
+    } else { flash('Missing the Google Review Link (Settings) or mobile number.', 'error'); }
     redirect('sale_view.php?id=' . $id);
 }
 
@@ -106,7 +106,7 @@ $page_title = 'Invoice ' . $sale['invoice_no'];
 include __DIR__ . '/includes/header.php';
 $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
 ?>
-<?php if ($sale['is_cancelled']): ?><div class="flash flash-error">🚫 આ INVOICE CANCELLED છે.</div><?php endif; ?>
+<?php if ($sale['is_cancelled']): ?><div class="flash flash-error">🚫 This INVOICE is CANCELLED.</div><?php endif; ?>
 <?php if (!$public): ?>
 <div class="page-actions no-print">
   <button class="btn" onclick="window.print()">🖨️ Print</button>
@@ -131,12 +131,12 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
   <?php endif; ?>
   <?php if (can('sales.delete')): ?>
   <?php if (!$sale['is_cancelled']): ?>
-  <form method="post" action="sales.php" onsubmit="return confirm('Invoice CANCEL કરવું? (Record રહેશે, stock પાછો આવશે)')" style="display:inline">
+  <form method="post" action="sales.php" onsubmit="return confirm('Cancel this invoice? (Record stays, stock is restored)')" style="display:inline">
     <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="mode" value="cancel"><input type="hidden" name="id" value="<?= $id ?>">
     <button class="btn btn-muted" type="submit">🚫 Cancel Invoice</button>
   </form>
   <?php endif; ?>
-  <form method="post" action="sales.php" onsubmit="return confirm('પૂરેપૂરું DELETE કરવું? Record પણ જતો રહેશે!')" style="display:inline">
+  <form method="post" action="sales.php" onsubmit="return confirm('DELETE completely? The record will be gone too!')" style="display:inline">
     <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="mode" value="delete"><input type="hidden" name="id" value="<?= $id ?>">
     <button class="btn btn-danger" type="submit">Delete</button>
   </form>

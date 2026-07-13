@@ -187,7 +187,7 @@ if ($action === 'view') {
           <?php endforeach; ?>
         <?php else: ?><p class="muted">Staff holds no stock (material usage will be empty).</p><?php endif; ?>
         <div class="field mt">
-          <label>Customer Signature (કામ પૂરું થયાની પુષ્ટિ)</label>
+          <label>Customer Signature (confirms job completion)</label>
           <canvas id="sigPad" width="600" height="180" style="width:100%;max-width:600px;height:180px;border:1.5px dashed var(--border);border-radius:8px;touch-action:none;background:#fff"></canvas>
           <input type="hidden" name="signature" id="sigInput">
           <button type="button" id="sigClear" class="btn btn-sm btn-outline mt">Clear Signature</button>

@@ -51,7 +51,7 @@ include __DIR__ . '/includes/header.php';
 
 <div class="card">
   <h2>🏦 Bank Accounts <a class="btn btn-sm btn-outline" style="float:right" href="bank_accounts.php">Manage →</a></h2>
-  <?php if (!$banks): ?><p class="muted">હજી કોઈ bank account ઉમેર્યું નથી. <a href="bank_accounts.php">+ Add Bank Account</a></p><?php else: ?>
+  <?php if (!$banks): ?><p class="muted">No bank account added yet. <a href="bank_accounts.php">+ Add Bank Account</a></p><?php else: ?>
   <table class="table-sm">
     <?php foreach ($banks as $b): ?>
     <tr><td><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?><?= $b['is_default'] ? ' <span class="badge badge-ok">DEFAULT</span>' : '' ?></td>
@@ -73,7 +73,7 @@ include __DIR__ . '/includes/header.php';
       <td class="num">₹<?= money($c['amount']) ?></td>
       <td><?= e($c['notes']) ?></td>
     </tr>
-    <?php endforeach; if (!$recentCash): ?><tr><td colspan="5" class="muted">કોઈ cash entry નથી.</td></tr><?php endif; ?></tbody>
+    <?php endforeach; if (!$recentCash): ?><tr><td colspan="5" class="muted">No cash entries.</td></tr><?php endif; ?></tbody>
   </table>
   <p class="mt"><a href="reports.php?r=cashbook">Full Cashbook Report →</a></p>
 </div>

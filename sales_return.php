@@ -79,7 +79,7 @@ if ($action === 'new') {
         <h3>Returned items</h3>
         <div class="bill-items" id="billItems"></div>
         <button type="button" class="btn btn-outline btn-sm" id="addRowBtn">+ Add item</button>
-        <p class="muted mt">Serial-tracked item પાછી આવે તો serial number "Notes" માં લખો — warranty page પરથી serial status handle થાય છે.</p>
+        <p class="muted mt">If a serial-tracked item is returned, write the serial number in "Notes" — serial status is handled from the warranty page.</p>
       </div>
       <div class="card">
         <div class="bill-totals">
@@ -106,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
             foreach (explode(',', $ri['serials']) as $sn) {
                 $srow = row('SELECT status FROM item_serials WHERE item_id = ? AND serial_no = ?', [$ri['item_id'], trim($sn)]);
                 if ($srow && $srow['status'] !== 'in_stock') {
-                    flash('આ return ના serial ' . trim($sn) . ' પર પછીથી કંઈ થઈ ગયું છે, એટલે delete કરી શકાય એમ નથી.', 'error');
+                    flash('Something has happened to serial ' . trim($sn) . ' on this return since, so it cannot be deleted.', 'error');
                     redirect('sales_return.php');
                 }
             }
@@ -146,7 +146,7 @@ include __DIR__ . '/includes/header.php';
     <td><?= e($r['customer_name']) ?></td><td class="num">₹<?= money($r['total']) ?></td>
     <td><?= e($r['refund_mode']) ?></td><td><?= e($r['staff_name']) ?></td>
     <td><?php if (can('sales_return.delete')): ?>
-      <form method="post" onsubmit="return confirm('Return delete કરવો? Stock પાછો adjust થશે.')"><?= csrf_field() ?>
+      <form method="post" onsubmit="return confirm('Delete this return? Stock will be adjusted back.')"><?= csrf_field() ?>
       <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $r['id'] ?>">
       <button class="btn btn-sm btn-danger" type="submit">✕</button></form>
     <?php endif; ?></td></tr>

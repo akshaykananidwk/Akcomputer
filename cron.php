@@ -15,7 +15,7 @@ if ($cronKey === '') {
 }
 if (!hash_equals($cronKey, (string)$key)) {
     http_response_code(403);
-    die("Invalid cron key. Settings page પરથી સાચી cron URL copy કરો.\n");
+    die("Invalid cron key. Copy the correct cron URL from the Settings page.\n");
 }
 
 // "today" is computed in PHP (Asia/Kolkata, per APP_TZ) rather than

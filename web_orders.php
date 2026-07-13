@@ -14,7 +14,7 @@ $orders = all('SELECT * FROM web_orders ORDER BY id DESC LIMIT 200');
 $page_title = 'Website Orders';
 include __DIR__ . '/includes/header.php';
 ?>
-<div class="list-count"><?= count($orders) ?> orders · <a href="catalog.php" target="_blank">🌐 Store જુઓ</a></div>
+<div class="list-count"><?= count($orders) ?> orders · <a href="catalog.php" target="_blank">🌐 View Store</a></div>
 <?php foreach ($orders as $o): $oi = json_decode($o['items_json'], true) ?: []; ?>
 <div class="card">
   <h3><?= e($o['order_no']) ?> <?= status_badge($o['status'] === 'new' ? 'pending' : ($o['status'] === 'completed' ? 'completed' : ($o['status'] === 'cancelled' ? 'cancelled' : 'in_progress'))) ?>
@@ -39,9 +39,9 @@ include __DIR__ . '/includes/header.php';
       <?php endforeach; ?>
     </select></div>
     <button class="btn btn-sm" type="submit">Update</button>
-    <?php if (can('sales.add')): ?><a class="btn btn-sm btn-success" href="sales.php?action=new">→ Bill બનાવો</a><?php endif; ?>
+    <?php if (can('sales.add')): ?><a class="btn btn-sm btn-success" href="sales.php?action=new">→ Create Bill</a><?php endif; ?>
   </form>
   <?php endif; ?>
 </div>
-<?php endforeach; if (!$orders): ?><div class="card"><p class="muted">હજી કોઈ website order નથી.</p></div><?php endif; ?>
+<?php endforeach; if (!$orders): ?><div class="card"><p class="muted">No website orders yet.</p></div><?php endif; ?>
 <?php include __DIR__ . '/includes/footer.php'; ?>

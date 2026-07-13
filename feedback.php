@@ -23,7 +23,7 @@ include __DIR__ . '/includes/header.php';
 <div class="card" style="max-width:480px;margin:20px auto">
   <?php if ($fb['submitted_at']): ?>
     <h2>🙏 Thank you!</h2>
-    <p class="muted">તમારો feedback મળી ગયો.</p>
+    <p class="muted">Your feedback has been received.</p>
     <p class="mt">Your rating: <?php for ($i = 1; $i <= 5; $i++): ?><?= $i <= $fb['rating'] ? '⭐' : '☆' ?><?php endfor; ?></p>
     <?php if ($fb['comment']): ?><p class="mt muted">"<?= e($fb['comment']) ?>"</p><?php endif; ?>
   <?php else: ?>

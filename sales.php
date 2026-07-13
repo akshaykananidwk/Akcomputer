@@ -194,7 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         if ($cancelOnly) {
             q('UPDATE sales SET is_cancelled = 1, paid = 0, status = ? WHERE id = ?', ['due', $sid]);
             log_activity('sale_cancel', $sale['invoice_no']);
-            flash('Invoice ' . $sale['invoice_no'] . ' CANCELLED - stock restored, record સચવાયો.');
+            flash('Invoice ' . $sale['invoice_no'] . ' CANCELLED - stock restored, record kept.');
         } else {
             q('DELETE FROM sale_items WHERE sale_id = ?', [$sid]);
             q('DELETE FROM sales WHERE id = ?', [$sid]);
@@ -216,7 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $sid = (int)post('id');
     $sale = row('SELECT * FROM sales WHERE id = ?', [$sid]);
     if (!$sale) { flash('Bill not found.', 'error'); redirect('sales.php'); }
-    if ($sale['is_cancelled']) { flash('Cancelled bill ને edit કરી શકાય નહીં.', 'error'); redirect('sale_view.php?id=' . $sid); }
+    if ($sale['is_cancelled']) { flash('A cancelled bill cannot be edited.', 'error'); redirect('sale_view.php?id=' . $sid); }
 
     $oldItems = all('SELECT * FROM sale_items WHERE sale_id = ?', [$sid]);
     foreach ($oldItems as $oi) {
@@ -224,7 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         foreach (explode(',', $oi['serials']) as $sn) {
             $srow = row('SELECT status FROM item_serials WHERE item_id = ? AND serial_no = ?', [$oi['item_id'], trim($sn)]);
             if ($srow && $srow['status'] !== 'sold') {
-                flash('આ bill ના serial ' . trim($sn) . ' પર warranty/return જેવું કંઈક થઈ ગયું છે, એટલે edit કરી શકાય નહીં. Cancel કરીને નવું બિલ બનાવો.', 'error');
+                flash('Serial ' . trim($sn) . ' on this bill has already gone through a warranty/return, so it cannot be edited. Cancel and create a new bill instead.', 'error');
                 redirect('sale_view.php?id=' . $sid);
             }
         }
@@ -355,7 +355,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
 
         $pdo->commit();
         log_activity('sale_edit', "{$sale['invoice_no']} total $total");
-        flash("Bill {$sale['invoice_no']} update થઈ ગયું.");
+        flash("Bill {$sale['invoice_no']} updated.");
         redirect('sale_view.php?id=' . $sid);
     } catch (Exception $ex) {
         $pdo->rollBack();
@@ -377,7 +377,7 @@ if ($action === 'new' || $action === 'edit') {
         $editSale = row('SELECT * FROM sales WHERE id = ?', [(int)get('id')]);
         if (!$editSale) die('Bill not found.');
         if (!can('sales.all') && $editSale['created_by'] != $u['id']) die('Access denied.');
-        if ($editSale['is_cancelled']) { flash('Cancelled bill ને edit કરી શકાય નહીં.', 'error'); redirect('sale_view.php?id=' . $editSale['id']); }
+        if ($editSale['is_cancelled']) { flash('A cancelled bill cannot be edited.', 'error'); redirect('sale_view.php?id=' . $editSale['id']); }
         $editItems = all('SELECT si.*, i.name, i.serial_tracked FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$editSale['id']]);
     }
     $parties = all("SELECT id, name, mobile, credit_days, loyalty_points FROM parties WHERE is_active = 1 ORDER BY name");
@@ -398,8 +398,8 @@ if ($action === 'new' || $action === 'edit') {
     $page_title = $isEdit ? 'Edit Bill ' . $editSale['invoice_no'] : 'New Bill';
     include __DIR__ . '/includes/header.php';
     ?>
-    <?php if ($est): ?><div class="flash flash-info">Converting <?= e($est['estimate_no']) ?> — serial-tracked items માટે serial ફરી select કરવા પડશે.</div><?php endif; ?>
-    <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serials'])): ?><div class="flash flash-info">Serial-tracked items ના serial numbers ફરી select કરવા પડશે.</div><?php endif; ?>
+    <?php if ($est): ?><div class="flash flash-info">Converting <?= e($est['estimate_no']) ?> — serial-tracked items will need their serial re-selected.</div><?php endif; ?>
+    <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serials'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers will need to be re-selected.</div><?php endif; ?>
     <form method="post" id="billForm">
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">
@@ -477,7 +477,7 @@ if ($action === 'new' || $action === 'edit') {
           <?php endif; ?>
           <?php if ($isEdit): ?>
           <div><label>Paid (₹)</label><input type="number" step="any" name="paid" id="paid" value="<?= money($editSale['paid']) ?>" max="<?= money($editSale['total']) ?>"></div>
-          <div><label>Payment mode <span class="muted" style="font-weight:normal">(જો paid amount બદલો તો)</span></label>
+          <div><label>Payment mode <span class="muted" style="font-weight:normal">(if you change the paid amount)</span></label>
             <select name="payment_mode">
               <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" <?= $pm['code'] === $editSale['payment_mode'] ? 'selected' : '' ?>><?= e($pm['name']) ?></option><?php endforeach; ?>
             </select></div>

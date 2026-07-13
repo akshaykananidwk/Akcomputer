@@ -160,7 +160,7 @@ include __DIR__ . '/includes/header.php';
       <td style="white-space:nowrap">
         <a class="btn btn-sm btn-outline" href="challans.php?action=view&id=<?= $c['id'] ?>">View</a>
         <?php if (can('challans.delete')): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('Challan delete કરવો?')">
+        <form method="post" style="display:inline" onsubmit="return confirm('Delete this challan?')">
           <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $c['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit">✕</button>
         </form>

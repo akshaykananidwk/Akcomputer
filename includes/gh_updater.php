@@ -27,7 +27,7 @@ function gh_save_settings($repo, $branch, $token) {
 }
 
 function gh_api_get($url, $token) {
-    if (!function_exists('curl_init')) return [null, 0, 'Server માં curl નથી.'];
+    if (!function_exists('curl_init')) return [null, 0, 'The server does not have curl.'];
     $ch = curl_init($url);
     $headers = ['User-Agent: AKComputer-Updater', 'Accept: application/vnd.github+json'];
     if ($token) $headers[] = 'Authorization: Bearer ' . $token;
@@ -45,16 +45,16 @@ function gh_api_get($url, $token) {
 /** Checks the latest commit on the configured branch vs the last one we applied. */
 function gh_check_update() {
     $cfg = gh_settings();
-    if (!$cfg['repo']) return ['ok' => false, 'error' => 'પહેલા GitHub repo (owner/repo) set કરો.'];
+    if (!$cfg['repo']) return ['ok' => false, 'error' => 'Set the GitHub repo (owner/repo) first.'];
     $url = 'https://api.github.com/repos/' . $cfg['repo'] . '/commits/' . rawurlencode($cfg['branch']);
     list($resp, $code, $err) = gh_api_get($url, $cfg['token']);
     if ($resp === null || $code !== 200) {
-        $reason = $code === 404 ? 'Repo/branch ના મળ્યા (નામ ચેક કરો; repo private હોય તો GitHub Token જોઈએ).'
-                : (($code === 401 || $code === 403) ? 'Access denied - Token ખોટો/ખૂટે છે.' : ('GitHub error (HTTP ' . $code . ') ' . $err));
+        $reason = $code === 404 ? 'Repo/branch not found (check the name; a private repo needs a GitHub Token).'
+                : (($code === 401 || $code === 403) ? 'Access denied - Token is wrong/missing.' : ('GitHub error (HTTP ' . $code . ') ' . $err));
         return ['ok' => false, 'error' => $reason];
     }
     $data = json_decode($resp, true);
-    if (!$data || empty($data['sha'])) return ['ok' => false, 'error' => 'GitHub response સમજાયો નહીં.'];
+    if (!$data || empty($data['sha'])) return ['ok' => false, 'error' => 'Could not understand the GitHub response.'];
     $sha = $data['sha'];
     $current = setting('gh_last_sha');
     return [
@@ -68,9 +68,9 @@ function gh_check_update() {
 
 /** Downloads + applies the given commit sha: overwrites app files, then re-runs DB migration. */
 function gh_apply_update($sha) {
-    if (!class_exists('ZipArchive')) return [false, 'Server માં PHP zip extension નથી - hosting ને enable કરવા કહો.'];
+    if (!class_exists('ZipArchive')) return [false, 'The server does not have the PHP zip extension - ask your hosting to enable it.'];
     $cfg = gh_settings();
-    if (!$cfg['repo'] || !$sha) return [false, 'Repo અથવા commit ખૂટે છે.'];
+    if (!$cfg['repo'] || !$sha) return [false, 'Missing the repo or commit.'];
 
     $url = 'https://api.github.com/repos/' . $cfg['repo'] . '/zipball/' . $sha;
     $headers = ['User-Agent: AKComputer-Updater', 'Accept: application/vnd.github+json'];
@@ -93,7 +93,7 @@ function gh_apply_update($sha) {
     }
 
     $zip = new ZipArchive();
-    if ($zip->open($tmpZip) !== true) { @unlink($tmpZip); return [false, 'ZIP ખૂલી નહીં.']; }
+    if ($zip->open($tmpZip) !== true) { @unlink($tmpZip); return [false, 'Could not open the ZIP.']; }
 
     // GitHub zipballs wrap everything in one top-level "owner-repo-sha/" folder.
     $prefix = '';
@@ -146,6 +146,6 @@ function gh_apply_update($sha) {
     file_put_contents($hist, json_encode($log, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
     log_activity('gh_update_applied', substr($sha, 0, 7) . " ($applied files)");
-    $dbMsg = $migration['totals']['failed'] ? (' — database માં ' . $migration['totals']['failed'] . ' error (history માં જુઓ)') : ' + database update';
-    return [true, 'Update ' . substr($sha, 0, 7) . ' લાગી ગયું — ' . $applied . ' files' . $dbMsg . '.'];
+    $dbMsg = $migration['totals']['failed'] ? (' — ' . $migration['totals']['failed'] . ' database error(s) (see history)') : ' + database update';
+    return [true, 'Update ' . substr($sha, 0, 7) . ' applied — ' . $applied . ' files' . $dbMsg . '.'];
 }

@@ -91,11 +91,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'import' && !empty($
     $ext = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
     $rows = $ext === 'xlsx' ? read_xlsx_rows($_FILES['file']['tmp_name']) : read_csv_rows($_FILES['file']['tmp_name']);
     if (!$rows || count($rows) < 2) {
-        flash($ext === 'xlsx' && !class_exists('ZipArchive') ? 'Server માં zip extension નથી - .csv વાપરો.' : 'File વંચાઈ નહીં અથવા ખાલી છે. Sample format જુઓ.', 'error');
+        flash($ext === 'xlsx' && !class_exists('ZipArchive') ? 'The server does not have the zip extension - use .csv instead.' : 'The file could not be read or is empty. See the sample format.', 'error');
     } else {
         $map = map_columns($rows[0]);
         if (!isset($map['name'])) {
-            flash('Header row માં "Name" column ન મળ્યો. Sample file જેવા headers રાખો.', 'error');
+            flash('No "Name" column found in the header row. Keep headers like the sample file.', 'error');
         } else {
             $loc_id = (int)post('location_id') ?: $u['location_id'];
             $added = 0; $updated = 0; $skipped = 0; $stocked = 0;
@@ -140,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'import' && !empty($
             }
             $pdo->commit();
             log_activity('items_import', "added=$added updated=$updated stock=$stocked");
-            flash("Import પૂરું: $added નવી items, $updated update, $stocked ને opening stock" . ($skipped ? ", $skipped ખાલી rows skip" : '') . '.');
+            flash("Import done: $added new items, $updated updated, $stocked with opening stock" . ($skipped ? ", $skipped blank rows skipped" : '') . '.');
             redirect('items.php');
         }
     }
@@ -151,32 +151,32 @@ $page_title = 'Import Items (Excel/CSV)';
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="card">
-  <h2>📥 Excel / CSV થી Items Import</h2>
+  <h2>📥 Import Items from Excel / CSV</h2>
   <p class="muted mb">
-    File ની પહેલી row માં headers જોઈએ: <code>Item Name, HSN, Unit, Purchase Price, Selling Price, B2B Price, GST %, Opening Stock, Barcode, Category, Margin %, Warranty Months</code><br>
-    (કોઈ column ઓછો હોય તો ચાલે — ખાલી Name ફરજિયાત. Item નું નામ પહેલેથી હોય તો ભાવ update થશે, બે વાર નહીં બને.)
+    The file's first row needs these headers: <code>Item Name, HSN, Unit, Purchase Price, Selling Price, B2B Price, GST %, Opening Stock, Barcode, Category, Margin %, Warranty Months</code><br>
+    (Missing a column is fine — only Name is required. If an item's name already exists, its prices get updated instead of creating a duplicate.)
   </p>
   <p class="mb"><a class="btn btn-outline btn-sm" href="items_import.php?do=sample">⬇ Sample CSV download</a></p>
   <form method="post" enctype="multipart/form-data">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="import">
     <div class="form-row cols-2">
-      <div><label>File (.xlsx અથવા .csv) *</label><input type="file" name="file" accept=".xlsx,.csv" required></div>
-      <div><label>Opening stock કયા location માં?</label>
+      <div><label>File (.xlsx or .csv) *</label><input type="file" name="file" accept=".xlsx,.csv" required></div>
+      <div><label>Which location for opening stock?</label>
         <select name="location_id">
           <?php foreach ($locations as $l): ?>
           <option value="<?= $l['id'] ?>" <?= $l['id'] == $u['location_id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option>
           <?php endforeach; ?>
         </select></div>
     </div>
-    <label class="check-inline mb"><input type="checkbox" name="import_stock" value="1" checked> "Opening Stock" column માંથી stock પણ ચડાવવો</label>
+    <label class="check-inline mb"><input type="checkbox" name="import_stock" value="1" checked> Also load stock from the "Opening Stock" column</label>
     <button class="btn" type="submit">⬆ Import Now</button>
   </form>
 </div>
 <div class="card">
-  <h3>ટિપ્સ</h3>
-  <p class="muted">• Vyapar માંથી નીકળવું હોય તો: Vyapar → Items → Export to Excel કરી એ file અહીં ચડાવી દો (headers આપોઆપ ઓળખાઈ જશે).<br>
-  • Serial-tracked items import પછી Items page પર ખોલીને "Serial number tracked" tick કરવું.<br>
-  • Margin % આપો ને Selling ખાલી રાખો તો Selling = Purchase + Margin% આપોઆપ ગણાશે.</p>
+  <h3>Tips</h3>
+  <p class="muted">• Moving from Vyapar: go to Vyapar → Items → Export to Excel, then upload that file here (headers are auto-detected).<br>
+  • For serial-tracked items, open them on the Items page after import and tick "Serial number tracked".<br>
+  • Give a Margin % and leave Selling blank, and Selling = Purchase + Margin% is calculated automatically.</p>
 </div>
 <?php include __DIR__ . '/includes/footer.php'; ?>

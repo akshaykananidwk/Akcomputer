@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('settings.edit');
     $pid = (int)post('id');
     if (val('SELECT is_system FROM payment_methods WHERE id = ?', [$pid])) {
-        flash('System payment method deactivate જ કરી શકાય, delete નહીં.', 'error');
+        flash('A system payment method can only be deactivated, not deleted.', 'error');
         q('UPDATE payment_methods SET is_active = 0 WHERE id = ?', [$pid]);
     } else {
         q('DELETE FROM payment_methods WHERE id = ?', [$pid]);
@@ -54,12 +54,12 @@ include __DIR__ . '/includes/header.php';
           <option value="bank" <?= ($pm['type'] ?? '') === 'bank' ? 'selected' : '' ?>>Bank</option>
           <option value="other" <?= ($pm['type'] ?? 'other') === 'other' ? 'selected' : '' ?>>Other</option>
         </select></div>
-      <div id="bankSel" style="<?= ($pm['type'] ?? '') === 'bank' ? '' : 'display:none' ?>"><label>Bank account (bookkeeping માટે)</label>
+      <div id="bankSel" style="<?= ($pm['type'] ?? '') === 'bank' ? '' : 'display:none' ?>"><label>Bank account (for bookkeeping)</label>
         <select name="bank_account_id"><option value="">-- select --</option>
         <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>" <?= ($pm['bank_account_id'] ?? '') == $b['id'] ? 'selected' : '' ?>><?= e($b['account_name']) ?></option><?php endforeach; ?>
         </select></div>
     </div>
-    <label class="check-inline mb"><input type="checkbox" name="is_active" value="1" <?= ($pm === null || $pm['is_active']) ? 'checked' : '' ?>> Active (bill બનાવતી વખતે dropdown માં દેખાય)</label>
+    <label class="check-inline mb"><input type="checkbox" name="is_active" value="1" <?= ($pm === null || $pm['is_active']) ? 'checked' : '' ?>> Active (shows in the dropdown while creating a bill)</label>
     <button class="btn" type="submit">Save</button>
     <?php if ($pm): ?><a class="btn btn-muted" href="payment_methods.php">Cancel edit</a><?php endif; ?>
   </form>
