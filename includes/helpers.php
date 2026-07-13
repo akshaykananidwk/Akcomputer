@@ -201,6 +201,18 @@ function walkin_due() {
     return (float)val("SELECT COALESCE(SUM(total - paid), 0) FROM sales WHERE party_id IS NULL AND status <> 'paid' AND is_cancelled = 0");
 }
 
+// ---------- Reports: shared Firm/Party/Status filter builder ----------
+// Used by both reports.php and report_pdf.php (via includes/report_body.php)
+// so every sales/purchase-family report tab applies the same filters
+// consistently instead of each query reinventing it.
+function report_extra_where($alias, $fCompany, $fParty, $fStatus) {
+    $where = ''; $params = [];
+    if ($fCompany) { $where .= " AND $alias.company_id = ?"; $params[] = $fCompany; }
+    if ($fParty) { $where .= " AND $alias.party_id = ?"; $params[] = $fParty; }
+    if ($fStatus) { $where .= " AND $alias.status = ?"; $params[] = $fStatus; }
+    return [$where, $params];
+}
+
 // ---------- Loyalty points ----------
 /** Adds (or, with a negative $points, deducts) loyalty points for a party
  *  and logs the change. The parties.loyalty_points column is a running
