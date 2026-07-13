@@ -250,7 +250,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
     $shipping = max(0, (float)post('shipping'));
     $total = $subtotal - $discount + $tax + $shipping;
-    $paid = min((float)$sale['paid'], $total);
+    // Paid amount is now editable (staff often need to correct a mistyped
+    // amount) - clamped to [0, total]. The DIFFERENCE from the old paid
+    // value is posted as its own payments-ledger entry (direction 'in' for
+    // an increase, 'out' for a decrease) so the party balance and cash/bank
+    // books - which are computed from the payments table, not sales.paid -
+    // stay in sync instead of silently drifting from the invoice.
+    $paid = max(0, min((float)post('paid', $sale['paid']), $total));
+    $paidDelta = round($paid - (float)$sale['paid'], 2);
     $credit_days = (int)post('credit_days');
     $sale_date = post('sale_date', $sale['sale_date']);
 
@@ -321,6 +328,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
            $credit_days ? date('Y-m-d', strtotime("$sale_date +$credit_days days")) : null,
            $subtotal, $discount, $discType, $discPct, $tax, $shipping, $total, $paid,
            payment_status($total, $paid), post('notes'), $sid]);
+
+        if (abs($paidDelta) > 0.009) {
+            q('INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?)',
+              [$party_id, $paidDelta > 0 ? 'in' : 'out', abs($paidDelta), post('payment_mode', $sale['payment_mode']),
+               'sale', $sid, today(), 'Paid amount adjusted on edit of ' . $sale['invoice_no'], $u['id']]);
+        }
 
         $pdo->commit();
         log_activity('sale_edit', "{$sale['invoice_no']} total $total");
@@ -444,7 +458,11 @@ if ($action === 'new' || $action === 'edit') {
             <input type="number" step="1" min="0" name="redeem_points" id="redeem_points" value="0" oninput="Bill.totals()"></div>
           <?php endif; ?>
           <?php if ($isEdit): ?>
-          <div><label>Already paid</label><input type="text" value="₹<?= money($editSale['paid']) ?> (edit થી બદલાશે નહીં)" disabled></div>
+          <div><label>Paid (₹)</label><input type="number" step="any" name="paid" id="paid" value="<?= money($editSale['paid']) ?>" max="<?= money($editSale['total']) ?>"></div>
+          <div><label>Payment mode <span class="muted" style="font-weight:normal">(જો paid amount બદલો તો)</span></label>
+            <select name="payment_mode">
+              <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" <?= $pm['code'] === $editSale['payment_mode'] ? 'selected' : '' ?>><?= e($pm['name']) ?></option><?php endforeach; ?>
+            </select></div>
           <?php else: ?>
           <div><label>Paid now (₹) <a href="javascript:payFull()" style="font-weight:normal">[full]</a></label><input type="number" step="any" name="paid" id="paid" value="0"></div>
           <div><label>Payment mode</label>
