@@ -166,31 +166,40 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
 </div>
 <?php endif; endif; ?>
 
-<div class="inv-paper card <?= invoice_theme_class() ?>">
-  <div class="inv-head">
-    <div class="inv-firm">
-      <?php if (!empty($sale['c_logo'])): ?><img src="<?= e($sale['c_logo']) ?>" alt="" style="max-height:56px;margin-bottom:6px"><br><?php endif; ?>
-      <h1><?= e($sale['company_name']) ?></h1>
-      <div class="muted"><?= e($sale['c_address']) ?> <?= e($sale['loc_name']) ?>, <?= e($sale['loc_city']) ?><br>
-      <?= $sale['c_phone'] ? 'Ph: ' . e($sale['c_phone']) : '' ?>
-      <?= $sale['is_gst'] && $sale['gstin'] ? '| GSTIN: ' . e($sale['gstin']) : '' ?></div>
+<div class="inv-paper card inv-bill">
+  <div class="inv-topbar"></div>
+  <div class="inv-head2">
+    <div class="inv-firm2">
+      <?php if (!empty($sale['c_logo'])): ?><img src="<?= e($sale['c_logo']) ?>" alt="" style="max-height:50px;margin-bottom:6px"><br><?php else: ?>
+      <div class="inv-logo"><span class="ak">AK</span><span class="computer">COMPUTER</span></div>
+      <div class="inv-tagline">Smart Solutions, Better Future</div>
+      <?php endif; ?>
+      <div class="inv-contact"><?= e(trim(($sale['c_address'] ?? '') . ' ' . $sale['loc_name'] . ', ' . $sale['loc_city'])) ?></div>
+      <?php if ($sale['c_phone']): ?><div class="inv-contact"><?= e($sale['c_phone']) ?></div><?php endif; ?>
+      <?php if ($sale['is_gst'] && $sale['gstin']): ?><div class="inv-contact">GSTIN: <?= e($sale['gstin']) ?></div><?php endif; ?>
     </div>
-    <div class="inv-meta">
-      <div class="inv-title"><?= $sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE' ?></div>
-      <div><strong><?= e($sale['invoice_no']) ?></strong></div>
-      <div>Date: <?= dmy($sale['sale_date']) ?><?= setting('add_time_transactions', '1') === '1' && $sale['created_at'] ? ' &nbsp;Time: ' . date('h:i A', strtotime($sale['created_at'])) : '' ?></div>
-      <?php if ($sale['due_date']): ?><div>Due: <?= dmy($sale['due_date']) ?></div><?php endif; ?>
+    <div class="inv-box2">
+      <div class="inv-box-title"><?= $sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE' ?></div>
+      <div class="inv-box-rule"></div>
+      <div class="inv-box-row"><span>Invoice No.</span><span>: <?= e($sale['invoice_no']) ?></span></div>
+      <div class="inv-box-row"><span>Date</span><span>: <?= dmy($sale['sale_date']) ?></span></div>
+      <?php if (setting('add_time_transactions', '1') === '1' && $sale['created_at']): ?>
+      <div class="inv-box-row"><span>Time</span><span>: <?= date('h:i A', strtotime($sale['created_at'])) ?></span></div>
+      <?php endif; ?>
+      <?php if ($sale['due_date']): ?><div class="inv-box-row"><span>Due</span><span>: <?= dmy($sale['due_date']) ?></span></div><?php endif; ?>
+      <div class="inv-seal">THANK YOU<br>FOR YOUR<br>BUSINESS</div>
     </div>
   </div>
-  <div class="mb">
-    <strong>Bill To:</strong> <?= e($sale['customer_name'] ?: $sale['party_name'] ?: 'Walk-in Customer') ?>
-    <?= $sale['customer_mobile'] ? ' | ' . e($sale['customer_mobile']) : '' ?>
-    <?= $sale['party_gstin'] ? '<br>GSTIN: ' . e($sale['party_gstin']) : '' ?>
-    <?= $sale['party_address'] ? '<br>' . e($sale['party_address']) : '' ?>
+  <div class="mb" style="margin-top:26px">
+    <div class="inv-billto-pill">BILL TO:</div>
+    <div class="inv-billto-name"><?= e($sale['customer_name'] ?: $sale['party_name'] ?: 'Walk-in Customer') ?></div>
+    <?php if ($sale['customer_mobile']): ?><div class="inv-contact"><?= e($sale['customer_mobile']) ?></div><?php endif; ?>
+    <?= $sale['party_gstin'] ? '<div class="muted">GSTIN: ' . e($sale['party_gstin']) . '</div>' : '' ?>
+    <?= $sale['party_address'] ? '<div class="muted">' . e($sale['party_address']) . '</div>' : '' ?>
   </div>
   <div class="table-wrap" style="box-shadow:none">
-    <table class="inv-table">
-      <thead><tr><th>#</th><th>Item</th><?php if ($sale['is_gst']): ?><th>HSN</th><?php endif; ?><th class="num">Qty</th><th class="num">Rate</th><?php if ($sale['is_gst']): ?><th class="num">GST%</th><?php endif; ?><th class="num">Amount</th></tr></thead>
+    <table class="inv-table inv-table2">
+      <thead><tr><th>#</th><th>Item Description</th><?php if ($sale['is_gst']): ?><th>HSN</th><?php endif; ?><th class="num">Qty</th><th class="num">Rate</th><?php if ($sale['is_gst']): ?><th class="num">GST%</th><?php endif; ?><th class="num">Amount</th></tr></thead>
       <tbody>
       <?php foreach ($items as $n => $it): ?>
         <tr>
@@ -211,32 +220,59 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
       </tbody>
     </table>
   </div>
-  <div class="bill-totals">
-    <div class="t-line"><span>Subtotal</span><span>₹<?= money($sale['subtotal']) ?></span></div>
-    <?php if ($sale['discount'] > 0):
-        $dLabel = (!empty($sale['discount_type']) && $sale['discount_type'] === 'percent' && $sale['discount_pct'] > 0)
-            ? 'Discount (' . rtrim(rtrim(number_format($sale['discount_pct'], 2), '0'), '.') . '%)' : 'Discount'; ?>
-    <div class="t-line"><span><?= e($dLabel) ?></span><span>- ₹<?= money($sale['discount']) ?></span></div>
-    <?php endif; ?>
-    <?php if ($sale['is_gst']): ?>
-    <div class="t-line"><span>CGST</span><span>₹<?= money($sale['tax_amount'] / 2) ?></span></div>
-    <div class="t-line"><span>SGST</span><span>₹<?= money($sale['tax_amount'] / 2) ?></span></div>
-    <?php endif; ?>
-    <?php if ($sale['shipping'] > 0): ?>
-    <div class="t-line"><span>Shipping</span><span>₹<?= money($sale['shipping']) ?></span></div>
-    <?php endif; ?>
-    <?php if (!empty($sale['loyalty_points_used']) && $sale['loyalty_points_used'] > 0): ?>
-    <div class="t-line"><span>⭐ Points Discount (<?= (int)$sale['loyalty_points_used'] ?> pts)</span><span>- ₹<?= money($sale['loyalty_discount']) ?></span></div>
-    <?php endif; ?>
-    <?php if (!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009): ?>
-    <div class="t-line"><span>Adjustment</span><span><?= $sale['adjustment'] > 0 ? '' : '- ' ?>₹<?= money(abs($sale['adjustment'])) ?></span></div>
-    <?php endif; ?>
-    <?php if (!empty($sale['round_off']) && abs($sale['round_off']) > 0.004): ?>
-    <div class="t-line"><span>Round Off</span><span><?= $sale['round_off'] > 0 ? '' : '- ' ?>₹<?= money(abs($sale['round_off'])) ?></span></div>
-    <?php endif; ?>
-    <div class="t-line t-grand"><span>Total</span><span>₹<?= money($sale['total']) ?></span></div>
-    <div class="t-line"><span>Paid (<?= e($sale['payment_mode']) ?>)</span><span>₹<?= money($sale['paid']) ?></span></div>
-    <?php if ($due > 0.009): ?><div class="t-line"><span><strong>Balance Due</strong></span><span><strong>₹<?= money($due) ?></strong></span></div><?php endif; ?>
+  <?php $bankAcc = default_bank_account(); $qrWeb = invoice_qr_web_path($sale); ?>
+  <div class="inv-pay-totals">
+    <div class="inv-pay-block">
+      <?php if ($bankAcc): ?>
+      <div class="inv-pay-pill">PAY VIA BANK TRANSFER:</div>
+      <div class="inv-bank-box">
+        <div><span>A/C Name</span><strong><?= e($bankAcc['account_name']) ?></strong></div>
+        <div><span>A/C No.</span><strong><?= e($bankAcc['account_number']) ?></strong></div>
+        <div><span>IFSC Code</span><strong><?= e($bankAcc['ifsc']) ?></strong></div>
+        <?php if ($bankAcc['branch']): ?><div><span>Branch</span><strong><?= e($bankAcc['branch']) ?></strong></div><?php endif; ?>
+      </div>
+      <?php endif; ?>
+      <?php if ($qrWeb): ?>
+      <div class="inv-qr-row">
+        <div><div class="inv-scan-label">Scan & Pay</div><img src="<?= e($qrWeb) ?>" alt="Scan to pay"></div>
+        <div>
+          <div class="inv-thankyou">Thank You!</div>
+          <div class="inv-thankyou-note">We truly appreciate your business and look forward to serving you again.</div>
+        </div>
+      </div>
+      <?php endif; ?>
+    </div>
+    <div class="inv-totals-block">
+      <div class="inv-t-line"><span>Subtotal</span><span>₹<?= money($sale['subtotal']) ?></span></div>
+      <?php if ($sale['discount'] > 0):
+          $dLabel = (!empty($sale['discount_type']) && $sale['discount_type'] === 'percent' && $sale['discount_pct'] > 0)
+              ? 'Discount (' . rtrim(rtrim(number_format($sale['discount_pct'], 2), '0'), '.') . '%)' : 'Discount'; ?>
+      <div class="inv-t-line"><span><?= e($dLabel) ?></span><span>- ₹<?= money($sale['discount']) ?></span></div>
+      <?php endif; ?>
+      <?php if ($sale['is_gst']): ?>
+      <div class="inv-t-line"><span>CGST</span><span>₹<?= money($sale['tax_amount'] / 2) ?></span></div>
+      <div class="inv-t-line"><span>SGST</span><span>₹<?= money($sale['tax_amount'] / 2) ?></span></div>
+      <?php endif; ?>
+      <?php if ($sale['shipping'] > 0): ?>
+      <div class="inv-t-line"><span>Shipping</span><span>₹<?= money($sale['shipping']) ?></span></div>
+      <?php endif; ?>
+      <?php if (!empty($sale['loyalty_points_used']) && $sale['loyalty_points_used'] > 0): ?>
+      <div class="inv-t-line"><span>⭐ Points Discount</span><span>- ₹<?= money($sale['loyalty_discount']) ?></span></div>
+      <?php endif; ?>
+      <?php if (!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009): ?>
+      <div class="inv-t-line"><span>Adjustment</span><span><?= $sale['adjustment'] > 0 ? '' : '- ' ?>₹<?= money(abs($sale['adjustment'])) ?></span></div>
+      <?php endif; ?>
+      <?php if (!empty($sale['round_off']) && abs($sale['round_off']) > 0.004): ?>
+      <div class="inv-t-line"><span>Round Off</span><span><?= $sale['round_off'] > 0 ? '' : '- ' ?>₹<?= money(abs($sale['round_off'])) ?></span></div>
+      <?php endif; ?>
+      <div class="inv-total-bar"><span>TOTAL</span><span>₹<?= money($sale['total']) ?></span></div>
+      <div class="inv-t-line"><span>Paid (<?= e(strtoupper($sale['payment_mode'])) ?>)</span><span>₹<?= money($sale['paid']) ?></span></div>
+      <?php if ($due > 0.009): ?>
+      <div class="inv-balance-bar"><span>BALANCE DUE</span><span>₹<?= money($due) ?></span></div>
+      <?php else: ?>
+      <div class="inv-paid-bar">PAID IN FULL</div>
+      <?php endif; ?>
+    </div>
   </div>
 
   <?php if ($sale['is_gst'] && $sale['tax_amount'] > 0):
@@ -260,34 +296,22 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
   </div>
   <?php endif; ?>
 
-  <?php
-  $bankAcc = default_bank_account();
-  $qrWeb = invoice_qr_web_path($sale);
-  if ($bankAcc || $qrWeb): ?>
-  <div class="mt" style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;border-top:1px dashed var(--border);padding-top:12px">
-    <?php if ($bankAcc): ?>
-    <div style="font-size:12.5px">
-      <strong>Pay via Bank Transfer:</strong><br>
-      <?= e($bankAcc['account_name']) ?> - <?= e($bankAcc['bank_name']) ?><br>
-      A/C No: <?= e($bankAcc['account_number']) ?> &nbsp; IFSC: <?= e($bankAcc['ifsc']) ?>
-      <?= $bankAcc['branch'] ? '<br>Branch: ' . e($bankAcc['branch']) : '' ?>
-    </div>
-    <?php endif; ?>
-    <?php if ($qrWeb): ?>
-    <div style="text-align:center">
-      <img src="<?= e($qrWeb) ?>" alt="Scan to pay" style="width:110px;height:110px;border:1px solid var(--border);border-radius:8px">
-      <div class="muted" style="font-size:10.5px">Scan & Pay ₹<?= money($sale['total']) ?></div>
-    </div>
-    <?php endif; ?>
-  </div>
-  <?php endif; ?>
-
   <?php if ($sale['c_terms']): ?><p class="muted mt" style="font-size:11.5px"><strong>Terms & Conditions:</strong><br><?= nl2br(e($sale['c_terms'])) ?></p><?php endif; ?>
 
-  <div class="mt" style="display:flex;justify-content:space-between;gap:20px;padding-top:34px;font-size:13px">
-    <div style="border-top:1px solid var(--text);padding-top:6px;min-width:160px;text-align:center">Receiver's Signature</div>
-    <div style="border-top:1px solid var(--text);padding-top:6px;min-width:200px;text-align:center">For <strong><?= e($sale['company_name']) ?></strong><br>Authorised Signatory</div>
+  <div class="inv-sig-row2">
+    <div class="inv-sig-line">Receiver's Signature</div>
+    <div class="inv-stamp"><div class="inv-stamp-text">AK COMPUTER<br>* THANK YOU *<br><?= e(strtoupper($sale['loc_city'])) ?></div></div>
+    <div class="inv-sig-line">For <?= e($sale['company_name']) ?><br>Authorised Signatory</div>
   </div>
+  <div class="inv-footer-bar">
+    <div>
+      <strong>Stay Connected</strong>
+      <div class="inv-social-icons"><span>f</span><span>IG</span><span>W</span><span>YT</span></div>
+    </div>
+    <?php if ($sale['c_phone']): ?><div style="text-align:center"><strong>For Support</strong><?= e($sale['c_phone']) ?></div><?php endif; ?>
+    <div style="text-align:right"><strong>We Deal In:</strong>Computers . Laptops . CCTV . Networking . AMC</div>
+  </div>
+  <div class="inv-bottom-strip">This is a computer generated invoice.</div>
   <p class="muted mt" style="font-size:11px">Billed by: <?= e($sale['staff_name']) ?><?= $sale['notes'] ? ' | ' . e($sale['notes']) : '' ?></p>
 </div>
 <?php include __DIR__ . '/includes/footer.php'; ?>

@@ -264,39 +264,6 @@ function amount_in_words($num) {
     return trim($out) . ' Only';
 }
 
-// ---------- Invoice design themes ----------
-function invoice_themes() {
-    // id => [name, layout-classes, accent hex for preview]
-    return [
-        1 => ['Classic Blue', 'inv-band', '#1a56db'],
-        2 => ['Royal Dark', 'inv-band', '#0f172a'],
-        3 => ['Emerald', 'inv-band', '#047857'],
-        4 => ['Maroon', 'inv-band', '#9f1239'],
-        5 => ['Purple', 'inv-band', '#6d28d9'],
-        6 => ['Teal', 'inv-band', '#0f766e'],
-        7 => ['Orange', 'inv-band', '#c2410c'],
-        8 => ['Slate Minimal', 'inv-accentline', '#334155'],
-        9 => ['Blue Minimal', 'inv-accentline', '#1a56db'],
-        10 => ['Green Minimal', 'inv-accentline', '#047857'],
-        11 => ['Elegant Centre', 'inv-center inv-serif', '#0f172a'],
-        12 => ['Gold Classic', 'inv-center inv-serif', '#a16207'],
-        13 => ['Boxed Blue', 'inv-boxed', '#1a56db'],
-        14 => ['Boxed Dark', 'inv-boxed', '#0f172a'],
-        15 => ['Thermal Compact', 'inv-compact', '#0f172a'],
-        16 => ['Gradient Indigo', 'inv-grad', '#1a56db'],
-        17 => ['Gradient Sunset', 'inv-grad', '#db2777'],
-        18 => ['Gradient Forest', 'inv-grad', '#0f766e'],
-        19 => ['Zebra Maroon', 'inv-zebra', '#9f1239'],
-        20 => ['Zebra Dark', 'inv-zebra', '#1e293b'],
-    ];
-}
-function invoice_theme_class() {
-    $n = (int)setting('invoice_theme', '1');
-    $themes = invoice_themes();
-    if (!isset($themes[$n])) $n = 1;
-    return 'invt-' . $n . ' ' . $themes[$n][1];
-}
-
 // ---------- Party running-account balance (single source of truth) ----------
 // Positive = party owes shop (You'll Get). Negative = shop owes
 // party (You'll Give) - this also covers customer ADVANCES: a
@@ -398,13 +365,6 @@ function invoice_qr_web_path($sale) {
     $p = qr_png_path(upi_uri($bank['upi_id'], $bank['account_name'], $sale['total'], $sale['invoice_no']));
     if (!$p) return null;
     return 'uploads/qrcache/' . basename($p);
-}
-function invoice_theme_accent_rgb() {
-    $n = (int)setting('invoice_theme', '1');
-    $themes = invoice_themes();
-    $hex = ltrim($themes[$n][2] ?? '#1a56db', '#');
-    if (strlen($hex) !== 6) $hex = '1a56db';
-    return [hexdec(substr($hex, 0, 2)) / 255, hexdec(substr($hex, 2, 2)) / 255, hexdec(substr($hex, 4, 2)) / 255];
 }
 
 // ---------- Site credential vault (DVR/NVR passwords etc, encrypted at rest) ----------

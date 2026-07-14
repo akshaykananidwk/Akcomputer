@@ -452,7 +452,6 @@ td.num, th.num { text-align: right; white-space: nowrap; }
   .card { box-shadow: none; }
   .table-wrap { overflow: visible !important; box-shadow: none; }
   table { min-width: 0 !important; }
-  .inv-band .inv-head, .inv-grad .inv-head { margin: 0 0 14px; }
 }
 
 /* ---------- Desktop layout: light docked sidebar + light top bar with
@@ -495,58 +494,64 @@ td.num, th.num { text-align: right; white-space: nowrap; }
   .content:not(.content-full) > * { max-width: 1250px; }
 }
 
-/* ---------- Invoice design themes (pick in Settings) ---------- */
-.inv-paper { --ia: #1a56db; --ia-text: #ffffff; }
-.inv-paper .inv-head { border-bottom-color: var(--ia); }
-.inv-paper .inv-title { color: var(--ia); }
-/* band layout: colored header strip */
-.inv-band .inv-head { background: var(--ia); color: var(--ia-text); padding: 16px; border-radius: 8px; border-bottom: 0; margin: -8px -8px 14px; }
-.inv-band .inv-head .muted, .inv-band .inv-title { color: var(--ia-text); opacity: .95; }
-.inv-band .inv-head h1 { color: var(--ia-text); }
-/* left accent layout */
-.inv-accentline { border-left: 6px solid var(--ia); }
-.inv-accentline .inv-head { border-bottom: 1px solid var(--border); }
-/* centered elegant layout */
-.inv-center .inv-head { display: block; text-align: center; border-bottom: 3px double var(--ia); }
-.inv-center .inv-meta { text-align: center; margin-top: 8px; }
-.inv-center .inv-firm h1 { font-size: 26px; letter-spacing: .04em; }
-/* boxed layout */
-.inv-boxed { border: 2px solid var(--ia); }
-.inv-boxed .inv-table th { border: 1px solid var(--border); }
-.inv-boxed .inv-table td { border: 1px solid var(--border); }
-/* zebra rows */
-.inv-zebra tbody tr:nth-child(even) td { background: #f8fafc; }
-.inv-zebra .inv-table th { background: var(--ia); color: var(--ia-text); }
-/* compact / thermal-style */
-.inv-compact { font-family: 'Courier New', monospace; max-width: 480px; }
-.inv-compact .inv-head { display: block; text-align: center; }
-.inv-compact table { font-size: 12.5px; }
-/* serif elegant */
-.inv-serif { font-family: Georgia, 'Times New Roman', serif; }
-/* gradient band */
-.inv-grad .inv-head { background: linear-gradient(120deg, var(--ia), var(--ia2, #7c3aed)); color: #fff; padding: 16px; border-radius: 8px; border-bottom: 0; margin: -8px -8px 14px; }
-.inv-grad .inv-head .muted, .inv-grad .inv-title, .inv-grad .inv-head h1 { color: #fff; }
-/* theme color palettes */
-.invt-1 { --ia: #1a56db; }                                   /* Classic Blue band */
-.invt-2 { --ia: #0f172a; }                                   /* Royal Dark band */
-.invt-3 { --ia: #047857; }                                   /* Emerald band */
-.invt-4 { --ia: #9f1239; }                                   /* Maroon band */
-.invt-5 { --ia: #6d28d9; }                                   /* Purple band */
-.invt-6 { --ia: #0f766e; }                                   /* Teal band */
-.invt-7 { --ia: #c2410c; }                                   /* Orange band */
-.invt-8 { --ia: #334155; }                                   /* Slate minimal */
-.invt-9 { --ia: #1a56db; }                                   /* Blue minimal */
-.invt-10 { --ia: #047857; }                                  /* Green minimal */
-.invt-11 { --ia: #0f172a; }                                  /* Elegant centre */
-.invt-12 { --ia: #a16207; }                                  /* Gold centre serif */
-.invt-13 { --ia: #1a56db; }                                  /* Boxed blue */
-.invt-14 { --ia: #0f172a; }                                  /* Boxed dark */
-.invt-15 { --ia: #0f172a; }                                  /* Thermal compact */
-.invt-16 { --ia: #1a56db; --ia2: #7c3aed; }                  /* Gradient indigo */
-.invt-17 { --ia: #db2777; --ia2: #f59e0b; }                  /* Gradient sunset */
-.invt-18 { --ia: #0f766e; --ia2: #16a34a; }                  /* Gradient forest */
-.invt-19 { --ia: #9f1239; }                                  /* Zebra maroon */
-.invt-20 { --ia: #1e293b; }                                  /* Zebra dark */
+/* ---------- The one AK Computer bill design (used by sale_view.php print/
+   view and mirrored in includes/pdf.php's invoice_pdf() for the PDF/WhatsApp
+   copy - there used to be a 20-theme colour picker; it's gone, this is it). */
+.inv-bill { --navy: #0f2341; --navy-dark: #091629; --teal: #0b6e94; --teal-dark: #08546e;
+  --orange: #ff763f; --gold: #d4af37; --purple: #7c3aed; --blue: #2563eb; --pink: #d0348a;
+  --red: #c41e1e; --green: #128a3e; --row-alt: #eef6fc; --amber-bg: #ffebcc;
+  --lavender-bg: #f6f4fd; --lavender-border: #d1c7f2; }
+.inv-topbar { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--teal), var(--orange)); margin: -8px -8px 16px; }
+.inv-head2 { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 20px; }
+.inv-logo { font-size: 25px; font-weight: 800; }
+.inv-logo .ak { color: var(--blue); } .inv-logo .computer { color: var(--navy); }
+.inv-tagline { font-style: italic; color: var(--teal-dark); font-size: 12.5px; margin: 2px 0 8px; }
+.inv-contact { font-size: 12px; color: #64748b; margin: 3px 0; padding-left: 14px; position: relative; }
+.inv-contact::before { content: ''; position: absolute; left: 0; top: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+.inv-box2 { background: var(--navy); color: #fff; border-radius: 10px; padding: 14px 18px; min-width: 220px; position: relative; }
+.inv-box2 .inv-box-title { font-size: 20px; font-weight: 800; }
+.inv-box2 .inv-box-rule { width: 40px; height: 3px; background: var(--orange); margin: 5px 0 10px; border-radius: 2px; }
+.inv-box2 .inv-box-row { font-size: 12.5px; display: flex; gap: 8px; margin: 4px 0; }
+.inv-box2 .inv-box-row span:first-child { color: #c3cee0; min-width: 68px; }
+.inv-box2 .inv-box-row span:last-child { font-weight: 700; }
+.inv-seal { position: absolute; right: 14px; bottom: -26px; width: 60px; height: 60px; border-radius: 50%;
+  background: var(--gold); border: 2px solid var(--navy); color: var(--navy-dark); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; font-weight: 800; font-size: 6.5px; line-height: 1.35; }
+.inv-billto-pill { display: inline-block; background: linear-gradient(90deg, var(--teal), var(--blue)); color: #fff;
+  font-weight: 700; font-size: 11.5px; padding: 5px 16px; border-radius: 12px; margin-bottom: 10px; }
+.inv-billto-name { font-size: 14px; font-weight: 700; color: var(--navy); }
+.inv-table2 thead th { background: var(--teal) !important; color: #fff !important; font-size: 11px; }
+.inv-table2 tbody tr:nth-child(even) td { background: var(--row-alt); }
+.inv-pay-totals { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 16px; align-items: flex-start; }
+.inv-pay-block { flex: 1 1 300px; min-width: 280px; }
+.inv-totals-block { flex: 1 1 220px; min-width: 220px; max-width: 260px; margin-left: auto; }
+.inv-pay-pill { display: inline-block; background: linear-gradient(90deg, var(--purple), var(--blue)); color: #fff;
+  font-weight: 700; font-size: 11px; padding: 5px 14px; border-radius: 12px; margin-bottom: 10px; }
+.inv-bank-box { background: var(--lavender-bg); border: 1px solid var(--lavender-border); border-radius: 8px; padding: 10px 14px; font-size: 12px; }
+.inv-bank-box div { margin: 3px 0; } .inv-bank-box span:first-child { color: #64748b; display: inline-block; min-width: 70px; }
+.inv-qr-row { display: flex; gap: 14px; align-items: flex-start; margin-top: 14px; }
+.inv-qr-row img { width: 78px; height: 78px; border: 1px solid var(--border); border-radius: 8px; }
+.inv-scan-label { font-size: 10.5px; font-weight: 700; color: var(--blue); margin-bottom: 4px; }
+.inv-thankyou { font-family: Georgia, 'Times New Roman', serif; font-style: italic; color: var(--pink); font-size: 19px; margin-bottom: 4px; }
+.inv-thankyou-note { font-size: 10.5px; color: #64748b; max-width: 240px; }
+.inv-t-line { display: flex; justify-content: space-between; font-size: 12.5px; padding: 3px 0; color: #475569; }
+.inv-total-bar, .inv-balance-bar, .inv-paid-bar { display: flex; justify-content: space-between; padding: 8px 12px; border-radius: 4px; margin: 6px 0; font-weight: 800; }
+.inv-total-bar { background: var(--navy); color: #fff; font-size: 14px; }
+.inv-balance-bar { background: var(--amber-bg); color: var(--red); font-size: 13px; }
+.inv-paid-bar { background: #d8f3e0; color: var(--green); font-size: 12.5px; justify-content: center; }
+.inv-sig-row2 { display: flex; justify-content: space-between; gap: 20px; padding-top: 44px; font-size: 12.5px; margin-top: 30px; position: relative; }
+.inv-sig-line { border-top: 1px solid #94a3b8; padding-top: 6px; min-width: 170px; text-align: center; color: #475569; }
+.inv-stamp { position: absolute; left: 50%; top: 4px; transform: translateX(-50%); width: 76px; height: 76px; border-radius: 50%;
+  border: 1.5px solid var(--navy); display: flex; align-items: center; justify-content: center; }
+.inv-stamp::before { content: ''; position: absolute; inset: 5px; border: 0.8px solid var(--navy); border-radius: 50%; }
+.inv-stamp-text { text-align: center; font-size: 6.3px; font-weight: 700; color: var(--navy); line-height: 1.5; }
+.inv-footer-bar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center;
+  background: linear-gradient(90deg, var(--orange), var(--teal)); color: #fff; padding: 10px 16px; border-radius: 6px; margin-top: 34px; font-size: 11px; }
+.inv-footer-bar strong { display: block; font-size: 11px; margin-bottom: 4px; }
+.inv-social-icons { display: flex; gap: 6px; }
+.inv-social-icons span { width: 18px; height: 18px; border-radius: 50%; background: #fff; color: var(--teal-dark); font-size: 8px;
+  font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.inv-bottom-strip { background: var(--navy); color: #c3cee0; text-align: center; font-size: 10.5px; padding: 7px; border-radius: 0 0 6px 6px; }
 
 /* misc */
 .muted { color: var(--muted); font-size: 13px; }

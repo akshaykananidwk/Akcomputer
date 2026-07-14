@@ -157,7 +157,7 @@ if ($action === 'view') {
       <?php endif; ?>
       <a class="btn btn-outline" href="estimates.php">← Back</a>
     </div>
-    <div class="inv-paper card <?= invoice_theme_class() ?>">
+    <div class="inv-paper card">
       <div class="inv-head">
         <div class="inv-firm"><h1><?= e($est['company_name']) ?></h1></div>
         <div class="inv-meta"><div class="inv-title">ESTIMATE</div><div><strong><?= e($est['estimate_no']) ?></strong></div>

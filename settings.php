@@ -141,13 +141,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_invoice') {
     redirect('settings.php?cat=invoice');
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'design') {
-    require_perm('settings.edit');
-    set_setting('invoice_theme', (int)post('invoice_theme'));
-    flash('Bill design changed ✔ — open any bill to see it.');
-    redirect('settings.php?cat=invoice');
-}
-
 if (setting('cron_key', '') === '') set_setting('cron_key', bin2hex(random_bytes(12)));
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reminder_gap') {
     require_perm('settings.edit');
@@ -422,31 +415,6 @@ exit;
 <?php endif; ?>
 
 <?php if ($cat === 'invoice'): ?>
-<div class="card">
-  <h3>🎨 Bill / Invoice Design (<?= count(invoice_themes()) ?> designs)</h3>
-  <p class="muted mb">Pick a design — it applies to all bills, estimates, and challans.</p>
-  <form method="post">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="design">
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">
-      <?php $cur = (int)setting('invoice_theme', '1');
-      foreach (invoice_themes() as $tid => $th): ?>
-      <label style="border:2px solid <?= $cur === $tid ? 'var(--primary)' : 'var(--border)' ?>;border-radius:10px;padding:10px;cursor:pointer;display:block">
-        <input type="radio" name="invoice_theme" value="<?= $tid ?>" <?= $cur === $tid ? 'checked' : '' ?> style="width:auto"> <strong style="font-size:13px"><?= e($th[0]) ?></strong>
-        <div style="margin-top:6px;border:1px solid var(--border);border-radius:6px;overflow:hidden">
-          <div style="background:<?= e($th[2]) ?>;height:16px"></div>
-          <div style="padding:5px;font-size:9px;line-height:1.5;color:#475569">
-            INVOICE #001<br>
-            <span style="display:inline-block;width:70%;height:4px;background:#e2e8f0"></span><br>
-            <span style="display:inline-block;width:50%;height:4px;background:#e2e8f0"></span>
-          </div>
-        </div>
-      </label>
-      <?php endforeach; ?>
-    </div>
-    <button class="btn mt" type="submit">Apply Design</button>
-  </form>
-</div>
 <div class="card">
   <h3>Google Review & Online Payment</h3>
   <form method="post">
