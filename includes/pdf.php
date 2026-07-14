@@ -515,8 +515,10 @@ function invoice_pdf($sale, $items) {
     $hasGst = $sale['is_gst'];
     // column geometry
     $cNum = $L + 8; $cItem = $L + 26;
-    if ($hasGst) { $cHsnR = 316; $cQtyC = 360; $cRateR = 444; $cGstR = 480; $cAmtR = $R - 8; $itemMaxW = 258; }
-    else { $cQtyC = 322; $cRateR = 468; $cAmtR = $R - 8; $itemMaxW = 300; }
+    // itemMaxW stops well before the next column so a wrapped/long name can
+    // never run into the QTY (or HSN) text - that overlap was the bug.
+    if ($hasGst) { $cHsnR = 316; $cQtyC = 360; $cRateR = 444; $cGstR = 480; $cAmtR = $R - 8; $itemMaxW = $cHsnR - $cItem - 52; }
+    else { $cQtyC = 322; $cRateR = 468; $cAmtR = $R - 8; $itemMaxW = ($cQtyC - 24) - $cItem - 10; }
 
     $rowH = 22; $headH = 20;
     $tableTop = $y;
