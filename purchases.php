@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             $item = row('SELECT * FROM items WHERE id = ?', [$r['item_id']]);
             q('INSERT INTO purchase_items (purchase_id, item_id, qty, price, tax_rate, total) VALUES (?,?,?,?,?,?)',
               [$pid, $r['item_id'], $r['qty'], $r['price'], $r['tax_rate'], $r['total']]);
-            adjust_stock($r['item_id'], $loc_id, $r['qty'], 'purchase', $pid, post('bill_no'));
+            adjust_stock($r['item_id'], $loc_id, $r['qty'], 'purchase', $pid, post('bill_no'), (float)$r['price']);
 
             if ($item['serial_tracked']) {
                 $sns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $r['serials']))));
@@ -112,6 +112,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         foreach ($purchase['is_cancelled'] ? [] : all('SELECT * FROM purchase_items WHERE purchase_id = ?', [$pid]) as $pi) {
             adjust_stock($pi['item_id'], $purchase['location_id'], -(float)$pi['qty'], 'purchase_delete', $pid);
         }
+        // cost layers this purchase created (if FIFO/weighted-avg costing is
+        // on) are tied to it 1:1 via ref_id - remove them along with the
+        // purchase itself rather than leaving stale layers behind
+        q("DELETE FROM stock_cost_layers WHERE ref_type IN ('purchase','purchase_edit') AND ref_id = ?", [$pid]);
         if (!$purchase['is_cancelled']) {
             q("DELETE FROM item_serials WHERE purchase_id = ? AND status = 'in_stock'", [$pid]);
         }
@@ -189,6 +193,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         foreach (all('SELECT * FROM purchase_items WHERE purchase_id = ?', [$pid]) as $oi) {
             adjust_stock($oi['item_id'], $purchase['location_id'], -(float)$oi['qty'], 'purchase_edit', $pid);
         }
+        q("DELETE FROM stock_cost_layers WHERE ref_type IN ('purchase','purchase_edit') AND ref_id = ?", [$pid]);
         q('DELETE FROM item_serials WHERE purchase_id = ?', [$pid]);
         q('DELETE FROM purchase_items WHERE purchase_id = ?', [$pid]);
 
@@ -196,7 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
             $item = row('SELECT * FROM items WHERE id = ?', [$r['item_id']]);
             q('INSERT INTO purchase_items (purchase_id, item_id, qty, price, tax_rate, total) VALUES (?,?,?,?,?,?)',
               [$pid, $r['item_id'], $r['qty'], $r['price'], $r['tax_rate'], $r['total']]);
-            adjust_stock($r['item_id'], $loc_id, $r['qty'], 'purchase_edit', $pid, post('bill_no'));
+            adjust_stock($r['item_id'], $loc_id, $r['qty'], 'purchase_edit', $pid, post('bill_no'), (float)$r['price']);
 
             if ($item['serial_tracked']) {
                 $sns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $r['serials']))));

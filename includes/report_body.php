@@ -261,6 +261,24 @@ if ($r === 'stockval' && can('reports.profit')) {
     echo '<div class="stat s-ok"><div class="stat-label">Stock Market Value (at selling price)</div><div class="stat-value">₹' . money($grandSale) . '</div></div>';
     echo '<div class="stat"><div class="stat-label">Potential Profit on Stock</div><div class="stat-value">₹' . money($grandSale - $grandVal) . '</div></div>';
     echo '</div>';
+
+    // FIFO/weighted-average valuation - only meaningful once Settings >
+    // Inventory has costing_method switched on and some purchases have
+    // happened since (older stock has no cost layers, see Settings note).
+    $costMethod = setting('costing_method', 'current');
+    if ($costMethod !== 'current') {
+        $layerRows = all("SELECT i.name, i.unit, SUM(l.qty_remaining) q, SUM(l.qty_remaining * l.unit_cost) val
+                           FROM stock_cost_layers l JOIN items i ON i.id = l.item_id
+                           WHERE l.qty_remaining > 0 GROUP BY l.item_id HAVING q > 0 ORDER BY val DESC");
+        $layerTotal = array_sum(array_column($layerRows, 'val'));
+        echo '<div class="card mt"><h3>📐 ' . ($costMethod === 'fifo' ? 'FIFO' : 'Weighted-Average') . ' Cost Valuation</h3>';
+        echo '<p class="muted mb">Based on actual recorded purchase cost layers (Settings &gt; Inventory) rather than the current purchase price above - more accurate once enough purchases have been logged since this was switched on.</p>';
+        echo '<div class="table-wrap"><table><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Value ₹</th></tr></thead><tbody>';
+        foreach ($layerRows as $lr) echo '<tr><td>' . e($lr['name']) . '</td><td class="num">' . (float)$lr['q'] . ' ' . e($lr['unit']) . '</td><td class="num">₹' . money($lr['val']) . '</td></tr>';
+        if (!$layerRows) echo '<tr><td colspan="3" class="muted">No cost layers recorded yet - they build up as new purchases come in.</td></tr>';
+        echo '<tr style="font-weight:600;border-top:2px solid var(--text)"><td colspan="2">Total</td><td class="num">₹' . money($layerTotal) . '</td></tr>';
+        echo '</tbody></table></div></div>';
+    }
 }
 
 // ---------------- cashbook (day-wise in/out) ----------------
@@ -511,13 +529,9 @@ if ($r === 'forecast') {
 
 // ---------------- low stock / auto purchase suggestion ----------------
 if ($r === 'low') {
-    $rows = all("SELECT i.id, i.name, i.min_stock, i.unit, i.tax_rate, i.purchase_price, COALESCE(SUM(s.qty),0) q,
-                 (SELECT pt.name FROM purchases pu JOIN purchase_items pi2 ON pi2.purchase_id = pu.id
-                  JOIN parties pt ON pt.id = pu.party_id WHERE pi2.item_id = i.id AND pu.is_cancelled = 0
-                  ORDER BY pu.purchase_date DESC, pu.id DESC LIMIT 1) last_supplier
-                 FROM items i LEFT JOIN stock s ON s.item_id = i.id
-                 WHERE i.is_active = 1 AND i.item_type <> 'service' AND i.min_stock > 0 GROUP BY i.id HAVING q < i.min_stock ORDER BY q");
+    $rows = low_stock_items($stockLoc ?: null);
     $canReorder = can('purchases.add') && $rows;
+    echo '<p class="muted mb">' . ($stockLoc ? 'Showing stock at the selected location only.' : 'Showing stock summed across every location - pick one location above for a location-specific reorder list.') . '</p>';
     if ($canReorder) echo '<p class="muted mb">Select item(s) and press "🛒 Create Purchase for Selected" below - the New Purchase form opens with item/qty pre-filled, you just need to pick the party.</p>';
     echo '<div class="table-wrap"><table><thead><tr>' . ($canReorder ? '<th></th>' : '') . '<th>Item</th><th class="num">In stock</th><th class="num">Min level</th><th class="num">To order</th><th>Last Supplier</th></tr></thead><tbody>';
     foreach ($rows as $x) {
@@ -544,6 +558,38 @@ if ($r === 'low') {
         }
         </script>';
     }
+}
+
+// ---------------- dead / slow-moving stock ----------------
+if ($r === 'dead_stock' && can('reports.profit')) {
+    $deadDays = (int)get('dead_days') ?: (int)setting('dead_stock_days', 90);
+    $locJoin = $stockLoc ? ' AND s.location_id = ' . (int)$stockLoc : '';
+    $rows = all("SELECT i.*, COALESCE(SUM(s.qty),0) q,
+                 (SELECT MAX(s2.sale_date) FROM sale_items si2 JOIN sales s2 ON s2.id = si2.sale_id
+                  WHERE si2.item_id = i.id AND s2.is_cancelled = 0) last_sale_date
+                 FROM items i LEFT JOIN stock s ON s.item_id = i.id $locJoin
+                 WHERE i.is_active = 1 AND i.item_type <> 'service'
+                 GROUP BY i.id
+                 HAVING q > 0 AND (last_sale_date IS NULL OR last_sale_date < DATE_SUB(CURDATE(), INTERVAL $deadDays DAY))
+                 ORDER BY COALESCE(SUM(s.qty),0) * i.purchase_price DESC");
+    $totalValue = array_sum(array_map(fn($x) => $x['q'] * $x['purchase_price'], $rows));
+    echo '<form method="get" class="filterbar"><input type="hidden" name="r" value="dead_stock">'
+       . '<input type="hidden" name="from" value="' . e($from) . '"><input type="hidden" name="to" value="' . e($to) . '">'
+       . '<input type="hidden" name="stock_loc" value="' . $stockLoc . '">'
+       . '<div><label>No sale in the last (days)</label><input type="number" name="dead_days" value="' . $deadDays . '"></div>'
+       . '<button class="btn btn-sm" type="submit">Apply</button></form>';
+    echo '<div class="grid-stats"><div class="stat s-bad"><div class="stat-label">Value tied up</div><div class="stat-value">₹' . money($totalValue) . '</div></div>'
+       . '<div class="stat"><div class="stat-label">Items affected</div><div class="stat-value">' . count($rows) . '</div></div></div>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Item</th><th class="num">In stock</th><th>Last sold</th><th class="num">Days idle</th><th class="num">Value tied up</th></tr></thead><tbody>';
+    foreach ($rows as $x) {
+        $idle = $x['last_sale_date'] ? days_between($x['last_sale_date']) : null;
+        echo '<tr><td>' . e($x['name']) . '</td><td class="num">' . (float)$x['q'] . ' ' . e($x['unit']) . '</td>'
+           . '<td>' . ($x['last_sale_date'] ? dmy($x['last_sale_date']) : '<span class="badge badge-bad">Never sold</span>') . '</td>'
+           . '<td class="num">' . ($idle !== null ? $idle . 'd' : '-') . '</td>'
+           . '<td class="num">₹' . money($x['q'] * $x['purchase_price']) . '</td></tr>';
+    }
+    if (!$rows) echo '<tr><td colspan="5" class="muted">Nothing dead/slow-moving right now. 🎉</td></tr>';
+    echo '</tbody></table></div>';
 }
 
 // ---------------- activity log (who did what, when) ----------------

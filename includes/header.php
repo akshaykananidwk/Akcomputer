@@ -45,8 +45,12 @@ $_navMenu = [
     ]],
     ['group', 'godown', 'archive', 'Stock / Godown', [
         ['handover.php', 'Handover / Transfer', 'handover.view', 'handover.php?action=new', 'handover.add'],
+        ['transfers.php', 'Warehouse Transfers', 'handover.view', 'handover.php?action=new&type=transfer', 'handover.add'],
         ['my_stock.php', 'My Stock', null, null, null],
         ['stock.php', 'Location Stock', 'stock.view', null, null],
+        ['stock_audit.php', 'Stock Audit / Cycle Counting', 'stock_audit.view', 'stock_audit.php?action=new', 'stock_audit.add'],
+        ['bins.php', 'Bin / Rack Locations', 'bins.view', null, null],
+        ['reservations.php', 'Stock Reservations', 'reservations.view', null, null],
     ]],
     ['group', 'service', 'tool', 'Repair & Service', [
         ['my_jobs.php', 'My Jobs (Technician)', null, null, null],

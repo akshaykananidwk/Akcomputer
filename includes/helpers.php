@@ -79,12 +79,20 @@ function doc_no($prefix, $id) {
 }
 
 // ---------- Stock helpers (always use inside a transaction for documents) ----------
-function adjust_stock($item_id, $location_id, $delta, $ref_type, $ref_id = null, $note = '') {
+/** $unit_cost is optional - when given on a positive delta, a FIFO/weighted-
+ *  average cost layer is recorded (stock_layer_consume() reads it back on a
+ *  negative delta). Every existing call site keeps working unchanged since
+ *  this is purely additive; the Stock Report/COGS only start using it once
+ *  Settings > Inventory has costing_method switched off "current". */
+function adjust_stock($item_id, $location_id, $delta, $ref_type, $ref_id = null, $note = '', $unit_cost = null) {
     q('INSERT INTO stock (item_id, location_id, qty) VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty)', [$item_id, $location_id, $delta]);
     q('INSERT INTO stock_ledger (item_id, location_id, change_qty, ref_type, ref_id, note, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?)',
       [$item_id, $location_id, $delta, $ref_type, $ref_id, $note, $_SESSION['user_id'] ?? null]);
+    if ($delta > 0 && $unit_cost !== null) {
+        stock_layer_add($item_id, $location_id, $delta, $unit_cost, $ref_type, $ref_id);
+    }
 }
 
 function adjust_staff_stock($user_id, $item_id, $delta, $ref_type, $ref_id = null, $note = '') {
@@ -100,6 +108,74 @@ function stock_qty($item_id, $location_id) {
 }
 function staff_stock_qty($user_id, $item_id) {
     return (float) (val('SELECT qty FROM staff_stock WHERE user_id = ? AND item_id = ?', [$user_id, $item_id]) ?? 0);
+}
+
+// ---------- FIFO / weighted-average cost layers (additive, opt-in) ----------
+function stock_layer_add($item_id, $location_id, $qty, $unit_cost, $ref_type = '', $ref_id = null) {
+    q('INSERT INTO stock_cost_layers (item_id, location_id, qty_remaining, unit_cost, ref_type, ref_id) VALUES (?,?,?,?,?,?)',
+      [$item_id, $location_id, $qty, $unit_cost, $ref_type, $ref_id]);
+}
+/** Consumes $qty worth of layers (oldest first) for one item/location and
+ *  returns the blended unit cost of what was actually consumed - null if no
+ *  layers exist yet (caller should fall back to items.purchase_price, same
+ *  as before this feature existed). For costing_method='weighted_avg' the
+ *  blended cost is effectively the pool average anyway since every
+ *  remaining layer is consumed proportionally in id order. */
+function stock_layer_consume($item_id, $location_id, $qty) {
+    $layers = all('SELECT * FROM stock_cost_layers WHERE item_id = ? AND location_id = ? AND qty_remaining > 0 ORDER BY id ASC', [$item_id, $location_id]);
+    if (!$layers) return null;
+    $remaining = $qty;
+    $costTotal = 0;
+    $qtyTaken = 0;
+    foreach ($layers as $l) {
+        if ($remaining <= 0) break;
+        $take = min($remaining, (float)$l['qty_remaining']);
+        q('UPDATE stock_cost_layers SET qty_remaining = qty_remaining - ? WHERE id = ?', [$take, $l['id']]);
+        $costTotal += $take * (float)$l['unit_cost'];
+        $qtyTaken += $take;
+        $remaining -= $take;
+    }
+    if ($qtyTaken <= 0) return null;
+    // whatever couldn't be covered by layers (oversold beyond tracked stock)
+    // is priced at the last known layer cost, so the average stays sane
+    if ($remaining > 0) $costTotal += $remaining * (float)end($layers)['unit_cost'];
+    return $costTotal / $qty;
+}
+/** Current inventory value from remaining cost layers for one item, across
+ *  every location (or one, if given) - used by the FIFO/WA valuation view. */
+function stock_layer_value($item_id, $location_id = null) {
+    $sql = 'SELECT COALESCE(SUM(qty_remaining * unit_cost),0) FROM stock_cost_layers WHERE item_id = ? AND qty_remaining > 0';
+    $params = [$item_id];
+    if ($location_id) { $sql .= ' AND location_id = ?'; $params[] = $location_id; }
+    return (float)val($sql, $params);
+}
+
+// ---------- Stock reservations (soft-hold, doesn't touch stock.qty) ----------
+function stock_reserved_qty($item_id, $location_id) {
+    return (float)val("SELECT COALESCE(SUM(qty),0) FROM stock_reservations WHERE item_id = ? AND location_id = ? AND status = 'active'", [$item_id, $location_id]);
+}
+function stock_available_qty($item_id, $location_id) {
+    return stock_qty($item_id, $location_id) - stock_reserved_qty($item_id, $location_id);
+}
+
+// ---------- Low stock (shared by the header bell, the Low Stock report and
+// reorder suggestions - one query instead of three near-duplicates) ----------
+function low_stock_items($location_id = null) {
+    if ($location_id) {
+        return all("SELECT i.*, COALESCE(s.qty,0) q,
+                     (SELECT pt.name FROM purchases pu JOIN purchase_items pi2 ON pi2.purchase_id = pu.id
+                      JOIN parties pt ON pt.id = pu.party_id WHERE pi2.item_id = i.id AND pu.is_cancelled = 0
+                      ORDER BY pu.purchase_date DESC, pu.id DESC LIMIT 1) last_supplier
+                     FROM items i LEFT JOIN stock s ON s.item_id = i.id AND s.location_id = ?
+                     WHERE i.is_active = 1 AND i.item_type <> 'service' AND i.min_stock > 0
+                     HAVING q < i.min_stock ORDER BY q", [$location_id]);
+    }
+    return all("SELECT i.*, COALESCE(SUM(s.qty),0) q,
+                (SELECT pt.name FROM purchases pu JOIN purchase_items pi2 ON pi2.purchase_id = pu.id
+                 JOIN parties pt ON pt.id = pu.party_id WHERE pi2.item_id = i.id AND pu.is_cancelled = 0
+                 ORDER BY pu.purchase_date DESC, pu.id DESC LIMIT 1) last_supplier
+                FROM items i LEFT JOIN stock s ON s.item_id = i.id
+                WHERE i.is_active = 1 AND i.item_type <> 'service' AND i.min_stock > 0 GROUP BY i.id HAVING q < i.min_stock ORDER BY q");
 }
 
 // ---------- OTP ----------

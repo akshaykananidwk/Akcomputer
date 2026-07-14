@@ -62,6 +62,8 @@ foreach (all('SELECT ss.item_id, SUM(ss.qty) q FROM staff_stock ss GROUP BY ss.i
 $staffDetail = all('SELECT ss.*, u2.name staff_name, i.name item_name, i.unit FROM staff_stock ss
                     JOIN users u2 ON u2.id = ss.user_id JOIN items i ON i.id = ss.item_id
                     WHERE ss.qty > 0 ORDER BY u2.name, i.name');
+$reservedMap = [];
+foreach (all("SELECT item_id, SUM(qty) q FROM stock_reservations WHERE status = 'active' GROUP BY item_id") as $s) $reservedMap[$s['item_id']] = (float)$s['q'];
 
 $page_title = 'Stock';
 include __DIR__ . '/includes/header.php';
@@ -71,7 +73,7 @@ include __DIR__ . '/includes/header.php';
 <table id="sTable">
   <thead><tr><th>Item</th>
   <?php foreach ($locations as $l): ?><th class="num"><?= e($l['code']) ?></th><?php endforeach; ?>
-  <th class="num">Staff</th><th class="num">Total</th><th></th></tr></thead>
+  <th class="num">Staff</th><th class="num">Total</th><th class="num">Reserved</th><th class="num">Available</th><th></th></tr></thead>
   <tbody>
   <?php foreach ($stockRows as $it):
       $rowTotal = 0; ?>
@@ -79,10 +81,12 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($it['name']) ?><?= $it['serial_tracked'] ? ' <span class="badge badge-info">SN</span>' : '' ?></td>
       <?php foreach ($locations as $l): $qv = $stockMap[$it['id']][$l['id']] ?? 0; $rowTotal += $qv; ?>
         <td class="num"><?= $qv ?: '·' ?></td>
-      <?php endforeach; $sh = $staffHeld[$it['id']] ?? 0; $rowTotal += $sh; ?>
+      <?php endforeach; $sh = $staffHeld[$it['id']] ?? 0; $rowTotal += $sh; $reserved = $reservedMap[$it['id']] ?? 0; ?>
       <td class="num"><?= $sh ?: '·' ?></td>
       <td class="num"><strong><?= $rowTotal ?></strong>
         <?= $it['min_stock'] > 0 && $rowTotal < $it['min_stock'] ? '<span class="badge badge-bad">LOW</span>' : '' ?></td>
+      <td class="num"><?= $reserved ?: '·' ?></td>
+      <td class="num"><?= $rowTotal - $reserved ?></td>
       <td><a class="btn btn-sm btn-outline" href="stock.php?action=ledger&item_id=<?= $it['id'] ?>">Ledger</a></td>
     </tr>
   <?php endforeach; ?>

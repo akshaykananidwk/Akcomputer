@@ -77,6 +77,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'checklist_toggle') 
     redirect('settings.php?cat=service');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_inventory') {
+    require_perm('settings.edit');
+    $method = post('costing_method');
+    if (in_array($method, ['current', 'fifo', 'weighted_avg'], true)) set_setting('costing_method', $method);
+    set_setting('dead_stock_days', (string)max(1, (int)post('dead_stock_days')));
+    flash('Inventory settings saved.');
+    redirect('settings.php?cat=inventory');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_transaction') {
     require_perm('settings.edit');
     set_setting('cash_sale_default', post('cash_sale_default') ? '1' : '0');
@@ -204,6 +213,7 @@ $categories = [
     'party'     => ['👥', 'Party', 'Credit term options'],
     'accounting' => ['📒', 'Accounting', 'Period lock, Chart of Accounts, Journal Entries'],
     'service'   => ['🔧', 'Service Checklist', 'Repair job checklist items'],
+    'inventory' => ['📦', 'Inventory', 'Costing method, dead-stock threshold, audit/bins/transfers/reservations'],
     'backup'    => ['🔄', 'Backup & Updates', 'Backup download, GitHub update'],
     'about'     => ['📱', 'About', 'Install as app'],
 ];
@@ -480,6 +490,32 @@ exit;
     <div><label>New checklist item</label><input type="text" name="label" required></div>
     <div style="align-self:end"><button class="btn btn-sm" type="submit">+ Add</button></div>
   </form>
+</div>
+<?php endif; ?>
+
+<?php if ($cat === 'inventory'): ?>
+<div class="card">
+  <h3>📦 Costing method</h3>
+  <p class="muted mb">Controls how the Stock Report's FIFO/Weighted-Average valuation section and each sale's recorded cost are computed. "Current price" (the default) keeps today's behaviour - every valuation uses whatever <?= e(setting('app_name', 'the item')) ?>'s Items page currently shows as Purchase Price. Switching to FIFO or Weighted-Average only affects stock going forward - existing stock has no cost history to draw on until new purchases build it up.</p>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_inventory">
+    <div><label>Costing method</label>
+      <select name="costing_method">
+        <?php foreach (['current' => 'Current price (default)', 'fifo' => 'FIFO', 'weighted_avg' => 'Weighted Average'] as $k => $lbl): ?>
+        <option value="<?= $k ?>" <?= setting('costing_method', 'current') === $k ? 'selected' : '' ?>><?= $lbl ?></option>
+        <?php endforeach; ?>
+      </select></div>
+    <div><label>Dead stock: no sale in (days)</label><input type="number" name="dead_stock_days" value="<?= (int)setting('dead_stock_days', 90) ?>"></div>
+    <button class="btn btn-sm" type="submit">Save</button>
+  </form>
+</div>
+<div class="card">
+  <h3>Inventory Tools</h3>
+  <a class="btn btn-sm btn-outline" href="stock_audit.php">Stock Audit / Cycle Counting</a>
+  <a class="btn btn-sm btn-outline" href="bins.php">Bin / Rack Locations</a>
+  <a class="btn btn-sm btn-outline" href="transfers.php">Warehouse Transfers</a>
+  <a class="btn btn-sm btn-outline" href="reservations.php">Stock Reservations</a>
 </div>
 <?php endif; ?>
 

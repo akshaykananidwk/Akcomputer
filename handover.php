@@ -180,8 +180,8 @@ if ($action === 'new') {
         <div class="form-row cols-4">
           <div><label>Type</label>
             <select name="type" id="ho_type" onchange="hoType()">
-              <option value="issue">Issue to staff</option>
-              <option value="transfer">Transfer to branch/godown</option>
+              <option value="issue" <?= get('type') === 'issue' ? 'selected' : '' ?>>Issue to staff</option>
+              <option value="transfer" <?= get('type') === 'transfer' ? 'selected' : '' ?>>Transfer to branch/godown</option>
             </select></div>
           <div><label>From location</label>
             <select name="location_id" id="location_id">
@@ -216,6 +216,7 @@ if ($action === 'new') {
         document.getElementById('staffBox').style.display = t === 'issue' ? '' : 'none';
         document.getElementById('toLocBox').style.display = t === 'transfer' ? '' : 'none';
       }
+      hoType();
     </script>
     <?php
     include __DIR__ . '/includes/footer.php';

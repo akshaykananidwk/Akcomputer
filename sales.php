@@ -136,13 +136,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             if ($item['serial_tracked'] && !$serials && !$allowNeg) {
                 throw new Exception("Select serial number(s) for {$item['name']}.");
             }
+            // FIFO/weighted-average costing (Settings > Inventory) is
+            // opt-in and additive - stock_layer_consume() returns null
+            // (falling back to today's purchase price, same as before this
+            // feature existed) whenever no cost layers have built up yet
+            // for this item/location.
+            $costPrice = (float)$item['purchase_price'];
+            if ($item['item_type'] !== 'service' && setting('costing_method', 'current') !== 'current') {
+                $layerCost = stock_layer_consume($r['item_id'], $loc_id, $r['qty'] + $r['free']);
+                if ($layerCost !== null) $costPrice = $layerCost;
+            }
             q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-              [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null,
+              [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], $costPrice, $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null,
                $r['description'], $r['custom_data']]);
 
             if ($item['item_type'] === 'service') { continue; } // service: no stock effect
-            if (!$allowNeg && stock_qty($r['item_id'], $loc_id) < $r['qty']) {
-                throw new Exception("Not enough stock of {$item['name']} at this location.");
+            if (!$allowNeg && stock_available_qty($r['item_id'], $loc_id) < $r['qty']) {
+                throw new Exception("Not enough available stock of {$item['name']} at this location (some may be reserved).");
             }
             adjust_stock($r['item_id'], $loc_id, -($r['qty'] + $r['free']), 'sale', $sale_id, $invoice_no);
 
@@ -348,8 +358,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
                $r['description'], $r['custom_data']]);
 
             if ($item['item_type'] === 'service') { continue; }
-            if (!$allowNeg && stock_qty($r['item_id'], $loc_id) < $r['qty']) {
-                throw new Exception("Not enough stock of {$item['name']} at this location.");
+            if (!$allowNeg && stock_available_qty($r['item_id'], $loc_id) < $r['qty']) {
+                throw new Exception("Not enough available stock of {$item['name']} at this location (some may be reserved).");
             }
             adjust_stock($r['item_id'], $loc_id, -($r['qty'] + $r['free']), 'sale_edit', $sid, $sale['invoice_no']);
 

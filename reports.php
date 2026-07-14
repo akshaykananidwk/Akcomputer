@@ -13,6 +13,8 @@ $banksAll = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_def
 $bankId = (int)get('bank_id') ?: (int)($banksAll[0]['id'] ?? 0);
 $coaAll = can('reports.accounting') ? coa_all() : [];
 $glAccount = (int)get('gl_account') ?: (int)($coaAll[0]['id'] ?? 0);
+$locsAll = all('SELECT id, name FROM locations WHERE is_active = 1 ORDER BY name');
+$stockLoc = (int)get('stock_loc');
 $page_title = 'Reports';
 include __DIR__ . '/includes/header.php';
 
@@ -28,13 +30,13 @@ $tabs = [
     'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Profit',
     'bill_profit' => '🧮 Bill Profit', 'staff' => '🎒 Staff Stock',
     'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'tech_sla' => '⏱️ Technician SLA',
-    'forecast' => '🔮 AI Sales Forecast', 'low' => '⚠️ Low Stock',
+    'forecast' => '🔮 AI Sales Forecast', 'low' => '⚠️ Low Stock', 'dead_stock' => '🐌 Dead / Slow-moving Stock',
     'general_ledger' => '📗 General Ledger', 'trial_balance' => '⚖️ Trial Balance',
     'balance_sheet' => '📑 Balance Sheet', 'profit_loss' => '💹 Profit & Loss',
     'activity' => '🔍 Activity Log',
 ];
 if (!can('reports.gst')) unset($tabs['gst']);
-if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); }
+if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); unset($tabs['dead_stock']); }
 if (!can('expenses.view')) unset($tabs['expense']);
 if (!can('users.view')) unset($tabs['activity']);
 if (!can('payments.view')) unset($tabs['bank_ledger']);
@@ -51,7 +53,7 @@ $tabCategories = [
     'Transaction' => ['business', 'daily', 'sales', 'purchase'],
     'Party Reports' => ['party_sales', 'aging', 'vendor_perf'],
     'GST' => ['gst'],
-    'Item / Stock Reports' => ['stockval', 'low', 'forecast'],
+    'Item / Stock Reports' => ['stockval', 'low', 'dead_stock', 'forecast'],
     'Business Status' => ['cashbook', 'bank_ledger', 'profit', 'bill_profit'],
     'Accounting' => ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'],
     'Expense Reports' => ['expense'],
@@ -60,7 +62,7 @@ $tabCategories = [
 ];
 ?>
 <?php
-$filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&bank_id=' . $bankId . '&gl_account=' . $glAccount;
+$filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&bank_id=' . $bankId . '&gl_account=' . $glAccount . '&stock_loc=' . $stockLoc;
 $filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchase', 'vendor_perf', 'gst', 'profit', 'bill_profit'], true);
 $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
 ?>
@@ -168,6 +170,15 @@ $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
     <select name="gl_account" onchange="document.getElementById('reportFilterForm').submit()">
       <?php foreach ($coaAll as $a): ?>
       <option value="<?= $a['id'] ?>" <?= $glAccount == $a['id'] ? 'selected' : '' ?>><?= e($a['code']) ?> - <?= e($a['name']) ?></option>
+      <?php endforeach; ?>
+    </select></div>
+  <?php endif; ?>
+  <?php if (in_array($r, ['low', 'dead_stock'], true)): ?>
+  <div><label>Location</label>
+    <select name="stock_loc" onchange="document.getElementById('reportFilterForm').submit()">
+      <option value="0">All locations</option>
+      <?php foreach ($locsAll as $l): ?>
+      <option value="<?= $l['id'] ?>" <?= $stockLoc == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option>
       <?php endforeach; ?>
     </select></div>
   <?php endif; ?>
