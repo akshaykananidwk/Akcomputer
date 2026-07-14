@@ -1082,13 +1082,15 @@ function invoice_pdf_design2($sale, $items) {
     $cats = ['Computers', 'Laptops', 'Accessories', 'CCTV', 'Networking', 'AMC'];
     $sx0 = 330; $sstep = ($R - $sx0) / (count($cats) - 1);
     foreach ($cats as $i => $cat) { $cx = $sx0 + $i * $sstep; pdf_icon_device($pdf, $cx, $fbTop + 25, [1, 1, 1]); $pdf->text_center($cx, $fbTop + 39, 6, $cat, '', [1, 1, 1]); }
-    // centre stamp
+    // centre stamp (auto-fit "AK COMPUTER" so it never gets clipped by the ring)
     $stcx = 290; $stcy = $fbTop + 21;
     $pdf->circle($stcx, $stcy, 20, [1, 1, 1]);
-    $pdf->circle_stroke($stcx, $stcy, 19, $C['purple'], 1); $pdf->circle_stroke($stcx, $stcy, 15.5, $C['purple'], 0.5);
-    $pdf->text_center($stcx, $stcy - 5, 5, 'AK COMPUTER', 'B', $C['purple']);
-    $pdf->text_center($stcx, $stcy + 2, 4.6, 'THANK YOU', '', $C['purple']);
-    $pdf->text_center($stcx, $stcy + 9, 4.6, strtoupper(trim(explode('-', $sale['loc_city'])[0])), 'B', $C['purple']);
+    $pdf->circle_stroke($stcx, $stcy, 19, $C['purple'], 1); $pdf->circle_stroke($stcx, $stcy, 16.5, $C['purple'], 0.5);
+    $innerW = 2 * 16.5 - 5;                 // usable width inside the inner ring
+    $topFs = min(4.6, $innerW * 4.6 / max(1, pdf_text_width('AK COMPUTER', 4.6, true)));
+    $pdf->text_center($stcx, $stcy - 5.5, $topFs, 'AK COMPUTER', 'B', $C['purple']);
+    $pdf->text_center($stcx, $stcy + 1.5, 4.4, 'THANK YOU', '', $C['purple']);
+    $pdf->text_center($stcx, $stcy + 8.5, 4.4, strtoupper(trim(explode('-', $sale['loc_city'])[0])), 'B', $C['purple']);
 
     // signature lines
     $sy = $fbTop + 42 + 24;
