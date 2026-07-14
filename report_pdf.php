@@ -41,7 +41,7 @@ $tabLabels = [
     'expense' => 'Expenses', 'gst' => 'GST', 'profit' => 'Product-wise Profit', 'bill_profit' => 'Bill Profit',
     'branch_staff' => 'Branch / Staff Comparison',
     'staff' => 'Staff Stock', 'repair_tat' => 'Repair TAT', 'warranty_tat' => 'Warranty TAT',
-    'tech_sla' => 'Technician SLA', 'forecast' => 'AI Sales Forecast', 'low' => 'Low Stock', 'dead_stock' => 'Dead / Slow-moving Stock',
+    'tech_sla' => 'Technician SLA', 'forecast' => 'AI Sales Forecast', 'low' => 'Low Stock', 'purchase_reco' => 'Purchase Recommendations (AI)', 'dead_stock' => 'Dead / Slow-moving Stock',
     'general_ledger' => 'General Ledger', 'trial_balance' => 'Trial Balance',
     'balance_sheet' => 'Balance Sheet', 'profit_loss' => 'Profit & Loss',
     'custom' => 'Custom Report',

@@ -8,11 +8,11 @@ require_perm('dashboard.view');
 $u = current_user();
 
 $widgetLabels = [
-    'duo' => 'To Receive / To Pay', 'sale_overview' => 'Sale Overview', 'profit_trend' => 'Profit Trend',
+    'duo' => 'To Receive / To Pay', 'sale_overview' => 'Sale Overview', 'profit_trend' => 'Profit Trend', 'ai_insights' => 'AI Insights',
     'inventory' => 'Inventory Summary', 'open_tx' => 'Open Transactions', 'tasks' => 'My Pending Tasks', 'stock' => 'Stock In My Hand',
 ];
 $widgetPerms = [
-    'duo' => can('payments.view'), 'sale_overview' => can('sales.view'), 'profit_trend' => can('sales.view'),
+    'duo' => can('payments.view'), 'sale_overview' => can('sales.view'), 'profit_trend' => can('sales.view'), 'ai_insights' => can('reports.profit'),
     'inventory' => can('stock.view'), 'open_tx' => (can('repairs.view') || can('estimates.view') || can('warranty.view')),
     'tasks' => true, 'stock' => true,
 ];
@@ -21,7 +21,7 @@ $widgetPerms = [
 // others in its own group, since moving it past a different-group widget
 // wouldn't actually change anything on the dashboard (the two groups
 // render in separate DOM blocks).
-$topKeys = ['duo', 'sale_overview', 'profit_trend'];
+$topKeys = ['duo', 'sale_overview', 'profit_trend', 'ai_insights'];
 $gridKeys = ['inventory', 'open_tx', 'tasks', 'stock'];
 function dc_group($w, $topKeys) { return in_array($w, $topKeys, true) ? 'top' : 'grid'; }
 $defaultOrder = array_keys($widgetLabels);

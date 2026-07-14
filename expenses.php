@@ -44,17 +44,38 @@ include __DIR__ . '/includes/header.php';
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save">
     <div><label>Date</label><input type="date" name="exp_date" value="<?= today() ?>"></div>
-    <div><label>Category</label><select name="category"><?php foreach ($cats as $c): ?><option><?= $c ?></option><?php endforeach; ?></select></div>
+    <div><label>Category</label><select name="category" id="exp_category"><?php foreach ($cats as $c): ?><option><?= $c ?></option><?php endforeach; ?></select></div>
     <div><label>Amount ₹</label><input type="number" step="any" name="amount" required></div>
     <div><label>Mode</label><select name="mode" id="exp_mode" onchange="document.getElementById('exp_bank').style.display=this.selectedOptions[0].dataset.type==='bank'?'':'none'">
       <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
     </select></div>
     <div id="exp_bank" style="display:none"><label>Bank Account</label>
       <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?></option><?php endforeach; ?></select></div>
-    <div><label>Notes</label><input type="text" name="notes"></div>
+    <div><label>Notes <span class="muted" style="font-weight:normal">(category auto-suggested as you type)</span></label><input type="text" name="notes" id="exp_notes"></div>
     <button class="btn btn-sm" type="submit">Save</button>
   </form>
 </div>
+<script>
+(function () {
+  var notes = document.getElementById('exp_notes'), cat = document.getElementById('exp_category');
+  if (!notes || !cat) return;
+  var catTouched = false, t = null;
+  cat.addEventListener('change', function () { catTouched = true; });
+  notes.addEventListener('input', function () {
+    clearTimeout(t);
+    var text = notes.value.trim();
+    if (!text || catTouched) return;
+    t = setTimeout(function () {
+      fetch('ajax.php?a=suggest_category&text=' + encodeURIComponent(text)).then(function (r) { return r.json(); }).then(function (d) {
+        if (!d.category) return;
+        for (var i = 0; i < cat.options.length; i++) {
+          if (cat.options[i].value === d.category) { cat.selectedIndex = i; break; }
+        }
+      });
+    }, 400);
+  });
+})();
+</script>
 <?php endif; ?>
 <form method="get" class="filterbar">
   <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>

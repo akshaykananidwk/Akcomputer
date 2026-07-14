@@ -94,6 +94,11 @@ if ($a === 'serial_lookup') {
     exit;
 }
 
+if ($a === 'suggest_category' && can('expenses.add')) {
+    echo json_encode(['category' => suggest_expense_category(get('text'))]);
+    exit;
+}
+
 if ($a === 'set_theme' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $theme = in_array(post('theme'), ['light', 'dark', 'auto'], true) ? post('theme') : 'auto';
     set_user_pref(current_user()['id'], 'theme', $theme);

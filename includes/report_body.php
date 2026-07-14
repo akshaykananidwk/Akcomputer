@@ -608,6 +608,45 @@ if ($r === 'low') {
     }
 }
 
+// ---------------- purchase recommendations (demand-driven) ----------------
+// Complements the Low Stock tab above (which only flags items already
+// below their fixed min_stock line) - this flags items trending toward
+// running out based on actual sales velocity (weighted_forecast() over the
+// last 6 months), even ones that haven't crossed min_stock yet.
+if ($r === 'purchase_reco') {
+    $recos = purchase_recommendations(6);
+    $canReorder = can('purchases.add') && $recos;
+    echo '<p class="muted mb">Suggested purchase quantities based on each item\'s sales trend over the last 6 months (not just a fixed minimum-stock line) - covers items that are about to run low even if they haven\'t crossed their Low Stock threshold yet.</p>';
+    if ($canReorder) echo '<p class="muted mb">Select item(s) and press "🛒 Create Purchase for Selected" below - the New Purchase form opens with item/qty pre-filled, you just need to pick the party.</p>';
+    echo '<div class="table-wrap"><table><thead><tr>' . ($canReorder ? '<th></th>' : '') . '<th>Item</th><th class="num">In stock</th><th class="num">Forecast (next month)</th><th>Trend</th><th class="num">Suggested Order</th><th class="num">Est. Cost</th></tr></thead><tbody>';
+    $trendIcon = ['up' => '📈', 'down' => '📉', 'flat' => '➡️'];
+    foreach ($recos as $x) {
+        echo '<tr>';
+        if ($canReorder) echo '<td><input type="checkbox" class="reorder-cb" data-id="' . $x['item_id'] . '" data-name="' . e($x['name']) . '" data-qty="' . $x['suggest_qty'] . '" data-tax="' . $x['tax_rate'] . '" data-price="' . $x['purchase_price'] . '"></td>';
+        echo '<td>' . e($x['name']) . '</td><td class="num">' . $x['stock'] . '</td>'
+           . '<td class="num">' . number_format($x['forecast'], 1) . ' ' . e($x['unit']) . '</td>'
+           . '<td>' . $trendIcon[$x['trend']] . '</td>'
+           . '<td class="num"><strong>' . $x['suggest_qty'] . '</strong></td>'
+           . '<td class="num">₹' . money($x['est_cost']) . '</td></tr>';
+    }
+    if (!$recos) echo '<tr><td colspan="6" class="muted">No items trending toward running out. 🎉</td></tr>';
+    echo '</tbody></table></div>';
+    if ($canReorder) {
+        echo '<button type="button" class="btn mt" onclick="buildReorder()">🛒 Create Purchase for Selected</button>';
+        echo '<script>
+        function buildReorder() {
+          var items = [];
+          document.querySelectorAll(".reorder-cb:checked").forEach(function (cb) {
+            items.push({id: cb.dataset.id, name: cb.dataset.name, qty: cb.dataset.qty, tax: cb.dataset.tax, price: cb.dataset.price});
+          });
+          if (!items.length) { alert("Select at least one item."); return; }
+          sessionStorage.setItem("reorderItems", JSON.stringify(items));
+          location = "purchases.php?action=new&reorder=1";
+        }
+        </script>';
+    }
+}
+
 // ---------------- dead / slow-moving stock ----------------
 if ($r === 'dead_stock' && can('reports.profit')) {
     $deadDays = (int)get('dead_days') ?: (int)setting('dead_stock_days', 90);

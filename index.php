@@ -82,10 +82,12 @@ $partiesLink = can('parties.view');
 // grid just lays children out in DOM order, so reordering within a group
 // is a plain array sort - no positioning math needed). See
 // dashboard_customize.php for the show/hide + reorder UI.
+$aiInsights = can('reports.profit') ? ai_dashboard_insights($saleScope . $locScope, array_merge($saleParams, $locParam)) : [];
 $topWidgetDefs = [
     'duo' => $canMoney,
     'sale_overview' => can('sales.view'),
     'profit_trend' => can('sales.view') && $profitChart,
+    'ai_insights' => can('reports.profit') && $aiInsights,
 ];
 $gridWidgetDefs = [
     'inventory' => (bool)$invCard,
@@ -154,6 +156,13 @@ include __DIR__ . '/includes/header.php';
   <h2>Profit Trend <span class="muted" style="font-weight:400;font-size:13px">(Last 6 Months, item profit only)</span></h2>
   <?= svg_line_chart($profitChart, '#16a34a') ?>
   <p class="mt"><a href="reports.php?r=profit">View full Profit report →</a></p>
+</div>
+<?php elseif ($_w === 'ai_insights'): ?>
+<div class="card">
+  <h2>🤖 AI Insights</h2>
+  <?php foreach ($aiInsights as $ins): ?>
+  <p class="mb"><?= $ins['icon'] ?> <?= e($ins['text']) ?></p>
+  <?php endforeach; ?>
 </div>
 <?php endif; endforeach; ?>
 
