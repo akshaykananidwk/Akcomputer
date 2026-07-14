@@ -113,8 +113,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
 <?php if ($sale['is_cancelled']): ?><div class="flash flash-error">🚫 This INVOICE is CANCELLED.</div><?php endif; ?>
 <?php if (!$public): ?>
 <div class="page-actions no-print">
-  <button class="btn" onclick="window.print()">🖨️ Print</button>
-  <a class="btn btn-outline" href="sale_pdf.php?id=<?= $id ?>" target="_blank">📄 PDF</a>
+  <a class="btn" href="sale_pdf.php?id=<?= $id ?>" target="_blank" rel="noopener">🖨️ Print / PDF</a>
   <form method="post" style="display:inline-flex;gap:6px">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="whatsapp">
@@ -199,7 +198,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
   </div>
   <div class="table-wrap" style="box-shadow:none">
     <table class="inv-table inv-table2">
-      <thead><tr><th>#</th><th>Item Description</th><?php if ($sale['is_gst']): ?><th>HSN</th><?php endif; ?><th class="num">Qty</th><th class="num">Rate</th><?php if ($sale['is_gst']): ?><th class="num">GST%</th><?php endif; ?><th class="num">Amount</th></tr></thead>
+      <thead><tr><th>#</th><th>Item Description</th><?php if ($sale['is_gst']): ?><th>HSN</th><?php endif; ?><th class="num">Qty</th><th class="num">Rate (₹)</th><?php if ($sale['is_gst']): ?><th class="num">GST%</th><?php endif; ?><th class="num">Amount (₹)</th></tr></thead>
       <tbody>
       <?php foreach ($items as $n => $it): ?>
         <tr>
@@ -309,7 +308,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
       <div class="inv-social-icons"><span>f</span><span>IG</span><span>W</span><span>YT</span></div>
     </div>
     <?php if ($sale['c_phone']): ?><div style="text-align:center"><strong>For Support</strong><?= e($sale['c_phone']) ?></div><?php endif; ?>
-    <div style="text-align:right"><strong>We Deal In:</strong>Computers . Laptops . CCTV . Networking . AMC</div>
+    <div style="text-align:right"><strong>We Deal In:</strong>Computers . Laptops . Accessories . CCTV . Networking . AMC</div>
   </div>
   <div class="inv-bottom-strip">This is a computer generated invoice.</div>
   <p class="muted mt" style="font-size:11px">Billed by: <?= e($sale['staff_name']) ?><?= $sale['notes'] ? ' | ' . e($sale['notes']) : '' ?></p>

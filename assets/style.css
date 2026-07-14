@@ -546,11 +546,15 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .inv-stamp::before { content: ''; position: absolute; inset: 5px; border: 0.8px solid var(--navy); border-radius: 50%; }
 .inv-stamp-text { text-align: center; font-size: 6.3px; font-weight: 700; color: var(--navy); line-height: 1.5; }
 .inv-footer-bar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center;
-  background: linear-gradient(90deg, var(--orange), var(--teal)); color: #fff; padding: 10px 16px; border-radius: 6px; margin-top: 34px; font-size: 11px; }
+  background: linear-gradient(90deg, #ffdd8c, #ffedba); color: var(--navy); padding: 10px 16px; border-radius: 6px; margin-top: 34px; font-size: 11px; }
 .inv-footer-bar strong { display: block; font-size: 11px; margin-bottom: 4px; }
 .inv-social-icons { display: flex; gap: 6px; }
-.inv-social-icons span { width: 18px; height: 18px; border-radius: 50%; background: #fff; color: var(--teal-dark); font-size: 8px;
+.inv-social-icons span { width: 18px; height: 18px; border-radius: 50%; color: #fff; font-size: 8px;
   font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.inv-social-icons span:nth-child(1) { background: #3b5998; }
+.inv-social-icons span:nth-child(2) { background: #d1348a; }
+.inv-social-icons span:nth-child(3) { background: #22b34f; }
+.inv-social-icons span:nth-child(4) { background: #d92121; }
 .inv-bottom-strip { background: var(--navy); color: #c3cee0; text-align: center; font-size: 10.5px; padding: 7px; border-radius: 0 0 6px 6px; }
 
 /* misc */
