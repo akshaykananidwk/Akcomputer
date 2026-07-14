@@ -557,6 +557,56 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .inv-social-icons span:nth-child(4) { background: #d92121; }
 .inv-bottom-strip { background: var(--navy); color: #c3cee0; text-align: center; font-size: 10.5px; padding: 7px; border-radius: 0 0 6px 6px; }
 
+/* ---------- Bill Design 2 (purple / orange), mirrors invoice_pdf_design2() ---------- */
+.inv2-bill { --pp: #6d28d9; --ppd: #4c1d95; --ppl: #8b5cf6; --org: #ff7a1a; --nvy: #1e1b3a; }
+.inv2-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; background: linear-gradient(110deg, #fff 0 46%, var(--pp) 46%); border-radius: 10px; padding: 14px 16px; margin: -8px -8px 14px; }
+.inv2-logo { font-size: 26px; font-weight: 800; } .inv2-logo .ak { color: var(--pp); } .inv2-logo .cmp { color: var(--nvy); }
+.inv2-tagline { font-style: italic; color: var(--pp); font-size: 12.5px; border-top: 2px solid var(--org); display: inline-block; padding-top: 2px; margin: 2px 0 8px; }
+.inv2-contact { font-size: 12px; color: #64748b; margin: 3px 0; }
+.inv2-head-right { text-align: right; min-width: 250px; }
+.inv2-title { font-size: 30px; font-weight: 800; color: #fff; margin-bottom: 8px; }
+.inv2-info { background: #fff; border: 1px solid #ddd6f3; border-radius: 9px; padding: 8px 12px; text-align: left; }
+.inv2-info-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: 5px 0; }
+.inv2-info-row .ib { width: 18px; height: 18px; border-radius: 4px; color: #fff; font-size: 9px; display: inline-flex; align-items: center; justify-content: center; }
+.inv2-info-row .il { color: #64748b; min-width: 66px; } .inv2-info-row .iv { font-weight: 700; color: var(--nvy); }
+.inv2-billrow { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 14px; }
+.inv2-billto { display: inline-block; background: linear-gradient(90deg, var(--pp), var(--ppl)); color: #fff; font-weight: 700; font-size: 12px; padding: 5px 16px; border-radius: 13px; }
+.inv2-cust { font-size: 15px; font-weight: 800; color: var(--nvy); margin-top: 8px; }
+.inv2-badges { display: flex; gap: 14px; }
+.inv2-badge { text-align: center; width: 62px; }
+.inv2-hex { width: 42px; height: 46px; margin: 0 auto 5px; color: #fff; font-size: 18px; display: flex; align-items: center; justify-content: center; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+.inv2-badge-t { font-size: 8px; font-weight: 700; color: var(--nvy); line-height: 1.2; }
+.inv2-table thead th { background: linear-gradient(90deg, var(--pp), var(--ppl)) !important; color: #fff !important; font-size: 11px; }
+.inv2-table tbody tr:nth-child(even) td { background: #f8f6fe; }
+.inv2-sq { display: inline-block; min-width: 22px; padding: 2px 4px; border-radius: 4px; color: #fff; font-weight: 700; font-size: 11px; text-align: center; }
+.inv2-payrow { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; margin-top: 16px; }
+.inv2-payblock { flex: 1 1 300px; min-width: 280px; }
+.inv2-totals { flex: 1 1 230px; min-width: 230px; max-width: 265px; margin-left: auto; }
+.inv2-pay-pill, .inv2-scan-pill { display: inline-block; background: linear-gradient(90deg, var(--pp), var(--ppl)); color: #fff; font-weight: 700; font-size: 11px; padding: 5px 16px; border-radius: 13px; margin-bottom: 10px; }
+.inv2-scan-pill { font-size: 9.5px; padding: 4px 10px; }
+.inv2-bank { position: relative; background: #f7f5fe; border: 1px solid #ddd6f3; border-radius: 9px; padding: 11px 14px; font-size: 12px; overflow: hidden; }
+.inv2-bank div { margin: 3px 0; } .inv2-bank span { color: #64748b; display: inline-block; min-width: 68px; }
+.inv2-bank::after { content: ''; position: absolute; right: 0; bottom: 0; border-width: 0 0 18px 18px; border-style: solid; border-color: transparent transparent var(--org) transparent; }
+.inv2-scanrow { display: flex; gap: 14px; align-items: flex-start; margin-top: 14px; }
+.inv2-qr { width: 76px; height: 76px; border: 1px solid #ddd6f3; border-radius: 6px; }
+.inv2-thanks { font-family: Georgia, serif; font-style: italic; color: var(--pp); font-size: 20px; }
+.inv2-stars { color: var(--org); font-size: 16px; letter-spacing: 3px; margin-top: 4px; }
+.inv2-t { display: flex; justify-content: space-between; font-size: 12.5px; padding: 5px 2px; color: #475569; border-bottom: 1px solid #eee; }
+.inv2-total-bar { display: flex; justify-content: space-between; background: linear-gradient(90deg, var(--pp), #2563eb); color: #fff; font-weight: 800; font-size: 15px; padding: 9px 12px; border-radius: 4px; margin: 5px 0; }
+.inv2-balance-bar { display: flex; justify-content: space-between; background: #fff1d6; border-left: 5px solid var(--org); color: #b3260b; font-weight: 800; font-size: 13.5px; padding: 8px 12px; margin-top: 5px; }
+.inv2-paid-bar { text-align: center; background: #d8f3e0; color: #0f9d58; font-weight: 800; padding: 8px; margin-top: 5px; border-radius: 4px; }
+.inv2-trustrow { display: flex; justify-content: center; gap: 26px; flex-wrap: wrap; margin: 20px 0; }
+.inv2-trust { text-align: center; width: 84px; }
+.inv2-trust-c { width: 34px; height: 34px; margin: 0 auto 5px; border: 2px solid; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+.inv2-trust-t { font-size: 8px; font-weight: 700; color: var(--nvy); }
+.inv2-footer { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; background: linear-gradient(90deg, var(--pp), var(--ppd)); color: #fff; padding: 11px 16px; border-radius: 6px; margin-top: 20px; font-size: 11px; }
+.inv2-social { display: flex; gap: 6px; margin-top: 4px; }
+.inv2-social span { width: 18px; height: 18px; border-radius: 50%; background: #fff; color: var(--pp); font-size: 8px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.inv2-sigrow { display: flex; justify-content: space-between; gap: 20px; align-items: flex-end; padding-top: 30px; font-size: 12.5px; }
+.inv2-sig { border-top: 1px solid #94a3b8; padding-top: 6px; min-width: 180px; text-align: center; color: #475569; }
+.inv2-stamp { width: 74px; height: 74px; border: 1.5px solid var(--pp); border-radius: 50%; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 6.5px; font-weight: 700; color: var(--pp); line-height: 1.5; }
+.inv2-bottom { background: var(--ppd); color: #ddd3f5; font-size: 10.5px; padding: 7px 14px; border-radius: 4px; margin-top: 12px; }
+
 /* misc */
 .muted { color: var(--muted); font-size: 13px; }
 .mt { margin-top: 12px; } .mb { margin-bottom: 12px; }

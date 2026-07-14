@@ -433,8 +433,17 @@ function pdf_invoice_waves(&$pdf, $C) {
     ], $C['gold']);
 }
 
-/** Build the invoice PDF bytes for a sale row + items (same data as sale_view). */
+/** Build the invoice PDF bytes for a sale row + items. Dispatches to the
+ *  design chosen in Settings (invoice_design: 1 = teal/orange default,
+ *  2 = purple). Both produce genuine selectable-text PDFs. */
 function invoice_pdf($sale, $items) {
+    return (setting('invoice_design', '1') === '2')
+        ? invoice_pdf_design2($sale, $items)
+        : invoice_pdf_design1($sale, $items);
+}
+
+/** Design 1 - teal/orange flowing-ribbon theme (the original default). */
+function invoice_pdf_design1($sale, $items) {
     $pdf = new MiniPDF();
     $L = 36; $R = 559; $PW = 595;
     $C = invoice_colors();
@@ -772,4 +781,335 @@ function invoice_pdf($sale, $items) {
     $pdf->poly([[$PW, 824], [$PW, 842], [$PW - 40, 842]], $C['orange']);
 
     return $pdf->output();
+}
+
+/** Colour palette for invoice Design 2 (purple / orange theme). */
+function invoice_colors2() {
+    return [
+        'purple' => [0.45, 0.17, 0.78], 'purple_dark' => [0.31, 0.10, 0.57], 'purple_lt' => [0.58, 0.32, 0.86],
+        'orange' => [1.0, 0.50, 0.10], 'blue' => [0.13, 0.42, 0.88], 'green' => [0.09, 0.62, 0.36],
+        'pink' => [0.86, 0.20, 0.53], 'teal' => [0.04, 0.66, 0.62], 'navy' => [0.12, 0.10, 0.28],
+        'gray' => [0.40, 0.42, 0.50], 'amber_bg' => [1.0, 0.93, 0.74], 'amber_edge' => [1.0, 0.62, 0.15],
+        'row_alt' => [0.975, 0.965, 0.995], 'lav_bg' => [0.972, 0.962, 0.995], 'lav_border' => [0.80, 0.72, 0.95],
+    ];
+}
+/** Filled pointy-top hexagon centred at ($cx,$cy), circum-radius $r. */
+function pdf_hexagon(&$pdf, $cx, $cy, $r, $rgb) {
+    $pts = [];
+    for ($i = 0; $i < 6; $i++) { $a = M_PI / 2 + $i * M_PI / 3; $pts[] = [$cx + $r * cos($a), $cy - $r * sin($a)]; }
+    $pdf->poly($pts, $rgb);
+}
+/** A small badge: coloured hexagon with a white glyph + a 2-line caption under it. */
+function pdf_badge_hex(&$pdf, $cx, $cy, $r, $rgb, $glyph, $l1, $l2, $C) {
+    pdf_hexagon($pdf, $cx, $cy, $r, $rgb);
+    pdf_hexagon($pdf, $cx, $cy, $r - 2.2, [1, 1, 1]);
+    pdf_hexagon($pdf, $cx, $cy, $r - 4.5, $rgb);
+    $pdf->text_center($cx, $cy + $r * 0.28, $r * 0.7, $glyph, 'B', [1, 1, 1]);
+    $pdf->text_center($cx, $cy + $r + 9, 6.3, $l1, 'B', $C['navy']);
+    if ($l2 !== '') $pdf->text_center($cx, $cy + $r + 17, 6.3, $l2, 'B', $C['navy']);
+}
+/** A trust badge: thin ring with a glyph + a 2-line caption under it. */
+function pdf_trust(&$pdf, $cx, $cy, $r, $rgb, $glyph, $l1, $l2, $C) {
+    $pdf->circle($cx, $cy, $r, [0.97, 0.95, 0.99]);
+    $pdf->circle_stroke($cx, $cy, $r, $rgb, 1.2);
+    $pdf->text_center($cx, $cy + $r * 0.32, $r * 0.85, $glyph, 'B', $rgb);
+    $pdf->text_center($cx, $cy + $r + 9, 6, $l1, 'B', $C['navy']);
+    if ($l2 !== '') $pdf->text_center($cx, $cy + $r + 16.5, 6, $l2, 'B', $C['navy']);
+}
+/** Small rounded-square icon holding a glyph (used in the invoice info panel). */
+function pdf_isq(&$pdf, $x, $y, $s, $rgb, $glyph) {
+    $pdf->rrect($x, $y, $s, $s, 3, $rgb);
+    $pdf->text_center($x + $s / 2, $y + $s * 0.72, $s * 0.62, $glyph, 'B', [1, 1, 1]);
+}
+
+/** Design 2 - purple/orange geometric theme. */
+function invoice_pdf_design2($sale, $items) {
+    $pdf = new MiniPDF();
+    $L = 36; $R = 559; $PW = 595;
+    $C = invoice_colors2();
+    $bank = default_bank_account();
+    $qrId = null;
+    if ($bank && $bank['upi_id']) {
+        $qrPath = qr_png_path(upi_uri($bank['upi_id'], $bank['account_name'], $sale['total'], $sale['invoice_no']));
+        if ($qrPath) $qrId = $pdf->load_png($qrPath);
+    }
+    $showTime = setting('add_time_transactions', '1') === '1' && !empty($sale['created_at']);
+    $due = $sale['total'] - $sale['paid'];
+
+    // ===== HEADER (angular purple / orange) =====
+    $pdf->poly([[0, 0], [$PW, 0], [$PW, 120], [$PW - 150, 120], [$PW - 210, 60], [0, 60]], $C['purple']);
+    // orange accent slashes near the middle divider
+    $pdf->poly([[$PW - 210, 0], [$PW - 150, 0], [$PW - 210, 70]], $C['orange']);
+    $pdf->poly([[$PW - 250, 0], [$PW - 222, 0], [$PW - 262, 44]], $C['orange']);
+    // white rounded logo card on the left over the purple
+    $pdf->rrect(10, 8, 300, 118, 14, [1, 1, 1]);
+
+    // INVOICE title on the purple (right)
+    $pdf->text_right($R, 46, 34, 'INVOICE', 'B', [1, 1, 1]);
+
+    // logo lockup
+    $pdf->text($L, 44, 30, 'AK', 'B', $C['purple']);
+    $akw = pdf_text_width('AK', 30, true);
+    $pdf->text($L + $akw + 7, 42, 23, 'COMPUTER', 'B', $C['navy']);
+    $pdf->text($L + $akw + 9, 58, 11, 'Smart Solutions, Better Future', 'I', $C['purple']);
+    $pdf->line($L, 62, $L + $akw + 2, 62, 0.8, $C['orange']);
+
+    // contact lines with icons (below the logo card)
+    $cy = 90;
+    $addrMaxW = 300 - ($L + 16) - 6;
+    $addrLines = array_slice(pdf_wrap(trim(($sale['c_address'] ?? '') . ' ' . $sale['loc_name'] . ', ' . $sale['loc_city']), 8, false, $addrMaxW), 0, 2);
+    pdf_icon_pin($pdf, $L + 5, $cy, 10, $C['purple']);
+    foreach ($addrLines as $al) { $pdf->text($L + 15, $cy, 8, $al, '', $C['gray']); $cy += 11; }
+    $cy += 2;
+    if ($sale['c_phone']) { pdf_icon_phone($pdf, $L + 5, $cy, 10, $C['purple']); $pdf->text($L + 15, $cy, 8, $sale['c_phone'], '', $C['gray']); $cy += 13; }
+    $email = setting('company_email', setting('app_email', ''));
+    if ($email) { pdf_icon_at($pdf, $L + 5, $cy, 10, $C['purple']); $pdf->text($L + 15, $cy, 8, $email, '', $C['gray']); }
+
+    // invoice info panel (white rounded, purple text) on the right, below INVOICE
+    $ipX = 355; $ipY = 74; $ipW = $R - $ipX; $ipH = 62;
+    $pdf->rrect($ipX, $ipY, $ipW, $ipH, 9, [1, 1, 1]);
+    $pdf->rrect_stroke($ipX, $ipY, $ipW, $ipH, 9, $C['lav_border'], 0.8);
+    $rowsInfo = [['D', 'Invoice No.', $sale['invoice_no'], $C['purple']], ['C', 'Date', dmy($sale['sale_date']), $C['orange']]];
+    if ($showTime) $rowsInfo[] = ['T', 'Time', date('h:i A', strtotime($sale['created_at'])), $C['blue']];
+    $iy = $ipY + 8;
+    $rh = ($ipH - 12) / count($rowsInfo);
+    foreach ($rowsInfo as $ri) {
+        pdf_isq($pdf, $ipX + 10, $iy + 1, 12, $ri[3], $ri[0]);
+        $pdf->text($ipX + 30, $iy + 10, 8.5, $ri[1], '', $C['gray']);
+        $pdf->text($ipX + 96, $iy + 10, 8.5, ': ' . $ri[2], 'B', $C['navy']);
+        $iy += $rh;
+    }
+
+    // ===== BILL TO + trust hexagons =====
+    $y = 150;
+    $pdf->grad_rrect($L, $y - 13, 110, 20, 10, $C['purple'], $C['purple_lt'], 'h');
+    $pdf->text_center($L + 20, $y, 8.5, 'B', 'B', [1, 1, 1]);
+    $pdf->text($L + 32, $y, 10, 'BILL TO :', 'B', [1, 1, 1]);
+    $y += 20;
+    $pdf->text($L, $y, 13, $sale['customer_name'] ?: $sale['party_name'] ?: 'Walk-in Customer', 'B', $C['navy']);
+    if ($sale['customer_mobile']) { $y += 15; pdf_icon_phone($pdf, $L + 5, $y, 10, $C['purple']); $pdf->text($L + 15, $y, 9.5, $sale['customer_mobile'], '', $C['gray']); }
+    if (!empty($sale['party_gstin'])) { $y += 13; $pdf->text($L + 15, $y, 9, 'GSTIN: ' . $sale['party_gstin'], '', $C['gray']); }
+
+    // four hexagon badges on the right
+    $hexY = 178; $hexR = 19;
+    $bx0 = 300; $bstep = (($R - 10) - $bx0) / 3;
+    pdf_badge_hex($pdf, $bx0 + 0 * $bstep, $hexY, $hexR, $C['purple'], '*', 'BEST', 'QUALITY', $C);
+    pdf_badge_hex($pdf, $bx0 + 1 * $bstep, $hexY, $hexR, $C['orange'], '%', 'BEST', 'PRICE', $C);
+    pdf_badge_hex($pdf, $bx0 + 2 * $bstep, $hexY, $hexR, $C['blue'], 'V', 'TRUSTED', 'SERVICE', $C);
+    pdf_badge_hex($pdf, $bx0 + 3 * $bstep, $hexY, $hexR, $C['green'], 'H', 'AFTER SALES', 'SUPPORT', $C);
+
+    // ===== ITEM TABLE =====
+    $hasGst = $sale['is_gst'];
+    $cNum = $L + 6; $cItem = $L + 34;
+    if ($hasGst) { $cHsnR = 316; $cQtyC = 360; $cRateR = 444; $cGstR = 480; $cAmtR = $R - 10; $itemMaxW = $cHsnR - $cItem - 52; }
+    else { $cQtyC = 322; $cRateR = 468; $cAmtR = $R - 10; $itemMaxW = ($cQtyC - 24) - $cItem - 10; }
+
+    $rowH = 22; $headH = 21;
+    $y = 220;
+    $sqColors = [$C['purple'], $C['orange'], $C['blue'], $C['pink'], $C['teal'], $C['green']];
+    $drawHead = function ($ty) use ($pdf, $L, $R, $C, $headH, $cNum, $cItem, $hasGst, $cHsnR, $cQtyC, $cRateR, $cGstR, $cAmtR) {
+        $pdf->grad_rrect($L, $ty, $R - $L, $headH, 5, $C['purple'], $C['purple_lt'], 'h');
+        $pdf->rect($L, $ty + $headH - 6, $R - $L, 6, $C['purple_lt']);
+        $hy = $ty + 14;
+        $pdf->text($cNum, $hy, 9, '#', 'B', [1, 1, 1]);
+        $pdf->text($cItem, $hy, 9, 'ITEM DESCRIPTION', 'B', [1, 1, 1]);
+        if ($hasGst) $pdf->text_right($cHsnR, $hy, 9, 'HSN', 'B', [1, 1, 1]);
+        $pdf->text_center($cQtyC, $hy, 9, 'QTY', 'B', [1, 1, 1]);
+        $pdf->text_right($cRateR, $hy, 9, 'RATE', 'B', [1, 1, 1]);
+        if ($hasGst) $pdf->text_right($cGstR, $hy, 9, 'GST%', 'B', [1, 1, 1]);
+        $pdf->text_right($cAmtR, $hy, 9, 'AMOUNT', 'B', [1, 1, 1]);
+    };
+    $drawHead($y);
+    $y += $headH;
+    $bodyTop = $y; $paginated = false; $targetBodyBottom = 470;
+    foreach ($items as $n => $it) {
+        $nameLines = array_slice(pdf_wrap($it['name'], 9.5, false, $itemMaxW), 0, 4);
+        $nLines = count($nameLines);
+        $rowNeed = $rowH + ($nLines - 1) * 12 + ($it['serials'] ? 10 : 0);
+        if ($y + $rowNeed > 690) {
+            $pdf->new_page(); $paginated = true; $y = 44; $drawHead($y); $y += $headH; $bodyTop = $y;
+        }
+        if ($n % 2 === 1) $pdf->rect($L, $y, $R - $L, $rowNeed, $C['row_alt']);
+        $ty = $y + 14;
+        // numbered coloured square
+        $sqc = $sqColors[$n % count($sqColors)];
+        $pdf->rrect($cNum - 2, $ty - 10, 18, 14, 3, $sqc);
+        $pdf->text_center($cNum + 7, $ty, 8.5, sprintf('%02d', $n + 1), 'B', [1, 1, 1]);
+        foreach ($nameLines as $i => $nl) $pdf->text($cItem, $ty + $i * 12, 9.5, $nl, '', [0.15, 0.15, 0.22]);
+        if ($hasGst) $pdf->text_right($cHsnR, $ty, 9, (string)($it['hsn'] ?? ''), '', $C['gray']);
+        $pdf->text_center($cQtyC, $ty, 9.5, trim((float)$it['qty'] . ' ' . $it['unit']), '', [0.15, 0.15, 0.22]);
+        $pdf->text_right($cRateR, $ty, 9.5, money($it['price']), '', [0.15, 0.15, 0.22]);
+        if ($hasGst) $pdf->text_right($cGstR, $ty, 9, (float)$it['tax_rate'] . '%', '', $C['gray']);
+        $pdf->text_right($cAmtR, $ty, 9.5, money($it['total']), '', [0.15, 0.15, 0.22]);
+        if ($it['serials']) $pdf->text($cItem, $ty + $nLines * 12 - 2, 7.3, $pdf->fit('SN: ' . $it['serials'], $itemMaxW, 7.3), '', $C['gray']);
+        $y += $rowNeed;
+        $pdf->line($L, $y, $R, $y, 0.5, [0.9, 0.88, 0.95]);
+    }
+    if (!$paginated) { while ($y + $rowH <= $targetBodyBottom) { $y += $rowH; $pdf->line($L, $y, $R, $y, 0.5, [0.93, 0.91, 0.97]); } }
+    $pdf->line($L, $bodyTop, $L, $y, 0.5, [0.85, 0.82, 0.92]);
+    $pdf->line($R, $bodyTop, $R, $y, 0.5, [0.85, 0.82, 0.92]);
+    $y += 14;
+
+    // ===== BANK (left) + TOTALS (right) =====
+    $blockTop = $y;
+    $totW = 250; $totX = $R - $totW; $leftW = $totX - $L - 22;
+    // totals
+    $ry = $blockTop; $rowY = $ry;
+    $trow = function ($label, $val, $bold = false) use (&$rowY, $pdf, $totX, $totW, $R, $C) {
+        $pdf->text($totX + 12, $rowY + 15, 10, $label, '', $C['gray']);
+        $pdf->money_text_right($R - 12, $rowY + 15, 10, $val, $bold ? 'B' : '', $C['navy']);
+        $pdf->line($totX, $rowY + 24, $R, $rowY + 24, 0.5, [0.87, 0.85, 0.93]);
+        $rowY += 24;
+    };
+    $trow('SUBTOTAL', money($sale['subtotal']));
+    $dLabel = !empty($sale['discount_type']) && $sale['discount_type'] === 'percent' && $sale['discount_pct'] > 0
+        ? 'DISCOUNT (' . rtrim(rtrim(number_format($sale['discount_pct'], 2), '0'), '.') . '%)' : 'DISCOUNT';
+    $trow($dLabel, ($sale['discount'] > 0 ? '- ' : '') . money($sale['discount']));
+    if ($hasGst) { $trow('CGST', money($sale['tax_amount'] / 2)); $trow('SGST', money($sale['tax_amount'] / 2)); }
+    if (!empty($sale['shipping']) && $sale['shipping'] > 0) $trow('SHIPPING', money($sale['shipping']));
+    if (!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009) $trow('ADJUSTMENT', ($sale['adjustment'] > 0 ? '' : '- ') . money(abs($sale['adjustment'])));
+    if (!empty($sale['round_off']) && abs($sale['round_off']) > 0.004) $trow('ROUND OFF', ($sale['round_off'] > 0 ? '' : '- ') . money(abs($sale['round_off'])));
+    // TOTAL gradient bar
+    $pdf->grad_rect($totX, $rowY, $totW, 27, $C['purple'], $C['blue'], 'h');
+    $pdf->text($totX + 12, $rowY + 18, 13, 'TOTAL', 'B', [1, 1, 1]);
+    $pdf->money_text_right($R - 12, $rowY + 18, 13, money($sale['total']), 'B', [1, 1, 1]);
+    $rowY += 27;
+    $pdf->text($totX + 12, $rowY + 16, 10, 'PAID (' . strtoupper($sale['payment_mode']) . ')', '', $C['gray']);
+    $pdf->money_text_right($R - 12, $rowY + 16, 10, money($sale['paid']), '', $C['navy']);
+    $pdf->line($totX, $rowY + 25, $R, $rowY + 25, 0.5, [0.87, 0.85, 0.93]); $rowY += 25;
+    if ($due > 0.009) {
+        $pdf->rect($totX, $rowY, $totW, 26, $C['amber_bg']);
+        $pdf->rect($totX, $rowY, 5, 26, $C['amber_edge']);
+        $pdf->text($totX + 14, $rowY + 17, 11, 'BALANCE DUE', 'B', [0.75, 0.15, 0.08]);
+        $pdf->money_text_right($R - 12, $rowY + 17, 12, money($due), 'B', [0.75, 0.15, 0.08]);
+    } else {
+        $pdf->rect($totX, $rowY, $totW, 26, [0.86, 0.96, 0.89]);
+        $pdf->text_center($totX + $totW / 2, $rowY + 17, 11.5, 'PAID IN FULL', 'B', $C['green']);
+    }
+    $rowY += 26;
+    $pdf->rrect_stroke($totX, $ry, $totW, $rowY - $ry, 3, [0.82, 0.78, 0.92], 0.8);
+    $totalsBottom = $rowY;
+
+    // bank card (left)
+    $ly = $blockTop;
+    if ($bank) {
+        $pdf->grad_rrect($L, $ly, 168, 19, 9.5, $C['purple'], $C['purple_lt'], 'h');
+        $pdf->text($L + 14, $ly + 13, 9, 'PAY VIA BANK TRANSFER', 'B', [1, 1, 1]);
+        $ly += 24;
+        $bh = 66;
+        $pdf->rrect($L, $ly, $leftW, $bh, 8, $C['lav_bg']);
+        $pdf->rrect_stroke($L, $ly, $leftW, $bh, 8, $C['lav_border'], 1);
+        $pdf->poly([[$L + $leftW, $ly + $bh - 16], [$L + $leftW, $ly + $bh], [$L + $leftW - 16, $ly + $bh]], $C['orange']);
+        $iy = $ly + 16;
+        $rows = [['A/C Name', $bank['account_name']], ['A/C No.', $bank['account_number']], ['IFSC Code', $bank['ifsc']]];
+        if ($bank['branch']) $rows[] = ['Branch', $bank['branch']];
+        foreach ($rows as $rr) {
+            $pdf->text($L + 12, $iy, 8.5, $rr[0], 'B', $C['navy']);
+            $pdf->text($L + 78, $iy, 8.5, ': ' . $pdf->fit($rr[1], $leftW - 130, 8.5), '', $C['gray']);
+            $iy += 13;
+        }
+        // bank icon outline
+        $bxi = $L + $leftW - 34; $byi = $ly + 16; $bl = $C['purple'];
+        $pdf->line($bxi - 15, $byi - 4, $bxi, $byi - 14, 1.2, $bl);
+        $pdf->line($bxi, $byi - 14, $bxi + 15, $byi - 4, 1.2, $bl);
+        $pdf->line($bxi - 15, $byi - 4, $bxi + 15, $byi - 4, 1.2, $bl);
+        for ($p = -1; $p <= 1; $p++) $pdf->line($bxi + $p * 10, $byi - 2, $bxi + $p * 10, $byi + 8, 1.9, $bl);
+        $pdf->rect($bxi - 17, $byi + 9, 34, 2.4, $bl);
+        $ly += $bh + 12;
+    }
+    // scan & pay + thank you
+    if ($qrId) {
+        $pdf->grad_rrect($L, $ly, 84, 15, 7, $C['purple'], $C['purple_lt'], 'h');
+        $pdf->text_center($L + 42, $ly + 10.5, 7, 'SCAN & PAY', 'B', [1, 1, 1]);
+        $pdf->rrect_stroke($L, $ly + 18, 74, 74, 5, [0.8, 0.76, 0.9], 0.8);
+        $pdf->image($qrId, $L + 7, $ly + 25, 60, 60);
+        $pdf->text($L + 90, $ly + 30, 16, 'Thank You!', 'I', $C['purple']);
+        foreach (array_slice(pdf_wrap('We truly appreciate your business and look forward to serving you again.', 8, false, 150), 0, 3) as $i => $tl)
+            $pdf->text($L + 90, $ly + 44 + $i * 10, 7.6, $tl, '', $C['gray']);
+        for ($s = 0; $s < 5; $s++) pdf_icon_star_p($pdf, $L + 96 + $s * 12, $ly + 80, 5, $C['orange']);
+        $ly += 96;
+    }
+
+    // trust circles (right, below totals)
+    $tcY = $totalsBottom + 30;
+    $tcx0 = $totX + 4; $tcstep = ($totW - 8) / 4; $tcR = 13;
+    $trusts = [[$C['purple'], 'O', '100%', 'ORIGINAL'], [$C['blue'], 'L', 'SECURE', 'PAYMENT'], [$C['pink'], 'W', 'WARRANTY', 'ASSURED'], [$C['teal'], 'H', 'EXPERT', 'SUPPORT'], [$C['orange'], '>', 'FAST &', 'SAFE']];
+    foreach ($trusts as $i => $t) pdf_trust($pdf, $tcx0 + $i * $tcstep, $tcY, $tcR, $t[0], $t[1], $t[2], $t[3], $C);
+
+    $y = max($ly, $tcY + $tcR + 22) + 8;
+
+    // GST slab breakdown
+    if ($hasGst && $sale['tax_amount'] > 0 && $y < 660) {
+        $slabs = [];
+        foreach ($items as $it) { $tr = (float)$it['tax_rate']; if ($tr > 0) $slabs[(string)$tr] = ($slabs[(string)$tr] ?? 0) + (float)$it['total']; }
+        ksort($slabs);
+        $pdf->rect($L, $y, 320, 15, $C['row_alt']);
+        $gy = $y + 10.5;
+        $pdf->text($L + 8, $gy, 8.2, 'GST Slab', 'B', $C['purple']);
+        $pdf->text($L + 78, $gy, 8.2, 'Taxable', 'B', $C['purple']);
+        $pdf->text($L + 148, $gy, 8.2, 'CGST', 'B', $C['purple']);
+        $pdf->text($L + 218, $gy, 8.2, 'SGST', 'B', $C['purple']);
+        $pdf->text($L + 280, $gy, 8.2, 'Total Tax', 'B', $C['purple']);
+        $y += 15;
+        foreach ($slabs as $tr => $tv) {
+            $tx2 = $tv * (float)$tr / 100; $gy = $y + 10;
+            $pdf->text($L + 8, $gy, 8.2, $tr . '%', '', $C['gray']);
+            $pdf->text($L + 78, $gy, 8.2, money($tv), '', $C['gray']);
+            $pdf->text($L + 148, $gy, 8.2, money($tx2 / 2), '', $C['gray']);
+            $pdf->text($L + 218, $gy, 8.2, money($tx2 / 2), '', $C['gray']);
+            $pdf->text($L + 280, $gy, 8.2, money($tx2), '', $C['gray']);
+            $y += 13;
+        }
+    }
+
+    // ===== FOOTER =====
+    $fbTop = max($y + 6, 706); if ($fbTop > 720) $fbTop = 720;
+    $pdf->grad_rect(0, $fbTop, $PW, 42, $C['purple'], $C['purple_dark'], 'h');
+    $pdf->text($L, $fbTop + 15, 8.3, 'Stay Connected', 'B', [1, 1, 1]);
+    pdf_social($pdf, $L + 8, $fbTop + 29, 7, 'f', [1, 1, 1]);
+    pdf_social($pdf, $L + 26, $fbTop + 29, 7, 'IG', [1, 1, 1]);
+    pdf_social($pdf, $L + 44, $fbTop + 29, 7, 'W', [1, 1, 1]);
+    pdf_social($pdf, $L + 62, $fbTop + 29, 7, 'YT', [1, 1, 1]);
+    // reset social fill (they draw white circle + white letter -> need dark letter). Redraw letters dark:
+    foreach (['f' => $L + 8, 'IG' => $L + 26, 'W' => $L + 44, 'YT' => $L + 62] as $lbl => $sx) {
+        $pdf->circle($sx, $fbTop + 29, 7, [1, 1, 1]);
+        $pdf->text_center($sx, $fbTop + 31.5, 6.6, $lbl, 'B', $C['purple']);
+    }
+    $pdf->text(150, $fbTop + 15, 8.3, 'For Support', 'B', [1, 1, 1]);
+    $pdf->text(150, $fbTop + 30, 10, $sale['c_phone'] ?: '', 'B', [1, 1, 1]);
+    // We Deal In (right)
+    $pdf->text(330, $fbTop + 13, 7.6, 'We Deal In :', 'B', [1, 1, 1]);
+    $cats = ['Computers', 'Laptops', 'Accessories', 'CCTV', 'Networking', 'AMC'];
+    $sx0 = 330; $sstep = ($R - $sx0) / (count($cats) - 1);
+    foreach ($cats as $i => $cat) { $cx = $sx0 + $i * $sstep; pdf_icon_device($pdf, $cx, $fbTop + 25, [1, 1, 1]); $pdf->text_center($cx, $fbTop + 39, 6, $cat, '', [1, 1, 1]); }
+    // centre stamp
+    $stcx = 290; $stcy = $fbTop + 21;
+    $pdf->circle($stcx, $stcy, 20, [1, 1, 1]);
+    $pdf->circle_stroke($stcx, $stcy, 19, $C['purple'], 1); $pdf->circle_stroke($stcx, $stcy, 15.5, $C['purple'], 0.5);
+    $pdf->text_center($stcx, $stcy - 5, 5, 'AK COMPUTER', 'B', $C['purple']);
+    $pdf->text_center($stcx, $stcy + 2, 4.6, 'THANK YOU', '', $C['purple']);
+    $pdf->text_center($stcx, $stcy + 9, 4.6, strtoupper(trim(explode('-', $sale['loc_city'])[0])), 'B', $C['purple']);
+
+    // signature lines
+    $sy = $fbTop + 42 + 24;
+    $pdf->line($L, $sy, $L + 160, $sy, 0.7, [0.6, 0.6, 0.66]);
+    $pdf->text_center($L + 80, $sy + 12, 8.5, "Receiver's Signature", '', $C['gray']);
+    $pdf->line($R - 200, $sy, $R, $sy, 0.7, [0.6, 0.6, 0.66]);
+    $pdf->text_center($R - 100, $sy + 12, 8.5, 'For ' . $sale['company_name'] . ' - Authorised Signatory', '', $C['gray']);
+
+    // bottom strip
+    $pdf->rect(0, 824, $PW, 18, $C['purple_dark']);
+    $pdf->text($L, 836, 8, 'This is a computer generated invoice.', '', [0.85, 0.82, 0.92]);
+    $pdf->poly([[$PW, 824], [$PW, 842], [$PW - 40, 842]], $C['orange']);
+
+    return $pdf->output();
+}
+/** Small filled 5-point star for Design 2's rating row. */
+function pdf_icon_star_p(&$pdf, $cx, $cy, $r, $rgb) {
+    $pts = [];
+    for ($i = 0; $i < 5; $i++) {
+        $a = -M_PI / 2 + $i * 2 * M_PI / 5; $pts[] = [$cx + $r * cos($a), $cy + $r * sin($a)];
+        $a2 = $a + M_PI / 5; $pts[] = [$cx + $r * 0.42 * cos($a2), $cy + $r * 0.42 * sin($a2)];
+    }
+    $pdf->poly($pts, $rgb);
 }

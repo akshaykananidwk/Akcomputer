@@ -165,6 +165,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
 </div>
 <?php endif; endif; ?>
 
+<?php if (setting('invoice_design', '1') === '2'): include __DIR__ . '/includes/invoice_card_d2.php'; else: ?>
 <div class="inv-paper card inv-bill">
   <div class="inv-topbar"></div>
   <div class="inv-head2">
@@ -313,4 +314,5 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
   <div class="inv-bottom-strip">This is a computer generated invoice.</div>
   <p class="muted mt" style="font-size:11px">Billed by: <?= e($sale['staff_name']) ?><?= $sale['notes'] ? ' | ' . e($sale['notes']) : '' ?></p>
 </div>
+<?php endif; ?>
 <?php include __DIR__ . '/includes/footer.php'; ?>

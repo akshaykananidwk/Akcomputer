@@ -141,6 +141,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_invoice') {
     redirect('settings.php?cat=invoice');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'bill_design') {
+    require_perm('settings.edit');
+    set_setting('invoice_design', post('invoice_design') === '2' ? '2' : '1');
+    log_activity('settings_bill_design', post('invoice_design'));
+    flash('Bill design changed ✔ — open any bill to see it.');
+    redirect('settings.php?cat=invoice');
+}
+
 if (setting('cron_key', '') === '') set_setting('cron_key', bin2hex(random_bytes(12)));
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reminder_gap') {
     require_perm('settings.edit');
@@ -415,6 +423,26 @@ exit;
 <?php endif; ?>
 
 <?php if ($cat === 'invoice'): ?>
+<div class="card">
+  <h3>🎨 Bill Design</h3>
+  <p class="muted mb">Choose the design used for every bill — on screen, on print, and on the WhatsApp PDF. You can change it any time.</p>
+  <form method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="bill_design">
+    <?php $curDesign = setting('invoice_design', '1');
+    $designs = [
+        '1' => ['Design 1 — Teal & Orange', 'The original clean teal/orange bill.'],
+        '2' => ['Design 2 — Purple & Orange', 'Bold purple theme with trust badges & icons.'],
+    ];
+    foreach ($designs as $dId => $d): ?>
+    <label style="display:flex;gap:10px;align-items:flex-start;border:2px solid <?= $curDesign === $dId ? 'var(--primary)' : 'var(--border)' ?>;border-radius:10px;padding:12px;cursor:pointer;margin-bottom:10px">
+      <input type="radio" name="invoice_design" value="<?= $dId ?>" <?= $curDesign === $dId ? 'checked' : '' ?> style="width:auto;margin-top:3px">
+      <span><strong><?= e($d[0]) ?></strong><br><span class="muted" style="font-size:12.5px"><?= e($d[1]) ?></span></span>
+    </label>
+    <?php endforeach; ?>
+    <button class="btn" type="submit">Save Design</button>
+  </form>
+</div>
 <div class="card">
   <h3>Google Review & Online Payment</h3>
   <form method="post">
