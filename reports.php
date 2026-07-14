@@ -3,6 +3,24 @@
 require_once __DIR__ . '/includes/init.php';
 require_perm('reports.view');
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_custom_report') {
+    require_perm('reports.builder');
+    $u = current_user();
+    $name = trim(post('name'));
+    $source = post('source');
+    if ($name === '' || !isset(custom_report_sources()[$source])) { flash('Give the report a name.', 'error'); redirect('reports.php?r=custom'); }
+    q('INSERT INTO custom_reports (name, source, columns_json, group_by, sort_by, created_by) VALUES (?,?,?,?,?,?)',
+      [$name, $source, json_encode(post('columns', [])), post('group_by'), post('sort_by'), $u['id']]);
+    flash('Report "' . $name . '" saved.');
+    redirect('reports.php?r=custom');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete_custom_report') {
+    require_perm('reports.builder');
+    q('DELETE FROM custom_reports WHERE id = ?', [(int)post('id')]);
+    flash('Saved report deleted.');
+    redirect('reports.php?r=custom');
+}
+
 $r = get('r', 'daily');
 $from = get('from', date('Y-m-01'));
 $to = get('to', today());
@@ -27,24 +45,28 @@ $tabs = [
     'aging' => '⏳ Aging / Collection',
     'purchase' => '📦 Purchase', 'vendor_perf' => '🚚 Vendor Performance', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
     'bank_ledger' => '🏦 Bank Ledger',
-    'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Profit',
-    'bill_profit' => '🧮 Bill Profit', 'staff' => '🎒 Staff Stock',
+    'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Product-wise Profit',
+    'bill_profit' => '🧮 Bill Profit', 'branch_staff' => '📊 Branch / Staff Comparison', 'staff' => '🎒 Staff Stock',
     'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'tech_sla' => '⏱️ Technician SLA',
     'forecast' => '🔮 AI Sales Forecast', 'low' => '⚠️ Low Stock', 'dead_stock' => '🐌 Dead / Slow-moving Stock',
     'general_ledger' => '📗 General Ledger', 'trial_balance' => '⚖️ Trial Balance',
     'balance_sheet' => '📑 Balance Sheet', 'profit_loss' => '💹 Profit & Loss',
+    'custom' => '🧩 Custom Report Builder',
     'activity' => '🔍 Activity Log', 'login_history' => '🔐 Login History',
 ];
 if (!can('reports.gst')) unset($tabs['gst']);
-if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); unset($tabs['dead_stock']); }
+if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); unset($tabs['dead_stock']); unset($tabs['branch_staff']); }
 if (!can('expenses.view')) unset($tabs['expense']);
 if (!can('users.view')) { unset($tabs['activity']); unset($tabs['login_history']); }
 if (!can('payments.view')) unset($tabs['bank_ledger']);
 if (!can('reports.accounting')) { unset($tabs['general_ledger']); unset($tabs['trial_balance']); unset($tabs['balance_sheet']); unset($tabs['profit_loss']); }
+if (!can('reports.builder')) unset($tabs['custom']);
 if ($r === 'business' && !can('reports.profit')) $r = 'daily';
+if ($r === 'branch_staff' && !can('reports.profit')) $r = 'daily';
 if (in_array($r, ['activity', 'login_history'], true) && !can('users.view')) $r = 'daily';
 if ($r === 'bank_ledger' && !can('payments.view')) $r = 'daily';
 if (in_array($r, ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'], true) && !can('reports.accounting')) $r = 'daily';
+if ($r === 'custom' && !can('reports.builder')) $r = 'daily';
 
 // Grouped the same way Vyapar's own Reports screen groups its report list -
 // a vertical, categorized list (not a horizontal scrolling tab strip) so
@@ -54,10 +76,11 @@ $tabCategories = [
     'Party Reports' => ['party_sales', 'aging', 'vendor_perf'],
     'GST' => ['gst'],
     'Item / Stock Reports' => ['stockval', 'low', 'dead_stock', 'forecast'],
-    'Business Status' => ['cashbook', 'bank_ledger', 'profit', 'bill_profit'],
+    'Business Status' => ['cashbook', 'bank_ledger', 'profit', 'bill_profit', 'branch_staff'],
     'Accounting' => ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'],
     'Expense Reports' => ['expense'],
     'Staff & Service Reports' => ['staff', 'repair_tat', 'warranty_tat', 'tech_sla'],
+    'Custom' => ['custom'],
     'Activity' => ['activity', 'login_history'],
 ];
 ?>

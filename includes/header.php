@@ -66,7 +66,11 @@ $_navMenu = [
         ['tickets.php', 'Complaints / Tickets', 'tickets.view', 'tickets.php?action=new', 'tickets.add'],
         ['follow_ups.php', 'Follow-ups', 'followups.view', 'follow_ups.php?action=new', 'followups.add'],
     ]],
-    ['link', 'reports.php', 'bar-chart', 'Reports', 'reports.view'],
+    ['group', 'reports', 'bar-chart', 'Reports', [
+        ['reports.php', 'All Reports', 'reports.view', null, null],
+        ['reports.php?r=custom', 'Custom Report Builder', 'reports.builder', null, null],
+        ['report_schedules.php', 'Scheduled Reports', 'report_schedules.view', 'report_schedules.php?action=new', 'report_schedules.add'],
+    ]],
     ['group', 'store', 'globe', 'My Online Store', [
         ['catalog.php', 'View Website', null, null, null],
         ['web_orders.php', 'Website Orders', 'weborders.view', null, null],

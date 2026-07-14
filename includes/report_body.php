@@ -165,10 +165,58 @@ if ($r === 'profit' && can('reports.profit')) {
     echo '<div class="stat s-ok"><div class="stat-label">Gross item profit</div><div class="stat-value">₹' . money($rev - $cost) . '</div></div>';
     echo '<div class="stat s-ok"><div class="stat-label">Service + Repair profit</div><div class="stat-value">₹' . money($svc + $repairProfit) . '</div></div>';
     echo '</div>';
-    echo '<div class="table-wrap"><table><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Revenue ₹</th><th class="num">Cost ₹</th><th class="num">Profit ₹</th></tr></thead><tbody>';
-    foreach ($rows as $x) echo '<tr><td>' . e($x['name']) . '</td><td class="num">' . (float)$x['qty'] . '</td><td class="num">' . money($x['revenue']) . '</td><td class="num">' . money($x['cost']) . '</td><td class="num">' . money($x['revenue'] - $x['cost']) . '</td></tr>';
+    if ($rows) {
+        echo '<div class="card"><h3>Top 10 products by profit</h3>';
+        echo svg_bar_chart(array_map(fn($x) => ['label' => $x['name'], 'val' => (float)($x['revenue'] - $x['cost'])], array_slice($rows, 0, 10)), '#16a34a');
+        echo '</div>';
+    }
+    echo '<div class="table-wrap"><table><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Revenue ₹</th><th class="num">Cost ₹</th><th class="num">Profit ₹</th><th class="num">Margin %</th></tr></thead><tbody>';
+    foreach ($rows as $x) {
+        $p = $x['revenue'] - $x['cost'];
+        $margin = $x['revenue'] > 0 ? $p / $x['revenue'] * 100 : 0;
+        echo '<tr><td>' . e($x['name']) . '</td><td class="num">' . (float)$x['qty'] . '</td><td class="num">' . money($x['revenue']) . '</td><td class="num">' . money($x['cost']) . '</td><td class="num">' . money($p) . '</td><td class="num">' . round($margin, 1) . '%</td></tr>';
+    }
     echo '</tbody></table></div>';
-    echo '<p class="muted">Cost = current item purchase price × qty (estimate).</p>';
+    echo '<p class="muted">Product-wise profit - cost = current item purchase price × qty (estimate).</p>';
+}
+
+// ---------------- branch / staff comparison ----------------
+if ($r === 'branch_staff' && can('reports.profit')) {
+    $branchRows = all("SELECT l.name, COUNT(s.id) bills, COALESCE(SUM(s.total),0) revenue,
+                        COALESCE((SELECT SUM(si.qty * i.purchase_price) FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id IN
+                                  (SELECT id FROM sales s2 WHERE s2.location_id = l.id AND s2.is_cancelled = 0 AND s2.sale_date BETWEEN ? AND ?)),0) cost
+                        FROM locations l LEFT JOIN sales s ON s.location_id = l.id AND s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?
+                        WHERE l.is_active = 1 GROUP BY l.id ORDER BY revenue DESC", [$from, $to, $from, $to]);
+    $staffRows = all("SELECT u2.name, COUNT(s.id) bills, COALESCE(SUM(s.total),0) revenue,
+                       COALESCE((SELECT SUM(si.qty * i.purchase_price) FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id IN
+                                 (SELECT id FROM sales s2 WHERE s2.created_by = u2.id AND s2.is_cancelled = 0 AND s2.sale_date BETWEEN ? AND ?)),0) cost,
+                       COALESCE((SELECT SUM(amount) FROM payments WHERE created_by = u2.id AND direction = 'in' AND pay_date BETWEEN ? AND ?),0) collected
+                       FROM users u2 LEFT JOIN sales s ON s.created_by = u2.id AND s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?
+                       WHERE u2.is_active = 1 GROUP BY u2.id HAVING bills > 0 OR collected > 0 ORDER BY revenue DESC", [$from, $to, $from, $to, $from, $to]);
+
+    echo '<div class="card"><h3>🏬 By Branch</h3>';
+    echo svg_bar_chart(array_map(fn($x) => ['label' => $x['name'], 'val' => (float)$x['revenue']], $branchRows));
+    echo '<div class="table-wrap"><table><thead><tr><th>Branch</th><th class="num">Bills</th><th class="num">Revenue ₹</th><th class="num">Est. Cost ₹</th><th class="num">Profit ₹</th><th class="num">Avg Bill ₹</th></tr></thead><tbody>';
+    foreach ($branchRows as $x) {
+        $profit = $x['revenue'] - $x['cost'];
+        $avg = $x['bills'] ? $x['revenue'] / $x['bills'] : 0;
+        echo '<tr><td>' . e($x['name']) . '</td><td class="num">' . $x['bills'] . '</td><td class="num">' . money($x['revenue']) . '</td>'
+           . '<td class="num">' . money($x['cost']) . '</td><td class="num">' . money($profit) . '</td><td class="num">' . money($avg) . '</td></tr>';
+    }
+    if (!$branchRows) echo '<tr><td colspan="6" class="muted">No active locations.</td></tr>';
+    echo '</tbody></table></div></div>';
+
+    echo '<div class="card"><h3>🧑‍💼 By Staff</h3>';
+    echo svg_bar_chart(array_map(fn($x) => ['label' => $x['name'], 'val' => (float)$x['revenue']], $staffRows));
+    echo '<div class="table-wrap"><table><thead><tr><th>Staff</th><th class="num">Bills</th><th class="num">Revenue ₹</th><th class="num">Profit ₹</th><th class="num">Avg Bill ₹</th><th class="num">Collected ₹</th></tr></thead><tbody>';
+    foreach ($staffRows as $x) {
+        $profit = $x['revenue'] - $x['cost'];
+        $avg = $x['bills'] ? $x['revenue'] / $x['bills'] : 0;
+        echo '<tr><td>' . e($x['name']) . '</td><td class="num">' . $x['bills'] . '</td><td class="num">' . money($x['revenue']) . '</td>'
+           . '<td class="num">' . money($profit) . '</td><td class="num">' . money($avg) . '</td><td class="num">' . money($x['collected']) . '</td></tr>';
+    }
+    if (!$staffRows) echo '<tr><td colspan="6" class="muted">No sales/collections by staff in this period.</td></tr>';
+    echo '</tbody></table></div></div>';
 }
 
 // ---------------- party-wise sales ----------------
@@ -645,6 +693,79 @@ if ($r === 'login_history' && can('users.view')) {
     }
     if (!$logins) echo '<tr><td colspan="7" class="muted">Nothing found.</td></tr>';
     echo '</tbody></table></div>';
+}
+
+// ---------------- custom report builder ----------------
+if ($r === 'custom' && can('reports.builder')) {
+    $sources = custom_report_sources();
+    $cSource = get('source') ?: 'sales';
+    if (!isset($sources[$cSource])) $cSource = 'sales';
+    $cColumns = (array)get('columns', array_keys($sources[$cSource]['columns']));
+    $cGroupBy = get('group_by');
+    $cSortBy = get('sort_by');
+    $savedReports = all('SELECT cr.*, u2.name staff_name FROM custom_reports cr JOIN users u2 ON u2.id = cr.created_by ORDER BY cr.name');
+
+    if ($savedReports) {
+        echo '<div class="card"><h3>💾 Saved reports</h3>';
+        foreach ($savedReports as $sr) {
+            $cols = implode('&', array_map(fn($c) => 'columns[]=' . urlencode($c), json_decode($sr['columns_json'], true) ?: []));
+            $link = "reports.php?r=custom&source={$sr['source']}&$cols&group_by={$sr['group_by']}&sort_by={$sr['sort_by']}&from=$from&to=$to";
+            echo '<span style="display:inline-flex;align-items:center;gap:6px;margin:2px 8px 2px 0">'
+               . '<a class="btn btn-sm btn-outline" href="' . e($link) . '">' . e($sr['name']) . '</a>'
+               . '<form method="post" action="reports.php" style="display:inline" onsubmit="return confirm(\'Delete this saved report?\')">' . csrf_field()
+               . '<input type="hidden" name="do" value="delete_custom_report"><input type="hidden" name="id" value="' . $sr['id'] . '">'
+               . '<button class="btn btn-sm btn-outline btn-danger no-print" type="submit" title="Delete">✕</button></form></span>';
+        }
+        echo '</div>';
+    }
+
+    echo '<div class="card"><h3>🧩 Build a report</h3>';
+    echo '<form method="get">';
+    echo '<input type="hidden" name="r" value="custom"><input type="hidden" name="from" value="' . e($from) . '"><input type="hidden" name="to" value="' . e($to) . '">';
+    echo '<div class="form-row cols-3">';
+    echo '<div><label>Data source</label><select name="source" onchange="this.form.submit()">';
+    foreach ($sources as $sk => $sv) echo '<option value="' . $sk . '" ' . ($cSource === $sk ? 'selected' : '') . '>' . e($sv['label']) . '</option>';
+    echo '</select></div>';
+    echo '<div><label>Group by</label><select name="group_by"><option value="">No grouping (list every row)</option>';
+    foreach ($sources[$cSource]['group_cols'] as $gk => $ge) echo '<option value="' . $gk . '" ' . ($cGroupBy === $gk ? 'selected' : '') . '>' . e(ucfirst($gk)) . '</option>';
+    echo '</select></div>';
+    echo '<div><label>Sort by (list mode)</label><select name="sort_by"><option value="">Date (default)</option>';
+    foreach ($sources[$cSource]['columns'] as $ck => $cv) echo '<option value="' . $ck . '" ' . ($cSortBy === $ck ? 'selected' : '') . '>' . e($cv['label']) . '</option>';
+    echo '</select></div>';
+    echo '</div>';
+    echo '<div class="field"><label>Columns</label><div style="display:flex;flex-wrap:wrap;gap:10px">';
+    foreach ($sources[$cSource]['columns'] as $ck => $cv) {
+        echo '<label class="check-inline"><input type="checkbox" name="columns[]" value="' . $ck . '" ' . (in_array($ck, $cColumns, true) ? 'checked' : '') . '> ' . e($cv['label']) . '</label>';
+    }
+    echo '</div></div>';
+    echo '<button class="btn btn-sm mt" type="submit">Run Report</button>';
+    echo '</form>';
+    if (can('reports.builder')) {
+        echo '<form method="post" action="reports.php" class="filterbar mt">' . csrf_field();
+        echo '<input type="hidden" name="do" value="save_custom_report"><input type="hidden" name="source" value="' . e($cSource) . '">';
+        foreach ($cColumns as $cc) echo '<input type="hidden" name="columns[]" value="' . e($cc) . '">';
+        echo '<input type="hidden" name="group_by" value="' . e($cGroupBy) . '"><input type="hidden" name="sort_by" value="' . e($cSortBy) . '">';
+        echo '<div><label>Save this as</label><input type="text" name="name" placeholder="e.g. Monthly sales by branch" required></div>';
+        echo '<button class="btn btn-sm btn-outline" type="submit">💾 Save Report</button></form>';
+    }
+    echo '</div>';
+
+    [$cRows, $cCols, $cGrouped] = custom_report_run($cSource, $cColumns, $cGroupBy, $cSortBy, $from, $to);
+    echo '<div class="table-wrap"><table><thead><tr>';
+    foreach ($cCols as $key => $meta) echo '<th' . (($meta['type'] ?? '') === 'num' ? ' class="num"' : '') . '>' . e($meta['label']) . '</th>';
+    echo '</tr></thead><tbody>';
+    foreach ($cRows as $row) {
+        echo '<tr>';
+        foreach ($cCols as $key => $meta) {
+            $val = $key === 'grp' ? $row['grp_val'] : ($row[$key] ?? '');
+            $isNum = ($meta['type'] ?? '') === 'num';
+            echo '<td' . ($isNum ? ' class="num"' : '') . '>' . ($isNum ? money((float)$val) : e((string)$val)) . '</td>';
+        }
+        echo '</tr>';
+    }
+    if (!$cRows) echo '<tr><td colspan="' . max(1, count($cCols)) . '" class="muted">No data for this selection.</td></tr>';
+    echo '</tbody></table></div>';
+    if (!$cGrouped) echo '<p class="muted">Showing up to 500 rows, most recent first.</p>';
 }
 
 // ---------------- General Ledger (one account, transaction-level) ----------------

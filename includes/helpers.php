@@ -475,3 +475,91 @@ function status_badge($status) {
     $cls = $map[$status] ?? 'info';
     return '<span class="badge badge-' . $cls . '">' . e(str_replace('_', ' ', $status)) . '</span>';
 }
+
+// ---------- Scheduled reports (WhatsApp text digest, processed by cron.php) ----------
+/** Builds the WhatsApp message body for one report_schedules row. Kept
+ *  intentionally short (a text summary, not the full report) since this is
+ *  meant to be read on a phone, not a replacement for opening the report. */
+function report_schedule_build_message($s) {
+    $shop = setting('app_name', 'AK Computer');
+    $locJoin = $s['location_id'] ? ' AND s.location_id = ' . (int)$s['location_id'] : '';
+    $today = today();
+    switch ($s['report_key']) {
+        case 'daily':
+            $t = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) tot FROM sales WHERE is_cancelled = 0 AND sale_date = ?$locJoin", [$today]);
+            $y = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) tot FROM sales WHERE is_cancelled = 0 AND sale_date = DATE_SUB(?, INTERVAL 1 DAY)$locJoin", [$today]);
+            return "*$shop* - Daily Sales ({$today})\nToday: *₹" . money($t['tot']) . "* ({$t['c']} bills)\nYesterday: ₹" . money($y['tot']) . " ({$y['c']} bills)";
+        case 'business':
+            $mStart = date('Y-m-01');
+            $rev = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?$locJoin", [$mStart, $today]);
+            $exp = (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE exp_date BETWEEN ? AND ?" . ($s['location_id'] ? ' AND location_id = ' . (int)$s['location_id'] : ''), [$mStart, $today]);
+            $cost = (float)val("SELECT COALESCE(SUM(si.qty * i.purchase_price),0) FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
+                                 WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?$locJoin", [$mStart, $today]);
+            return "*$shop* - Business Report (month to date)\nRevenue: ₹" . money($rev) . "\nExpenses: ₹" . money($exp) . "\nEst. Gross Profit: *₹" . money($rev - $cost - $exp) . "*";
+        case 'branch_staff':
+            $top = row("SELECT l.name, COALESCE(SUM(s.total),0) rev FROM locations l LEFT JOIN sales s ON s.location_id = l.id AND s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?
+                        WHERE l.is_active = 1 GROUP BY l.id ORDER BY rev DESC LIMIT 1", [date('Y-m-01'), $today]);
+            $topStaff = row("SELECT u2.name, COALESCE(SUM(s.total),0) rev FROM users u2 LEFT JOIN sales s ON s.created_by = u2.id AND s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?
+                              WHERE u2.is_active = 1 GROUP BY u2.id ORDER BY rev DESC LIMIT 1", [date('Y-m-01'), $today]);
+            return "*$shop* - Branch/Staff Leaders (month to date)\nTop branch: *" . ($top['name'] ?? '-') . "* (₹" . money($top['rev'] ?? 0) . ")\nTop staff: *" . ($topStaff['name'] ?? '-') . "* (₹" . money($topStaff['rev'] ?? 0) . ")\nSee full report in Reports > Branch/Staff Comparison.";
+        case 'low':
+            $items = low_stock_items($s['location_id'] ?: null);
+            $names = array_slice(array_column($items, 'name'), 0, 5);
+            return "*$shop* - Low Stock Alert\n" . count($items) . " item(s) below minimum" . ($names ? ":\n- " . implode("\n- ", $names) : '.') . (count($items) > 5 ? "\n...and " . (count($items) - 5) . ' more' : '');
+        default:
+            return "*$shop* - Scheduled report \"" . $s['name'] . '"';
+    }
+}
+
+// ---------- Charts (hand-rolled inline SVG - no charting library in this
+// project). Same visual idiom as the dashboard's original sales chart,
+// pulled out into reusable helpers so trend/comparison reports don't each
+// reimplement the SVG math. Both return a ready-to-echo HTML string. ----------
+/** $data = [['label'=>..., 'val'=>...], ...]. Line + filled-area chart. */
+function svg_line_chart($data, $color = '#1a56db') {
+    if (!$data) return '<p class="muted">No data.</p>';
+    $w = 600; $h = 220; $padL = 10; $padR = 10; $padT = 24; $padB = 34;
+    $maxVal = max(1, max(array_column($data, 'val')));
+    $iw = ($w - $padL - $padR) / (count($data) - 1 ?: 1);
+    $pts = [];
+    foreach ($data as $ci => $cv) {
+        $x = $padL + $ci * $iw;
+        $y = $padT + ($h - $padT - $padB) * (1 - $cv['val'] / $maxVal);
+        $pts[] = [$x, $y, $cv];
+    }
+    $poly = implode(' ', array_map(fn($p) => round($p[0], 1) . ',' . round($p[1], 1), $pts));
+    $area = "$padL," . ($h - $padB) . " $poly " . round(end($pts)[0], 1) . ',' . ($h - $padB);
+    $rgb = sscanf($color, '#%02x%02x%02x');
+    $fill = 'rgba(' . $rgb[0] . ',' . $rgb[1] . ',' . $rgb[2] . ',.12)';
+    $fmt = fn($v) => $v >= 100000 ? round($v / 100000, 1) . 'L' : ($v >= 1000 ? round($v / 1000, 1) . 'k' : round($v));
+    $out = '<div class="chart-wrap"><svg viewBox="0 0 600 220" preserveAspectRatio="xMidYMid meet">';
+    $out .= '<polygon points="' . e($area) . '" fill="' . e($fill) . '"/>';
+    $out .= '<polyline points="' . e($poly) . '" fill="none" stroke="' . e($color) . '" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>';
+    foreach ($pts as $p) {
+        $out .= '<circle cx="' . round($p[0], 1) . '" cy="' . round($p[1], 1) . '" r="4.5" fill="' . e($color) . '"/>';
+        $out .= '<text x="' . round($p[0], 1) . '" y="' . ($h - 12) . '" text-anchor="middle" font-size="13" fill="#64748b">' . e($p[2]['label']) . '</text>';
+        if ($p[2]['val'] > 0) $out .= '<text x="' . round($p[0], 1) . '" y="' . (round($p[1], 1) - 10) . '" text-anchor="middle" font-size="11" fill="#334155">' . e($fmt($p[2]['val'])) . '</text>';
+    }
+    $out .= '</svg></div>';
+    return $out;
+}
+/** $data = [['label'=>..., 'val'=>...], ...]. Horizontal bar chart - reads
+ *  top-to-bottom, works well for a ranked comparison (branches, staff,
+ *  top products) without needing to rotate axis labels. */
+function svg_bar_chart($data, $color = '#1a56db') {
+    if (!$data) return '<p class="muted">No data.</p>';
+    $rowH = 32; $padL = 140; $padR = 70; $w = 600; $h = count($data) * $rowH + 16;
+    $maxVal = max(1, max(array_column($data, 'val')));
+    $barMaxW = $w - $padL - $padR;
+    $fmt = fn($v) => $v >= 100000 ? round($v / 100000, 1) . 'L' : ($v >= 1000 ? round($v / 1000, 1) . 'k' : round($v, 1));
+    $out = '<div class="chart-wrap"><svg viewBox="0 0 ' . $w . ' ' . $h . '" preserveAspectRatio="xMidYMid meet">';
+    foreach ($data as $i => $d) {
+        $y = $i * $rowH + 8;
+        $bw = $maxVal > 0 ? $barMaxW * ($d['val'] / $maxVal) : 0;
+        $out .= '<text x="' . ($padL - 10) . '" y="' . ($y + 16) . '" text-anchor="end" font-size="12" fill="#334155">' . e(mb_substr($d['label'], 0, 18)) . '</text>';
+        $out .= '<rect x="' . $padL . '" y="' . $y . '" width="' . max(2, round($bw, 1)) . '" height="20" rx="4" fill="' . e($color) . '"/>';
+        $out .= '<text x="' . ($padL + $bw + 8) . '" y="' . ($y + 16) . '" font-size="12" fill="#334155">' . e($fmt($d['val'])) . '</text>';
+    }
+    $out .= '</svg></div>';
+    return $out;
+}

@@ -7,8 +7,15 @@ $u = current_user();
 $today = today();
 list($saleScope, $saleParams) = own_scope('sales');
 
-$todaySales = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date = ? $saleScope", array_merge([$today], $saleParams));
-$monthSales = row("SELECT COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date >= ? $saleScope", array_merge([date('Y-m-01')], $saleParams));
+// Optional branch filter (multi-location shops) - "own scope" (staff seeing
+// only their own bills) still applies on top of it, same as everywhere else.
+$locsAllDash = can('locations.view') ? all('SELECT id, name FROM locations WHERE is_active = 1 ORDER BY name') : [];
+$dashLoc = (int)get('loc');
+$locScope = $dashLoc ? ' AND location_id = ?' : '';
+$locParam = $dashLoc ? [$dashLoc] : [];
+
+$todaySales = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date = ? $saleScope$locScope", array_merge([$today], $saleParams, $locParam));
+$monthSales = row("SELECT COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date >= ? $saleScope$locScope", array_merge([date('Y-m-01')], $saleParams, $locParam));
 
 // Same party-ledger formula as Parties list / Payment-In-Out, so this
 // number never disagrees with what those pages show (it used to be a
@@ -25,18 +32,24 @@ if ($canMoney) {
     $walkinDue = walkin_due();
 }
 
-// last 6 months sales for chart
-$chart = [];
+// last 6 months sales + profit for the trend chart
+$chart = []; $profitChart = [];
 for ($i = 5; $i >= 0; $i--) {
     $mStart = date('Y-m-01', strtotime("-$i months"));
     $mEnd = date('Y-m-t', strtotime($mStart));
+    $label = date('M', strtotime($mStart));
     $chart[] = [
-        'label' => date('M', strtotime($mStart)),
-        'val' => (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ? $saleScope",
-                            array_merge([$mStart, $mEnd], $saleParams)),
+        'label' => $label,
+        'val' => (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ? $saleScope$locScope",
+                            array_merge([$mStart, $mEnd], $saleParams, $locParam)),
     ];
+    if (can('reports.profit')) {
+        $rev = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ? $saleScope$locScope", array_merge([$mStart, $mEnd], $saleParams, $locParam));
+        $cost = (float)val("SELECT COALESCE(SUM(si.qty * i.purchase_price),0) FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
+                             WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $saleScope$locScope", array_merge([$mStart, $mEnd], $saleParams, $locParam));
+        $profitChart[] = ['label' => $label, 'val' => $rev - $cost];
+    }
 }
-$maxVal = max(1, max(array_column($chart, 'val')));
 
 // inventory summary
 $invCard = null;
@@ -88,36 +101,29 @@ include __DIR__ . '/includes/header.php';
 <div class="flash flash-info">🤝 You have <?= $myHandovers ?> stock handover(s) pending. <a href="my_stock.php">Accept with OTP →</a></div>
 <?php endif; ?>
 
+<?php if ($locsAllDash): ?>
+<form method="get" class="filterbar no-print" style="margin-bottom:10px">
+  <div><label>Branch</label>
+    <select name="loc" onchange="this.form.submit()">
+      <option value="0">All branches</option>
+      <?php foreach ($locsAllDash as $l): ?><option value="<?= $l['id'] ?>" <?= $dashLoc == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option><?php endforeach; ?>
+    </select></div>
+</form>
+<?php endif; ?>
+
 <?php if (can('sales.view')): ?>
 <div class="card">
-  <h2>Sale Overview <span class="muted" style="font-weight:400;font-size:13px">(Last 6 Months)</span></h2>
-  <p class="muted">This month: <strong>₹<?= money($monthSales['t']) ?></strong> · Today: <strong>₹<?= money($todaySales['t']) ?></strong> (<?= (int)$todaySales['c'] ?> bills)</p>
-  <div class="chart-wrap">
-    <svg viewBox="0 0 600 220" preserveAspectRatio="xMidYMid meet">
-      <?php
-      $w = 600; $h = 220; $padL = 10; $padR = 10; $padT = 24; $padB = 34;
-      $iw = ($w - $padL - $padR) / (count($chart) - 1 ?: 1);
-      $pts = [];
-      foreach ($chart as $ci => $cv) {
-          $x = $padL + $ci * $iw;
-          $y = $padT + ($h - $padT - $padB) * (1 - $cv['val'] / $maxVal);
-          $pts[] = [$x, $y, $cv];
-      }
-      $poly = implode(' ', array_map(fn($p) => round($p[0], 1) . ',' . round($p[1], 1), $pts));
-      $area = "$padL," . ($h - $padB) . " $poly " . round(end($pts)[0], 1) . ',' . ($h - $padB);
-      ?>
-      <polygon points="<?= $area ?>" fill="rgba(26,86,219,.12)"/>
-      <polyline points="<?= $poly ?>" fill="none" stroke="#1a56db" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-      <?php foreach ($pts as $p): ?>
-        <circle cx="<?= round($p[0], 1) ?>" cy="<?= round($p[1], 1) ?>" r="4.5" fill="#1a56db"/>
-        <text x="<?= round($p[0], 1) ?>" y="<?= $h - 12 ?>" text-anchor="middle" font-size="13" fill="#64748b"><?= $p[2]['label'] ?></text>
-        <?php if ($p[2]['val'] > 0): ?>
-        <text x="<?= round($p[0], 1) ?>" y="<?= round($p[1], 1) - 10 ?>" text-anchor="middle" font-size="11" fill="#334155"><?= $p[2]['val'] >= 100000 ? round($p[2]['val'] / 100000, 1) . 'L' : ($p[2]['val'] >= 1000 ? round($p[2]['val'] / 1000, 1) . 'k' : round($p[2]['val'])) ?></text>
-        <?php endif; ?>
-      <?php endforeach; ?>
-    </svg>
-  </div>
+  <h2>Sale Overview <span class="muted" style="font-weight:400;font-size:13px">(Last 6 Months<?= $dashLoc ? ' - ' . e($locsAllDash[array_search($dashLoc, array_column($locsAllDash, 'id'))]['name'] ?? '') : '' ?>)</span></h2>
+  <p class="muted">This month: <strong>₹<?= money($monthSales['t']) ?></strong> · Today: <strong>₹<?= money($todaySales['t']) ?></strong> (<?= (int)$todaySales['c'] ?> bills) · <a href="reports.php?r=daily">View Daily Sales report →</a></p>
+  <?= svg_line_chart($chart) ?>
 </div>
+<?php if ($profitChart): ?>
+<div class="card">
+  <h2>Profit Trend <span class="muted" style="font-weight:400;font-size:13px">(Last 6 Months, item profit only)</span></h2>
+  <?= svg_line_chart($profitChart, '#16a34a') ?>
+  <p class="mt"><a href="reports.php?r=profit">View full Profit report →</a></p>
+</div>
+<?php endif; ?>
 <?php endif; ?>
 
 <div class="grid-2">

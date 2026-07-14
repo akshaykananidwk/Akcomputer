@@ -38,11 +38,13 @@ $tabLabels = [
     'party_sales' => 'Party-wise Sales', 'aging' => 'Aging / Collection', 'purchase' => 'Purchase',
     'vendor_perf' => 'Vendor Performance', 'stockval' => 'Stock Report', 'cashbook' => 'Cashbook',
     'bank_ledger' => 'Bank Ledger',
-    'expense' => 'Expenses', 'gst' => 'GST', 'profit' => 'Profit', 'bill_profit' => 'Bill Profit',
+    'expense' => 'Expenses', 'gst' => 'GST', 'profit' => 'Product-wise Profit', 'bill_profit' => 'Bill Profit',
+    'branch_staff' => 'Branch / Staff Comparison',
     'staff' => 'Staff Stock', 'repair_tat' => 'Repair TAT', 'warranty_tat' => 'Warranty TAT',
     'tech_sla' => 'Technician SLA', 'forecast' => 'AI Sales Forecast', 'low' => 'Low Stock', 'dead_stock' => 'Dead / Slow-moving Stock',
     'general_ledger' => 'General Ledger', 'trial_balance' => 'Trial Balance',
     'balance_sheet' => 'Balance Sheet', 'profit_loss' => 'Profit & Loss',
+    'custom' => 'Custom Report',
     'activity' => 'Activity Log', 'login_history' => 'Login History',
 ];
 $title = $tabLabels[$r] ?? 'Report';

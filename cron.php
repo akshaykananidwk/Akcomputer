@@ -93,3 +93,24 @@ foreach (['dob' => 'birthday', 'anniversary' => 'anniversary'] as $col => $tpl) 
     }
 }
 echo "Birthday/anniversary wishes sent: $wishSent\n";
+
+// ---------- Scheduled reports (WhatsApp digest) ----------
+// One shared cron entry point, same as the jobs above - "due today" is
+// worked out here (daily/weekly-on-X/monthly-on-X) rather than needing a
+// separate per-minute scheduler, and last_run_at stops it firing twice if
+// the host's cron (or a manual "Send Now") runs more than once the same day.
+$dueSchedules = all("SELECT * FROM report_schedules WHERE is_active = 1");
+$scheduleSent = 0;
+foreach ($dueSchedules as $sch) {
+    if ($sch['last_run_at'] && date('Y-m-d', strtotime($sch['last_run_at'])) === $today) continue;
+    $isDue = $sch['frequency'] === 'daily'
+        || ($sch['frequency'] === 'weekly' && (int)date('w') === (int)$sch['day_of_week'])
+        || ($sch['frequency'] === 'monthly' && (int)date('j') === (int)$sch['day_of_month']);
+    if (!$isDue) continue;
+    $ok = send_whatsapp($sch['recipient_mobile'], report_schedule_build_message($sch));
+    if ($ok) { q('UPDATE report_schedules SET last_run_at = NOW() WHERE id = ?', [$sch['id']]); $scheduleSent++; }
+    usleep(400000);
+}
+q('INSERT INTO activity_log (user_id, action, details) VALUES (NULL, ?, ?)',
+  ['cron_report_schedules', "checked=" . count($dueSchedules) . " sent=$scheduleSent"]);
+echo "Scheduled reports: checked " . count($dueSchedules) . ", sent $scheduleSent\n";
