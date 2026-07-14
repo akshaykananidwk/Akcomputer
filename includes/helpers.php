@@ -74,6 +74,37 @@ function set_setting($name, $value) {
     q('INSERT INTO settings (name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)', [$name, $value]);
 }
 
+// ---------- Per-user preferences (theme, dashboard layout, etc.) ----------
+function user_pref($user_id, $key, $default = null) {
+    $v = val('SELECT pref_value FROM user_preferences WHERE user_id = ? AND pref_key = ?', [$user_id, $key]);
+    return $v === null ? $default : $v;
+}
+function set_user_pref($user_id, $key, $value) {
+    q('INSERT INTO user_preferences (user_id, pref_key, pref_value) VALUES (?,?,?)
+       ON DUPLICATE KEY UPDATE pref_value = VALUES(pref_value)', [$user_id, $key, $value]);
+}
+
+// ---------- Saved filters (per user, per page) ----------
+// $page is a short stable key (e.g. "sales", "parties", "reports_cashbook")
+// distinguishing where a saved filter applies - it's stored alongside the
+// filter so a "Daily Sales" saved view never shows up on "Cashbook".
+function render_saved_filters($user_id, $page) {
+    $filters = all('SELECT * FROM saved_filters WHERE user_id = ? AND page = ? ORDER BY id DESC', [$user_id, $page]);
+    ob_start();
+    ?>
+    <div class="saved-filters no-print">
+      <?php foreach ($filters as $f): ?>
+      <span class="saved-filter-chip">
+        <a href="?<?= e($f['query_string']) ?>"><?= e($f['name']) ?></a>
+        <button type="button" class="saved-filter-del" data-id="<?= (int)$f['id'] ?>" title="Delete this saved filter">×</button>
+      </span>
+      <?php endforeach; ?>
+      <button type="button" class="btn btn-sm btn-outline" onclick="saveCurrentFilter(<?= json_encode($page, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)">💾 Save current filter</button>
+    </div>
+    <?php
+    return ob_get_clean();
+}
+
 // ---------- Activity log ----------
 function log_activity($action, $details = '') {
     $uid = $_SESSION['user_id'] ?? null;

@@ -17,24 +17,114 @@ document.addEventListener('click', function () {
   document.querySelectorAll('.bell-panel.show, .avatar-panel.show').forEach(function (p) { p.classList.remove('show'); });
 });
 
-// ----- desktop top bar: quick nav search (filters the sidebar's own links,
-// no separate search backend needed - matches what's actually navigable) -----
-(function () {
-  var inp = document.getElementById('navSearch');
-  var box = document.getElementById('navSearchResults');
+// ----- global search: local sidebar-link filter (instant) + backend search
+// across parties/items/sales/repairs (debounced) - wired to both the
+// desktop top bar box and the mobile sidebar box (Ctrl/Cmd+K focuses
+// whichever one is actually visible) -----
+function wireGlobalSearch(inputId, resultsId) {
+  var inp = document.getElementById(inputId);
+  var box = document.getElementById(resultsId);
   if (!inp || !box) return;
   var links = Array.prototype.slice.call(document.querySelectorAll('.sidebar-links a')).map(function (a) {
     return { text: a.textContent.trim(), href: a.getAttribute('href') };
   });
+  var debounce = null;
   inp.addEventListener('input', function () {
-    var q = inp.value.trim().toLowerCase();
+    var q = inp.value.trim();
+    var qLower = q.toLowerCase();
+    clearTimeout(debounce);
     if (!q) { box.classList.remove('show'); box.innerHTML = ''; return; }
-    var matches = links.filter(function (l) { return l.text.toLowerCase().indexOf(q) > -1; }).slice(0, 8);
-    box.innerHTML = matches.map(function (l) { return '<a href="' + l.href + '">' + l.text + '</a>'; }).join('') ||
-      '<div class="bell-empty">No matches</div>';
+    var menuMatches = links.filter(function (l) { return l.text.toLowerCase().indexOf(qLower) > -1; }).slice(0, 5);
+    var menuHtml = menuMatches.length
+      ? '<div class="search-group-label">Menu</div>' + menuMatches.map(function (l) { return '<a href="' + l.href + '">' + l.text + '</a>'; }).join('')
+      : '';
+    box.innerHTML = menuHtml || '<div class="bell-empty">Searching…</div>';
     box.classList.add('show');
+    if (q.length < 2) return;
+    debounce = setTimeout(function () {
+      fetch('ajax.php?a=global_search&q=' + encodeURIComponent(q)).then(function (r) { return r.json(); }).then(function (d) {
+        var extraHtml = (d.groups || []).map(function (g) {
+          return '<div class="search-group-label">' + g.label + '</div>' +
+            g.items.map(function (it) { return '<a href="' + it.href + '">' + it.label + '</a>'; }).join('');
+        }).join('');
+        box.innerHTML = (menuHtml + extraHtml) || '<div class="bell-empty">No matches</div>';
+      });
+    }, 250);
   });
-  document.addEventListener('click', function (ev) { if (!ev.target.closest('.topbar-search')) box.classList.remove('show'); });
+  document.addEventListener('click', function (ev) { if (!ev.target.closest('#' + inputId) && !ev.target.closest('#' + resultsId)) box.classList.remove('show'); });
+}
+wireGlobalSearch('navSearch', 'navSearchResults');
+wireGlobalSearch('sidebarSearch', 'sidebarSearchResults');
+
+// ----- keyboard shortcuts: Ctrl/Cmd+K focuses search (desktop top bar box
+// if visible, else the mobile sidebar's search box - opening the sidebar
+// for it); Escape closes any open dropdown/sidebar/sheet -----
+document.addEventListener('keydown', function (ev) {
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k') {
+    ev.preventDefault();
+    var top = document.getElementById('navSearch');
+    if (top && top.offsetParent !== null) { top.focus(); return; }
+    var side = document.getElementById('sidebarSearch');
+    if (side) {
+      var sb = document.getElementById('sidebar'), ov = document.getElementById('sidebarOverlay');
+      if (sb && ov) { sb.classList.add('open'); ov.classList.add('show'); }
+      side.focus();
+    }
+    return;
+  }
+  if (ev.key === 'Escape') {
+    document.querySelectorAll('.bell-panel.show, .avatar-panel.show, .topbar-search-results.show').forEach(function (p) { p.classList.remove('show'); });
+    var sb2 = document.getElementById('sidebar'), ov2 = document.getElementById('sidebarOverlay');
+    if (sb2 && sb2.classList.contains('open')) { sb2.classList.remove('open'); ov2.classList.remove('show'); }
+    var sheet = document.getElementById('actionSheet'), sheetOv = document.getElementById('sheetOverlay');
+    if (sheet && sheet.classList.contains('open')) { sheet.classList.remove('open'); sheetOv.classList.remove('show'); }
+  }
+});
+
+// ----- saved filters (sales.php / parties.php / reports.php filter bars) -----
+function saveCurrentFilter(page) {
+  var name = prompt('Name this filter (e.g. "This month" or "Overdue only"):');
+  if (!name) return;
+  var fd = new FormData();
+  fd.append('csrf', CSRF_TOKEN);
+  fd.append('page', page);
+  fd.append('name', name);
+  fd.append('query_string', window.location.search.replace(/^\?/, ''));
+  fetch('ajax.php?a=save_filter', { method: 'POST', body: fd }).then(function (r) { return r.json(); }).then(function (d) {
+    if (d.error) { alert(d.error); return; }
+    location.reload();
+  });
+}
+document.addEventListener('click', function (ev) {
+  var btn = ev.target.closest('.saved-filter-del');
+  if (!btn) return;
+  if (!confirm('Delete this saved filter?')) return;
+  var fd = new FormData();
+  fd.append('csrf', CSRF_TOKEN);
+  fd.append('id', btn.dataset.id);
+  fetch('ajax.php?a=delete_filter', { method: 'POST', body: fd }).then(function () { location.reload(); });
+});
+
+// ----- dark mode toggle (avatar menu) - persisted server-side per user -----
+(function () {
+  var btn = document.getElementById('themeToggleBtn');
+  if (!btn) return;
+  var label = document.getElementById('themeToggleLabel');
+  var next = { auto: 'dark', dark: 'light', light: 'auto' };
+  var labels = { auto: 'Dark Mode', dark: 'Light Mode', light: 'Auto Theme' };
+  btn.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    var cur = btn.dataset.theme || 'auto';
+    var nx = next[cur] || 'auto';
+    if (nx === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', nx);
+    btn.dataset.theme = nx;
+    if (label) label.textContent = labels[nx];
+    var fd = new FormData();
+    fd.append('csrf', CSRF_TOKEN);
+    fd.append('theme', nx);
+    fetch('ajax.php?a=set_theme', { method: 'POST', body: fd });
+  });
 })();
 
 // ----- sidebar -----

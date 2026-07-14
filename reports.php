@@ -221,6 +221,7 @@ $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
   <a class="btn btn-sm btn-outline no-print" href="tally_export.php?type=<?= $tallyType ?>&from=<?= e($from) ?>&to=<?= e($to) ?>">⬇ Tally XML</a>
   <?php endif; ?>
 </form>
+<?= render_saved_filters(current_user()['id'], 'reports_' . $r) ?>
 
 <div class="modal-overlay no-print" id="exportModal">
   <div class="modal-box">

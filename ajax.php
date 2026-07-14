@@ -94,4 +94,62 @@ if ($a === 'serial_lookup') {
     exit;
 }
 
+if ($a === 'set_theme' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $theme = in_array(post('theme'), ['light', 'dark', 'auto'], true) ? post('theme') : 'auto';
+    set_user_pref(current_user()['id'], 'theme', $theme);
+    echo json_encode(['theme' => $theme]);
+    exit;
+}
+
+if ($a === 'save_filter' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $page = preg_replace('/[^a-z_]/', '', post('page'));
+    $name = trim(mb_substr(post('name'), 0, 100));
+    $qs = mb_substr(post('query_string'), 0, 500);
+    if ($page === '' || $name === '') { echo json_encode(['error' => 'Name required']); exit; }
+    q('INSERT INTO saved_filters (user_id, page, name, query_string) VALUES (?,?,?,?)', [current_user()['id'], $page, $name, $qs]);
+    echo json_encode(['id' => insert_id(), 'name' => $name, 'query_string' => $qs]);
+    exit;
+}
+
+if ($a === 'delete_filter' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    q('DELETE FROM saved_filters WHERE id = ? AND user_id = ?', [(int)post('id'), current_user()['id']]);
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+if ($a === 'global_search') {
+    $q = trim(get('q'));
+    $groups = [];
+    if (mb_strlen($q) >= 2) {
+        $like = '%' . $q . '%';
+        if (can('parties.view')) {
+            $rows = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 AND (name LIKE ? OR mobile LIKE ?) ORDER BY name LIMIT 5", [$like, $like]);
+            if ($rows) $groups[] = ['label' => 'Parties', 'items' => array_map(fn($r) => [
+                'label' => $r['name'] . ($r['mobile'] ? ' · ' . $r['mobile'] : ''), 'href' => 'parties.php?action=ledger&id=' . $r['id'],
+            ], $rows)];
+        }
+        if (can('items.view')) {
+            $rows = all("SELECT id, name FROM items WHERE is_active = 1 AND (name LIKE ? OR barcode LIKE ?) ORDER BY name LIMIT 5", [$like, $like]);
+            if ($rows) $groups[] = ['label' => 'Items', 'items' => array_map(fn($r) => [
+                'label' => $r['name'], 'href' => 'item_view.php?id=' . $r['id'],
+            ], $rows)];
+        }
+        if (can('sales.view')) {
+            list($scope, $params) = own_scope('sales');
+            $rows = all("SELECT id, invoice_no, customer_name FROM sales WHERE invoice_no LIKE ? $scope ORDER BY id DESC LIMIT 5", array_merge([$like], $params));
+            if ($rows) $groups[] = ['label' => 'Sales', 'items' => array_map(fn($r) => [
+                'label' => $r['invoice_no'] . ($r['customer_name'] ? ' - ' . $r['customer_name'] : ''), 'href' => 'sale_view.php?id=' . $r['id'],
+            ], $rows)];
+        }
+        if (can('repairs.view')) {
+            $rows = all("SELECT id, job_no, customer_name FROM repairs WHERE job_no LIKE ? OR customer_name LIKE ? ORDER BY id DESC LIMIT 5", [$like, $like]);
+            if ($rows) $groups[] = ['label' => 'Repair Jobs', 'items' => array_map(fn($r) => [
+                'label' => $r['job_no'] . ($r['customer_name'] ? ' - ' . $r['customer_name'] : ''), 'href' => 'repairs.php?action=edit&id=' . $r['id'],
+            ], $rows)];
+        }
+    }
+    echo json_encode(['groups' => $groups]);
+    exit;
+}
+
 echo json_encode(['error' => 'Unknown action']);

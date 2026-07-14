@@ -484,6 +484,7 @@ include __DIR__ . '/includes/header.php';
   <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>
   <button class="btn btn-sm" type="submit">Filter</button>
 </form>
+<?= render_saved_filters($u['id'], 'purchases') ?>
 <div class="list-count"><?= count($purchases) ?> purchases · Total ₹<?= money(array_sum(array_column($purchases, 'total'))) ?></div>
 <div class="table-wrap">
 <table>

@@ -117,8 +117,14 @@ function nav_visible_items($items) {
     }
     return $out;
 }
+
+// Theme: no row in user_preferences = "auto" = follow the OS
+// (prefers-color-scheme, handled purely in CSS) - the data-theme attribute
+// is only emitted for an explicit light/dark choice made via the avatar
+// menu toggle, so it can override the OS setting in either direction.
+$_theme = $u ? user_pref($u['id'], 'theme', 'auto') : 'auto';
 ?><!DOCTYPE html>
-<html lang="en">
+<html lang="en"<?= $_theme !== 'auto' ? ' data-theme="' . e($_theme) . '"' : '' ?>>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -159,6 +165,7 @@ function nav_visible_items($items) {
       <div class="avatar-panel" id="avatarPanel">
         <div class="avatar-panel-name"><?= e($u['name']) ?><span><?= e($u['role_name']) ?> · <?= e($u['location_name']) ?></span></div>
         <a href="my_account.php"><?= icon('gear', 16) ?> My Account</a>
+        <button type="button" id="themeToggleBtn" data-theme="<?= e($_theme) ?>"><?= icon('moon', 16) ?> <span id="themeToggleLabel"><?= $_theme === 'dark' ? 'Light Mode' : ($_theme === 'light' ? 'Auto Theme' : 'Dark Mode') ?></span></button>
         <a href="logout.php" onclick="return confirm('Logout?')"><?= icon('log-out', 16) ?> Logout</a>
       </div>
     </div>
@@ -173,6 +180,11 @@ function nav_visible_items($items) {
       <div class="sidebar-username"><?= e($u['name']) ?> · <?= e($u['role_name']) ?><br><?= e($u['location_name']) ?></div>
     </div>
   </div>
+  <div class="sidebar-search no-print">
+    <?= icon('search', 16) ?>
+    <input type="text" id="sidebarSearch" placeholder="Search parties, items, bills..." autocomplete="off">
+  </div>
+  <div class="sidebar-search-results" id="sidebarSearchResults"></div>
   <div class="sidebar-links">
   <?php foreach ($_navMenu as $_nm): ?>
     <?php if ($_nm[0] === 'link'):
@@ -236,7 +248,8 @@ function nav_visible_items($items) {
   </div>
 </div>
 <?php endif; ?>
-<script src="assets/app.js?v=8"></script>
+<script>var CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;</script>
+<script src="assets/app.js?v=9"></script>
 <?php unset($_navMenu, $_navItems, $_navQuick, $_nm, $_ni, $_nq, $_navOpen); ?>
 <main class="content<?= $u ? '' : ' content-full' ?>">
 <?php if ($u && !empty($_SESSION['impersonator_id'])): ?>
