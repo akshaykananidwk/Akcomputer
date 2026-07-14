@@ -7,6 +7,7 @@ $action = get('action', 'list');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('purchase_return.add');
+    if (is_period_locked(post('return_date', today()))) { flash(period_lock_message(), 'error'); redirect('purchase_return.php?action=new'); }
     $party_id = (int)post('party_id');
     $loc_id = (int)post('location_id') ?: $u['location_id'];
     $item_ids = post('item_id', []);
@@ -97,6 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('purchase_return.delete');
     $rid = (int)post('id');
     $ret = row('SELECT * FROM purchase_returns WHERE id = ?', [$rid]);
+    if ($ret && is_period_locked($ret['return_date'])) { flash(period_lock_message(), 'error'); redirect('purchase_return.php'); }
     if ($ret) {
         $ritems = all('SELECT * FROM purchase_return_items WHERE return_id = ?', [$rid]);
         $allowNeg = setting('allow_negative_stock', '1') === '1';

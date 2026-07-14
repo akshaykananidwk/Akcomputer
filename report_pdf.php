@@ -15,6 +15,7 @@ $fCompany = (int)get('f_company');
 $fParty = (int)get('f_party');
 $fStatus = get('f_status');
 $bankId = (int)get('bank_id');
+$glAccount = (int)get('gl_account');
 $fname = get('fname');
 
 // Optional column picker from the "What to display?" export dialog: a
@@ -39,6 +40,8 @@ $tabLabels = [
     'expense' => 'Expenses', 'gst' => 'GST', 'profit' => 'Profit', 'bill_profit' => 'Bill Profit',
     'staff' => 'Staff Stock', 'repair_tat' => 'Repair TAT', 'warranty_tat' => 'Warranty TAT',
     'tech_sla' => 'Technician SLA', 'forecast' => 'AI Sales Forecast', 'low' => 'Low Stock',
+    'general_ledger' => 'General Ledger', 'trial_balance' => 'Trial Balance',
+    'balance_sheet' => 'Balance Sheet', 'profit_loss' => 'Profit & Loss',
     'activity' => 'Activity Log',
 ];
 $title = $tabLabels[$r] ?? 'Report';

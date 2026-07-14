@@ -7,6 +7,7 @@ $action = get('action', 'list');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('sales_return.add');
+    if (is_period_locked(post('return_date', today()))) { flash(period_lock_message(), 'error'); redirect('sales_return.php?action=new'); }
     $sale = row('SELECT * FROM sales WHERE invoice_no = ? OR id = ?', [post('invoice_ref'), (int)post('invoice_ref')]);
     $loc_id = $sale ? (int)$sale['location_id'] : (int)$u['location_id'];
     $item_ids = post('item_id', []);
@@ -99,6 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('sales_return.delete');
     $rid = (int)post('id');
     $ret = row('SELECT * FROM sales_returns WHERE id = ?', [$rid]);
+    if ($ret && is_period_locked($ret['return_date'])) { flash(period_lock_message(), 'error'); redirect('sales_return.php'); }
     if ($ret) {
         $ritems = all('SELECT * FROM sales_return_items WHERE return_id = ?', [$rid]);
         foreach ($ritems as $ri) {

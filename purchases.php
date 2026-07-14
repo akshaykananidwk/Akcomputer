@@ -7,6 +7,7 @@ $action = get('action', 'list');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('purchases.add');
+    if (is_period_locked(post('purchase_date', today()))) { flash(period_lock_message(), 'error'); redirect('purchases.php?action=new'); }
     $company = row('SELECT * FROM companies WHERE id = ?', [(int)post('company_id', 1)]);
     $loc_id = (int)post('location_id') ?: $u['location_id'];
     $party_id = (int)post('party_id');
@@ -99,6 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     $pid = (int)post('id');
     $purchase = row('SELECT * FROM purchases WHERE id = ?', [$pid]);
     $cancelOnly = post('mode') === 'cancel';
+    if ($purchase && is_period_locked($purchase['purchase_date'])) { flash(period_lock_message(), 'error'); redirect('purchases.php'); }
     if ($purchase) {
         // Some serials from this purchase may already be sold/issued/
         // returned elsewhere - delete/cancel is allowed anyway (by
@@ -137,6 +139,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $purchase = row('SELECT * FROM purchases WHERE id = ?', [$pid]);
     if (!$purchase) { flash('Purchase not found.', 'error'); redirect('purchases.php'); }
     if ($purchase['is_cancelled']) { flash('A cancelled bill cannot be edited.', 'error'); redirect('purchase_view.php?id=' . $pid); }
+    if (is_period_locked($purchase['purchase_date']) || is_period_locked(post('purchase_date', $purchase['purchase_date']))) {
+        flash(period_lock_message(), 'error'); redirect('purchase_view.php?id=' . $pid);
+    }
 
     $moved = (int)val("SELECT COUNT(*) FROM item_serials WHERE purchase_id = ? AND status <> 'in_stock'", [$pid]);
     if ($moved > 0) {

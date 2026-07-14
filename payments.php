@@ -14,6 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
     $amount = (float)post('amount');
     $party = row('SELECT * FROM parties WHERE id = ?', [$party_id]);
     if (!$party || $amount <= 0) { flash('Party and amount required.', 'error'); redirect('payments.php?action=new&dir=' . $dir); }
+    if (is_period_locked(post('pay_date', today()))) { flash(period_lock_message(), 'error'); redirect('payments.php?action=new&dir=' . $dir); }
 
     $allocIds = post('alloc_id', []);
     $allocAmts = post('alloc_amt', []);
@@ -114,6 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('payments.delete');
     $pid = (int)post('id');
     $pay = row('SELECT * FROM payments WHERE id = ?', [$pid]);
+    if ($pay && is_period_locked($pay['pay_date'])) { flash(period_lock_message(), 'error'); redirect('payments.php'); }
     if ($pay) {
         $pdo = db();
         $pdo->beginTransaction();
@@ -152,6 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_contra') {
     $purchAllocIds = post('purch_alloc_id', []);
     $purchAllocAmts = post('purch_alloc_amt', []);
     $pay_date = post('pay_date', today());
+    if (is_period_locked($pay_date)) { flash(period_lock_message(), 'error'); redirect('payments.php?action=contra&party=' . $party_id); }
 
     $pdo = db();
     $pdo->beginTransaction();

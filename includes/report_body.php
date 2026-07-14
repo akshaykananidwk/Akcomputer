@@ -572,3 +572,141 @@ if ($r === 'activity' && can('users.view')) {
     if (!$logs) echo '<tr><td colspan="4" class="muted">Nothing found.</td></tr>';
     echo '</tbody></table></div>';
 }
+
+// ---------------- General Ledger (one account, transaction-level) ----------------
+if ($r === 'general_ledger' && can('reports.accounting')) {
+    $glAcc = coa_get($glAccount);
+    if (!$glAcc) {
+        echo '<p class="muted">No Chart of Accounts yet - add one from <a href="accounts.php">Chart of Accounts</a> first.</p>';
+    } else {
+        $openTo = date('Y-m-d', strtotime($from . ' -1 day'));
+        $opening = coa_balance_asof($glAcc, $openTo);
+        $glRows = coa_gl_rows($glAcc, $from, $to);
+        echo '<div class="card"><h2>' . e($glAcc['code']) . ' - ' . e($glAcc['name']) . ' <span class="muted" style="font-size:13px;font-weight:normal">(' . ucfirst($glAcc['type']) . ')</span></h2>';
+        echo '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead><tbody>';
+        $bal = $opening;
+        echo '<tr style="font-weight:600;background:var(--card-alt,rgba(0,0,0,.03))"><td colspan="4">Opening Balance (' . dmy($from) . ')</td><td class="num">₹' . money(abs($bal)) . ' ' . ($bal < 0 ? 'Cr' : 'Dr') . '</td></tr>';
+        $totDr = 0; $totCr = 0;
+        foreach ($glRows as $row) {
+            $bal += $row['debit'] - $row['credit'];
+            $totDr += $row['debit']; $totCr += $row['credit'];
+            echo '<tr><td>' . dmy($row['date']) . '</td><td>' . ($row['link'] ? '<a href="' . e($row['link']) . '">' . e($row['desc']) . '</a>' : e($row['desc'])) . '</td>'
+               . '<td class="num">' . ($row['debit'] ? '₹' . money($row['debit']) : '') . '</td>'
+               . '<td class="num">' . ($row['credit'] ? '₹' . money($row['credit']) : '') . '</td>'
+               . '<td class="num">₹' . money(abs($bal)) . ' ' . ($bal < 0 ? 'Cr' : 'Dr') . '</td></tr>';
+        }
+        if (!$glRows) echo '<tr><td colspan="5" class="muted">No transactions in this period.</td></tr>';
+        echo '<tr style="font-weight:600;border-top:2px solid var(--text)"><td colspan="2">Period Total</td><td class="num">₹' . money($totDr) . '</td><td class="num">₹' . money($totCr) . '</td>'
+           . '<td class="num">₹' . money(abs($bal)) . ' ' . ($bal < 0 ? 'Cr' : 'Dr') . '</td></tr>';
+        echo '</tbody></table></div></div>';
+    }
+}
+
+// ---------------- Trial Balance (every account, as of "To" date) ----------------
+if ($r === 'trial_balance' && can('reports.accounting')) {
+    $accts = coa_all();
+    $totDr = 0; $totCr = 0;
+    echo '<div class="card"><h2>Trial Balance (as of ' . dmy($to) . ')</h2>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>';
+    foreach ($accts as $a) {
+        $bal = coa_balance_asof($a, $to);
+        $side = coa_normal_side($a['type']);
+        if ($side === 'debit') { $dr = $bal > 0 ? $bal : 0; $cr = $bal < 0 ? -$bal : 0; }
+        else { $cr = $bal < 0 ? -$bal : 0; $dr = $bal > 0 ? $bal : 0; }
+        if ($dr == 0 && $cr == 0) continue;
+        $totDr += $dr; $totCr += $cr;
+        echo '<tr><td>' . e($a['code']) . '</td><td><a href="reports.php?r=general_ledger&gl_account=' . $a['id'] . '&from=' . e($from) . '&to=' . e($to) . '">' . e($a['name']) . '</a></td><td>' . ucfirst($a['type']) . '</td>'
+           . '<td class="num">' . ($dr ? '₹' . money($dr) : '') . '</td><td class="num">' . ($cr ? '₹' . money($cr) : '') . '</td></tr>';
+    }
+    echo '<tr style="font-weight:600;border-top:2px solid var(--text)"><td colspan="3">Total</td><td class="num">₹' . money($totDr) . '</td><td class="num">₹' . money($totCr) . '</td></tr>';
+    echo '</tbody></table></div>';
+    if (abs($totDr - $totCr) > 0.01) {
+        echo '<p class="muted mt">Debit/Credit differ by ₹' . money(abs($totDr - $totCr)) . ' - this is the shop\'s opening equity (value built up before this Accounting module was switched on) that hasn\'t been posted yet. Post it once via <a href="journal.php?action=new">Journal Entry</a> against "Owner\'s Capital" and this will balance to zero going forward.</p>';
+    }
+    echo '</div>';
+}
+
+// ---------------- Balance Sheet (Assets = Liabilities + Equity, as of "To" date) ----------------
+if ($r === 'balance_sheet' && can('reports.accounting')) {
+    $accts = coa_all();
+    $assets = array_filter($accts, fn($a) => $a['type'] === 'asset');
+    $liabs = array_filter($accts, fn($a) => $a['type'] === 'liability');
+    $equity = array_filter($accts, fn($a) => $a['type'] === 'equity');
+    $totAssets = 0; $totLiab = 0; $totEquity = 0;
+
+    echo '<div class="card"><h2>Balance Sheet (as of ' . dmy($to) . ')</h2>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Account</th><th class="num">Amount</th></tr></thead><tbody>';
+    echo '<tr style="font-weight:600"><td colspan="2">Assets</td></tr>';
+    foreach ($assets as $a) {
+        $v = coa_balance_asof($a, $to);
+        $totAssets += $v;
+        echo '<tr><td style="padding-left:20px">' . e($a['name']) . '</td><td class="num">₹' . money($v) . '</td></tr>';
+    }
+    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Total Assets</td><td class="num">₹' . money($totAssets) . '</td></tr>';
+
+    echo '<tr style="font-weight:600"><td colspan="2">Liabilities</td></tr>';
+    foreach ($liabs as $a) {
+        $v = -coa_balance_asof($a, $to);
+        $totLiab += $v;
+        echo '<tr><td style="padding-left:20px">' . e($a['name']) . '</td><td class="num">₹' . money($v) . '</td></tr>';
+    }
+    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Total Liabilities</td><td class="num">₹' . money($totLiab) . '</td></tr>';
+
+    echo '<tr style="font-weight:600"><td colspan="2">Equity</td></tr>';
+    foreach ($equity as $a) {
+        $v = $a['code'] === '3900'
+            ? coa_net_profit('0001-01-01', $to) - journal_balance($a['id'], '0001-01-01', $to)
+            : -journal_balance($a['id'], '0001-01-01', $to);
+        $totEquity += $v;
+        echo '<tr><td style="padding-left:20px">' . e($a['name']) . ($a['code'] === '3900' ? ' <span class="muted">(accumulated Net Profit)</span>' : '') . '</td><td class="num">₹' . money($v) . '</td></tr>';
+    }
+    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Total Equity</td><td class="num">₹' . money($totEquity) . '</td></tr>';
+    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>Total Liabilities + Equity</td><td class="num">₹' . money($totLiab + $totEquity) . '</td></tr>';
+    echo '</tbody></table></div>';
+
+    $diff = $totAssets - ($totLiab + $totEquity);
+    if (abs($diff) > 0.01) {
+        echo '<p class="muted mt">Assets and Liabilities+Equity differ by ₹' . money(abs($diff)) . ' - this is the shop\'s opening equity (value built up before this Accounting module was switched on) that hasn\'t been posted yet. Post it once via <a href="journal.php?action=new">Journal Entry</a> against "Owner\'s Capital" and this will balance to zero going forward.</p>';
+    }
+    echo '</div>';
+}
+
+// ---------------- Profit & Loss, Chart-of-Accounts based (period) ----------------
+if ($r === 'profit_loss' && can('reports.accounting')) {
+    $revenue = coa_sales_revenue($from, $to);
+    $customIncome = array_filter(coa_all(), fn($a) => $a['type'] === 'income' && !in_array($a['code'], ['4000', '4100'], true));
+    foreach ($customIncome as $a) $revenue += -journal_balance($a['id'], $from, $to);
+
+    $cogs = coa_cogs($from, $to);
+    $expCats = coa_expenses_by_category($from, $to);
+    $customExpense = array_filter(coa_all(), fn($a) => $a['type'] === 'expense' && $a['code'] !== '5000');
+    $totalOpex = array_sum(array_column($expCats, 'total'));
+    foreach ($customExpense as $a) $totalOpex += journal_balance($a['id'], $from, $to);
+
+    $gross = $revenue - $cogs;
+    $net = $gross - $totalOpex;
+
+    echo '<div class="grid-stats">';
+    echo '<div class="stat"><div class="stat-label">Revenue</div><div class="stat-value">₹' . money($revenue) . '</div></div>';
+    echo '<div class="stat s-ok"><div class="stat-label">Gross Profit</div><div class="stat-value">₹' . money($gross) . '</div></div>';
+    echo '<div class="stat ' . ($net >= 0 ? 's-ok' : 's-bad') . '"><div class="stat-label">NET PROFIT</div><div class="stat-value">₹' . money($net) . '</div></div>';
+    echo '</div>';
+
+    echo '<div class="card"><h2>Profit &amp; Loss (' . dmy($from) . ' &rarr; ' . dmy($to) . ')</h2>';
+    echo '<div class="table-wrap"><table><tbody>';
+    echo '<tr><td>Sales Revenue (net of returns)</td><td class="num">₹' . money($revenue) . '</td></tr>';
+    echo '<tr><td>Less: Cost of Goods Sold</td><td class="num" style="color:var(--bad)">-₹' . money($cogs) . '</td></tr>';
+    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Gross Profit</td><td class="num">₹' . money($gross) . '</td></tr>';
+    foreach ($expCats as $c) {
+        if ((float)$c['total'] == 0) continue;
+        echo '<tr><td style="padding-left:20px">Less: ' . e($c['category']) . '</td><td class="num" style="color:var(--bad)">-₹' . money($c['total']) . '</td></tr>';
+    }
+    foreach ($customExpense as $a) {
+        $v = journal_balance($a['id'], $from, $to);
+        if ($v == 0) continue;
+        echo '<tr><td style="padding-left:20px">Less: ' . e($a['name']) . '</td><td class="num" style="color:var(--bad)">-₹' . money($v) . '</td></tr>';
+    }
+    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Total Expenses</td><td class="num">₹' . money($totalOpex) . '</td></tr>';
+    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>NET PROFIT</td><td class="num">₹' . money($net) . '</td></tr>';
+    echo '</tbody></table></div></div>';
+}

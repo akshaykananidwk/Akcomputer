@@ -30,7 +30,8 @@ function permission_catalog() {
         'amc' => ['view', 'add', 'edit', 'delete'],
         'sites' => ['view', 'add', 'edit', 'delete'],
         'batches' => ['view', 'add', 'edit', 'delete'],
-        'reports' => ['view', 'profit', 'gst'],
+        'reports' => ['view', 'profit', 'gst', 'accounting'],
+        'accounting' => ['view', 'add', 'edit'],
         'users' => ['view', 'add', 'edit', 'delete', 'impersonate'],
         'roles' => ['view', 'add', 'edit', 'delete'],
         'locations' => ['view', 'add', 'edit', 'delete'],
@@ -49,6 +50,7 @@ function permission_labels() {
         'expenses' => 'Expenses', 'challans' => 'Delivery Challans',
         'weborders' => 'Website Orders', 'amc' => 'AMC / Recurring Billing',
         'sites' => 'Customer Sites / DVR-NVR Vault', 'batches' => 'Batch / Expiry Tracking', 'reports' => 'Reports',
+        'accounting' => 'Accounting (Journal, Chart of Accounts, Reconciliation)',
         'users' => 'Staff Users', 'roles' => 'Roles', 'locations' => 'Locations',
         'companies' => 'Companies / Firms', 'settings' => 'Settings',
     ];

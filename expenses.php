@@ -6,6 +6,7 @@ $u = current_user();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('expenses.add');
+    if (is_period_locked(post('exp_date', today()))) { flash(period_lock_message(), 'error'); redirect('expenses.php'); }
     $amt = (float)post('amount');
     if ($amt > 0) {
         q('INSERT INTO expenses (exp_date, category, amount, mode, bank_account_id, payment_method_id, notes, location_id, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
@@ -18,6 +19,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('expenses.delete');
+    $exp = row('SELECT * FROM expenses WHERE id = ?', [(int)post('id')]);
+    if ($exp && is_period_locked($exp['exp_date'])) { flash(period_lock_message(), 'error'); redirect('expenses.php'); }
     q('DELETE FROM expenses WHERE id = ?', [(int)post('id')]);
     flash('Expense deleted.');
     redirect('expenses.php');

@@ -151,6 +151,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'custom_field_del') 
     redirect('settings.php?cat=transaction');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_period_lock') {
+    require_perm('settings.edit');
+    set_setting('period_lock_date', post('period_lock_date'));
+    log_activity('settings_save', 'period_lock_date=' . post('period_lock_date'));
+    flash(post('period_lock_date') ? 'Period locked through ' . dmy(post('period_lock_date')) . ' - nothing on or before that date can be added, edited or deleted.' : 'Period lock removed.');
+    redirect('settings.php?cat=accounting');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_loyalty') {
     require_perm('settings.edit');
     set_setting('loyalty_enabled', post('loyalty_enabled') ? '1' : '0');
@@ -174,6 +182,7 @@ $categories = [
     'invoice'   => ['🎨', 'Invoice / Bill', 'Design, Google review, online payment'],
     'reminders' => ['⏰', 'Reminders', 'Auto overdue payment reminders'],
     'party'     => ['👥', 'Party', 'Credit term options'],
+    'accounting' => ['📒', 'Accounting', 'Period lock, Chart of Accounts, Journal Entries'],
     'backup'    => ['🔄', 'Backup & Updates', 'Backup download, GitHub update'],
     'about'     => ['📱', 'About', 'Install as app'],
 ];
@@ -398,6 +407,32 @@ exit;
     </div>
     <button class="btn" type="submit">Save</button>
   </form>
+</div>
+<?php endif; ?>
+
+<?php if ($cat === 'accounting'): ?>
+<div class="card">
+  <h3>📒 Period Lock</h3>
+  <p class="muted mb">Nothing dated on or before the lock date can be added, edited or deleted anywhere in the app (Sales, Purchases, Payments, Expenses, Returns, Journal Entries) - use this once a month or year's books are finalized, so they can't change by accident.</p>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_period_lock">
+    <div><label>Locked through</label><input type="date" name="period_lock_date" value="<?= e(setting('period_lock_date')) ?>"></div>
+    <button class="btn btn-sm" type="submit">Save</button>
+  </form>
+  <?php if (setting('period_lock_date')): ?>
+  <form method="post" class="mt"><?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_period_lock"><input type="hidden" name="period_lock_date" value="">
+    <button class="btn btn-sm btn-outline" type="submit">Remove Lock</button>
+  </form>
+  <?php endif; ?>
+</div>
+<div class="card">
+  <h3>Accounting Tools</h3>
+  <p class="muted mb">Manage the Chart of Accounts and post manual Journal / Adjustment entries.</p>
+  <a class="btn btn-sm btn-outline" href="accounts.php">Chart of Accounts</a>
+  <a class="btn btn-sm btn-outline" href="journal.php">Journal Entries</a>
+  <a class="btn btn-sm btn-outline" href="bank_reconcile.php">Bank Reconciliation</a>
 </div>
 <?php endif; ?>
 

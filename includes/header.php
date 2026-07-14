@@ -34,6 +34,15 @@ $_navMenu = [
         ['bank_accounts.php', 'Bank Accounts', 'settings.view', 'bank_accounts.php', 'settings.edit'],
         ['payment_methods.php', 'Payment Methods', 'settings.view', 'payment_methods.php', 'settings.edit'],
     ]],
+    ['group', 'accounting', 'book', 'Accounting', [
+        ['accounts.php', 'Chart of Accounts', 'accounting.view', 'accounts.php', 'accounting.edit'],
+        ['journal.php', 'Journal Entries', 'accounting.view', 'journal.php?action=new', 'accounting.edit'],
+        ['bank_reconcile.php', 'Bank Reconciliation', 'accounting.view', null, null],
+        ['reports.php?r=general_ledger', 'General Ledger', 'reports.accounting', null, null],
+        ['reports.php?r=trial_balance', 'Trial Balance', 'reports.accounting', null, null],
+        ['reports.php?r=balance_sheet', 'Balance Sheet', 'reports.accounting', null, null],
+        ['reports.php?r=profit_loss', 'Profit & Loss', 'reports.accounting', null, null],
+    ]],
     ['group', 'godown', 'archive', 'Stock / Godown', [
         ['handover.php', 'Handover / Transfer', 'handover.view', 'handover.php?action=new', 'handover.add'],
         ['my_stock.php', 'My Stock', null, null, null],

@@ -21,6 +21,7 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/whatsapp.php';
 require_once __DIR__ . '/icons.php';
+require_once __DIR__ . '/accounting.php';
 
 csrf_check();
 

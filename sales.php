@@ -23,6 +23,7 @@ function sale_item_custom_data($activeCF, $i) {
 // ---------- save new bill ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('sales.add');
+    if (is_period_locked(post('sale_date', today()))) { flash(period_lock_message(), 'error'); redirect('sales.php?action=new'); }
     $company = row('SELECT * FROM companies WHERE id = ?', [(int)post('company_id')]);
     $loc_id = (int)post('location_id') ?: $u['location_id'];
     $item_ids = post('item_id', []);
@@ -196,6 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     $sid = (int)post('id');
     $sale = row('SELECT * FROM sales WHERE id = ?', [$sid]);
     $cancelOnly = post('mode') === 'cancel';
+    if ($sale && is_period_locked($sale['sale_date'])) { flash(period_lock_message(), 'error'); redirect('sales.php'); }
     if ($sale) {
         $pdo = db();
         $pdo->beginTransaction();
@@ -235,6 +237,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $sale = row('SELECT * FROM sales WHERE id = ?', [$sid]);
     if (!$sale) { flash('Bill not found.', 'error'); redirect('sales.php'); }
     if ($sale['is_cancelled']) { flash('A cancelled bill cannot be edited.', 'error'); redirect('sale_view.php?id=' . $sid); }
+    if (is_period_locked($sale['sale_date']) || is_period_locked(post('sale_date', $sale['sale_date']))) {
+        flash(period_lock_message(), 'error'); redirect('sale_view.php?id=' . $sid);
+    }
 
     $oldItems = all('SELECT * FROM sale_items WHERE sale_id = ?', [$sid]);
     foreach ($oldItems as $oi) {

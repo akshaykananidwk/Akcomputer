@@ -11,6 +11,8 @@ $fParty = (int)get('f_party');
 $fStatus = get('f_status'); // '', 'paid', 'partial', 'due'
 $banksAll = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
 $bankId = (int)get('bank_id') ?: (int)($banksAll[0]['id'] ?? 0);
+$coaAll = can('reports.accounting') ? coa_all() : [];
+$glAccount = (int)get('gl_account') ?: (int)($coaAll[0]['id'] ?? 0);
 $page_title = 'Reports';
 include __DIR__ . '/includes/header.php';
 
@@ -27,6 +29,8 @@ $tabs = [
     'bill_profit' => '🧮 Bill Profit', 'staff' => '🎒 Staff Stock',
     'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'tech_sla' => '⏱️ Technician SLA',
     'forecast' => '🔮 AI Sales Forecast', 'low' => '⚠️ Low Stock',
+    'general_ledger' => '📗 General Ledger', 'trial_balance' => '⚖️ Trial Balance',
+    'balance_sheet' => '📑 Balance Sheet', 'profit_loss' => '💹 Profit & Loss',
     'activity' => '🔍 Activity Log',
 ];
 if (!can('reports.gst')) unset($tabs['gst']);
@@ -34,9 +38,11 @@ if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']
 if (!can('expenses.view')) unset($tabs['expense']);
 if (!can('users.view')) unset($tabs['activity']);
 if (!can('payments.view')) unset($tabs['bank_ledger']);
+if (!can('reports.accounting')) { unset($tabs['general_ledger']); unset($tabs['trial_balance']); unset($tabs['balance_sheet']); unset($tabs['profit_loss']); }
 if ($r === 'business' && !can('reports.profit')) $r = 'daily';
 if ($r === 'activity' && !can('users.view')) $r = 'daily';
 if ($r === 'bank_ledger' && !can('payments.view')) $r = 'daily';
+if (in_array($r, ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'], true) && !can('reports.accounting')) $r = 'daily';
 
 // Grouped the same way Vyapar's own Reports screen groups its report list -
 // a vertical, categorized list (not a horizontal scrolling tab strip) so
@@ -47,13 +53,14 @@ $tabCategories = [
     'GST' => ['gst'],
     'Item / Stock Reports' => ['stockval', 'low', 'forecast'],
     'Business Status' => ['cashbook', 'bank_ledger', 'profit', 'bill_profit'],
+    'Accounting' => ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'],
     'Expense Reports' => ['expense'],
     'Staff & Service Reports' => ['staff', 'repair_tat', 'warranty_tat', 'tech_sla'],
     'Activity' => ['activity'],
 ];
 ?>
 <?php
-$filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&bank_id=' . $bankId;
+$filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&bank_id=' . $bankId . '&gl_account=' . $glAccount;
 $filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchase', 'vendor_perf', 'gst', 'profit', 'bill_profit'], true);
 $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
 ?>
@@ -153,6 +160,14 @@ $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
       <?php if (!$banksAll): ?><option value="0">-- No bank account --</option><?php endif; ?>
       <?php foreach ($banksAll as $b): ?>
       <option value="<?= $b['id'] ?>" <?= $bankId == $b['id'] ? 'selected' : '' ?>><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option>
+      <?php endforeach; ?>
+    </select></div>
+  <?php endif; ?>
+  <?php if ($r === 'general_ledger'): ?>
+  <div><label>Account</label>
+    <select name="gl_account" onchange="document.getElementById('reportFilterForm').submit()">
+      <?php foreach ($coaAll as $a): ?>
+      <option value="<?= $a['id'] ?>" <?= $glAccount == $a['id'] ? 'selected' : '' ?>><?= e($a['code']) ?> - <?= e($a['name']) ?></option>
       <?php endforeach; ?>
     </select></div>
   <?php endif; ?>
