@@ -28,18 +28,14 @@ $items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit, i.hs
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
     $mobile = post('mobile') ?: $sale['customer_mobile'];
     $link = base_url('sale_view.php?id=' . $id . '&token=' . $sale['share_token']);
-    // Sent as a PDF document (not a photo) - the exact same visual design
-    // as before (invoice_pdf_bytes() reuses the same GD drawing code as
-    // invoice_image_jpg()), but WhatsApp does NOT recompress documents the
-    // way it recompresses photos, so the bill stays sharp instead of
-    // getting blurry after WhatsApp's own image pipeline touches it.
-    require_once __DIR__ . '/includes/billimage.php';
-    $imgDir = __DIR__ . '/uploads/invoices';
-    if (!is_dir($imgDir)) mkdir($imgDir, 0755, true);
-    $imgName = preg_replace('/[^A-Za-z0-9\-]/', '_', $sale['invoice_no']) . '_' . substr($sale['share_token'], 0, 10) . '.pdf';
-    file_put_contents($imgDir . '/' . $imgName,
-        invoice_pdf_bytes($sale, all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?", [$id])));
-    $imgUrl = base_url('uploads/invoices/' . $imgName);
+    // Sent as a real PDF document, not a picture stuffed inside a PDF
+    // wrapper - sale_pdf.php already renders the bill with genuine PDF
+    // text (includes/pdf.php's invoice_pdf(), the same one behind the
+    // "Download PDF" button), so its text is selectable/searchable and
+    // stays crisp at any zoom, unlike an embedded raster image. No file
+    // needs to be generated here at all - it's just this existing,
+    // share-token-accessible URL.
+    $imgUrl = base_url('sale_pdf.php?id=' . $id . '&token=' . $sale['share_token']);
     $due = $sale['total'] - $sale['paid'];
     $payLink = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no'], $id) : null;
     $msg = wa_template('bill', [

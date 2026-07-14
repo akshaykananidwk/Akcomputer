@@ -1,7 +1,9 @@
 <?php
-// Renders an invoice as a JPG image (for sending on WhatsApp as a photo,
-// which previews inline - unlike a PDF document). Pure GD, no external
-// library. Uses the bundled DejaVu Sans TTF fonts (assets/fonts/).
+// Renders an invoice as a JPG image. WhatsApp bills are sent as a real PDF
+// now (sale_pdf.php / includes/pdf.php's invoice_pdf() - selectable text,
+// crisp at any zoom, not a picture inside a PDF wrapper), not this image -
+// kept for any future need to share the bill as a picture elsewhere. Pure
+// GD, no external library. Uses the bundled DejaVu Sans TTF fonts (assets/fonts/).
 //
 // Layout is built in two passes: pass 1 measures/wraps text and appends
 // drawing closures ("ops") to a list while advancing a $y cursor, so the
@@ -220,11 +222,7 @@ function bi_icon_monitor(&$ops, $x, $y, $w, $rgb, $rgbLight) {
     bi_rrect($ops, $x + $w * 0.22, $y + $screenH + $w * 0.1, $x + $w * 0.78, $y + $screenH + $w * 0.18, 3, $rgb);
 }
 
-/** Builds the bill as a GD image resource (caller must imagedestroy() it) -
- *  shared by invoice_image_jpg() (WhatsApp photo) and invoice_pdf_bytes()
- *  (WhatsApp document) so both use the exact same visual design with zero
- *  duplicated layout code. */
-function bi_render_gd($sale, $items) {
+function invoice_image_jpg($sale, $items) {
     $S = 2; // supersample factor - drawn at 2x then downsampled for smooth circles/rounded corners
     $W = 760; $margin = 30;
 
@@ -478,51 +476,12 @@ function bi_render_gd($sale, $items) {
     $img = imagecreatetruecolor($W, $H);
     imagecopyresampled($img, $big, 0, 0, 0, 0, $W, $H, $W * $S, $H * $S);
     imagedestroy($big);
-    return $img;
-}
 
-function invoice_image_jpg($sale, $items) {
-    $img = bi_render_gd($sale, $items);
     ob_start();
     imagejpeg($img, null, 90);
     $data = ob_get_clean();
     imagedestroy($img);
     return $data;
-}
-
-/** Same bill design as invoice_image_jpg(), embedded as a single-page PDF
- *  instead of a JPEG - sent to WhatsApp as a document rather than a photo,
- *  so WhatsApp's own photo-compression pipeline never touches it (that
- *  recompression, not the JPEG quality setting here, was the actual cause
- *  of blurry bills when sent as images). */
-function invoice_pdf_bytes($sale, $items) {
-    require_once __DIR__ . '/pdf.php';
-    $img = bi_render_gd($sale, $items);
-    $w = imagesx($img); $h = imagesy($img);
-    $tmp = tempnam(sys_get_temp_dir(), 'bill') . '.png';
-    imagepng($img, $tmp, 6);
-    imagedestroy($img);
-
-    $pdf = new MiniPDF();
-    $id = $pdf->load_png($tmp);
-    // Fit the bill image to the A4 page width, preserving aspect ratio. A
-    // bill with many line items can render taller than one page - rather
-    // than shrink long bills until they're hard to read, the image is
-    // spread across as many pages as it needs (image_clipped() places the
-    // same full-size image at a shifting offset behind a fixed window).
-    $margin = 16;
-    $pageW = MiniPDF::W - $margin * 2;
-    $pageContentH = MiniPDF::H - $margin * 2;
-    $drawW = $pageW;
-    $drawH = $h * ($drawW / $w);
-    $pages = max(1, (int)ceil($drawH / $pageContentH));
-    for ($p = 0; $p < $pages; $p++) {
-        $pdf->new_page();
-        $sliceH = min($pageContentH, $drawH - $p * $pageContentH);
-        $pdf->image_clipped($id, $margin, $margin - $p * $pageContentH, $drawW, $drawH, $margin, $margin, $pageW, $sliceH);
-    }
-    @unlink($tmp);
-    return $pdf->output();
 }
 
 /** A small "payment reminder" card image for the Aging/Collection report's
