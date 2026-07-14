@@ -45,7 +45,7 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
     $msg = wa_template('bill', [
         'firm' => $sale['company_name'], 'invoice_no' => $sale['invoice_no'], 'date' => dmy($sale['sale_date']),
         'total' => money($sale['total']),
-        'due_line' => $due > 0.009 ? 'Balance due: ₹' . money($due) : 'Paid ✔',
+        'due_line' => $due > 0.009 ? 'Balance due: Rs ' . money($due) : 'Paid ✔',
         'pay_link' => $payLink ? "💳 Pay online: $payLink\n" : '',
         'link' => $link, 'customer' => $sale['customer_name'],
     ]);
@@ -101,7 +101,7 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' &&
           [$sale['party_id'] ?: null, 'in', $amt, post('mode', 'cash'), (int)post('bank_account_id') ?: null,
            (int)post('payment_method_id') ?: null, 'sale', $id, today(), 'Against ' . $sale['invoice_no'], current_user()['id']]);
         fire_webhook('payment.recorded', ['sale_id' => $id, 'invoice_no' => $sale['invoice_no'], 'amount' => $amt, 'direction' => 'in', 'mode' => post('mode', 'cash')]);
-        flash('Payment of ₹' . money($amt) . ' recorded.');
+        flash('Payment of Rs ' . money($amt) . ' recorded.');
     }
     redirect('sale_view.php?id=' . $id);
 }
@@ -149,7 +149,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
   $pms = active_payment_methods();
   $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name'); ?>
 <div class="card no-print">
-  <h3>Record payment (due ₹<?= money($due) ?>)</h3>
+  <h3>Record payment (due Rs <?= money($due) ?>)</h3>
   <form method="post" class="filterbar">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="pay">
@@ -198,7 +198,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
   </div>
   <div class="table-wrap" style="box-shadow:none">
     <table class="inv-table inv-table2">
-      <thead><tr><th>#</th><th>Item Description</th><?php if ($sale['is_gst']): ?><th>HSN</th><?php endif; ?><th class="num">Qty</th><th class="num">Rate (₹)</th><?php if ($sale['is_gst']): ?><th class="num">GST%</th><?php endif; ?><th class="num">Amount (₹)</th></tr></thead>
+      <thead><tr><th>#</th><th>Item Description</th><?php if ($sale['is_gst']): ?><th>HSN</th><?php endif; ?><th class="num">Qty</th><th class="num">Rate</th><?php if ($sale['is_gst']): ?><th class="num">GST%</th><?php endif; ?><th class="num">Amount</th></tr></thead>
       <tbody>
       <?php foreach ($items as $n => $it): ?>
         <tr>
@@ -242,32 +242,32 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
       <?php endif; ?>
     </div>
     <div class="inv-totals-block">
-      <div class="inv-t-line"><span>Subtotal</span><span>₹<?= money($sale['subtotal']) ?></span></div>
+      <div class="inv-t-line"><span>Subtotal</span><span>Rs <?= money($sale['subtotal']) ?></span></div>
       <?php if ($sale['discount'] > 0):
           $dLabel = (!empty($sale['discount_type']) && $sale['discount_type'] === 'percent' && $sale['discount_pct'] > 0)
               ? 'Discount (' . rtrim(rtrim(number_format($sale['discount_pct'], 2), '0'), '.') . '%)' : 'Discount'; ?>
-      <div class="inv-t-line"><span><?= e($dLabel) ?></span><span>- ₹<?= money($sale['discount']) ?></span></div>
+      <div class="inv-t-line"><span><?= e($dLabel) ?></span><span>- Rs <?= money($sale['discount']) ?></span></div>
       <?php endif; ?>
       <?php if ($sale['is_gst']): ?>
-      <div class="inv-t-line"><span>CGST</span><span>₹<?= money($sale['tax_amount'] / 2) ?></span></div>
-      <div class="inv-t-line"><span>SGST</span><span>₹<?= money($sale['tax_amount'] / 2) ?></span></div>
+      <div class="inv-t-line"><span>CGST</span><span>Rs <?= money($sale['tax_amount'] / 2) ?></span></div>
+      <div class="inv-t-line"><span>SGST</span><span>Rs <?= money($sale['tax_amount'] / 2) ?></span></div>
       <?php endif; ?>
       <?php if ($sale['shipping'] > 0): ?>
-      <div class="inv-t-line"><span>Shipping</span><span>₹<?= money($sale['shipping']) ?></span></div>
+      <div class="inv-t-line"><span>Shipping</span><span>Rs <?= money($sale['shipping']) ?></span></div>
       <?php endif; ?>
       <?php if (!empty($sale['loyalty_points_used']) && $sale['loyalty_points_used'] > 0): ?>
-      <div class="inv-t-line"><span>⭐ Points Discount</span><span>- ₹<?= money($sale['loyalty_discount']) ?></span></div>
+      <div class="inv-t-line"><span>⭐ Points Discount</span><span>- Rs <?= money($sale['loyalty_discount']) ?></span></div>
       <?php endif; ?>
       <?php if (!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009): ?>
-      <div class="inv-t-line"><span>Adjustment</span><span><?= $sale['adjustment'] > 0 ? '' : '- ' ?>₹<?= money(abs($sale['adjustment'])) ?></span></div>
+      <div class="inv-t-line"><span>Adjustment</span><span><?= $sale['adjustment'] > 0 ? '' : '- ' ?>Rs <?= money(abs($sale['adjustment'])) ?></span></div>
       <?php endif; ?>
       <?php if (!empty($sale['round_off']) && abs($sale['round_off']) > 0.004): ?>
-      <div class="inv-t-line"><span>Round Off</span><span><?= $sale['round_off'] > 0 ? '' : '- ' ?>₹<?= money(abs($sale['round_off'])) ?></span></div>
+      <div class="inv-t-line"><span>Round Off</span><span><?= $sale['round_off'] > 0 ? '' : '- ' ?>Rs <?= money(abs($sale['round_off'])) ?></span></div>
       <?php endif; ?>
-      <div class="inv-total-bar"><span>TOTAL</span><span>₹<?= money($sale['total']) ?></span></div>
-      <div class="inv-t-line"><span>Paid (<?= e(strtoupper($sale['payment_mode'])) ?>)</span><span>₹<?= money($sale['paid']) ?></span></div>
+      <div class="inv-total-bar"><span>TOTAL</span><span>Rs <?= money($sale['total']) ?></span></div>
+      <div class="inv-t-line"><span>Paid (<?= e(strtoupper($sale['payment_mode'])) ?>)</span><span>Rs <?= money($sale['paid']) ?></span></div>
       <?php if ($due > 0.009): ?>
-      <div class="inv-balance-bar"><span>BALANCE DUE</span><span>₹<?= money($due) ?></span></div>
+      <div class="inv-balance-bar"><span>BALANCE DUE</span><span>Rs <?= money($due) ?></span></div>
       <?php else: ?>
       <div class="inv-paid-bar">PAID IN FULL</div>
       <?php endif; ?>
@@ -284,7 +284,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
       ksort($slabs); ?>
   <div class="table-wrap mt" style="box-shadow:none">
     <table class="table-sm inv-table">
-      <thead><tr><th>GST Slab</th><th class="num">Taxable ₹</th><th class="num">CGST</th><th class="num">SGST</th><th class="num">Total Tax ₹</th></tr></thead>
+      <thead><tr><th>GST Slab</th><th class="num">Taxable (Rs)</th><th class="num">CGST</th><th class="num">SGST</th><th class="num">Total Tax (Rs)</th></tr></thead>
       <tbody><?php foreach ($slabs as $tr => $tv): if ($tr <= 0) continue; $tx = $tv * $tr / 100; ?>
         <tr><td><?= $tr ?>%</td><td class="num"><?= money($tv) ?></td>
         <td class="num"><?= ($tr / 2) ?>% = <?= money($tx / 2) ?></td>

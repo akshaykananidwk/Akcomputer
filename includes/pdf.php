@@ -161,29 +161,14 @@ class MiniPDF {
         $this->line($x + $w - $t / 2, $top + $S * 0.15 + $t, $x + $S * 0.05, $y, $t * 1.25, $rgb);
         return $S * 0.64;
     }
-    /** Left-aligned "<Rs> <amount>" with a vector rupee glyph. */
+    /** Left-aligned "Rs <amount>" (plain text - the shop prefers "Rs" over the
+     *  Rupee symbol, which not every viewer renders and the shop found unclear). */
     function money_text($x, $y, $size, $amount, $style = '', $rgb = [0, 0, 0]) {
-        $adv = $this->rupee($x, $y, $size, $rgb);
-        $this->text($x + $adv + $size * 0.12, $y, $size, $amount, $style, $rgb);
+        $this->text($x, $y, $size, 'Rs ' . $amount, $style, $rgb);
     }
-    /** Right-aligned "<Rs> <amount>" with a vector rupee glyph, ending at $xRight. */
+    /** Right-aligned "Rs <amount>" (plain text), ending at $xRight. */
     function money_text_right($xRight, $y, $size, $amount, $style = '', $rgb = [0, 0, 0]) {
-        $numW = pdf_text_width($amount, $size, $style === 'B');
-        $adv = $size * 0.64; $gap = $size * 0.12;
-        $x = $xRight - ($adv + $gap + $numW);
-        $this->rupee($x, $y, $size, $rgb);
-        $this->text($x + $adv + $gap, $y, $size, $amount, $style, $rgb);
-    }
-    /** Right-aligned column header of the form "LABEL (Rs)" with a vector rupee glyph. */
-    function rupee_label_right($xRight, $y, $size, $label, $style = '', $rgb = [0, 0, 0]) {
-        $pre = $label . ' ('; $post = ')';
-        $wPre = pdf_text_width($pre, $size, $style === 'B');
-        $wPost = pdf_text_width($post, $size, $style === 'B');
-        $wRup = $size * 0.5; $g = $size * 0.05;
-        $x = $xRight - ($wPre + $g + $wRup + $g + $wPost);
-        $this->text($x, $y, $size, $pre, $style, $rgb);
-        $this->rupee($x + $wPre + $g, $y, $size * 0.86, $rgb);
-        $this->text($x + $wPre + $g + $wRup + $g, $y, $size, $post, $style, $rgb);
+        $this->text_right($xRight, $y, $size, 'Rs ' . $amount, $style, $rgb);
     }
     private function rrect_path($x, $y, $w, $h, $r) {
         $x0 = $x; $y0 = self::H - $y - $h;
@@ -543,9 +528,9 @@ function invoice_pdf($sale, $items) {
     $pdf->text($cItem, $hy, 9, 'ITEM DESCRIPTION', 'B', [1, 1, 1]);
     if ($hasGst) $pdf->text_right($cHsnR, $hy, 9, 'HSN', 'B', [1, 1, 1]);
     $pdf->text_center($cQtyC, $hy, 9, 'QTY', 'B', [1, 1, 1]);
-    $pdf->rupee_label_right($cRateR, $hy, 8.5, 'RATE', 'B', [1, 1, 1]);
+    $pdf->text_right($cRateR, $hy, 9, 'RATE', 'B', [1, 1, 1]);
     if ($hasGst) $pdf->text_right($cGstR, $hy, 9, 'GST%', 'B', [1, 1, 1]);
-    $pdf->rupee_label_right($cAmtR, $hy, 8.5, 'AMOUNT', 'B', [1, 1, 1]);
+    $pdf->text_right($cAmtR, $hy, 9, 'AMOUNT', 'B', [1, 1, 1]);
 
     $bodyTop = $tableTop + $headH;
     $targetBodyBottom = 498;               // designed table bottom for a "full" look
@@ -554,10 +539,12 @@ function invoice_pdf($sale, $items) {
     $paginated = false;
 
     foreach ($items as $n => $it) {
+        // wrap the item name onto extra lines instead of cutting it off
+        $nameLines = array_slice(pdf_wrap($it['name'], 9.5, false, $itemMaxW), 0, 4);
+        $nLines = count($nameLines);
+        $rowNeed = $rowH + ($nLines - 1) * 12 + ($it['serials'] ? 10 : 0);
         // page break for very long bills
-        if ($y + $rowH > 706) {
-            // draw side borders for current page body, then new page
-            $pdf->rect($L, $y, $R - $L, 0.6, [0.88, 0.9, 0.93]);
+        if ($y + $rowNeed > 706) {
             $pdf->new_page();
             $paginated = true;
             $y = 44;
@@ -568,26 +555,24 @@ function invoice_pdf($sale, $items) {
             $pdf->text($cItem, $hy, 9, 'ITEM DESCRIPTION', 'B', [1, 1, 1]);
             if ($hasGst) $pdf->text_right($cHsnR, $hy, 9, 'HSN', 'B', [1, 1, 1]);
             $pdf->text_center($cQtyC, $hy, 9, 'QTY', 'B', [1, 1, 1]);
-            $pdf->rupee_label_right($cRateR, $hy, 8.5, 'RATE', 'B', [1, 1, 1]);
+            $pdf->text_right($cRateR, $hy, 9, 'RATE', 'B', [1, 1, 1]);
             if ($hasGst) $pdf->text_right($cGstR, $hy, 9, 'GST%', 'B', [1, 1, 1]);
-            $pdf->rupee_label_right($cAmtR, $hy, 8.5, 'AMOUNT', 'B', [1, 1, 1]);
+            $pdf->text_right($cAmtR, $hy, 9, 'AMOUNT', 'B', [1, 1, 1]);
             $y += $headH;
             $bodyTop = $y;
         }
         $ty = $y + 14;
         $pdf->text($cNum, $ty, 9.5, ($n + 1) . '', '', $C['navy']);
-        $pdf->text($cItem, $ty, 9.5, $pdf->fit($it['name'], $itemMaxW, 9.5), '', [0.15, 0.2, 0.28]);
+        foreach ($nameLines as $i => $nl) $pdf->text($cItem, $ty + $i * 12, 9.5, $nl, '', [0.15, 0.2, 0.28]);
         if ($hasGst) $pdf->text_right($cHsnR, $ty, 9, (string)($it['hsn'] ?? ''), '', $C['gray']);
         $pdf->text_center($cQtyC, $ty, 9.5, trim((float)$it['qty'] . ' ' . $it['unit']), '', [0.15, 0.2, 0.28]);
         $pdf->text_right($cRateR, $ty, 9.5, money($it['price']), '', [0.15, 0.2, 0.28]);
         if ($hasGst) $pdf->text_right($cGstR, $ty, 9, (float)$it['tax_rate'] . '%', '', $C['gray']);
         $pdf->text_right($cAmtR, $ty, 9.5, money($it['total']), '', [0.15, 0.2, 0.28]);
-        $adv = $rowH;
         if ($it['serials']) {
-            $pdf->text($cItem, $ty + 10, 7.3, $pdf->fit('SN: ' . $it['serials'], $itemMaxW, 7.3), '', $C['gray']);
-            $adv = $rowH + 10;
+            $pdf->text($cItem, $ty + $nLines * 12 - 2, 7.3, $pdf->fit('SN: ' . $it['serials'], $itemMaxW, 7.3), '', $C['gray']);
         }
-        $y += $adv;
+        $y += $rowNeed;
         $pdf->line($L, $y, $R, $y, 0.5, [0.9, 0.92, 0.94]);
         $rowIdx++;
     }
