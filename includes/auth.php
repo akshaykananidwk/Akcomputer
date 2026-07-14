@@ -39,6 +39,7 @@ function permission_catalog() {
         'reports' => ['view', 'profit', 'gst', 'accounting', 'builder'],
         'report_schedules' => ['view', 'add', 'edit', 'delete'],
         'accounting' => ['view', 'add', 'edit'],
+        'webhooks' => ['view', 'add', 'edit', 'delete'],
         'users' => ['view', 'add', 'edit', 'delete', 'impersonate'],
         'roles' => ['view', 'add', 'edit', 'delete'],
         'locations' => ['view', 'add', 'edit', 'delete'],
@@ -62,6 +63,7 @@ function permission_labels() {
         'reports' => 'Reports',
         'report_schedules' => 'Scheduled Reports',
         'accounting' => 'Accounting (Journal, Chart of Accounts, Reconciliation)',
+        'webhooks' => 'Webhooks',
         'users' => 'Staff Users', 'roles' => 'Roles', 'locations' => 'Locations',
         'companies' => 'Companies / Firms', 'settings' => 'Settings',
     ];

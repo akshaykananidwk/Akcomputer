@@ -30,6 +30,7 @@ function icon($name, $size = 20) {
         'arrow-down' => '<line x1="12" y1="5" x2="12" y2="19"/><polyline points="6 13 12 19 18 13"/>',
         'arrow-up' => '<line x1="12" y1="19" x2="12" y2="5"/><polyline points="6 11 12 5 18 11"/>',
         'book' => '<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 4.5v17"/><line x1="20" y1="19" x2="6.5" y2="19"/>',
+        'link' => '<path d="M9 15l6-6"/><path d="M8 13l-2.5 2.5a3.5 3.5 0 0 0 5 5L13 18"/><path d="M16 11l2.5-2.5a3.5 3.5 0 0 0-5-5L11 6"/>',
     ];
     $body = $paths[$name] ?? $paths['grid'];
     return '<svg class="ico-svg" width="' . (int)$size . '" height="' . (int)$size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' . $body . '</svg>';

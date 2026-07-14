@@ -24,6 +24,9 @@ require_once __DIR__ . '/whatsapp.php';
 require_once __DIR__ . '/icons.php';
 require_once __DIR__ . '/accounting.php';
 require_once __DIR__ . '/custom_reports.php';
+require_once __DIR__ . '/api_auth.php';
+require_once __DIR__ . '/webhooks.php';
+require_once __DIR__ . '/xlsx_writer.php';
 
 csrf_check();
 

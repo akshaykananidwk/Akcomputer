@@ -135,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_transaction') 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_invoice') {
     require_perm('settings.edit');
-    foreach (['google_review_link', 'razorpay_key_id', 'razorpay_key_secret'] as $k) set_setting($k, post($k));
+    foreach (['google_review_link', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret'] as $k) set_setting($k, post($k));
     log_activity('settings_save');
     flash('Invoice settings saved.');
     redirect('settings.php?cat=invoice');
@@ -460,8 +460,15 @@ exit;
       <div><label>Razorpay Key ID <span class="muted" style="font-weight:normal">(for the online payment link on bills, optional)</span></label><input type="text" name="razorpay_key_id" value="<?= e(setting('razorpay_key_id')) ?>" placeholder="rzp_live_..."></div>
       <div><label>Razorpay Key Secret</label><input type="password" name="razorpay_key_secret" value="<?= e(setting('razorpay_key_secret')) ?>"></div>
     </div>
+    <div class="form-row cols-2">
+      <div><label>Razorpay Webhook Secret <span class="muted" style="font-weight:normal">(from the webhook you create below - auto-marks a bill paid when the customer pays online)</span></label><input type="password" name="razorpay_webhook_secret" value="<?= e(setting('razorpay_webhook_secret')) ?>"></div>
+    </div>
     <button class="btn" type="submit">Save</button>
   </form>
+  <?php if (setting('razorpay_key_id')): ?>
+  <p class="muted mt">In Razorpay Dashboard → Settings → Webhooks, add this URL with the "payment_link.paid" event, then paste the secret it gives you above:</p>
+  <p><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block"><?= e(base_url('razorpay_webhook.php')) ?></code></p>
+  <?php endif; ?>
 </div>
 <?php endif; ?>
 

@@ -68,6 +68,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'revoke_session') {
     redirect('my_account.php?tab=sessions');
 }
 
+// ---------- API tokens (Bearer tokens for api.php - external/mobile access) ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'create_api_token') {
+    $label = trim(post('label')) ?: 'Untitled token';
+    $days = (int)post('expires_days');
+    $token = bin2hex(random_bytes(32));
+    q('INSERT INTO api_tokens (user_id, label, token_hash, expires_at) VALUES (?,?,?,?)',
+      [$u['id'], $label, api_token_hash($token), $days > 0 ? date('Y-m-d H:i:s', strtotime("+$days days")) : null]);
+    $_SESSION['new_api_token'] = $token;
+    log_activity('api_token_create', $label);
+    redirect('my_account.php?tab=api');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'revoke_api_token') {
+    $tid = (int)post('id');
+    $row = row('SELECT * FROM api_tokens WHERE id = ? AND user_id = ?', [$tid, $u['id']]);
+    if ($row) {
+        q('UPDATE api_tokens SET revoked = 1 WHERE id = ?', [$tid]);
+        flash('Token "' . $row['label'] . '" revoked - anything using it stops working immediately.');
+    }
+    redirect('my_account.php?tab=api');
+}
+
 $page_title = 'My Account';
 include __DIR__ . '/includes/header.php';
 ?>
@@ -77,6 +99,7 @@ include __DIR__ . '/includes/header.php';
   <a class="btn btn-sm <?= $tab === '2fa' ? '' : 'btn-outline' ?>" href="my_account.php?tab=2fa">Two-Factor Auth</a>
   <a class="btn btn-sm <?= $tab === 'sessions' ? '' : 'btn-outline' ?>" href="my_account.php?tab=sessions">Active Sessions</a>
   <a class="btn btn-sm <?= $tab === 'history' ? '' : 'btn-outline' ?>" href="my_account.php?tab=history">Login History</a>
+  <a class="btn btn-sm <?= $tab === 'api' ? '' : 'btn-outline' ?>" href="my_account.php?tab=api">API Tokens</a>
 </div>
 
 <?php if ($tab === 'overview'): ?>
@@ -191,6 +214,43 @@ include __DIR__ . '/includes/header.php';
     </tbody>
   </table>
   </div>
+</div>
+
+<?php elseif ($tab === 'api'):
+    $tokens = all('SELECT * FROM api_tokens WHERE user_id = ? AND revoked = 0 ORDER BY id DESC', [$u['id']]);
+    $newToken = $_SESSION['new_api_token'] ?? null;
+    unset($_SESSION['new_api_token']); ?>
+<div class="card">
+  <h2>🔌 API Tokens</h2>
+  <p class="muted mb">Bearer tokens for <code>api.php</code> (also used by any mobile app) - external tools authenticate with <code>Authorization: Bearer &lt;token&gt;</code> instead of logging in, and can do anything your account's permissions allow.</p>
+  <?php if ($newToken): ?>
+  <div class="flash flash-info">
+    <strong>Copy this token now - it is shown only this once and cannot be retrieved again:</strong>
+    <div class="mt" style="font-family:monospace;font-size:14px;word-break:break-all;background:var(--card-alt,rgba(0,0,0,.04));padding:10px;border-radius:8px"><?= e($newToken) ?></div>
+  </div>
+  <?php endif; ?>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="create_api_token">
+    <div><label>Label</label><input type="text" name="label" placeholder="e.g. Mobile App" required></div>
+    <div><label>Expires in (days, blank = never)</label><input type="number" name="expires_days" min="1" style="width:120px"></div>
+    <button class="btn btn-sm" type="submit">Generate Token</button>
+  </form>
+  <?php foreach ($tokens as $t): ?>
+  <div class="list-row" style="cursor:default">
+    <div class="list-row-main">
+      <strong><?= e($t['label']) ?></strong>
+      <div class="muted list-row-sub">Created <?= dmyt($t['created_at']) ?> · last used <?= $t['last_used_at'] ? dmyt($t['last_used_at']) : 'never' ?><?= $t['expires_at'] ? ' · expires ' . dmyt($t['expires_at']) : '' ?></div>
+    </div>
+    <div class="list-row-val">
+      <form method="post" onsubmit="return confirm('Revoke this token? Anything using it stops working immediately.')">
+        <?= csrf_field() ?><input type="hidden" name="do" value="revoke_api_token"><input type="hidden" name="id" value="<?= $t['id'] ?>">
+        <button class="btn btn-sm btn-outline" type="submit">Revoke</button>
+      </form>
+    </div>
+  </div>
+  <?php endforeach; ?>
+  <?php if (!$tokens): ?><p class="muted">No API tokens yet.</p><?php endif; ?>
 </div>
 <?php endif; ?>
 <?php include __DIR__ . '/includes/footer.php'; ?>

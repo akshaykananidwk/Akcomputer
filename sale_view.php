@@ -38,7 +38,7 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
         invoice_image_jpg($sale, all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?", [$id])));
     $imgUrl = base_url('uploads/invoices/' . $imgName);
     $due = $sale['total'] - $sale['paid'];
-    $payLink = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no']) : null;
+    $payLink = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no'], $id) : null;
     $msg = wa_template('bill', [
         'firm' => $sale['company_name'], 'invoice_no' => $sale['invoice_no'], 'date' => dmy($sale['sale_date']),
         'total' => money($sale['total']),
@@ -62,7 +62,7 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
 // ---------- standalone payment link (for copy/SMS/email) ----------
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'paylink') {
     $due = $sale['total'] - $sale['paid'];
-    $link = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no']) : null;
+    $link = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no'], $id) : null;
     if ($link) {
         flash('Payment Link: ' . $link . ' (copy it)');
     } else {
@@ -97,6 +97,7 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' &&
            VALUES (?,?,?,?,?,?,?,?,?,?,?)',
           [$sale['party_id'] ?: null, 'in', $amt, post('mode', 'cash'), (int)post('bank_account_id') ?: null,
            (int)post('payment_method_id') ?: null, 'sale', $id, today(), 'Against ' . $sale['invoice_no'], current_user()['id']]);
+        fire_webhook('payment.recorded', ['sale_id' => $id, 'invoice_no' => $sale['invoice_no'], 'amount' => $amt, 'direction' => 'in', 'mode' => post('mode', 'cash')]);
         flash('Payment of ₹' . money($amt) . ' recorded.');
     }
     redirect('sale_view.php?id=' . $id);

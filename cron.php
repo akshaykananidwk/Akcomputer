@@ -114,3 +114,10 @@ foreach ($dueSchedules as $sch) {
 q('INSERT INTO activity_log (user_id, action, details) VALUES (NULL, ?, ?)',
   ['cron_report_schedules', "checked=" . count($dueSchedules) . " sent=$scheduleSent"]);
 echo "Scheduled reports: checked " . count($dueSchedules) . ", sent $scheduleSent\n";
+
+// ---------- Housekeeping: trim old webhook delivery logs ----------
+// webhook_deliveries has no cap on insert (every fire_webhook() call adds a
+// row) - trimmed here instead, same "let cron sweep it up" pattern as
+// everything else in this file, rather than deleting inline on every fire.
+$trimmed = q('DELETE FROM webhook_deliveries WHERE created_at < DATE_SUB(?, INTERVAL 30 DAY)', [$today])->rowCount();
+echo "Webhook delivery log cleanup: removed $trimmed old row(s)\n";

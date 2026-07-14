@@ -97,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'quickstatus') {
     q('UPDATE repairs SET status = ?, delivered_date = IF(? = "delivered", COALESCE(delivered_date, ?), delivered_date) WHERE id = ?',
       [$newStatus, $newStatus, today(), $rid]);
     log_activity('repair_status', $job['job_no'] . ' -> ' . $newStatus);
+    fire_webhook('repair.status_changed', ['repair_id' => $rid, 'job_no' => $job['job_no'], 'old_status' => $job['status'], 'new_status' => $newStatus]);
     if ($newStatus === 'delivered' && $job['customer_mobile']) {
         $link = feedback_link('repair', $rid, $job['customer_name'], $job['customer_mobile']);
         send_whatsapp($job['customer_mobile'], wa_template('feedback_request', [

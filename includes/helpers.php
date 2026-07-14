@@ -47,6 +47,13 @@ function csrf_field() {
 }
 function csrf_check() {
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        // api.php (Bearer-token REST/mobile API) and razorpay_webhook.php
+        // (HMAC-signature-verified inbound webhook) authenticate every
+        // request their own way and have no browser session/CSRF token to
+        // check against - both are genuinely different trust boundaries
+        // from the rest of this cookie-session-based app.
+        $exempt = ['api.php', 'razorpay_webhook.php'];
+        if (in_array(basename($_SERVER['SCRIPT_NAME'] ?? ''), $exempt, true)) return;
         if (!hash_equals(csrf_token(), (string)post('csrf'))) {
             http_response_code(400);
             die('Invalid request (CSRF). Go back and try again.');
@@ -387,7 +394,11 @@ function vault_decrypt($enc) {
 }
 
 // ---------- Online payment link (Razorpay Payment Links API) ----------
-function razorpay_payment_link($amount, $description, $customerName = '', $customerMobile = '', $referenceId = '') {
+// $saleId (optional): when given, the Razorpay payment-link id is saved on
+// that sale row so razorpay_webhook.php can later match the "payment_link.paid"
+// event back to this exact bill and auto-mark it paid - without it, the app
+// had no way to learn a customer had actually paid via the link.
+function razorpay_payment_link($amount, $description, $customerName = '', $customerMobile = '', $referenceId = '', $saleId = null) {
     $keyId = setting('razorpay_key_id'); $keySecret = setting('razorpay_key_secret');
     if (!$keyId || !$keySecret || $amount <= 0 || !function_exists('curl_init')) return null;
     $payload = [
@@ -410,6 +421,9 @@ function razorpay_payment_link($amount, $description, $customerName = '', $custo
     curl_close($ch);
     if ($resp === false || $code >= 300) return null;
     $data = json_decode($resp, true);
+    if ($saleId && !empty($data['id'])) {
+        q('UPDATE sales SET razorpay_link_id = ? WHERE id = ?', [$data['id'], $saleId]);
+    }
     return $data['short_url'] ?? null;
 }
 

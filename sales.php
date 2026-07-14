@@ -192,6 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         }
         $pdo->commit();
         log_activity('sale_add', "$invoice_no total $total");
+        fire_webhook('sale.created', ['sale_id' => $sale_id, 'invoice_no' => $invoice_no, 'total' => $total, 'paid' => $paid, 'customer_name' => post('customer_name')]);
         flash("Bill $invoice_no saved.");
         redirect(post('save_new') ? 'sales.php?action=new' : 'sale_view.php?id=' . $sale_id);
     } catch (Exception $ex) {

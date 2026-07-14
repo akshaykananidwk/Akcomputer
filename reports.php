@@ -213,10 +213,12 @@ $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
   <?php endif; ?>
   <button class="btn btn-sm" type="submit">Apply</button>
   <button class="btn btn-sm btn-outline no-print" type="button" onclick="window.print()">🖨️ Print</button>
-  <button class="btn btn-sm btn-outline no-print" type="button" onclick="openExportDialog('csv')">⬇ Excel/CSV</button>
+  <button class="btn btn-sm btn-outline no-print" type="button" onclick="openExportDialog('csv')">⬇ CSV</button>
+  <button class="btn btn-sm btn-outline no-print" type="button" onclick="openExportDialog('xlsx')">⬇ Excel</button>
   <button class="btn btn-sm btn-outline no-print" type="button" onclick="openExportDialog('pdf')">⬇ PDF</button>
-  <?php if ($r === 'sales' || $r === 'purchase'): ?>
-  <a class="btn btn-sm btn-outline no-print" href="tally_export.php?type=<?= $r ?>&from=<?= e($from) ?>&to=<?= e($to) ?>">⬇ Tally XML</a>
+  <?php $tallyType = ['sales' => 'sales', 'purchase' => 'purchase', 'cashbook' => 'payments', 'expense' => 'expenses'][$r] ?? null; ?>
+  <?php if ($tallyType): ?>
+  <a class="btn btn-sm btn-outline no-print" href="tally_export.php?type=<?= $tallyType ?>&from=<?= e($from) ?>&to=<?= e($to) ?>">⬇ Tally XML</a>
   <?php endif; ?>
 </form>
 
@@ -309,7 +311,9 @@ function applyExport() {
   document.querySelectorAll('#exportCheckList input:checked').forEach(function (c) { cols.push(parseInt(c.dataset.col, 10)); });
   var fname = document.getElementById('exportFname').value.trim() || 'report';
   closeExportDialog();
-  if (exportType === 'csv') exportCsv(cols, fname); else exportPdf(cols, fname);
+  if (exportType === 'csv') exportCsv(cols, fname);
+  else if (exportType === 'xlsx') exportXlsx(cols, fname);
+  else exportPdf(cols, fname);
 }
 function exportCsv(cols, fname) {
   var rows = [];
@@ -328,6 +332,10 @@ function exportCsv(cols, fname) {
   a.href = URL.createObjectURL(blob);
   a.download = fname + '.csv';
   a.click();
+}
+function exportXlsx(cols, fname) {
+  var url = 'report_xlsx.php?r=<?= e($r) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $filterExtra ?>&cols=' + cols.join(',') + '&fname=' + encodeURIComponent(fname);
+  window.open(url, '_blank');
 }
 function exportPdf(cols, fname) {
   var url = 'report_pdf.php?r=<?= e($r) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $filterExtra ?>&cols=' + cols.join(',') + '&fname=' + encodeURIComponent(fname);

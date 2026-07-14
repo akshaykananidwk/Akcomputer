@@ -76,6 +76,10 @@ $_navMenu = [
         ['web_orders.php', 'Website Orders', 'weborders.view', null, null],
         ['items.php', 'Website Items (ON/OFF)', 'items.view', null, null],
     ]],
+    ['group', 'integrations', 'link', 'API & Integrations', [
+        ['my_account.php?tab=api', 'API Tokens', null, null, null],
+        ['webhooks.php', 'Webhooks', 'webhooks.view', 'webhooks.php', 'webhooks.add'],
+    ]],
     ['group', 'admin', 'briefcase', 'Staff & Company', [
         ['users.php', 'Staff Users', 'users.view', 'users.php?action=new', 'users.add'],
         ['roles.php', 'Roles / Permissions', 'roles.view', 'roles.php?action=new', 'roles.add'],

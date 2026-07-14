@@ -1,6 +1,15 @@
 # AK Computer - Apache config
 Options -Indexes
 
+# Some PHP-FPM/CGI/suPHP setups on shared hosting strip the Authorization
+# header before it reaches PHP - api.php's Bearer-token auth needs it, so
+# pass it through explicitly rather than relying on $_SERVER['HTTP_AUTHORIZATION'].
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTP:Authorization} ^(.*)
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
+</IfModule>
+
 <FilesMatch "^(config\.php|config\.sample\.php)$">
   Require all denied
 </FilesMatch>
