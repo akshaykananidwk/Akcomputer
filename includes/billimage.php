@@ -199,6 +199,12 @@ function bi_icon_bank(&$ops, $cx, $cy, $r, $rgb) {
     bi_rect_local($ops, $cx - $r * 0.85, $cy + $r * 0.45, $cx + $r * 0.85, $cy + $r * 0.6, $rgb);
 }
 function bi_rect_local(&$ops, $x1, $y1, $x2, $y2, $rgb) { bi_rect($ops, $x1, $y1, $x2, $y2, $rgb); }
+function bi_icon_bell(&$ops, $cx, $cy, $r, $rgb) {
+    bi_circle($ops, $cx, $cy - $r * 0.1, $r * 0.72, $rgb);
+    bi_poly($ops, [[$cx - $r * 0.82, $cy + $r * 0.55], [$cx + $r * 0.82, $cy + $r * 0.55], [$cx + $r * 0.48, $cy - $r * 0.1], [$cx - $r * 0.48, $cy - $r * 0.1]], $rgb);
+    bi_circle($ops, $cx, $cy + $r * 0.55, $r * 0.15, $rgb);
+    bi_rect($ops, $cx - $r * 0.09, $cy - $r * 0.95, $cx + $r * 0.09, $cy - $r * 0.68, $rgb);
+}
 function bi_icon_phone(&$ops, $cx, $cy, $r, $rgb) {
     // classic rotated-handset silhouette: two rounded blobs joined by a bar
     bi_circle($ops, $cx - $r * 0.42, $cy - $r * 0.42, $r * 0.4, $rgb);
@@ -214,7 +220,11 @@ function bi_icon_monitor(&$ops, $x, $y, $w, $rgb, $rgbLight) {
     bi_rrect($ops, $x + $w * 0.22, $y + $screenH + $w * 0.1, $x + $w * 0.78, $y + $screenH + $w * 0.18, 3, $rgb);
 }
 
-function invoice_image_jpg($sale, $items) {
+/** Builds the bill as a GD image resource (caller must imagedestroy() it) -
+ *  shared by invoice_image_jpg() (WhatsApp photo) and invoice_pdf_bytes()
+ *  (WhatsApp document) so both use the exact same visual design with zero
+ *  duplicated layout code. */
+function bi_render_gd($sale, $items) {
     $S = 2; // supersample factor - drawn at 2x then downsampled for smooth circles/rounded corners
     $W = 760; $margin = 30;
 
@@ -463,6 +473,87 @@ function invoice_image_jpg($sale, $items) {
     $big = imagecreatetruecolor($W * $S, $H * $S);
     $white_c = imagecolorallocate($big, 255, 255, 255);
     imagefill($big, 0, 0, $white_c);
+    foreach ($ops as $op) $op($big, $S);
+
+    $img = imagecreatetruecolor($W, $H);
+    imagecopyresampled($img, $big, 0, 0, 0, 0, $W, $H, $W * $S, $H * $S);
+    imagedestroy($big);
+    return $img;
+}
+
+function invoice_image_jpg($sale, $items) {
+    $img = bi_render_gd($sale, $items);
+    ob_start();
+    imagejpeg($img, null, 90);
+    $data = ob_get_clean();
+    imagedestroy($img);
+    return $data;
+}
+
+/** Same bill design as invoice_image_jpg(), embedded as a single-page PDF
+ *  instead of a JPEG - sent to WhatsApp as a document rather than a photo,
+ *  so WhatsApp's own photo-compression pipeline never touches it (that
+ *  recompression, not the JPEG quality setting here, was the actual cause
+ *  of blurry bills when sent as images). */
+function invoice_pdf_bytes($sale, $items) {
+    require_once __DIR__ . '/pdf.php';
+    $img = bi_render_gd($sale, $items);
+    $w = imagesx($img); $h = imagesy($img);
+    $tmp = tempnam(sys_get_temp_dir(), 'bill') . '.png';
+    imagepng($img, $tmp, 6);
+    imagedestroy($img);
+
+    $pdf = new MiniPDF();
+    $id = $pdf->load_png($tmp);
+    // Fit the bill image to the A4 page width, preserving aspect ratio. A
+    // bill with many line items can render taller than one page - rather
+    // than shrink long bills until they're hard to read, the image is
+    // spread across as many pages as it needs (image_clipped() places the
+    // same full-size image at a shifting offset behind a fixed window).
+    $margin = 16;
+    $pageW = MiniPDF::W - $margin * 2;
+    $pageContentH = MiniPDF::H - $margin * 2;
+    $drawW = $pageW;
+    $drawH = $h * ($drawW / $w);
+    $pages = max(1, (int)ceil($drawH / $pageContentH));
+    for ($p = 0; $p < $pages; $p++) {
+        $pdf->new_page();
+        $sliceH = min($pageContentH, $drawH - $p * $pageContentH);
+        $pdf->image_clipped($id, $margin, $margin - $p * $pageContentH, $drawW, $drawH, $margin, $margin, $pageW, $sliceH);
+    }
+    @unlink($tmp);
+    return $pdf->output();
+}
+
+/** A small "payment reminder" card image for the Aging/Collection report's
+ *  WhatsApp button - deliberately minimal (shop name + heading + amount
+ *  only, no customer name or date on the image itself, since it's sent
+ *  straight to that customer's own chat). Same GD drawing primitives as
+ *  the invoice image above. */
+function reminder_image_jpg($shopName, $amount) {
+    $S = 2;
+    $W = 700;
+    $teal = [11, 110, 148]; $tealDark = [8, 84, 114];
+    $orange = [255, 118, 63];
+    $bodyBg = [227, 240, 250];
+    $dark = [30, 41, 59]; $white = [255, 255, 255];
+
+    $ops = [];
+    $headerH = 170;
+    bi_vgrad($ops, 0, 0, $W, $headerH, $teal, $tealDark);
+    bi_icon_bell($ops, 78, 82, 34, $white);
+    bi_txt($ops, 140, 68, 30, $shopName, true, $white);
+
+    $y = $headerH + 60;
+    bi_txt($ops, 50, $y, 30, 'Payment Reminder', true, $teal);
+    $y += 70;
+    bi_txt($ops, 50, $y, 46, '₹ ' . money($amount), true, $orange);
+    $y += 70;
+
+    $H = (int)ceil($y);
+    $big = imagecreatetruecolor($W * $S, $H * $S);
+    $bg = imagecolorallocate($big, $bodyBg[0], $bodyBg[1], $bodyBg[2]);
+    imagefill($big, 0, 0, $bg);
     foreach ($ops as $op) $op($big, $S);
 
     $img = imagecreatetruecolor($W, $H);

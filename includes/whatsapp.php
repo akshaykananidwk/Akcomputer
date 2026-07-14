@@ -101,6 +101,8 @@ function wa_template_defaults() {
                        '{firm} {estimate_no} {items} {total}', 'Estimate send'],
         'reminder' => ["*{firm}*\nPayment reminder 🙏\nInvoice: {invoice_no} ({date})\nBalance due: *₹{due}*\n{due_date_line}Kindly arrange the payment. Thank you!",
                        '{firm} {invoice_no} {date} {due} {due_date_line}', 'Payment reminder'],
+        'aging_reminder' => ["Hi,\nIt's a friendly reminder to you for paying *₹{amount}* to me.\n\nThank you,\n{shop}",
+                             '{amount} {shop} {customer}', 'Payment reminder (Aging / Collection report)'],
         'payment_receipt' => ["*{shop}*\nPayment received ✔\nAmount: *₹{amount}* ({mode})\nDate: {date}\n{alloc}Your current balance: {balance}\nThank you! 🙏",
                               '{shop} {amount} {mode} {date} {alloc} {balance} {party}', 'Payment received confirmation'],
         'ledger' => ["*{shop}*\nAccount statement: {party}\n{lines}\n*Closing balance: {balance}*",

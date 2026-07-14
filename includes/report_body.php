@@ -264,7 +264,14 @@ if ($r === 'aging') {
            . '<td class="num">' . ($x['b3'] > 0.009 ? '₹' . money($x['b3']) : '·') . '</td>'
            . '<td class="num">' . ($x['b4'] > 0.009 ? '<span class="badge badge-bad">₹' . money($x['b4']) . '</span>' : '·') . '</td>'
            . '<td class="num"><strong>₹' . money($x['total']) . '</strong></td>'
-           . '<td>' . ($x['mobile'] ? '<a class="btn btn-sm btn-wa" href="https://wa.me/91' . e(preg_replace('/\D/', '', $x['mobile'])) . '" target="_blank">📲</a>' : '') . '</td></tr>';
+           . '<td>' . ($x['mobile'] && can('payments.view') ?
+                '<form method="post" style="display:inline" onsubmit="return confirm(\'Send a WhatsApp payment reminder for ₹' . money($x['total']) . ' to ' . e($x['mobile']) . '?\')">'
+                . csrf_field() . '<input type="hidden" name="do" value="send_aging_reminder">'
+                . '<input type="hidden" name="mobile" value="' . e($x['mobile']) . '">'
+                . '<input type="hidden" name="amount" value="' . $x['total'] . '">'
+                . '<input type="hidden" name="pname" value="' . e($x['pname']) . '">'
+                . '<button class="btn btn-sm btn-wa" type="submit" title="Send WhatsApp reminder">📲</button></form>'
+              : '') . '</td></tr>';
     }
     if (!$agg) echo '<tr><td colspan="7" class="muted">All clear 🎉</td></tr>';
     echo '</tbody></table></div>';

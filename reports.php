@@ -20,6 +20,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete_custom_repor
     flash('Saved report deleted.');
     redirect('reports.php?r=custom');
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'send_aging_reminder' && can('payments.view')) {
+    require_once __DIR__ . '/includes/billimage.php';
+    $mobile = post('mobile');
+    $amount = (float)post('amount');
+    if (!$mobile || $amount <= 0.009) { flash('Missing mobile number or amount.', 'error'); redirect('reports.php?r=aging'); }
+    $shopName = setting('app_name', 'AK Computer');
+    $imgDir = __DIR__ . '/uploads/reminders';
+    if (!is_dir($imgDir)) mkdir($imgDir, 0755, true);
+    $imgName = 'reminder_' . preg_replace('/\D/', '', $mobile) . '_' . substr(md5(microtime()), 0, 6) . '.jpg';
+    file_put_contents($imgDir . '/' . $imgName, reminder_image_jpg($shopName, $amount));
+    $imgUrl = base_url('uploads/reminders/' . $imgName);
+    $msg = wa_template('aging_reminder', ['amount' => money($amount), 'shop' => $shopName, 'customer' => post('pname')]);
+    if (send_whatsapp($mobile, $msg, $imgUrl)) {
+        log_activity('aging_reminder_whatsapp', post('pname') . ' ' . $mobile . ' ₹' . money($amount));
+        flash('Reminder sent on WhatsApp to ' . $mobile . '.');
+    } else {
+        flash('WhatsApp send failed. ' . whatsapp_last_error(), 'error');
+    }
+    redirect('reports.php?r=aging');
+}
 
 $r = get('r', 'daily');
 $from = get('from', date('Y-m-01'));

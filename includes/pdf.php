@@ -116,6 +116,17 @@ class MiniPDF {
         $yy = self::H - $y - $h;
         $this->cur .= sprintf("q %.2F 0 0 %.2F %.2F %.2F cm /%s Do Q\n", $w, $h, $x, $yy, $id);
     }
+    /** Same as image() but clips to a rectangle first - used to spread one
+     *  tall source image (e.g. a long bill) across multiple pages: each
+     *  page places the SAME full-size image at a different vertical offset
+     *  behind a fixed clip window, revealing a different slice of it. */
+    function image_clipped($id, $x, $y, $w, $h, $clipX, $clipY, $clipW, $clipH) {
+        if (!$id || !isset($this->imgs[$id])) return;
+        $yy = self::H - $y - $h;
+        $clipYY = self::H - $clipY - $clipH;
+        $this->cur .= sprintf("q %.2F %.2F %.2F %.2F re W n %.2F 0 0 %.2F %.2F %.2F cm /%s Do Q\n",
+            $clipX, $clipYY, $clipW, $clipH, $w, $h, $x, $yy, $id);
+    }
 
     function output() {
         if ($this->cur !== '') { $this->pages[] = $this->cur; $this->cur = ''; }

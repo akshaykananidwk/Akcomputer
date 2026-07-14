@@ -28,14 +28,17 @@ $items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit, i.hs
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
     $mobile = post('mobile') ?: $sale['customer_mobile'];
     $link = base_url('sale_view.php?id=' . $id . '&token=' . $sale['share_token']);
-    // Sent as a photo (not a PDF document) so it opens inline in WhatsApp -
-    // WhatsApp needs a URL ending in .jpg to recognise it as an image.
+    // Sent as a PDF document (not a photo) - the exact same visual design
+    // as before (invoice_pdf_bytes() reuses the same GD drawing code as
+    // invoice_image_jpg()), but WhatsApp does NOT recompress documents the
+    // way it recompresses photos, so the bill stays sharp instead of
+    // getting blurry after WhatsApp's own image pipeline touches it.
     require_once __DIR__ . '/includes/billimage.php';
     $imgDir = __DIR__ . '/uploads/invoices';
     if (!is_dir($imgDir)) mkdir($imgDir, 0755, true);
-    $imgName = preg_replace('/[^A-Za-z0-9\-]/', '_', $sale['invoice_no']) . '_' . substr($sale['share_token'], 0, 10) . '.jpg';
+    $imgName = preg_replace('/[^A-Za-z0-9\-]/', '_', $sale['invoice_no']) . '_' . substr($sale['share_token'], 0, 10) . '.pdf';
     file_put_contents($imgDir . '/' . $imgName,
-        invoice_image_jpg($sale, all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?", [$id])));
+        invoice_pdf_bytes($sale, all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?", [$id])));
     $imgUrl = base_url('uploads/invoices/' . $imgName);
     $due = $sale['total'] - $sale['paid'];
     $payLink = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no'], $id) : null;
@@ -46,15 +49,15 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
         'pay_link' => $payLink ? "💳 Pay online: $payLink\n" : '',
         'link' => $link, 'customer' => $sale['customer_name'],
     ]);
-    // bill goes as a photo with the message as caption
+    // bill goes as a PDF document with the message as caption
     if ($mobile && send_whatsapp($mobile, $msg, $imgUrl)) {
         log_activity('sale_whatsapp', $sale['invoice_no'] . ' to ' . $mobile);
-        flash('Bill (photo) sent on WhatsApp to ' . $mobile);
+        flash('Bill (PDF) sent on WhatsApp to ' . $mobile);
     } else {
-        // Include the exact image URL that was sent to the gateway - lets
+        // Include the exact PDF URL that was sent to the gateway - lets
         // you paste it straight into a browser (or the bulk.akdwk.in test
         // link) to check whether it's actually reachable from outside.
-        flash('WhatsApp send failed' . ($mobile ? '' : ' - missing mobile number') . '. ' . whatsapp_last_error() . ' | Image URL: ' . $imgUrl, 'error');
+        flash('WhatsApp send failed' . ($mobile ? '' : ' - missing mobile number') . '. ' . whatsapp_last_error() . ' | PDF URL: ' . $imgUrl, 'error');
     }
     redirect('sale_view.php?id=' . $id);
 }
