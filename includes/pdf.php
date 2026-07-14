@@ -401,43 +401,50 @@ function pdf_icon_device(&$pdf, $cx, $cy, $rgb) {
     $pdf->rect($cx - 5, $cy + 6.6, 10, 1.4, $rgb);
 }
 
-/** The flowing ribbon decoration across the top of the bill (fixed branding). */
+/** The flowing ribbon decoration across the top of the bill (fixed branding).
+ *  Layered crescents nested from outer (deep) to inner (shallow) so the top
+ *  edge shows thin bands of teal/cyan/blue/orange/gold, like the reference. */
 function pdf_invoice_waves(&$pdf, $C) {
     $PW = 595;
-    // top-right teal wave filling the corner behind the invoice box
-    $pdf->fill_path([
-        ['m', 300, 0], ['l', $PW, 0], ['l', $PW, 150],
-        ['c', $PW, 150, 470, 165, 430, 120],
-        ['c', 395, 80, 360, 20, 300, 0],
-    ], $C['teal']);
-    // a lighter cyan overlay on the teal for depth
-    $pdf->fill_path([
-        ['m', 360, 0], ['l', $PW, 0], ['l', $PW, 70],
-        ['c', 500, 95, 430, 60, 400, 20], ['c', 390, 8, 375, 2, 360, 0],
-    ], [0.11, 0.63, 0.72]);
-    // orange corner triangle, very top-right
-    $pdf->poly([[$PW, 0], [$PW, 46], [$PW - 60, 0]], $C['orange']);
+    $cyan = [0.11, 0.63, 0.72];
 
-    // top-left flowing ribbons around the logo
+    // ---- top-right: teal wave filling the corner behind the invoice box ----
     $pdf->fill_path([
-        ['m', 0, 0], ['l', 250, 0],
-        ['c', 210, 40, 150, 60, 70, 62], ['c', 40, 63, 15, 55, 0, 40],
+        ['m', 318, 0], ['l', $PW, 0], ['l', $PW, 170],
+        ['c', 500, 168, 430, 120, 405, 70],
+        ['c', 388, 36, 358, 8, 318, 0],
     ], $C['teal']);
     $pdf->fill_path([
-        ['m', 0, 0], ['l', 300, 0],
-        ['c', 250, 30, 170, 42, 90, 40], ['c', 50, 39, 20, 30, 0, 18],
-    ], [0.11, 0.63, 0.72]);
+        ['m', 388, 0], ['l', $PW, 0], ['l', $PW, 84],
+        ['c', 495, 78, 445, 44, 425, 16], ['c', 415, 6, 402, 2, 388, 0],
+    ], $cyan);
+    // orange corner triangle, very top-right
+    $pdf->poly([[$PW, 0], [$PW, 50], [$PW - 62, 0]], $C['orange']);
+
+    // ---- top-left: flowing ribbons (deep on the far left, shallow over logo) ----
     $pdf->fill_path([
-        ['m', 40, 0], ['l', 320, 0],
-        ['c', 270, 20, 190, 26, 120, 22], ['c', 90, 20, 60, 12, 40, 0],
+        ['m', 0, 0], ['l', 330, 0],
+        ['c', 250, 10, 150, 20, 92, 30], ['c', 52, 38, 24, 50, 0, 60],
+    ], $C['navy']);
+    $pdf->fill_path([
+        ['m', 0, 0], ['l', 312, 0],
+        ['c', 236, 8, 142, 17, 86, 25], ['c', 48, 31, 22, 41, 0, 49],
+    ], $C['teal']);
+    $pdf->fill_path([
+        ['m', 0, 0], ['l', 290, 0],
+        ['c', 220, 7, 132, 14, 78, 20], ['c', 43, 25, 20, 33, 0, 39],
+    ], $cyan);
+    $pdf->fill_path([
+        ['m', 0, 0], ['l', 265, 0],
+        ['c', 200, 6, 120, 11, 68, 15], ['c', 37, 19, 17, 25, 0, 29],
     ], $C['blue']);
     $pdf->fill_path([
-        ['m', 150, 0], ['l', 330, 0],
-        ['c', 300, 14, 240, 18, 180, 14], ['c', 168, 13, 158, 8, 150, 0],
+        ['m', 0, 0], ['l', 150, 0],
+        ['c', 108, 5, 66, 10, 40, 14], ['c', 22, 17, 9, 20, 0, 21],
     ], $C['orange']);
     $pdf->fill_path([
-        ['m', 200, 0], ['l', 335, 0],
-        ['c', 310, 9, 270, 12, 225, 9], ['c', 214, 8, 206, 5, 200, 0],
+        ['m', 0, 0], ['l', 120, 0],
+        ['c', 86, 4, 52, 7, 30, 10], ['c', 16, 12, 6, 14, 0, 15],
     ], $C['gold']);
 }
 
@@ -458,14 +465,15 @@ function invoice_pdf($sale, $items) {
     // ================= HEADER =================
     pdf_invoice_waves($pdf, $C);
 
-    // logo lockup
-    $pdf->text($L, 40, 27, 'AK', 'B', $C['blue']);
-    $akw = pdf_text_width('AK', 27, true);
-    $pdf->text($L + $akw + 6, 40, 22, 'COMPUTER', 'B', $C['navy']);
-    $pdf->text($L + $akw + 8, 56, 11, 'Smart Solutions, Better Future', 'I', $C['navy']);
+    // logo lockup (shifted right of the left wave flourish, larger AK)
+    $logoX = 72;
+    $pdf->text($logoX, 57, 31, 'AK', 'B', $C['blue']);
+    $akw = pdf_text_width('AK', 31, true);
+    $pdf->text($logoX + $akw + 7, 55, 24, 'COMPUTER', 'B', $C['navy']);
+    $pdf->text($logoX + $akw + 9, 71, 11.5, 'Smart Solutions, Better Future', 'I', $C['navy']);
 
     // contact lines with icons
-    $cy = 82;
+    $cy = 96;
     $boxX = 342; $boxW = $R - $boxX; $boxY = 16; $boxH = 108;
     $addrMaxW = $boxX - ($L + 16) - 10;
     $addrLines = array_slice(pdf_wrap(trim(($sale['c_address'] ?? '') . ' ' . $sale['loc_name'] . ', ' . $sale['loc_city']), 8.7, false, $addrMaxW), 0, 2);
@@ -522,8 +530,8 @@ function invoice_pdf($sale, $items) {
     $hasGst = $sale['is_gst'];
     // column geometry
     $cNum = $L + 8; $cItem = $L + 26;
-    if ($hasGst) { $cHsnR = 316; $cQtyR = 382; $cRateR = 444; $cGstR = 480; $cAmtR = $R - 8; $itemMaxW = 258; }
-    else { $cQtyR = 372; $cRateR = 468; $cAmtR = $R - 8; $itemMaxW = 300; }
+    if ($hasGst) { $cHsnR = 316; $cQtyC = 360; $cRateR = 444; $cGstR = 480; $cAmtR = $R - 8; $itemMaxW = 258; }
+    else { $cQtyC = 322; $cRateR = 468; $cAmtR = $R - 8; $itemMaxW = 300; }
 
     $rowH = 22; $headH = 20;
     $tableTop = $y;
@@ -534,7 +542,7 @@ function invoice_pdf($sale, $items) {
     $pdf->text($cNum, $hy, 9, '#', 'B', [1, 1, 1]);
     $pdf->text($cItem, $hy, 9, 'ITEM DESCRIPTION', 'B', [1, 1, 1]);
     if ($hasGst) $pdf->text_right($cHsnR, $hy, 9, 'HSN', 'B', [1, 1, 1]);
-    $pdf->text_right($cQtyR, $hy, 9, 'QTY', 'B', [1, 1, 1]);
+    $pdf->text_center($cQtyC, $hy, 9, 'QTY', 'B', [1, 1, 1]);
     $pdf->rupee_label_right($cRateR, $hy, 8.5, 'RATE', 'B', [1, 1, 1]);
     if ($hasGst) $pdf->text_right($cGstR, $hy, 9, 'GST%', 'B', [1, 1, 1]);
     $pdf->rupee_label_right($cAmtR, $hy, 8.5, 'AMOUNT', 'B', [1, 1, 1]);
@@ -559,7 +567,7 @@ function invoice_pdf($sale, $items) {
             $pdf->text($cNum, $hy, 9, '#', 'B', [1, 1, 1]);
             $pdf->text($cItem, $hy, 9, 'ITEM DESCRIPTION', 'B', [1, 1, 1]);
             if ($hasGst) $pdf->text_right($cHsnR, $hy, 9, 'HSN', 'B', [1, 1, 1]);
-            $pdf->text_right($cQtyR, $hy, 9, 'QTY', 'B', [1, 1, 1]);
+            $pdf->text_center($cQtyC, $hy, 9, 'QTY', 'B', [1, 1, 1]);
             $pdf->rupee_label_right($cRateR, $hy, 8.5, 'RATE', 'B', [1, 1, 1]);
             if ($hasGst) $pdf->text_right($cGstR, $hy, 9, 'GST%', 'B', [1, 1, 1]);
             $pdf->rupee_label_right($cAmtR, $hy, 8.5, 'AMOUNT', 'B', [1, 1, 1]);
@@ -570,7 +578,7 @@ function invoice_pdf($sale, $items) {
         $pdf->text($cNum, $ty, 9.5, ($n + 1) . '', '', $C['navy']);
         $pdf->text($cItem, $ty, 9.5, $pdf->fit($it['name'], $itemMaxW, 9.5), '', [0.15, 0.2, 0.28]);
         if ($hasGst) $pdf->text_right($cHsnR, $ty, 9, (string)($it['hsn'] ?? ''), '', $C['gray']);
-        $pdf->text_right($cQtyR, $ty, 9.5, (float)$it['qty'] . ' ' . $it['unit'], '', [0.15, 0.2, 0.28]);
+        $pdf->text_center($cQtyC, $ty, 9.5, trim((float)$it['qty'] . ' ' . $it['unit']), '', [0.15, 0.2, 0.28]);
         $pdf->text_right($cRateR, $ty, 9.5, money($it['price']), '', [0.15, 0.2, 0.28]);
         if ($hasGst) $pdf->text_right($cGstR, $ty, 9, (float)$it['tax_rate'] . '%', '', $C['gray']);
         $pdf->text_right($cAmtR, $ty, 9.5, money($it['total']), '', [0.15, 0.2, 0.28]);
@@ -608,14 +616,13 @@ function invoice_pdf($sale, $items) {
     $pdf->money_text_right($R - 12, $rowY + 15, 10, money($sale['subtotal']), '', $C['navy']);
     $pdf->line($totX, $rowY + 24, $R, $rowY + 24, 0.5, [0.87, 0.89, 0.92]);
     $rowY += 24;
-    if ($sale['discount'] > 0) {
-        $dLabel = !empty($sale['discount_type']) && $sale['discount_type'] === 'percent' && $sale['discount_pct'] > 0
-            ? 'DISCOUNT (' . rtrim(rtrim(number_format($sale['discount_pct'], 2), '0'), '.') . '%)' : 'DISCOUNT';
-        $pdf->text($totX + 12, $rowY + 15, 10, $dLabel, '', $C['gray']);
-        $pdf->money_text_right($R - 12, $rowY + 15, 10, '- ' . money($sale['discount']), '', $C['navy']);
-        $pdf->line($totX, $rowY + 24, $R, $rowY + 24, 0.5, [0.87, 0.89, 0.92]);
-        $rowY += 24;
-    }
+    // DISCOUNT row is always shown (as in the reference template), even at 0.00
+    $dLabel = !empty($sale['discount_type']) && $sale['discount_type'] === 'percent' && $sale['discount_pct'] > 0
+        ? 'DISCOUNT (' . rtrim(rtrim(number_format($sale['discount_pct'], 2), '0'), '.') . '%)' : 'DISCOUNT';
+    $pdf->text($totX + 12, $rowY + 15, 10, $dLabel, '', $C['gray']);
+    $pdf->money_text_right($R - 12, $rowY + 15, 10, ($sale['discount'] > 0 ? '- ' : '') . money($sale['discount']), '', $C['navy']);
+    $pdf->line($totX, $rowY + 24, $R, $rowY + 24, 0.5, [0.87, 0.89, 0.92]);
+    $rowY += 24;
     if ($hasGst) {
         $pdf->text($totX + 12, $rowY + 15, 10, 'CGST', '', $C['gray']);
         $pdf->money_text_right($R - 12, $rowY + 15, 10, money($sale['tax_amount'] / 2), '', $C['navy']);
@@ -685,12 +692,13 @@ function invoice_pdf($sale, $items) {
             $pdf->text($L + 80, $iy, 8.8, $pdf->fit($rr[1], $leftW - 130, 8.8), 'B', $C['navy']);
             $iy += 13;
         }
-        // bank building icon on the right of the box
-        $bxi = $L + $leftW - 34; $byi = $ly + $bh / 2;
-        $pdf->poly([[$bxi - 16, $byi - 4], [$bxi + 16, $byi - 4], [$bxi, $byi - 16]], $C['blue']);
-        $pdf->rect($bxi - 16, $byi - 4, 32, 3, $C['blue']);
-        for ($p = -1; $p <= 1; $p++) $pdf->rect($bxi + $p * 9 - 2, $byi, 4, 12, $C['blue']);
-        $pdf->rect($bxi - 16, $byi + 12, 32, 3, $C['blue']);
+        // bank building icon on the right of the box (outline style, like the reference)
+        $bxi = $L + $leftW - 32; $byi = $ly + $bh / 2; $bl = [0.16, 0.42, 0.86];
+        $pdf->line($bxi - 18, $byi - 5, $bxi, $byi - 16, 1.3, $bl);   // pediment left
+        $pdf->line($bxi, $byi - 16, $bxi + 18, $byi - 5, 1.3, $bl);   // pediment right
+        $pdf->line($bxi - 18, $byi - 5, $bxi + 18, $byi - 5, 1.3, $bl); // architrave
+        for ($p = -1; $p <= 1; $p++) $pdf->line($bxi + $p * 11, $byi - 3, $bxi + $p * 11, $byi + 9, 2.1, $bl); // columns
+        $pdf->rect($bxi - 19, $byi + 10, 38, 2.6, $bl);               // base
         $ly += $bh + 14;
     }
     // QR + thank you
@@ -766,14 +774,15 @@ function invoice_pdf($sale, $items) {
     $stcx = ($L + $R) / 2; $stcy = $sy - 2;
     $pdf->circle_stroke($stcx, $stcy, 24, $C['navy'], 1.1);
     $pdf->circle_stroke($stcx, $stcy, 20, $C['navy'], 0.6);
-    $pdf->text_center($stcx, $stcy - 5, 6, 'AK COMPUTER', 'B', $C['navy']);
-    $pdf->text_center($stcx, $stcy + 4, 5.5, 'THANK YOU', '', $C['navy']);
-    $pdf->text_center($stcx, $stcy + 12, 5.5, strtoupper($sale['loc_city']), '', $C['navy']);
+    $stampCity = strtoupper(trim(explode('-', $sale['loc_city'])[0]));
+    $pdf->text_center($stcx, $stcy - 6, 5.2, 'AK COMPUTER', 'B', $C['navy']);
+    $pdf->text_center($stcx, $stcy + 2, 5.2, 'THANK YOU', '', $C['navy']);
+    $pdf->text_center($stcx, $stcy + 11, 5.2, $stampCity, 'B', $C['navy']);
 
-    // bottom navy strip
+    // bottom navy strip (text left-aligned, orange corner bottom-right)
     $pdf->rect(0, 824, $PW, 18, $C['navy']);
-    $pdf->text_center($PW / 2, 836, 8, 'This is a computer generated invoice.', '', [0.75, 0.8, 0.88]);
-    $pdf->poly([[$PW, 824], [$PW, 842], [$PW - 34, 842]], $C['orange']);
+    $pdf->text($L, 836, 8, 'This is a computer generated invoice.', '', [0.75, 0.8, 0.88]);
+    $pdf->poly([[$PW, 824], [$PW, 842], [$PW - 40, 842]], $C['orange']);
 
     return $pdf->output();
 }
