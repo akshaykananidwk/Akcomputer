@@ -26,16 +26,20 @@ $items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit, i.hs
 
 // ---------- WhatsApp send ----------
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
+    require_once __DIR__ . '/includes/pdf.php';
     $mobile = post('mobile') ?: $sale['customer_mobile'];
     $link = base_url('sale_view.php?id=' . $id . '&token=' . $sale['share_token']);
-    // Sent as a real PDF document, not a picture stuffed inside a PDF
-    // wrapper - sale_pdf.php already renders the bill with genuine PDF
-    // text (includes/pdf.php's invoice_pdf(), the same one behind the
-    // "Download PDF" button), so its text is selectable/searchable and
-    // stays crisp at any zoom, unlike an embedded raster image. No file
-    // needs to be generated here at all - it's just this existing,
-    // share-token-accessible URL.
-    $imgUrl = base_url('sale_pdf.php?id=' . $id . '&token=' . $sale['share_token']);
+    // Sent as a real PDF document (includes/pdf.php's invoice_pdf() - the
+    // same renderer behind the "Download PDF" button - genuine PDF text,
+    // selectable/searchable, crisp at any zoom, not a picture). WhatsApp
+    // needs the URL itself to end in .pdf to recognise it as a document
+    // (same reason images need a URL ending in .jpg), so the bytes are
+    // saved to a static file rather than linked straight to sale_pdf.php.
+    $pdfDir = __DIR__ . '/uploads/invoices';
+    if (!is_dir($pdfDir)) mkdir($pdfDir, 0755, true);
+    $pdfName = preg_replace('/[^A-Za-z0-9\-]/', '_', $sale['invoice_no']) . '_' . substr($sale['share_token'], 0, 10) . '.pdf';
+    file_put_contents($pdfDir . '/' . $pdfName, invoice_pdf($sale, $items));
+    $imgUrl = base_url('uploads/invoices/' . $pdfName);
     $due = $sale['total'] - $sale['paid'];
     $payLink = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no'], $id) : null;
     $msg = wa_template('bill', [
