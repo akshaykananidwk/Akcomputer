@@ -70,7 +70,8 @@ function set_setting($name, $value) {
 // ---------- Activity log ----------
 function log_activity($action, $details = '') {
     $uid = $_SESSION['user_id'] ?? null;
-    q('INSERT INTO activity_log (user_id, action, details) VALUES (?, ?, ?)', [$uid, $action, mb_substr($details, 0, 500)]);
+    q('INSERT INTO activity_log (user_id, action, details, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)',
+      [$uid, $action, mb_substr($details, 0, 500), function_exists('client_ip') ? client_ip() : '', function_exists('client_user_agent') ? client_user_agent() : '']);
 }
 
 // ---------- Document numbers ----------
@@ -187,9 +188,16 @@ function create_otp($purpose, $target, $minutes = 10) {
     return $code;
 }
 function verify_otp($purpose, $target, $code) {
-    $r = row('SELECT id FROM otp_codes WHERE purpose = ? AND target = ? AND code = ? AND used = 0 AND expires_at > NOW()
-              ORDER BY id DESC LIMIT 1', [$purpose, $target, trim($code)]);
-    if (!$r) return false;
+    // look up the active (unused, unexpired) code for this purpose/target
+    // regardless of whether $code matches yet, so wrong tries can be
+    // counted against it and it gets locked out after too many guesses
+    $r = row('SELECT * FROM otp_codes WHERE purpose = ? AND target = ? AND used = 0 AND expires_at > NOW()
+              ORDER BY id DESC LIMIT 1', [$purpose, $target]);
+    if (!$r || (int)$r['attempts'] >= 5) return false;
+    if (!hash_equals($r['code'], trim((string)$code))) {
+        q('UPDATE otp_codes SET attempts = attempts + 1 WHERE id = ?', [$r['id']]);
+        return false;
+    }
     q('UPDATE otp_codes SET used = 1 WHERE id = ?', [$r['id']]);
     return true;
 }

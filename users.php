@@ -12,6 +12,7 @@ require_once __DIR__ . '/includes/init.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'stop_impersonate' && !empty($_SESSION['impersonator_id'])) {
     require_login();
     $wasUser = current_user();
+    session_regenerate_id(true);
     $_SESSION['user_id'] = $_SESSION['impersonator_id'];
     unset($_SESSION['impersonator_id']);
     log_activity('impersonate_stop', 'back from ' . ($wasUser['name'] ?? '?'));
@@ -30,15 +31,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $data = [post('name'), post('username'), post('mobile'), (int)post('role_id'), (int)post('location_id'),
              json_encode($extra), post('is_active') ? 1 : 0];
     if ($id) {
+        if (post('password') !== '') {
+            $pwdErr = password_policy_check(post('password'));
+            if ($pwdErr) { flash($pwdErr, 'error'); redirect('users.php?action=edit&id=' . $id); }
+        }
         q('UPDATE users SET name=?, username=?, mobile=?, role_id=?, location_id=?, permissions=?, is_active=? WHERE id=?',
           array_merge($data, [$id]));
         if (post('password') !== '') {
-            q('UPDATE users SET password=? WHERE id=?', [password_hash(post('password'), PASSWORD_DEFAULT), $id]);
+            q('UPDATE users SET password=?, password_changed_at=NOW() WHERE id=?', [password_hash(post('password'), PASSWORD_DEFAULT), $id]);
         }
         flash('User updated.');
     } else {
         if (post('password') === '') { flash('Password required for new user.', 'error'); redirect('users.php?action=new'); }
-        q('INSERT INTO users (name, username, mobile, role_id, location_id, permissions, is_active, password) VALUES (?,?,?,?,?,?,?,?)',
+        $pwdErr = password_policy_check(post('password'));
+        if ($pwdErr) { flash($pwdErr, 'error'); redirect('users.php?action=new'); }
+        q('INSERT INTO users (name, username, mobile, role_id, location_id, permissions, is_active, password, password_changed_at) VALUES (?,?,?,?,?,?,?,?,NOW())',
           array_merge($data, [password_hash(post('password'), PASSWORD_DEFAULT)]));
         flash('User created.');
     }
@@ -61,6 +68,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     redirect('users.php');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'force_logout') {
+    require_perm('users.edit');
+    $uid = (int)post('id');
+    q('UPDATE user_sessions SET revoked = 1 WHERE user_id = ?', [$uid]);
+    log_activity('user_force_logout', "#$uid");
+    flash('All active sessions for this user have been signed out (takes effect on their next page load).');
+    redirect('users.php');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'disable_2fa') {
+    require_perm('users.edit');
+    $uid = (int)post('id');
+    q('UPDATE users SET totp_enabled = 0, totp_secret_enc = NULL WHERE id = ?', [$uid]);
+    q('DELETE FROM totp_backup_codes WHERE user_id = ?', [$uid]);
+    log_activity('user_2fa_disable', "#$uid (by admin)");
+    flash('Two-factor authentication disabled for this user - they can set it up again from My Account.');
+    redirect('users.php');
+}
+
 // ---------- login-as-user (impersonate) ----------
 // Lets an admin see the app exactly as a given staff member sees it -
 // same permission scoping, same "only my own bills" restrictions - to
@@ -73,6 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'impersonate') {
     if ($target['id'] == current_user()['id']) { flash('You are already logged in as yourself.', 'error'); redirect('users.php'); }
     if (!empty($_SESSION['impersonator_id'])) { flash('Stop the current impersonation first.', 'error'); redirect('users.php'); }
     log_activity('impersonate_start', current_user()['name'] . ' -> ' . $target['name']);
+    session_regenerate_id(true);
     $_SESSION['impersonator_id'] = current_user()['id'];
     $_SESSION['user_id'] = $target['id'];
     redirect('index.php');
@@ -158,6 +185,18 @@ include __DIR__ . '/includes/header.php';
         <form method="post" style="display:inline" onsubmit="return confirm('Log in as <?= e($us['name']) ?>? You will see the app through that user\'s eyes.')">
           <?= csrf_field() ?><input type="hidden" name="do" value="impersonate"><input type="hidden" name="id" value="<?= $us['id'] ?>">
           <button class="btn btn-sm btn-outline" type="submit">👁️ Login as</button>
+        </form>
+        <?php endif; ?>
+        <?php if (can('users.edit') && $us['id'] != current_user()['id']): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('Sign this user out of every device?')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="force_logout"><input type="hidden" name="id" value="<?= $us['id'] ?>">
+          <button class="btn btn-sm btn-outline" type="submit">🔒 Force Logout</button>
+        </form>
+        <?php endif; ?>
+        <?php if (can('users.edit') && $us['totp_enabled']): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('Disable 2FA for this user? Use this if they lost their authenticator device.')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="disable_2fa"><input type="hidden" name="id" value="<?= $us['id'] ?>">
+          <button class="btn btn-sm btn-outline" type="submit">Disable 2FA</button>
         </form>
         <?php endif; ?>
         <?php if (can('users.delete') && $us['is_active']): ?>

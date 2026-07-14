@@ -8,24 +8,32 @@ $err = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (post('step') === 'ask') {
-        $user = row('SELECT * FROM users WHERE username = ? AND is_active = 1', [post('username')]);
-        if ($user && $user['mobile']) {
-            $code = create_otp('forgot', 'user:' . $user['id']);
-            send_otp_whatsapp($user['mobile'], $code, 'password reset');
-            $_SESSION['forgot_user'] = $user['id'];
-            $step = 'reset';
+        $throttleKey = 'forgot:' . client_ip() . ':' . mb_strtolower(post('username'));
+        if (login_throttle_blocked($throttleKey)) {
+            $err = 'Too many requests. Try again in a few minutes.';
         } else {
-            $err = 'User not found or no WhatsApp mobile registered. Contact admin.';
+            $user = row('SELECT * FROM users WHERE username = ? AND is_active = 1', [post('username')]);
+            if ($user && $user['mobile']) {
+                login_throttle_hit($throttleKey);
+                $code = create_otp('forgot', 'user:' . $user['id']);
+                send_otp_whatsapp($user['mobile'], $code, 'password reset');
+                $_SESSION['forgot_user'] = $user['id'];
+                $step = 'reset';
+            } else {
+                $err = 'User not found or no WhatsApp mobile registered. Contact admin.';
+            }
         }
     } elseif (post('step') === 'reset') {
         $uid = (int)($_SESSION['forgot_user'] ?? 0);
         $step = 'reset';
+        $pwdErr = password_policy_check(post('password'));
         if (!$uid) { $err = 'Session expired, start again.'; $step = 'ask'; }
-        elseif (strlen(post('password')) < 4) { $err = 'Password too short (min 4 chars).'; }
+        elseif ($pwdErr) { $err = $pwdErr; }
         elseif (!verify_otp('forgot', 'user:' . $uid, post('otp'))) { $err = 'Wrong or expired OTP.'; }
         else {
-            q('UPDATE users SET password = ? WHERE id = ?', [password_hash(post('password'), PASSWORD_DEFAULT), $uid]);
+            q('UPDATE users SET password = ?, password_changed_at = NOW() WHERE id = ?', [password_hash(post('password'), PASSWORD_DEFAULT), $uid]);
             unset($_SESSION['forgot_user']);
+            log_activity('user_password_reset', "user #$uid via forgot-password OTP");
             flash('Password changed. Login now.');
             redirect('login.php');
         }

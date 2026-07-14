@@ -77,6 +77,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'checklist_toggle') 
     redirect('settings.php?cat=service');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_pwd_policy') {
+    require_perm('settings.edit');
+    set_setting('pwd_min_length', (string)max(4, (int)post('pwd_min_length')));
+    set_setting('pwd_require_number', post('pwd_require_number') ? '1' : '0');
+    set_setting('pwd_require_mixed_case', post('pwd_require_mixed_case') ? '1' : '0');
+    log_activity('settings_save', 'password policy');
+    flash('Password policy saved.');
+    redirect('settings.php?cat=security');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_autologout') {
+    require_perm('settings.edit');
+    set_setting('auto_logout_minutes', (string)max(0, (int)post('auto_logout_minutes')));
+    log_activity('settings_save', 'auto-logout');
+    flash('Auto-logout setting saved.');
+    redirect('settings.php?cat=security');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_login_limits') {
+    require_perm('settings.edit');
+    set_setting('login_max_attempts', (string)max(0, (int)post('login_max_attempts')));
+    set_setting('login_lockout_minutes', (string)max(1, (int)post('login_lockout_minutes')));
+    log_activity('settings_save', 'login limits');
+    flash('Login attempt limits saved.');
+    redirect('settings.php?cat=security');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_ip_whitelist') {
+    require_perm('settings.edit');
+    set_setting('ip_whitelist', trim(post('ip_whitelist')));
+    log_activity('settings_save', 'ip whitelist');
+    flash('IP restriction saved.');
+    redirect('settings.php?cat=security');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_inventory') {
     require_perm('settings.edit');
     $method = post('costing_method');
@@ -128,12 +163,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_test') {
     redirect('settings.php?cat=whatsapp');
 }
 
-// full database backup download (plain PHP SQL dump - works on shared hosting)
-if (get('do') === 'backup') {
+// full database backup download (plain PHP SQL dump - works on shared
+// hosting). An optional passphrase (POST only, never in the URL/history)
+// AES-256-CBC-encrypts the whole dump before it's sent - decrypt it back
+// via Settings > Backup & Updates > "Decrypt a backup file".
+if (get('do') === 'backup' || post('do') === 'backup') {
     require_perm('settings.edit');
+    $passphrase = post('passphrase');
     $pdo = db();
-    header('Content-Type: application/sql');
-    header('Content-Disposition: attachment; filename="backup_' . DB_NAME . '_' . date('Ymd_His') . '.sql"');
+    ob_start();
     echo "-- AK Computer backup " . date('Y-m-d H:i:s') . "\nSET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n\n";
     $tables = array_column($pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_NUM), 0);
     foreach ($tables as $t) {
@@ -147,7 +185,50 @@ if (get('do') === 'backup') {
         echo "\n";
     }
     echo "SET FOREIGN_KEY_CHECKS=1;\n";
-    log_activity('backup_download');
+    $sql = ob_get_clean();
+
+    if ($passphrase !== '') {
+        $salt = random_bytes(16);
+        $iv = random_bytes(16);
+        $key = hash_pbkdf2('sha256', $passphrase, $salt, 100000, 32, true);
+        $cipher = openssl_encrypt($sql, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+        header('Content-Type: application/octet-stream');
+        header('Content-Disposition: attachment; filename="backup_' . DB_NAME . '_' . date('Ymd_His') . '.sql.enc"');
+        echo "AKENC1" . $salt . $iv . $cipher;
+        log_activity('backup_download', 'encrypted');
+    } else {
+        header('Content-Type: application/sql');
+        header('Content-Disposition: attachment; filename="backup_' . DB_NAME . '_' . date('Ymd_His') . '.sql"');
+        echo $sql;
+        log_activity('backup_download', 'plain');
+    }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'backup_decrypt') {
+    require_perm('settings.edit');
+    if (empty($_FILES['encfile']['tmp_name']) || $_FILES['encfile']['error'] !== UPLOAD_ERR_OK) {
+        flash('Choose the .sql.enc file to decrypt.', 'error');
+        redirect('settings.php?cat=backup');
+    }
+    $raw = file_get_contents($_FILES['encfile']['tmp_name']);
+    if (substr($raw, 0, 6) !== 'AKENC1' || strlen($raw) < 38) {
+        flash('Not a recognized encrypted backup file.', 'error');
+        redirect('settings.php?cat=backup');
+    }
+    $salt = substr($raw, 6, 16);
+    $iv = substr($raw, 22, 16);
+    $cipher = substr($raw, 38);
+    $key = hash_pbkdf2('sha256', post('passphrase'), $salt, 100000, 32, true);
+    $plain = openssl_decrypt($cipher, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+    if ($plain === false) {
+        flash('Wrong passphrase (or a corrupted file).', 'error');
+        redirect('settings.php?cat=backup');
+    }
+    header('Content-Type: application/sql');
+    header('Content-Disposition: attachment; filename="' . preg_replace('/\.enc$/', '', $_FILES['encfile']['name']) . '"');
+    log_activity('backup_decrypt');
+    echo $plain;
     exit;
 }
 
@@ -214,6 +295,7 @@ $categories = [
     'accounting' => ['📒', 'Accounting', 'Period lock, Chart of Accounts, Journal Entries'],
     'service'   => ['🔧', 'Service Checklist', 'Repair job checklist items'],
     'inventory' => ['📦', 'Inventory', 'Costing method, dead-stock threshold, audit/bins/transfers/reservations'],
+    'security'  => ['🛡️', 'Security', 'Password policy, auto-logout, IP restriction, login attempts'],
     'backup'    => ['🔄', 'Backup & Updates', 'Backup download, GitHub update'],
     'about'     => ['📱', 'About', 'Install as app'],
 ];
@@ -519,11 +601,74 @@ exit;
 </div>
 <?php endif; ?>
 
+<?php if ($cat === 'security'): ?>
+<div class="card">
+  <h3>🔑 Password policy</h3>
+  <p class="muted mb">Applies whenever a password is set or changed (new user, edit user, My Account, forgot password).</p>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_pwd_policy">
+    <div><label>Minimum length</label><input type="number" name="pwd_min_length" value="<?= (int)setting('pwd_min_length', 8) ?>" min="4"></div>
+    <div><label class="check-inline mt"><input type="checkbox" name="pwd_require_number" value="1" <?= setting('pwd_require_number', '1') === '1' ? 'checked' : '' ?>> Require a number</label></div>
+    <div><label class="check-inline mt"><input type="checkbox" name="pwd_require_mixed_case" value="1" <?= setting('pwd_require_mixed_case', '0') === '1' ? 'checked' : '' ?>> Require upper &amp; lower case</label></div>
+    <button class="btn btn-sm" type="submit">Save</button>
+  </form>
+</div>
+<div class="card">
+  <h3>⏰ Auto-logout</h3>
+  <p class="muted mb">Signs out an idle session automatically. 0 = never (default).</p>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_autologout">
+    <div><label>Minutes of inactivity</label><input type="number" name="auto_logout_minutes" value="<?= (int)setting('auto_logout_minutes', 0) ?>" min="0"></div>
+    <button class="btn btn-sm" type="submit">Save</button>
+  </form>
+</div>
+<div class="card">
+  <h3>🚫 Login attempt limits</h3>
+  <p class="muted mb">Blocks further attempts (per IP + username) after this many wrong passwords/codes, for the given lockout window. 0 attempts = no limit.</p>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_login_limits">
+    <div><label>Max attempts</label><input type="number" name="login_max_attempts" value="<?= (int)setting('login_max_attempts', 5) ?>" min="0"></div>
+    <div><label>Lockout window (minutes)</label><input type="number" name="login_lockout_minutes" value="<?= (int)setting('login_lockout_minutes', 15) ?>" min="1"></div>
+    <button class="btn btn-sm" type="submit">Save</button>
+  </form>
+</div>
+<div class="card">
+  <h3>🌐 IP restriction</h3>
+  <p class="muted mb"><strong>Leave blank to allow login from anywhere (default, safe).</strong> If you add addresses, only those can log in - one per line, either a plain IP (<code>103.21.58.10</code>) or a range (<code>192.168.1.0/24</code>). Double-check your own current address is included before saving, or you may lock yourself out.</p>
+  <form method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_ip_whitelist">
+    <div class="field"><textarea name="ip_whitelist" rows="4" placeholder="103.21.58.10&#10;192.168.1.0/24"><?= e(setting('ip_whitelist', '')) ?></textarea></div>
+    <button class="btn btn-sm" type="submit">Save</button>
+  </form>
+</div>
+<?php endif; ?>
+
 <?php if ($cat === 'backup'): ?>
 <div class="card">
   <h3>💾 Backup</h3>
-  <p class="muted mb">Download a backup of the whole database (.sql file) — keep it saved on Google Drive / a pen drive.</p>
-  <a class="btn btn-outline" href="settings.php?do=backup">⬇ Download full backup</a>
+  <p class="muted mb">Download a backup of the whole database (.sql file) — keep it saved on Google Drive / a pen drive. Add a passphrase to encrypt the file (AES-256) - leave it blank for a plain .sql file like before.</p>
+  <form method="post" action="settings.php" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="backup">
+    <div><label>Passphrase (optional)</label><input type="password" name="passphrase" placeholder="leave blank for plain .sql"></div>
+    <button class="btn btn-outline" type="submit">⬇ Download backup</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>🔓 Decrypt a backup file</h3>
+  <p class="muted mb">Got an encrypted <code>.sql.enc</code> backup and need the plain <code>.sql</code> back? Upload it with its passphrase here.</p>
+  <form method="post" action="settings.php" enctype="multipart/form-data" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="backup_decrypt">
+    <div><label>Encrypted file</label><input type="file" name="encfile" accept=".enc" required></div>
+    <div><label>Passphrase</label><input type="password" name="passphrase" required></div>
+    <button class="btn btn-outline" type="submit">Decrypt & Download</button>
+  </form>
 </div>
 
 <div class="card">

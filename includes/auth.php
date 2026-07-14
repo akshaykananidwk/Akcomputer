@@ -67,6 +67,12 @@ function permission_labels() {
 
 function current_user() {
     static $user = null;
+    if ($user === null && !empty($_SESSION['user_id']) && !session_security_ok()) {
+        // idle timeout or the session was revoked from "Active Sessions" -
+        // clear it so this behaves exactly like never having logged in
+        $_SESSION = [];
+        return null;
+    }
     if ($user === null && !empty($_SESSION['user_id'])) {
         $user = row('SELECT u.*, r.name AS role_name, r.permissions AS role_permissions, l.name AS location_name
                      FROM users u

@@ -150,6 +150,7 @@ function nav_visible_items($items) {
       <?= e(mb_strtoupper(mb_substr($u['name'], 0, 1))) ?>
       <div class="avatar-panel" id="avatarPanel">
         <div class="avatar-panel-name"><?= e($u['name']) ?><span><?= e($u['role_name']) ?> · <?= e($u['location_name']) ?></span></div>
+        <a href="my_account.php"><?= icon('gear', 16) ?> My Account</a>
         <a href="logout.php" onclick="return confirm('Logout?')"><?= icon('log-out', 16) ?> Logout</a>
       </div>
     </div>

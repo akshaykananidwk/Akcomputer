@@ -610,12 +610,40 @@ if ($r === 'activity' && can('users.view')) {
     echo '<div><label>Search (action/details)</label><input type="text" name="log_q" value="' . e($logQ) . '"></div>';
     echo '<button class="btn btn-sm" type="submit">Filter</button></form>';
     echo '<p class="muted mb">Last 300 records (' . e($from) . ' to ' . e($to) . ').</p>';
-    echo '<div class="table-wrap"><table><thead><tr><th>Date/Time</th><th>Staff</th><th>Action</th><th>Details</th></tr></thead><tbody>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Date/Time</th><th>Staff</th><th>Action</th><th>Details</th><th>IP</th></tr></thead><tbody>';
     foreach ($logs as $l) {
         echo '<tr><td>' . dmyt($l['created_at']) . '</td><td>' . e($l['user_name'] ?: 'System') . '</td>'
-           . '<td><code style="font-size:12px">' . e($l['action']) . '</code></td><td>' . e($l['details']) . '</td></tr>';
+           . '<td><code style="font-size:12px">' . e($l['action']) . '</code></td><td>' . e($l['details']) . '</td>'
+           . '<td class="muted" style="font-size:12px">' . e($l['ip_address'] ?? '') . '</td></tr>';
     }
-    if (!$logs) echo '<tr><td colspan="4" class="muted">Nothing found.</td></tr>';
+    if (!$logs) echo '<tr><td colspan="5" class="muted">Nothing found.</td></tr>';
+    echo '</tbody></table></div>';
+}
+
+// ---------------- login history (every attempt, success or failure) ----------------
+if ($r === 'login_history' && can('users.view')) {
+    $lhUser = (int)get('log_user');
+    $where = ['DATE(lh.created_at) BETWEEN ? AND ?'];
+    $params = [$from, $to];
+    if ($lhUser) { $where[] = 'lh.user_id = ?'; $params[] = $lhUser; }
+    $logins = all("SELECT lh.*, u2.name user_name FROM login_history lh LEFT JOIN users u2 ON u2.id = lh.user_id
+                   WHERE " . implode(' AND ', $where) . " ORDER BY lh.id DESC LIMIT 300", $params);
+    $staffAll2 = all('SELECT id, name FROM users ORDER BY name');
+    $failCount = count(array_filter($logins, fn($l) => !$l['success']));
+    echo '<form method="get" class="filterbar"><input type="hidden" name="r" value="login_history"><input type="hidden" name="from" value="' . e($from) . '"><input type="hidden" name="to" value="' . e($to) . '">';
+    echo '<div><label>Staff</label><select name="log_user"><option value="">All</option>';
+    foreach ($staffAll2 as $s) echo '<option value="' . $s['id'] . '" ' . ($lhUser == $s['id'] ? 'selected' : '') . '>' . e($s['name']) . '</option>';
+    echo '</select></div><button class="btn btn-sm" type="submit">Filter</button></form>';
+    echo '<div class="grid-stats"><div class="stat"><div class="stat-label">Attempts shown</div><div class="stat-value">' . count($logins) . '</div></div>'
+       . '<div class="stat ' . ($failCount > 0 ? 's-bad' : 's-ok') . '"><div class="stat-label">Failed attempts</div><div class="stat-value">' . $failCount . '</div></div></div>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Date/Time</th><th>Username tried</th><th>Staff</th><th>Result</th><th>Reason</th><th>IP</th><th>Device</th></tr></thead><tbody>';
+    foreach ($logins as $l) {
+        echo '<tr><td>' . dmyt($l['created_at']) . '</td><td>' . e($l['username_attempted']) . '</td><td>' . e($l['user_name'] ?: '-') . '</td>'
+           . '<td>' . ($l['success'] ? '<span class="badge badge-ok">success</span>' : '<span class="badge badge-bad">failed</span>') . '</td>'
+           . '<td>' . e($l['reason']) . '</td><td class="muted" style="font-size:12px">' . e($l['ip_address']) . '</td>'
+           . '<td class="muted" style="font-size:12px">' . e(mb_substr($l['user_agent'], 0, 50)) . '</td></tr>';
+    }
+    if (!$logins) echo '<tr><td colspan="7" class="muted">Nothing found.</td></tr>';
     echo '</tbody></table></div>';
 }
 

@@ -33,16 +33,16 @@ $tabs = [
     'forecast' => '🔮 AI Sales Forecast', 'low' => '⚠️ Low Stock', 'dead_stock' => '🐌 Dead / Slow-moving Stock',
     'general_ledger' => '📗 General Ledger', 'trial_balance' => '⚖️ Trial Balance',
     'balance_sheet' => '📑 Balance Sheet', 'profit_loss' => '💹 Profit & Loss',
-    'activity' => '🔍 Activity Log',
+    'activity' => '🔍 Activity Log', 'login_history' => '🔐 Login History',
 ];
 if (!can('reports.gst')) unset($tabs['gst']);
 if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); unset($tabs['dead_stock']); }
 if (!can('expenses.view')) unset($tabs['expense']);
-if (!can('users.view')) unset($tabs['activity']);
+if (!can('users.view')) { unset($tabs['activity']); unset($tabs['login_history']); }
 if (!can('payments.view')) unset($tabs['bank_ledger']);
 if (!can('reports.accounting')) { unset($tabs['general_ledger']); unset($tabs['trial_balance']); unset($tabs['balance_sheet']); unset($tabs['profit_loss']); }
 if ($r === 'business' && !can('reports.profit')) $r = 'daily';
-if ($r === 'activity' && !can('users.view')) $r = 'daily';
+if (in_array($r, ['activity', 'login_history'], true) && !can('users.view')) $r = 'daily';
 if ($r === 'bank_ledger' && !can('payments.view')) $r = 'daily';
 if (in_array($r, ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'], true) && !can('reports.accounting')) $r = 'daily';
 
@@ -58,7 +58,7 @@ $tabCategories = [
     'Accounting' => ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'],
     'Expense Reports' => ['expense'],
     'Staff & Service Reports' => ['staff', 'repair_tat', 'warranty_tat', 'tech_sla'],
-    'Activity' => ['activity'],
+    'Activity' => ['activity', 'login_history'],
 ];
 ?>
 <?php
