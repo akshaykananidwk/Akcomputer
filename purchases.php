@@ -49,11 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $pdo->beginTransaction();
     try {
         q('INSERT INTO purchases (company_id, bill_no, party_id, location_id, purchase_date, credit_days, due_date,
-           subtotal, discount, discount_type, discount_pct, tax_amount, shipping, total, paid, payment_method_id, bank_account_id, status, notes, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+           subtotal, discount, discount_type, discount_pct, tax_amount, shipping, total, paid, payment_method_id, bank_account_id, status, notes, created_by, bill_photo)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
           [(int)post('company_id', 1), post('bill_no'), $party_id, $loc_id, $pdate, $credit_days,
            $credit_days ? date('Y-m-d', strtotime("$pdate +$credit_days days")) : null,
-           $subtotal, $discount, $discType, $discPct, $tax, $shipping, $total, $paid, $pmId, $bankAccId, payment_status($total, $paid), post('notes'), $u['id']]);
+           $subtotal, $discount, $discType, $discPct, $tax, $shipping, $total, $paid, $pmId, $bankAccId, payment_status($total, $paid), post('notes'), $u['id'],
+           preg_replace('/[^A-Za-z0-9_\-.]/', '', post('bill_photo'))]);
         $pid = insert_id();
 
         foreach ($rows as $r) {
@@ -265,6 +266,10 @@ if ($action === 'new' || $action === 'edit') {
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">
       <?php if ($isEdit): ?><input type="hidden" name="id" value="<?= $editPurchase['id'] ?>"><?php endif; ?>
+      <?php if (!$isEdit && get('bill_photo')): ?>
+      <input type="hidden" name="bill_photo" value="<?= e(get('bill_photo')) ?>">
+      <div class="flash flash-info">📎 Bill photo from the scan is attached to this purchase.</div>
+      <?php endif; ?>
       <div class="card">
         <div class="form-row cols-4">
           <div><label>Supplier party *</label>
@@ -278,7 +283,11 @@ if ($action === 'new' || $action === 'edit') {
           </div>
           <div><label>Firm / Company</label>
             <select name="company_id" id="company_id"><?php foreach ($companies as $c): ?><option value="<?= $c['id'] ?>" data-gst="<?= $c['is_gst'] ?>"><?= e($c['name']) ?><?= $c['is_gst'] ? ' (GST)' : '' ?></option><?php endforeach; ?></select></div>
-          <div><label>Supplier bill no.</label><input type="text" name="bill_no" id="bill_no" value="<?= $isEdit ? e($editPurchase['bill_no']) : '' ?>"></div>
+          <div><label>Supplier bill no.</label><input type="text" name="bill_no" id="bill_no" value="<?= $isEdit ? e($editPurchase['bill_no']) : '' ?>">
+            <?php if ($isEdit && !empty($editPurchase['bill_photo'])): ?>
+            <p class="muted mt"><a href="uploads/purchase_scans/<?= e($editPurchase['bill_photo']) ?>" target="_blank">📎 View scanned bill photo</a></p>
+            <?php endif; ?>
+          </div>
           <div><label>Date</label><input type="date" name="purchase_date" id="purchase_date" value="<?= $isEdit ? e($editPurchase['purchase_date']) : today() ?>"></div>
         </div>
         <div class="form-row cols-2">
@@ -477,7 +486,7 @@ include __DIR__ . '/includes/header.php';
   <div class="duo-card duo-give"><div class="duo-label">Balance Due</div><div class="duo-value">₹ <?= money($sumDueP) ?></div></div>
 </div>
 <div class="page-actions">
-  <?php if (can('purchases.add')): ?><a class="btn" href="purchases.php?action=new">+ New Purchase</a><?php endif; ?>
+  <?php if (can('purchases.add')): ?><a class="btn" href="purchases.php?action=new">+ New Purchase</a><a class="btn btn-outline" href="purchase_scan.php">📷 Scan Bill</a><?php endif; ?>
 </div>
 <form method="get" class="filterbar">
   <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>

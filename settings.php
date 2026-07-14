@@ -135,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_transaction') 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_invoice') {
     require_perm('settings.edit');
-    foreach (['google_review_link', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret'] as $k) set_setting($k, post($k));
+    foreach (['google_review_link', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret', 'ocr_api_key'] as $k) set_setting($k, post($k));
     log_activity('settings_save');
     flash('Invoice settings saved.');
     redirect('settings.php?cat=invoice');
@@ -462,6 +462,9 @@ exit;
     </div>
     <div class="form-row cols-2">
       <div><label>Razorpay Webhook Secret <span class="muted" style="font-weight:normal">(from the webhook you create below - auto-marks a bill paid when the customer pays online)</span></label><input type="password" name="razorpay_webhook_secret" value="<?= e(setting('razorpay_webhook_secret')) ?>"></div>
+    </div>
+    <div class="form-row cols-2">
+      <div><label>OCR.space API Key <span class="muted" style="font-weight:normal">(for Purchase &gt; Scan Bill - free key at ocr.space/ocrapi, optional)</span></label><input type="password" name="ocr_api_key" value="<?= e(setting('ocr_api_key')) ?>"></div>
     </div>
     <button class="btn" type="submit">Save</button>
   </form>

@@ -99,6 +99,13 @@ if ($a === 'suggest_category' && can('expenses.add')) {
     exit;
 }
 
+if ($a === 'ocr_recheck' && can('purchases.add')) {
+    $tok = mb_strtoupper(trim(get('token')));
+    $result = $tok !== '' ? ocr_match_items([$tok]) : [];
+    echo json_encode(['matches' => $result[0]['matches'] ?? []]);
+    exit;
+}
+
 if ($a === 'set_theme' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $theme = in_array(post('theme'), ['light', 'dark', 'auto'], true) ? post('theme') : 'auto';
     set_user_pref(current_user()['id'], 'theme', $theme);

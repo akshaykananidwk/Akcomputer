@@ -82,7 +82,7 @@ if ($action === 'new' || $action === 'edit') {
         <input type="hidden" name="do" value="save">
         <input type="hidden" name="old_photo" value="<?= e($it['photo'] ?? '') ?>">
         <div class="form-row cols-2">
-          <div><label>Item name *</label><input type="text" name="name" value="<?= e($it['name'] ?? '') ?>" required></div>
+          <div><label>Item name *</label><input type="text" name="name" value="<?= e($it['name'] ?? get('model', '')) ?>" required></div>
           <div><label>Category</label>
             <select name="category_id"><option value="">-- none --</option>
             <?php foreach ($cats as $c): ?><option value="<?= $c['id'] ?>" <?= ($it['category_id'] ?? '') == $c['id'] ? 'selected' : '' ?>><?= e($c['name']) ?></option><?php endforeach; ?>
@@ -90,7 +90,7 @@ if ($action === 'new' || $action === 'edit') {
         </div>
         <div class="form-row cols-3">
           <div><label>Brand</label><input type="text" name="brand" value="<?= e($it['brand'] ?? '') ?>"></div>
-          <div><label>Model</label><input type="text" name="model" value="<?= e($it['model'] ?? '') ?>"></div>
+          <div><label>Model</label><input type="text" name="model" value="<?= e($it['model'] ?? get('model', '')) ?>"></div>
           <div><label>Unit</label><input type="text" name="unit" value="<?= e($it['unit'] ?? 'PCS') ?>"></div>
         </div>
         <div class="form-row cols-3">

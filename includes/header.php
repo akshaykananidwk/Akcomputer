@@ -26,6 +26,7 @@ $_navMenu = [
     ]],
     ['group', 'purchase', 'box', 'Purchase', [
         ['purchases.php', 'Purchase Bills', 'purchases.view', 'purchases.php?action=new', 'purchases.add'],
+        ['purchase_scan.php', 'Scan Bill (OCR)', 'purchases.add', null, null],
         ['purchase_return.php', 'Purchase Return', 'purchase_return.view', 'purchase_return.php?action=new', 'purchase_return.add'],
     ]],
     ['link', 'expenses.php', 'wallet', 'Expenses', 'expenses.view'],
