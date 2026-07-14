@@ -49,12 +49,18 @@ $_navMenu = [
         ['stock.php', 'Location Stock', 'stock.view', null, null],
     ]],
     ['group', 'service', 'tool', 'Repair & Service', [
+        ['my_jobs.php', 'My Jobs (Technician)', null, null, null],
         ['repairs.php', 'Repair Jobs', 'repairs.view', 'repairs.php?action=new', 'repairs.add'],
         ['tasks.php', 'Field Tasks', 'tasks.view', 'tasks.php?action=new', 'tasks.add'],
         ['warranty.php', 'Warranty Claims', 'warranty.view', 'warranty.php?action=new', 'warranty.add'],
         ['amc.php', 'AMC / Recurring Billing', 'amc.view', 'amc.php?action=new', 'amc.add'],
         ['amc.php?action=calendar', 'AMC / Visit Calendar', 'amc.view', null, null],
         ['sites.php', 'Customer Sites / DVR-NVR Vault', 'sites.view', 'sites.php?action=new', 'sites.add'],
+    ]],
+    ['group', 'crm', 'handshake', 'Leads & CRM', [
+        ['leads.php', 'Leads', 'leads.view', 'leads.php?action=new', 'leads.add'],
+        ['tickets.php', 'Complaints / Tickets', 'tickets.view', 'tickets.php?action=new', 'tickets.add'],
+        ['follow_ups.php', 'Follow-ups', 'followups.view', 'follow_ups.php?action=new', 'followups.add'],
     ]],
     ['link', 'reports.php', 'bar-chart', 'Reports', 'reports.view'],
     ['group', 'store', 'globe', 'My Online Store', [
@@ -207,6 +213,9 @@ function nav_visible_items($items) {
         ['parties.php?action=new', 'users', 'Party', 'parties.add'],
         ['items.php?action=new', 'box', 'Item', 'items.add'],
         ['sales_return.php?action=new', 'return', 'Sale Return', 'sales_return.add'],
+        ['leads.php?action=new', 'handshake', 'Lead', 'leads.add'],
+        ['tickets.php?action=new', 'bell', 'Ticket', 'tickets.add'],
+        ['follow_ups.php?action=new', 'archive', 'Follow-up', 'followups.add'],
     ];
     foreach ($_navQuick as $_nq): if (!can($_nq[3])) continue; ?>
     <a href="<?= $_nq[0] ?>" class="sheet-item"><span><?= icon($_nq[1], 24) ?></span><?= $_nq[2] ?></a>

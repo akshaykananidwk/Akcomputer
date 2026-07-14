@@ -385,6 +385,8 @@ function status_badge($status) {
         'due' => 'bad', 'cancelled' => 'bad', 'rejected' => 'bad', 'returned_unrepaired' => 'bad',
         'partial' => 'warn', 'pending' => 'warn', 'sent' => 'warn', 'outsourced' => 'warn', 'started' => 'warn', 'in_progress' => 'warn',
         'received' => 'info', 'assigned' => 'info', 'open' => 'info', 'in_stock' => 'ok', 'with_staff' => 'warn', 'sold' => 'info', 'claim' => 'warn',
+        'won' => 'ok', 'lost' => 'bad', 'resolved' => 'ok', 'closed' => 'info', 'done' => 'ok',
+        'low' => 'info', 'medium' => 'warn', 'high' => 'warn', 'urgent' => 'bad',
     ];
     $cls = $map[$status] ?? 'info';
     return '<span class="badge badge-' . $cls . '">' . e(str_replace('_', ' ', $status)) . '</span>';

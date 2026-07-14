@@ -57,6 +57,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'templates') {
     redirect('settings.php?cat=whatsapp');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'checklist_add') {
+    require_perm('settings.edit');
+    $label = trim(post('label'));
+    if ($label) {
+        $n = (int)val('SELECT COALESCE(MAX(sort_order),0) FROM service_checklist_items') + 10;
+        q('INSERT INTO service_checklist_items (label, sort_order) VALUES (?, ?)', [$label, $n]);
+        flash('Checklist item added.');
+    }
+    redirect('settings.php?cat=service');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'checklist_toggle') {
+    require_perm('settings.edit');
+    $ci = row('SELECT * FROM service_checklist_items WHERE id = ?', [(int)post('id')]);
+    if ($ci) {
+        q('UPDATE service_checklist_items SET is_active = ? WHERE id = ?', [$ci['is_active'] ? 0 : 1, $ci['id']]);
+        flash($ci['is_active'] ? 'Item deactivated.' : 'Item activated.');
+    }
+    redirect('settings.php?cat=service');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_transaction') {
     require_perm('settings.edit');
     set_setting('cash_sale_default', post('cash_sale_default') ? '1' : '0');
@@ -183,6 +203,7 @@ $categories = [
     'reminders' => ['⏰', 'Reminders', 'Auto overdue payment reminders'],
     'party'     => ['👥', 'Party', 'Credit term options'],
     'accounting' => ['📒', 'Accounting', 'Period lock, Chart of Accounts, Journal Entries'],
+    'service'   => ['🔧', 'Service Checklist', 'Repair job checklist items'],
     'backup'    => ['🔄', 'Backup & Updates', 'Backup download, GitHub update'],
     'about'     => ['📱', 'About', 'Install as app'],
 ];
@@ -433,6 +454,32 @@ exit;
   <a class="btn btn-sm btn-outline" href="accounts.php">Chart of Accounts</a>
   <a class="btn btn-sm btn-outline" href="journal.php">Journal Entries</a>
   <a class="btn btn-sm btn-outline" href="bank_reconcile.php">Bank Reconciliation</a>
+</div>
+<?php endif; ?>
+
+<?php if ($cat === 'service'):
+    $checklistItems = all('SELECT * FROM service_checklist_items ORDER BY sort_order'); ?>
+<div class="card">
+  <h3>🔧 Service checklist items</h3>
+  <p class="muted mb">Shown on every repair job's checklist card (repairs.php) and on the shareable digital service report.</p>
+  <table class="table-sm">
+    <?php foreach ($checklistItems as $ci): ?>
+    <tr>
+      <td><?= e($ci['label']) ?></td>
+      <td><?= $ci['is_active'] ? '<span class="badge badge-ok">active</span>' : '<span class="badge badge-bad">off</span>' ?></td>
+      <td>
+        <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="checklist_toggle"><input type="hidden" name="id" value="<?= $ci['id'] ?>">
+          <button class="btn btn-sm btn-outline" type="submit"><?= $ci['is_active'] ? 'Deactivate' : 'Activate' ?></button></form>
+      </td>
+    </tr>
+    <?php endforeach; ?>
+  </table>
+  <form method="post" class="form-row cols-3 mt">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="checklist_add">
+    <div><label>New checklist item</label><input type="text" name="label" required></div>
+    <div style="align-self:end"><button class="btn btn-sm" type="submit">+ Add</button></div>
+  </form>
 </div>
 <?php endif; ?>
 

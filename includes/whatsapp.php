@@ -127,6 +127,8 @@ function wa_template_defaults() {
                           '{shop} {customer}', 'Anniversary wish'],
         'feedback_request' => ["*{shop}*\nHi {customer}, your job {job_no} is complete! 🙏\nWe'd love your feedback - please rate our service:\n{link}",
                                '{shop} {customer} {job_no} {link}', 'Feedback request (after job completion)'],
+        'service_report' => ["*{shop}*\nHi {customer}, here's the digital service report for your job {job_no}:\n{link}\nThank you! 🙏",
+                             '{shop} {customer} {job_no} {link}', 'Digital service report link'],
     ];
 }
 

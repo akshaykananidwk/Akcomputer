@@ -126,6 +126,24 @@ if ($action === 'ledger' && $id) {
         $entries[] = ['date' => $r['d'], 'desc' => 'Purchase Return ' . $r['return_no'], 'dr' => $r['amt'], 'cr' => 0];
     usort($entries, fn($a, $b) => strcmp($a['date'], $b['date']));
 
+    // ---- visit timeline: everything else linked to this customer, across
+    // service/CRM modules, computed on the fly (no separate table to keep
+    // in sync - same "aggregate the real tables" approach as the ledger above) ----
+    $timeline = [];
+    if (can('repairs.view')) foreach (all('SELECT job_no, device_type, brand_model, status, received_date FROM repairs WHERE party_id = ?', [$id]) as $r)
+        $timeline[] = ['date' => $r['received_date'], 'icon' => '🔧', 'desc' => 'Repair job ' . $r['job_no'] . ' - ' . trim($r['device_type'] . ' ' . $r['brand_model']), 'status' => $r['status'], 'link' => null];
+    if (can('tasks.view')) foreach (all('SELECT task_no, description, status, scheduled_date FROM tasks WHERE party_id = ?', [$id]) as $t)
+        $timeline[] = ['date' => $t['scheduled_date'], 'icon' => '🛠️', 'desc' => 'Field task ' . $t['task_no'] . ' - ' . mb_substr($t['description'], 0, 60), 'status' => $t['status'], 'link' => null];
+    if (can('warranty.view')) foreach (all('SELECT claim_no, issue, status, received_date FROM warranty_claims WHERE party_id = ?', [$id]) as $w)
+        $timeline[] = ['date' => $w['received_date'], 'icon' => '🛡️', 'desc' => 'Warranty claim ' . $w['claim_no'] . ' - ' . mb_substr($w['issue'], 0, 60), 'status' => $w['status'], 'link' => null];
+    if (can('tickets.view')) foreach (all('SELECT id, ticket_no, subject, status, created_at FROM tickets WHERE party_id = ?', [$id]) as $tk)
+        $timeline[] = ['date' => $tk['created_at'], 'icon' => '🎫', 'desc' => 'Ticket ' . $tk['ticket_no'] . ' - ' . $tk['subject'], 'status' => $tk['status'], 'link' => 'tickets.php?action=view&id=' . $tk['id']];
+    if (can('leads.view')) foreach (all('SELECT id, lead_no, interest, status, created_at FROM leads WHERE party_id = ?', [$id]) as $ld)
+        $timeline[] = ['date' => $ld['created_at'], 'icon' => '🎯', 'desc' => 'Lead ' . $ld['lead_no'] . ' - ' . ($ld['interest'] ?: 'converted'), 'status' => $ld['status'], 'link' => 'leads.php?action=view&id=' . $ld['id']];
+    if (can('followups.view')) foreach (all('SELECT title, status, due_date FROM follow_ups WHERE party_id = ?', [$id]) as $fu)
+        $timeline[] = ['date' => $fu['due_date'], 'icon' => '⏰', 'desc' => 'Follow-up - ' . $fu['title'], 'status' => $fu['status'], 'link' => 'follow_ups.php'];
+    usort($timeline, fn($a, $b) => strcmp($b['date'], $a['date']));
+
     $bal = (float)$p['opening_balance'];
     $openingBal = $bal;
     $page_title = 'Ledger: ' . $p['name'];
@@ -169,6 +187,20 @@ if ($action === 'ledger' && $id) {
       </div>
       <?php endforeach; ?>
     </div>
+    <?php if ($timeline): ?>
+    <div class="card">
+      <h3>🕓 Visit Timeline</h3>
+      <?php foreach ($timeline as $tl): ?>
+      <div class="list-row" style="cursor:default">
+        <div class="list-row-main"><?= $tl['icon'] ?> <?= e($tl['desc']) ?><div class="muted list-row-sub"><?= dmy($tl['date']) ?></div></div>
+        <div class="list-row-val">
+          <?= status_badge($tl['status']) ?>
+          <?php if ($tl['link']): ?><br><a class="muted" style="font-size:12px" href="<?= e($tl['link']) ?>">Open</a><?php endif; ?>
+        </div>
+      </div>
+      <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
     <div class="card no-print">
       <div class="page-actions" style="margin:0">
         <?php if (can('payments.add')): ?>
