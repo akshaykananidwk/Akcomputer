@@ -112,18 +112,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_ledger') {
 if ($action === 'ledger' && $id) {
     $p = row('SELECT * FROM parties WHERE id = ?', [$id]);
     if (!$p) { flash('Party not found', 'error'); redirect('parties.php'); }
+    // Every ledger row carries a 'link' to its own detail page (where Edit /
+    // Delete live) so you can tap any transaction straight from the ledger -
+    // like the party screen in Vyapar.
     $entries = [];
-    foreach (all('SELECT id, invoice_no ref, sale_date d, total amt FROM sales WHERE party_id = ? AND is_cancelled = 0', [$id]) as $r)
-        $entries[] = ['date' => $r['d'], 'desc' => 'Sale ' . $r['ref'], 'dr' => $r['amt'], 'cr' => 0];
-    foreach (all('SELECT id, bill_no ref, purchase_date d, total amt FROM purchases WHERE party_id = ?', [$id]) as $r)
-        $entries[] = ['date' => $r['d'], 'desc' => 'Purchase ' . $r['ref'], 'dr' => 0, 'cr' => $r['amt']];
+    foreach (all('SELECT id, invoice_no ref, sale_date d, total amt, paid FROM sales WHERE party_id = ? AND is_cancelled = 0', [$id]) as $r)
+        $entries[] = ['date' => $r['d'], 'desc' => 'Sale ' . $r['ref'], 'dr' => $r['amt'], 'cr' => 0,
+                      'link' => 'sale_view.php?id=' . $r['id'], 'sub' => $r['amt'] - $r['paid'] > 0.009 ? 'Balance ₹' . money($r['amt'] - $r['paid']) : 'Paid'];
+    foreach (all('SELECT id, bill_no ref, purchase_date d, total amt, paid FROM purchases WHERE party_id = ? AND is_cancelled = 0', [$id]) as $r)
+        $entries[] = ['date' => $r['d'], 'desc' => 'Purchase ' . ($r['ref'] ?: '#' . $r['id']), 'dr' => 0, 'cr' => $r['amt'],
+                      'link' => 'purchase_view.php?id=' . $r['id'], 'sub' => $r['amt'] - $r['paid'] > 0.009 ? 'Balance ₹' . money($r['amt'] - $r['paid']) : 'Paid'];
     foreach (all('SELECT * FROM payments WHERE party_id = ?', [$id]) as $r)
         $entries[] = ['date' => $r['pay_date'], 'desc' => ($r['direction'] === 'in' ? 'Received' : 'Paid') . ' (' . $r['mode'] . ') ' . $r['notes'],
-                      'dr' => $r['direction'] === 'out' ? $r['amount'] : 0, 'cr' => $r['direction'] === 'in' ? $r['amount'] : 0];
-    foreach (all('SELECT return_no, return_date d, total amt FROM sales_returns WHERE party_id = ?', [$id]) as $r)
-        $entries[] = ['date' => $r['d'], 'desc' => 'Sales Return ' . $r['return_no'], 'dr' => 0, 'cr' => $r['amt']];
-    foreach (all('SELECT return_no, return_date d, total amt FROM purchase_returns WHERE party_id = ?', [$id]) as $r)
-        $entries[] = ['date' => $r['d'], 'desc' => 'Purchase Return ' . $r['return_no'], 'dr' => $r['amt'], 'cr' => 0];
+                      'dr' => $r['direction'] === 'out' ? $r['amount'] : 0, 'cr' => $r['direction'] === 'in' ? $r['amount'] : 0,
+                      'link' => 'payments.php?action=view&id=' . $r['id'], 'sub' => 'Receipt P-' . str_pad($r['id'], 5, '0', STR_PAD_LEFT)];
+    foreach (all('SELECT id, return_no, return_date d, total amt FROM sales_returns WHERE party_id = ?', [$id]) as $r)
+        $entries[] = ['date' => $r['d'], 'desc' => 'Sales Return ' . $r['return_no'], 'dr' => 0, 'cr' => $r['amt'],
+                      'link' => 'sales_return.php', 'sub' => ''];
+    foreach (all('SELECT id, return_no, return_date d, total amt FROM purchase_returns WHERE party_id = ?', [$id]) as $r)
+        $entries[] = ['date' => $r['d'], 'desc' => 'Purchase Return ' . $r['return_no'], 'dr' => $r['amt'], 'cr' => 0,
+                      'link' => 'purchase_return.php', 'sub' => ''];
     usort($entries, fn($a, $b) => strcmp($a['date'], $b['date']));
 
     // ---- visit timeline: everything else linked to this customer, across
@@ -178,13 +186,14 @@ if ($action === 'ledger' && $id) {
         <div class="list-row-val"><span class="muted">₹<?= money($openingBal) ?></span></div>
       </div>
       <?php foreach ($entries as $en): $bal += $en['dr'] - $en['cr']; ?>
-      <div class="list-row" style="cursor:default">
-        <div class="list-row-main"><strong><?= e($en['desc']) ?></strong><div class="muted list-row-sub"><?= dmy($en['date']) ?></div></div>
+      <a class="list-row" href="<?= e($en['link']) ?>">
+        <div class="list-row-main"><strong><?= e($en['desc']) ?></strong><div class="muted list-row-sub"><?= dmy($en['date']) ?><?= $en['sub'] ? ' · ' . e($en['sub']) : '' ?></div></div>
         <div class="list-row-val">
           <?php if ($en['dr'] > 0): ?><span class="bal-get">+₹<?= money($en['dr']) ?></span>
           <?php else: ?><span class="bal-give">-₹<?= money($en['cr']) ?></span><?php endif; ?>
+          <span class="muted" style="font-size:15px;margin-left:6px">›</span>
         </div>
-      </div>
+      </a>
       <?php endforeach; ?>
     </div>
     <?php if ($timeline): ?>

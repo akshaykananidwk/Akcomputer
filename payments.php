@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/init.php';
 require_perm('payments.view');
 $u = current_user();
 $action = get('action', 'list');
+$id = (int)get('id');
 
 // ---------- save payment (with optional bill allocation) ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
@@ -136,6 +137,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         }
     }
     redirect('payments.php');
+}
+
+// ---------- Edit a payment ----------
+// The amount/date/mode/notes can all be changed. To keep the books exactly
+// right, the payment's old effect on bills is fully reversed first, then the
+// NEW amount is re-applied to the party's outstanding bills oldest-first (the
+// same predictable rule as "Auto"). The party's ledger balance always tracks
+// the payments table directly, so it's correct no matter what.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
+    require_perm('payments.edit');
+    $pid = (int)post('id');
+    $pay = row('SELECT * FROM payments WHERE id = ?', [$pid]);
+    if (!$pay) { flash('Payment not found.', 'error'); redirect('payments.php'); }
+    if ($pay['mode'] === 'contra') { flash("A contra settlement can't be edited - delete it and record a fresh one.", 'error'); redirect('payments.php?action=view&id=' . $pid); }
+    if (is_period_locked($pay['pay_date']) || is_period_locked(post('pay_date', $pay['pay_date']))) { flash(period_lock_message(), 'error'); redirect('payments.php?action=view&id=' . $pid); }
+    $amount = round((float)post('amount'), 2);
+    if ($amount <= 0) { flash('Amount must be more than zero.', 'error'); redirect('payments.php?action=edit&id=' . $pid); }
+    $mode = post('mode', $pay['mode']);
+    $bankAccId = (int)post('bank_account_id') ?: null;
+    $payDate = post('pay_date', $pay['pay_date']);
+    $notes = post('notes', $pay['notes']);
+    $dir = $pay['direction'];
+    $party_id = (int)$pay['party_id'];
+
+    // The bills this payment settled, in order (direct link first, then any
+    // structured allocations). The edited amount is re-applied to these SAME
+    // bills so the payment keeps settling what it always did - only the
+    // amount scales. Any leftover just sits on the party's account.
+    $targets = [];
+    if ($pay['ref_type'] && $pay['ref_id']) $targets[] = ['type' => $pay['ref_type'], 'id' => (int)$pay['ref_id']];
+    foreach (all('SELECT ref_type, ref_id FROM payment_allocations WHERE payment_id = ? ORDER BY id', [$pid]) as $a)
+        $targets[] = ['type' => $a['ref_type'], 'id' => (int)$a['ref_id']];
+
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        // 1) reverse the old effect on any bill(s) it had touched
+        if ($pay['ref_type'] && $pay['ref_id']) reverse_bill_paid($pay['ref_type'], $pay['ref_id'], (float)$pay['amount']);
+        foreach (all('SELECT * FROM payment_allocations WHERE payment_id = ?', [$pid]) as $a) reverse_bill_paid($a['ref_type'], $a['ref_id'], (float)$a['amount']);
+        q('DELETE FROM payment_allocations WHERE payment_id = ?', [$pid]);
+        // 2) save the new values (link now tracked purely via allocations below)
+        q('UPDATE payments SET amount=?, mode=?, bank_account_id=?, pay_date=?, notes=?, ref_type=NULL, ref_id=NULL WHERE id=?',
+          [$amount, $mode, $bankAccId, $payDate, $notes, $pid]);
+        // 3) re-apply the new amount to the same bills, capped to each one's due
+        $left = $amount;
+        foreach ($targets as $t) {
+            if ($left <= 0.009) break;
+            $tbl = $t['type'] === 'sale' ? 'sales' : 'purchases';
+            $b = row("SELECT total, paid, is_cancelled FROM $tbl WHERE id = ?", [$t['id']]);
+            if (!$b || $b['is_cancelled']) continue;
+            $use = min($left, round($b['total'] - $b['paid'], 2));
+            if ($use <= 0.009) continue;
+            q("UPDATE $tbl SET paid = paid + ?, status = ? WHERE id = ?", [$use, payment_status($b['total'], $b['paid'] + $use), $t['id']]);
+            q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $t['type'], $t['id'], $use]);
+            $left -= $use;
+        }
+        $pdo->commit();
+        log_activity('payment_edit', "P-$pid amount $amount");
+        flash('Payment updated — the linked bills and the party ledger have been recalculated.');
+        redirect('payments.php?action=view&id=' . $pid);
+    } catch (Exception $ex) {
+        $pdo->rollBack();
+        flash('Error updating payment: ' . $ex->getMessage(), 'error');
+        redirect('payments.php?action=edit&id=' . $pid);
+    }
 }
 
 // ---------- Contra / Settle: net a sale due against a purchase due for the
@@ -457,6 +523,116 @@ if ($action === 'contra') {
     exit;
 }
 
+// ---------- view a single payment (detail + Edit / Delete) ----------
+if ($action === 'view' && $id) {
+    $pay = row('SELECT p.*, pt.name party_name, pt.id party_ref, u2.name by_name, ba.account_name bank_name
+                FROM payments p LEFT JOIN parties pt ON pt.id = p.party_id
+                JOIN users u2 ON u2.id = p.created_by
+                LEFT JOIN bank_accounts ba ON ba.id = p.bank_account_id
+                WHERE p.id = ?', [$id]);
+    if (!$pay) { flash('Payment not found.', 'error'); redirect('payments.php'); }
+    // bills this payment settled (structured allocations + any direct bill link)
+    $links = [];
+    foreach (all('SELECT * FROM payment_allocations WHERE payment_id = ?', [$id]) as $a) {
+        $t = $a['ref_type'] === 'sale' ? 'sales' : 'purchases';
+        $noCol = $a['ref_type'] === 'sale' ? 'invoice_no' : 'bill_no';
+        $b = row("SELECT $noCol no FROM $t WHERE id = ?", [$a['ref_id']]);
+        $links[] = ['label' => ucfirst($a['ref_type']) . ' ' . ($b['no'] ?? '#' . $a['ref_id']), 'amt' => $a['amount'],
+                    'link' => ($a['ref_type'] === 'sale' ? 'sale_view.php?id=' : 'purchase_view.php?id=') . $a['ref_id']];
+    }
+    if ($pay['ref_type'] && $pay['ref_id'] && !$links) {
+        $t = $pay['ref_type'] === 'sale' ? 'sales' : 'purchases';
+        $noCol = $pay['ref_type'] === 'sale' ? 'invoice_no' : 'bill_no';
+        $b = row("SELECT $noCol no FROM $t WHERE id = ?", [$pay['ref_id']]);
+        $links[] = ['label' => ucfirst($pay['ref_type']) . ' ' . ($b['no'] ?? '#' . $pay['ref_id']), 'amt' => $pay['amount'],
+                    'link' => ($pay['ref_type'] === 'sale' ? 'sale_view.php?id=' : 'purchase_view.php?id=') . $pay['ref_id']];
+    }
+    $page_title = 'Payment P-' . str_pad($id, 5, '0', STR_PAD_LEFT);
+    include __DIR__ . '/includes/header.php';
+    ?>
+    <div class="page-actions no-print">
+      <a class="btn btn-outline" href="<?= $pay['party_ref'] ? 'parties.php?action=ledger&id=' . $pay['party_ref'] : 'payments.php' ?>">← Back</a>
+      <?php if ($pay['mode'] !== 'contra' && can('payments.edit')): ?>
+      <a class="btn" href="payments.php?action=edit&id=<?= $id ?>">✏️ Edit</a>
+      <?php endif; ?>
+      <?php if (can('payments.delete')): ?>
+      <form method="post" onsubmit="return confirm('Delete this payment? Any bill it was linked to will have its paid amount reversed.')" style="display:inline">
+        <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $id ?>">
+        <button class="btn btn-danger" type="submit">🗑️ Delete</button></form>
+      <?php endif; ?>
+    </div>
+    <div class="card">
+      <h2><?= $pay['direction'] === 'in' ? '⬇ Payment-In (Received)' : '⬆ Payment-Out (Paid)' ?></h2>
+      <div style="font-size:30px;font-weight:800;color:<?= $pay['direction'] === 'in' ? 'var(--ok)' : 'var(--bad)' ?>">₹<?= money($pay['amount']) ?></div>
+      <p class="muted">Receipt P-<?= str_pad($id, 5, '0', STR_PAD_LEFT) ?> · <?= dmy($pay['pay_date']) ?></p>
+      <table class="table-sm mt">
+        <tr><td class="muted">Party</td><td><?= $pay['party_ref'] ? '<a href="parties.php?action=ledger&id=' . $pay['party_ref'] . '">' . e($pay['party_name']) . '</a>' : '<span class="muted">Walk-in / none</span>' ?></td></tr>
+        <tr><td class="muted">Mode</td><td><?= e(strtoupper($pay['mode'])) ?><?= $pay['bank_name'] ? ' · ' . e($pay['bank_name']) : '' ?></td></tr>
+        <tr><td class="muted">Notes</td><td><?= e($pay['notes']) ?: '<span class="muted">—</span>' ?></td></tr>
+        <tr><td class="muted">Recorded by</td><td><?= e($pay['by_name']) ?></td></tr>
+      </table>
+      <?php if ($pay['mode'] === 'contra'): ?><p class="muted mt">🔄 This is a contra settlement (no cash moved). To change it, delete it and record a fresh one.</p><?php endif; ?>
+    </div>
+    <?php if ($links): ?>
+    <div class="card list-card">
+      <div class="list-row" style="cursor:default"><div class="list-row-main"><strong>Settles these bills</strong></div></div>
+      <?php foreach ($links as $lk): ?>
+      <a class="list-row" href="<?= e($lk['link']) ?>">
+        <div class="list-row-main"><?= e($lk['label']) ?></div>
+        <div class="list-row-val">₹<?= money($lk['amt']) ?> <span class="muted" style="font-size:15px">›</span></div>
+      </a>
+      <?php endforeach; ?>
+    </div>
+    <?php else: ?>
+    <div class="card"><p class="muted">Not linked to a specific bill — it sits on the party's account as an advance / on-account amount.</p></div>
+    <?php endif; ?>
+    <?php include __DIR__ . '/includes/footer.php'; exit;
+}
+
+// ---------- edit a payment ----------
+if ($action === 'edit' && $id) {
+    require_perm('payments.edit');
+    $pay = row('SELECT p.*, pt.name party_name FROM payments p LEFT JOIN parties pt ON pt.id = p.party_id WHERE p.id = ?', [$id]);
+    if (!$pay) { flash('Payment not found.', 'error'); redirect('payments.php'); }
+    if ($pay['mode'] === 'contra') { flash("A contra settlement can't be edited - delete it and record a fresh one.", 'error'); redirect('payments.php?action=view&id=' . $id); }
+    $pms = active_payment_methods();
+    $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
+    $page_title = 'Edit Payment P-' . str_pad($id, 5, '0', STR_PAD_LEFT);
+    include __DIR__ . '/includes/header.php';
+    ?>
+    <form method="post">
+      <?= csrf_field() ?>
+      <input type="hidden" name="do" value="update">
+      <input type="hidden" name="id" value="<?= $id ?>">
+      <div class="card">
+        <h2>Edit <?= $pay['direction'] === 'in' ? 'Payment-In' : 'Payment-Out' ?> — <?= e($pay['party_name'] ?: 'Walk-in') ?></h2>
+        <p class="muted mb">Changing the amount recalculates the linked bills and the party's balance automatically. The updated amount is re-applied to the oldest unpaid bill(s) first.</p>
+        <div class="form-row cols-2">
+          <div><label>Amount (₹)</label><input type="number" step="any" name="amount" value="<?= money($pay['amount']) ?>" required></div>
+          <div><label>Date</label><input type="date" name="pay_date" value="<?= e($pay['pay_date']) ?>"></div>
+        </div>
+        <div class="form-row cols-2">
+          <div><label>Mode</label>
+            <select name="mode" id="ep_mode" onchange="document.getElementById('ep_bank').style.display=this.selectedOptions[0].dataset.type==='bank'?'':'none'">
+              <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?>
+              <option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>" <?= $pm['code'] === $pay['mode'] ? 'selected' : '' ?>><?= e($pm['name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div id="ep_bank" style="<?= ($pay['bank_account_id']) ? '' : 'display:none' ?>"><label>Bank account</label>
+            <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>" <?= $b['id'] == $pay['bank_account_id'] ? 'selected' : '' ?>><?= e($b['account_name']) ?></option><?php endforeach; ?></select>
+          </div>
+        </div>
+        <div class="field"><label>Notes</label><input type="text" name="notes" value="<?= e($pay['notes']) ?>"></div>
+        <div class="page-actions" style="margin-top:10px">
+          <button class="btn" type="submit">💾 Update Payment</button>
+          <a class="btn btn-outline" href="payments.php?action=view&id=<?= $id ?>">Cancel</a>
+        </div>
+      </div>
+    </form>
+    <?php include __DIR__ . '/includes/footer.php'; exit;
+}
+
 // ---------- list ----------
 $parties = all('SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name');
 $recent = all('SELECT p.*, pt.name party_name, u2.name by_name FROM payments p
@@ -529,14 +705,17 @@ include __DIR__ . '/includes/header.php';
     <thead><tr><th>#</th><th>Date</th><th>Party</th><th>Dir</th><th class="num">Amount</th><th>Mode</th><th>Notes</th><th></th></tr></thead>
     <tbody><?php foreach ($recent as $pm): ?>
       <tr>
-        <td>P-<?= str_pad($pm['id'], 5, '0', STR_PAD_LEFT) ?></td>
+        <td><a href="payments.php?action=view&id=<?= $pm['id'] ?>">P-<?= str_pad($pm['id'], 5, '0', STR_PAD_LEFT) ?></a></td>
         <td><?= dmy($pm['pay_date']) ?></td>
         <td><?= $pm['party_id'] ? '<a href="parties.php?action=ledger&id=' . $pm['party_id'] . '">' . e($pm['party_name']) . '</a>' : '<span class="muted">Walk-in</span>' ?></td>
         <td><?= $pm['direction'] === 'in' ? '<span class="badge badge-ok">IN</span>' : '<span class="badge badge-bad">OUT</span>' ?></td>
         <td class="num">₹<?= money($pm['amount']) ?></td>
         <td><?= e($pm['mode']) ?></td>
         <td><?= e($pm['notes']) ?> <span class="muted">(<?= e($pm['by_name']) ?>)</span></td>
-        <td><?php if (can('payments.delete')): ?>
+        <td style="white-space:nowrap">
+          <a class="btn btn-sm btn-outline" href="payments.php?action=view&id=<?= $pm['id'] ?>">Open</a>
+          <?php if ($pm['mode'] !== 'contra' && can('payments.edit')): ?><a class="btn btn-sm btn-outline" href="payments.php?action=edit&id=<?= $pm['id'] ?>">✏️</a><?php endif; ?>
+          <?php if (can('payments.delete')): ?>
           <form method="post" onsubmit="return confirm('Delete entry?')" style="display:inline"><?= csrf_field() ?>
           <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $pm['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?></td>

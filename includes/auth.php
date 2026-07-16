@@ -23,7 +23,7 @@ function permission_catalog() {
         'tasks' => ['view', 'add', 'edit', 'all'],
         'repairs' => ['view', 'add', 'edit', 'delete'],
         'warranty' => ['view', 'add', 'edit', 'delete'],
-        'payments' => ['view', 'add', 'delete'],
+        'payments' => ['view', 'add', 'edit', 'delete'],
         'expenses' => ['view', 'add', 'delete'],
         'challans' => ['view', 'add', 'edit', 'delete'],
         'weborders' => ['view', 'edit', 'delete'],
