@@ -234,11 +234,13 @@ if ($r === 'party_sales') {
 
 // ---------------- aging / collection (as of today, ignores from/to) ----------------
 if ($r === 'aging') {
+    $isPdf = !empty($reportPdf);
     $ewA = ''; $epA = [];
     if ($fCompany) { $ewA .= ' AND s.company_id = ?'; $epA[] = $fCompany; }
     if ($fParty) { $ewA .= ' AND s.party_id = ?'; $epA[] = $fParty; }
-    $rows = all("SELECT COALESCE(p.name, NULLIF(s.customer_name, ''), 'Walk-in') pname, s.customer_mobile,
-                 p.mobile party_mobile, s.due_date, s.sale_date, (s.total - s.paid) due
+    $rows = all("SELECT s.party_id, COALESCE(p.name, NULLIF(s.customer_name, ''), 'Walk-in') pname, s.customer_mobile,
+                 p.mobile party_mobile, TRIM(CONCAT_WS(', ', NULLIF(p.address, ''), NULLIF(p.city, ''))) addr,
+                 s.due_date, s.sale_date, (s.total - s.paid) due
                  FROM sales s LEFT JOIN parties p ON p.id = s.party_id
                  WHERE s.is_cancelled = 0 AND s.status <> 'paid' $ewA", $epA);
     $agg = [];
@@ -246,41 +248,70 @@ if ($r === 'aging') {
         $base = $x['due_date'] ?: $x['sale_date'];
         $days = days_between($base);
         $bucket = $days <= 30 ? 'b1' : ($days <= 60 ? 'b2' : ($days <= 90 ? 'b3' : 'b4'));
-        $key = $x['pname'];
-        if (!isset($agg[$key])) $agg[$key] = ['pname' => $key, 'mobile' => $x['party_mobile'] ?: $x['customer_mobile'],
+        $key = ($x['party_id'] ?: 'w') . '|' . $x['pname'];
+        if (!isset($agg[$key])) $agg[$key] = ['pname' => $x['pname'], 'party_id' => $x['party_id'],
+            'mobile' => $x['party_mobile'] ?: $x['customer_mobile'], 'addr' => $x['addr'],
             'b1' => 0, 'b2' => 0, 'b3' => 0, 'b4' => 0, 'total' => 0];
         $agg[$key][$bucket] += $x['due'];
         $agg[$key]['total'] += $x['due'];
     }
     usort($agg, fn($a, $b) => $b['total'] <=> $a['total']);
-    echo '<p class="muted mb">As of today - the date filter does not apply here (based on how many days overdue).</p>';
-    echo '<div class="table-wrap"><table><thead><tr><th>Customer / Party</th><th class="num">0-30 days</th><th class="num">31-60 days</th><th class="num">61-90 days</th><th class="num">90+ days</th><th class="num">Total Due ₹</th><th></th></tr></thead><tbody>';
+
     $tot = ['b1' => 0, 'b2' => 0, 'b3' => 0, 'b4' => 0, 'total' => 0];
-    foreach ($agg as $x) {
-        foreach (['b1', 'b2', 'b3', 'b4', 'total'] as $k) $tot[$k] += $x[$k];
-        echo '<tr><td>' . e($x['pname']) . '</td>'
-           . '<td class="num">' . ($x['b1'] > 0.009 ? '₹' . money($x['b1']) : '·') . '</td>'
-           . '<td class="num">' . ($x['b2'] > 0.009 ? '₹' . money($x['b2']) : '·') . '</td>'
-           . '<td class="num">' . ($x['b3'] > 0.009 ? '₹' . money($x['b3']) : '·') . '</td>'
-           . '<td class="num">' . ($x['b4'] > 0.009 ? '<span class="badge badge-bad">₹' . money($x['b4']) . '</span>' : '·') . '</td>'
-           . '<td class="num"><strong>₹' . money($x['total']) . '</strong></td>'
-           . '<td>' . ($x['mobile'] && can('payments.view') ?
-                '<form method="post" style="display:inline" onsubmit="return confirm(\'Send a WhatsApp payment reminder for ₹' . money($x['total']) . ' to ' . e($x['mobile']) . '?\')">'
-                . csrf_field() . '<input type="hidden" name="do" value="send_aging_reminder">'
-                . '<input type="hidden" name="mobile" value="' . e($x['mobile']) . '">'
-                . '<input type="hidden" name="amount" value="' . $x['total'] . '">'
-                . '<input type="hidden" name="pname" value="' . e($x['pname']) . '">'
-                . '<button class="btn btn-sm btn-wa" type="submit" title="Send WhatsApp reminder">📲</button></form>'
-              : '') . '</td></tr>';
-    }
-    if (!$agg) echo '<tr><td colspan="7" class="muted">All clear 🎉</td></tr>';
-    echo '</tbody></table></div>';
-    echo '<div class="grid-stats">';
-    echo '<div class="stat"><div class="stat-label">0-30 days</div><div class="stat-value">₹' . money($tot['b1']) . '</div></div>';
-    echo '<div class="stat"><div class="stat-label">31-60 days</div><div class="stat-value">₹' . money($tot['b2']) . '</div></div>';
-    echo '<div class="stat"><div class="stat-label">61-90 days</div><div class="stat-value">₹' . money($tot['b3']) . '</div></div>';
-    echo '<div class="stat s-bad"><div class="stat-label">90+ days (risky)</div><div class="stat-value">₹' . money($tot['b4']) . '</div></div>';
+    foreach ($agg as $x) foreach (['b1', 'b2', 'b3', 'b4', 'total'] as $k) $tot[$k] += $x[$k];
+    $overdue = $tot['b2'] + $tot['b3'] + $tot['b4'];   // anything more than 30 days old
+
+    // ---- summary stat cards (Total Parties / Total Due / Overdue) ----
+    echo '<div class="grid-stats mb">';
+    echo '<div class="stat"><div class="stat-label">👥 Total Parties</div><div class="stat-value">' . count($agg) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">📄 Total Due</div><div class="stat-value">₹' . money($tot['total']) . '</div></div>';
+    echo '<div class="stat s-bad"><div class="stat-label">⚠️ Overdue (30+ days)</div><div class="stat-value">₹' . money($overdue) . '</div></div>';
     echo '</div>';
+    echo '<p class="muted mb">As of today — based on how many days each bill is overdue. The date filter above does not apply here.</p>';
+
+    // ---- the table (wrapped in a bulk-send form on screen) ----
+    $canWa = !$isPdf && can('payments.view');
+    if ($canWa) echo '<form method="post" id="agingForm">' . csrf_field() . '<input type="hidden" name="do" value="send_aging_bulk">';
+    echo '<div class="table-wrap"><table class="aging-table"><thead><tr>';
+    if ($canWa) echo '<th style="width:26px"><input type="checkbox" title="Select all" onclick="document.querySelectorAll(\'.agchk\').forEach(c=>{if(!c.disabled)c.checked=this.checked})"></th>';
+    echo '<th>Customer / Party</th><th class="num">0-30 days</th><th class="num">31-60 days</th><th class="num">61-90 days</th><th class="num">90+ days</th><th class="num">Total Due ' . ($isPdf ? 'INR' : '₹') . '</th>';
+    echo '</tr></thead><tbody>';
+
+    $cur = $isPdf ? 'INR ' : '₹';
+    $bcell = function ($v, $cls) use ($cur) {
+        return '<td class="num ' . $cls . '">' . $cur . money($v) . '</td>';
+    };
+    $cols = $canWa ? 7 : 6;
+    foreach ($agg as $x) {
+        echo '<tr>';
+        if ($canWa) echo '<td><input type="checkbox" class="agchk" name="mobile[]" value="' . e($x['mobile']) . '"'
+            . ($x['mobile'] ? '' : ' disabled title="No mobile number"') . '>'
+            . '<input type="hidden" name="amount[]" value="' . $x['total'] . '"><input type="hidden" name="pname[]" value="' . e($x['pname']) . '"></td>';
+        echo '<td><strong>' . e($x['pname']) . '</strong>';
+        if ($x['mobile']) echo '<div class="muted list-row-sub">📞 ' . e($x['mobile']) . '</div>';
+        if ($x['addr']) echo '<div class="muted list-row-sub">📍 ' . e($x['addr']) . '</div>';
+        echo '</td>';
+        echo $bcell($x['b1'], 'ag-b1') . $bcell($x['b2'], 'ag-b2') . $bcell($x['b3'], 'ag-b3') . $bcell($x['b4'], 'ag-b4');
+        echo '<td class="num"><strong>' . $cur . money($x['total']) . '</strong></td>';
+        echo '</tr>';
+    }
+    if (!$agg) echo '<tr><td colspan="' . $cols . '" class="muted">All clear 🎉</td></tr>';
+    // total row
+    if ($agg) {
+        echo '<tr class="ag-total"><td' . ($canWa ? ' colspan="2"' : '') . '><strong>Total</strong></td>';
+        echo '<td class="num"><strong>' . $cur . money($tot['b1']) . '</strong></td><td class="num"><strong>' . $cur . money($tot['b2']) . '</strong></td>';
+        echo '<td class="num"><strong>' . $cur . money($tot['b3']) . '</strong></td><td class="num"><strong>' . $cur . money($tot['b4']) . '</strong></td>';
+        echo '<td class="num"><strong>' . $cur . money($tot['total']) . '</strong></td></tr>';
+    }
+    echo '</tbody></table></div>';
+
+    // ---- colour legend ----
+    echo '<div class="aging-legend no-print"><span><i class="ag-dot ag-b1"></i>0-30 Days</span><span><i class="ag-dot ag-b2"></i>31-60 Days</span><span><i class="ag-dot ag-b3"></i>61-90 Days</span><span><i class="ag-dot ag-b4"></i>90+ Days</span></div>';
+
+    if ($canWa) {
+        echo '<div class="page-actions no-print mt"><button class="btn btn-wa" type="submit" onclick="return confirm(\'Send a WhatsApp payment reminder to all ticked parties?\')">📲 Send reminder to selected</button></div>';
+        echo '</form>';
+    }
 }
 
 // ---------------- stock report (qty + value, location-wise) ----------------

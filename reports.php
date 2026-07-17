@@ -41,6 +41,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'send_aging_reminder
     redirect('reports.php?r=aging');
 }
 
+// Bulk: send a WhatsApp reminder to every party ticked on the Aging report.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'send_aging_bulk' && can('payments.view')) {
+    require_once __DIR__ . '/includes/billimage.php';
+    $shopName = setting('app_name', 'AK Computer');
+    $imgDir = __DIR__ . '/uploads/reminders';
+    if (!is_dir($imgDir)) mkdir($imgDir, 0755, true);
+    $mobiles = post('mobile', []); $amounts = post('amount', []); $pnames = post('pname', []);
+    $sent = 0; $failed = 0;
+    foreach ($mobiles as $i => $mobile) {
+        $mobile = trim((string)$mobile);
+        $amount = (float)($amounts[$i] ?? 0);
+        if (!$mobile || $amount <= 0.009) { continue; }
+        $imgName = 'reminder_' . preg_replace('/\D/', '', $mobile) . '_' . substr(md5(microtime() . $i), 0, 6) . '.jpg';
+        file_put_contents($imgDir . '/' . $imgName, reminder_image_jpg($shopName, $amount));
+        $imgUrl = base_url('uploads/reminders/' . $imgName);
+        $msg = wa_template('aging_reminder', ['amount' => money($amount), 'shop' => $shopName, 'customer' => (string)($pnames[$i] ?? '')]);
+        if (send_whatsapp($mobile, $msg, $imgUrl)) $sent++; else $failed++;
+    }
+    log_activity('aging_reminder_bulk', "sent=$sent failed=$failed");
+    if ($sent && !$failed) flash("Payment reminder sent on WhatsApp to $sent party(ies).");
+    elseif ($sent) flash("Sent to $sent, but $failed failed. " . whatsapp_last_error(), 'error');
+    else flash('No reminders sent — tick at least one party with a mobile number. ' . whatsapp_last_error(), 'error');
+    redirect('reports.php?r=aging');
+}
+
 $r = get('r', 'daily');
 $from = get('from', date('Y-m-01'));
 $to = get('to', today());

@@ -30,6 +30,7 @@ if (get('cols') !== '') {
 }
 
 ob_start();
+$reportPdf = true; // report_body.php skips on-screen-only controls (checkboxes, send buttons)
 include __DIR__ . '/includes/report_body.php';
 $html = ob_get_clean();
 
