@@ -213,17 +213,18 @@ $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
 <form method="get" class="filterbar" id="reportFilterForm">
   <input type="hidden" name="r" value="<?= e($r) ?>">
   <div><label>Period</label>
-    <select id="datePreset" onchange="applyPreset(this.value)">
+    <?php $preset = get('preset'); ?>
+    <select id="datePreset" name="preset" onchange="applyPreset(this.value)">
       <option value="">Custom</option>
-      <option value="today">Today</option>
-      <option value="week">This Week</option>
-      <option value="month">This Month</option>
-      <option value="quarter">This Quarter</option>
-      <option value="fy">This Financial Year</option>
+      <option value="today" <?= $preset === 'today' ? 'selected' : '' ?>>Today</option>
+      <option value="week" <?= $preset === 'week' ? 'selected' : '' ?>>This Week</option>
+      <option value="month" <?= $preset === 'month' ? 'selected' : '' ?>>This Month</option>
+      <option value="quarter" <?= $preset === 'quarter' ? 'selected' : '' ?>>This Quarter</option>
+      <option value="fy" <?= $preset === 'fy' ? 'selected' : '' ?>>This Financial Year</option>
     </select>
   </div>
-  <div><label>From</label><input type="date" name="from" id="fFrom" value="<?= e($from) ?>"></div>
-  <div><label>To</label><input type="date" name="to" id="fTo" value="<?= e($to) ?>"></div>
+  <div><label>From</label><input type="date" name="from" id="fFrom" value="<?= e($from) ?>" onchange="document.getElementById('datePreset').value=''"></div>
+  <div><label>To</label><input type="date" name="to" id="fTo" value="<?= e($to) ?>" onchange="document.getElementById('datePreset').value=''"></div>
   <?php if ($r === 'bank_ledger'): ?>
   <div><label>Bank Account</label>
     <select name="bank_id" onchange="document.getElementById('reportFilterForm').submit()">

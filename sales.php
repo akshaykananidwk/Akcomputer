@@ -39,6 +39,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
         $qty = (float)($qtys[$i] ?? 0);
+        // Serial-tracked line: the number of serial numbers entered IS the
+        // quantity (each serial = one physical unit). So 4 serials with qty
+        // left at 1 is treated as qty 4 automatically instead of erroring.
+        $rowSerials = array_values(array_filter(array_map('trim', (array)($serialSel[$i + 1] ?? []))));
+        if ($rowSerials) $qty = count($rowSerials);
         if (!$iid || $qty <= 0) continue;
         $price = (float)($prices[$i] ?? 0);
         $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
@@ -279,6 +284,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
         $qty = (float)($qtys[$i] ?? 0);
+        // Serial-tracked line: the number of serial numbers entered IS the
+        // quantity (each serial = one physical unit). So 4 serials with qty
+        // left at 1 is treated as qty 4 automatically instead of erroring.
+        $rowSerials = array_values(array_filter(array_map('trim', (array)($serialSel[$i + 1] ?? []))));
+        if ($rowSerials) $qty = count($rowSerials);
         if (!$iid || $qty <= 0) continue;
         $price = (float)($prices[$i] ?? 0);
         $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
@@ -712,6 +722,9 @@ if ($action === 'new' || $action === 'edit') {
         Bill.totals();
       });
       var ccMode = <?= json_encode(!$isEdit && setting('cash_sale_default', '1') !== '1' ? 'credit' : 'cash') ?>;
+      // When editing an existing bill the paid amount must NOT auto-follow the
+      // total - the user types/spreads it manually (partial payments, udhar).
+      var SALE_EDIT = <?= $isEdit ? 'true' : 'false' ?>;
       function setCC(m) {
         ccMode = m;
         document.getElementById('ccCash').className = m === 'cash' ? 'on-cash' : '';
@@ -828,7 +841,7 @@ if ($action === 'new' || $action === 'edit') {
         var due = document.getElementById('t_due');
         if (due) { var paid = parseFloat((document.getElementById('paid') || {}).value) || 0; due.textContent = (grand - paid).toFixed(2); }
 
-        if (ccMode === 'cash') {
+        if (ccMode === 'cash' && !SALE_EDIT) {
           var p = document.getElementById('paid');
           if (p) { p.value = grand.toFixed(2); if (due) due.textContent = '0.00'; }
         }

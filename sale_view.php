@@ -22,7 +22,7 @@ if (!$public) {
     }
 }
 
-$items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit, i.hsn FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?", [$id]);
+$items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit, i.hsn FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ? AND si.qty > 0", [$id]);
 
 // ---------- WhatsApp send ----------
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {

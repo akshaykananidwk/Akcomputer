@@ -274,7 +274,10 @@ if ($r === 'aging') {
     if ($canWa) echo '<form method="post" id="agingForm">' . csrf_field() . '<input type="hidden" name="do" value="send_aging_bulk">';
     echo '<div class="table-wrap"><table class="aging-table"><thead><tr>';
     if ($canWa) echo '<th style="width:26px"><input type="checkbox" title="Select all" onclick="document.querySelectorAll(\'.agchk\').forEach(c=>{if(!c.disabled)c.checked=this.checked})"></th>';
-    echo '<th>Customer / Party</th><th class="num">0-30 days</th><th class="num">31-60 days</th><th class="num">61-90 days</th><th class="num">90+ days</th><th class="num">Total Due ' . ($isPdf ? 'INR' : '₹') . '</th>';
+    // data-w hints give the PDF export a wide party column (name + phone +
+    // address all live there) and slimmer amount columns, instead of the equal
+    // split that used to squeeze the party name and cut it off.
+    echo '<th data-w="34">Customer / Party</th><th class="num" data-w="13">0-30 days</th><th class="num" data-w="13">31-60 days</th><th class="num" data-w="13">61-90 days</th><th class="num" data-w="13">90+ days</th><th class="num" data-w="14">Total Due ' . ($isPdf ? 'INR' : '₹') . '</th>';
     echo '</tr></thead><tbody>';
 
     $cur = $isPdf ? 'INR ' : '₹';
@@ -288,8 +291,18 @@ if ($r === 'aging') {
             . ($x['mobile'] ? '' : ' disabled title="No mobile number"') . '>'
             . '<input type="hidden" name="amount[]" value="' . $x['total'] . '"><input type="hidden" name="pname[]" value="' . e($x['pname']) . '"></td>';
         echo '<td><strong>' . e($x['pname']) . '</strong>';
-        if ($x['mobile']) echo '<div class="muted list-row-sub">📞 ' . e($x['mobile']) . '</div>';
-        if ($x['addr']) echo '<div class="muted list-row-sub">📍 ' . e($x['addr']) . '</div>';
+        if ($isPdf) {
+            // The PDF renderer flattens a cell to one line, so emoji icons turn
+            // into "?" and long text is clipped. Emit plain, icon-free text
+            // instead: "Name  Ph 98xxxx, City".
+            $bits = [];
+            if ($x['mobile']) $bits[] = 'Ph ' . $x['mobile'];
+            if ($x['addr']) $bits[] = $x['addr'];
+            if ($bits) echo '  ' . e(implode(', ', $bits));
+        } else {
+            if ($x['mobile']) echo '<div class="muted list-row-sub">📞 ' . e($x['mobile']) . '</div>';
+            if ($x['addr']) echo '<div class="muted list-row-sub">📍 ' . e($x['addr']) . '</div>';
+        }
         echo '</td>';
         echo $bcell($x['b1'], 'ag-b1') . $bcell($x['b2'], 'ag-b2') . $bcell($x['b3'], 'ag-b3') . $bcell($x['b4'], 'ag-b4');
         echo '<td class="num"><strong>' . $cur . money($x['total']) . '</strong></td>';

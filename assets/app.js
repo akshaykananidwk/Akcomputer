@@ -483,6 +483,7 @@ var Bill = {
         extra.innerHTML = '<label class="mt">Serial numbers (one per line, count = qty)</label>' +
           '<textarea name="serials[]" rows="2" placeholder="SN001\nSN002"></textarea>';
         div.dataset.hasSerialBox = '1';
+        this.wireSerialQtySync(div);
       } else if (this.cfg.mode === 'sale') {
         // Vyapar-style serial picker: scan/type + Add, checkbox list, counter.
         // When editing a bill (cfg.editSaleId set), the fetch also returns
@@ -509,7 +510,17 @@ var Bill = {
               '</div>';
             function updCount() {
               var c = extra.querySelectorAll('input[type=checkbox]:checked').length;
-              var need = parseFloat(div.querySelector('.i-qty').value) || 0;
+              // For a serial-tracked item the number of serials picked IS the
+              // quantity - each serial is one physical unit. So auto-sync qty
+              // to the serial count (4 serials picked => qty becomes 4) instead
+              // of forcing the user to also correct the qty box by hand.
+              var qtyInp = div.querySelector('.i-qty');
+              if (c > 0 && (parseFloat(qtyInp.value) || 0) !== c) {
+                qtyInp.value = c;
+                self.rowTotal(div);
+                self.renderSummary();
+              }
+              var need = parseFloat(qtyInp.value) || 0;
               var el = extra.querySelector('.sp-count');
               el.textContent = c + ' / ' + need + ' entered';
               el.className = 'sp-count badge ' + (c == need ? 'badge-ok' : 'badge-warn');
@@ -545,6 +556,24 @@ var Bill = {
   repriceAll: function () {
     // price type changed - just recalc totals (prices already typed stay)
     this.totals();
+  },
+
+  // Purchase serials are typed one-per-line in a textarea; the number of
+  // serials IS the quantity for a serial-tracked item, so keep the qty box in
+  // sync automatically (type 4 serials => qty becomes 4) instead of erroring.
+  wireSerialQtySync: function (div) {
+    var self = this;
+    var ta = div.querySelector('textarea[name="serials[]"]');
+    if (!ta) return;
+    var sync = function () {
+      var n = ta.value.split(/[\r\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean).length;
+      if (n > 0) {
+        var q = div.querySelector('.i-qty');
+        if ((parseFloat(q.value) || 0) !== n) { q.value = n; self.rowTotal(div); self.renderSummary(); }
+      }
+    };
+    ta.addEventListener('input', sync);
+    sync();
   },
 
   rowTotal: function (div) {

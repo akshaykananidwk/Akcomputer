@@ -22,11 +22,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
         $qty = (float)($qtys[$i] ?? 0);
+        // Serial-tracked line: the count of serial numbers typed IS the qty, so
+        // 4 serials with qty left at 1 becomes qty 4 automatically (no error).
+        $serialsRaw = trim((string)($serials_in[$i] ?? ''));
+        $snCount = $serialsRaw !== '' ? count(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $serialsRaw)))) : 0;
+        if ($snCount > 0) $qty = $snCount;
         if (!$iid || $qty <= 0) { continue; }
         $tr = ($company && $company['is_gst']) ? (float)($taxes[$i] ?? 0) : 0;
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'price' => (float)($prices[$i] ?? 0),
                    'tax_rate' => $tr, 'total' => $qty * (float)($prices[$i] ?? 0),
-                   'serials' => trim((string)($serials_in[$i] ?? ''))];
+                   'serials' => $serialsRaw];
     }
     if (!$rows || !$party_id) { flash('Party and at least one item required.', 'error'); redirect('purchases.php?action=new'); }
 
@@ -148,10 +153,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         flash(period_lock_message(), 'error'); redirect('purchase_view.php?id=' . $pid);
     }
 
-    $moved = (int)val("SELECT COUNT(*) FROM item_serials WHERE purchase_id = ? AND status <> 'in_stock'", [$pid]);
-    if ($moved > 0) {
-        flash('Some serial numbers on this bill have already been sold/issued/returned, so it cannot be edited.', 'error');
-        redirect('purchase_view.php?id=' . $pid);
+    // Editing stays allowed even after some serials have moved on
+    // (sold/issued/returned) - the shop owner often needs to fix a price or a
+    // detail on an older bill. The moved serials are PROTECTED below: they are
+    // never deleted or duplicated (so their linked sale/warranty stays intact)
+    // and they can't be removed from the bill.
+    $movedSerials = [];
+    foreach (all("SELECT item_id, serial_no FROM item_serials WHERE purchase_id = ? AND status <> 'in_stock'", [$pid]) as $ms) {
+        $movedSerials[(int)$ms['item_id']][] = $ms['serial_no'];
     }
 
     $company = row('SELECT * FROM companies WHERE id = ?', [(int)post('company_id', 1)]);
@@ -167,11 +176,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
         $qty = (float)($qtys[$i] ?? 0);
+        // Serial-tracked line: the count of serial numbers typed IS the qty, so
+        // 4 serials with qty left at 1 becomes qty 4 automatically (no error).
+        $serialsRaw = trim((string)($serials_in[$i] ?? ''));
+        $snCount = $serialsRaw !== '' ? count(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $serialsRaw)))) : 0;
+        if ($snCount > 0) $qty = $snCount;
         if (!$iid || $qty <= 0) { continue; }
         $tr = ($company && $company['is_gst']) ? (float)($taxes[$i] ?? 0) : 0;
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'price' => (float)($prices[$i] ?? 0),
                    'tax_rate' => $tr, 'total' => $qty * (float)($prices[$i] ?? 0),
-                   'serials' => trim((string)($serials_in[$i] ?? ''))];
+                   'serials' => $serialsRaw];
     }
     if (!$rows || !$party_id) { flash('Party and at least one item required.', 'error'); redirect('purchases.php?action=edit&id=' . $pid); }
 
@@ -200,7 +214,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
             adjust_stock($oi['item_id'], $purchase['location_id'], -(float)$oi['qty'], 'purchase_edit', $pid);
         }
         q("DELETE FROM stock_cost_layers WHERE ref_type IN ('purchase','purchase_edit') AND ref_id = ?", [$pid]);
-        q('DELETE FROM item_serials WHERE purchase_id = ?', [$pid]);
+        // Only wipe serials still sitting in stock - the ones that already
+        // moved on (sold/issued/returned) are kept untouched.
+        q("DELETE FROM item_serials WHERE purchase_id = ? AND status = 'in_stock'", [$pid]);
         q('DELETE FROM purchase_items WHERE purchase_id = ?', [$pid]);
 
         foreach ($rows as $r) {
@@ -212,7 +228,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
             if ($item['serial_tracked']) {
                 $sns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $r['serials']))));
                 if (count($sns) != $r['qty']) throw new Exception("Enter {$r['qty']} serial number(s) for {$item['name']} (one per line).");
+                // A serial that already moved on must stay on the bill.
+                $movedForItem = $movedSerials[(int)$r['item_id']] ?? [];
+                $missing = array_diff($movedForItem, $sns);
+                if ($missing) throw new Exception("Serial " . implode(', ', $missing) . " for {$item['name']} was already sold/issued and can't be removed. Keep it on the bill.");
                 foreach ($sns as $sn) {
+                    // moved serials already exist in the table - leave them as-is,
+                    // only (re)create the ones still in stock so nothing dupes.
+                    if (in_array($sn, $movedForItem, true)) continue;
                     q("INSERT INTO item_serials (item_id, serial_no, location_id, status, purchase_id, warranty_months)
                        VALUES (?,?,?,'in_stock',?,?)", [$r['item_id'], $sn, $loc_id, $pid, $item['warranty_months']]);
                 }
@@ -435,6 +458,8 @@ if ($action === 'new' || $action === 'edit') {
           if (it.serialTracked) {
             extra.innerHTML = '<label class="mt">Serial numbers (one per line, count = qty)</label><textarea name="serials[]" rows="2"></textarea>';
             extra.querySelector('textarea').value = it.serials;
+            div.dataset.hasSerialBox = '1';
+            Bill.wireSerialQtySync(div);
           } else {
             extra.innerHTML = '<input type="hidden" name="serials[]" value="">';
           }
