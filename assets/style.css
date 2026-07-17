@@ -680,6 +680,26 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
 .modal-actions .btn { flex: 1; }
 
+/* ---------- Vyapar-style tabbed Filters sheet ---------- */
+.vyf-box { max-width: 560px; width: 100%; padding: 0; overflow: hidden; display: flex; flex-direction: column; max-height: 88vh; }
+.vyf-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.vyf-head h3 { margin: 0; font-size: 18px; }
+.vyf-x { background: none; border: none; font-size: 17px; color: var(--muted); cursor: pointer; padding: 4px 8px; }
+.vyf-body { display: flex; min-height: 0; flex: 1; }
+.vyf-tabs { flex: 0 0 40%; max-width: 190px; background: var(--bg); border-right: 1px solid var(--border); overflow-y: auto; }
+.vyf-tab { display: block; width: 100%; text-align: left; padding: 15px 16px; border: none; background: none; font-size: 15px; color: var(--muted); cursor: pointer; border-bottom: 1px solid var(--border); }
+.vyf-tab.on { background: var(--card); color: var(--text); font-weight: 700; box-shadow: inset 3px 0 0 var(--primary); }
+.vyf-panels { flex: 1; overflow-y: auto; }
+.vyf-panel { display: none; }
+.vyf-panel.on { display: block; }
+.vyf-opt { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 15px; cursor: pointer; }
+.vyf-opt span { flex: 1; }
+.vyf-opt input[type=radio] { width: 20px; height: 20px; accent-color: var(--primary); flex-shrink: 0; }
+.vyf-foot { display: flex; gap: 12px; padding: 14px 18px; border-top: 1px solid var(--border); }
+.vyf-foot .btn { flex: 1; }
+.vyf-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vyf-chip { display: inline-block; padding: 5px 12px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); font-size: 13px; font-weight: 600; }
+
 /* ---------- Reports hub: vertical categorized list + favorites ---------- */
 .fav-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .fav-chip { white-space: nowrap; }

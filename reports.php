@@ -71,7 +71,8 @@ $from = get('from', date('Y-m-01'));
 $to = get('to', today());
 $fCompany = (int)get('f_company');
 $fParty = (int)get('f_party');
-$fStatus = get('f_status'); // '', 'paid', 'partial', 'due'
+$fStatus = get('f_status'); // '', 'paid', 'partial', 'due', 'cancelled', 'overdue'
+$fUser = (int)get('f_user'); // filter a report by the staff member who made the entry
 $banksAll = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
 $bankId = (int)get('bank_id') ?: (int)($banksAll[0]['id'] ?? 0);
 $coaAll = can('reports.accounting') ? coa_all() : [];
@@ -83,6 +84,7 @@ include __DIR__ . '/includes/header.php';
 
 $companiesAll = all('SELECT id, name FROM companies ORDER BY name');
 $partiesAll = all('SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name');
+$usersAll = all('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name');
 
 $tabs = [
     'business' => '🏢 Business Report',
@@ -130,7 +132,7 @@ $tabCategories = [
 ];
 ?>
 <?php
-$filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&bank_id=' . $bankId . '&gl_account=' . $glAccount . '&stock_loc=' . $stockLoc;
+$filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&f_user=' . $fUser . '&bank_id=' . $bankId . '&gl_account=' . $glAccount . '&stock_loc=' . $stockLoc;
 $filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchase', 'vendor_perf', 'gst', 'profit', 'bill_profit'], true);
 $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
 ?>
@@ -255,7 +257,8 @@ $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
   <input type="hidden" name="f_company" id="f_company_h" value="<?= $fCompany ?>">
   <input type="hidden" name="f_party" id="f_party_h" value="<?= $fParty ?>">
   <input type="hidden" name="f_status" id="f_status_h" value="<?= e($fStatus) ?>">
-  <div><button class="btn btn-sm btn-outline no-print" type="button" onclick="var p=document.getElementById('filterPanel'); p.style.display = p.style.display === 'none' ? '' : 'none'">🔽 Filters</button></div>
+  <input type="hidden" name="f_user" id="f_user_h" value="<?= $fUser ?>">
+  <div><button class="btn btn-sm btn-outline no-print" type="button" onclick="openFilterModal()">🔽 Filters<?php $nf = ($fCompany?1:0)+($fParty?1:0)+($fStatus?1:0)+($fUser?1:0); if ($nf): ?> <span class="badge badge-info" style="padding:1px 7px"><?= $nf ?></span><?php endif; ?></button></div>
   <?php endif; ?>
   <button class="btn btn-sm" type="submit">Apply</button>
   <button class="btn btn-sm btn-outline no-print" type="button" onclick="window.print()">🖨️ Print</button>
@@ -284,37 +287,70 @@ $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
   </div>
 </div>
 <?php if ($filterFamily): ?>
-<div class="card" id="filterPanel" style="display:none">
-  <div class="form-row cols-3">
-    <div><label>Firm</label><select onchange="document.getElementById('f_company_h').value=this.value">
-      <option value="0">All Firms</option>
-      <?php foreach ($companiesAll as $c): ?><option value="<?= $c['id'] ?>" <?= $fCompany == $c['id'] ? 'selected' : '' ?>><?= e($c['name']) ?></option><?php endforeach; ?>
-    </select></div>
-    <div><label>Party</label><select onchange="document.getElementById('f_party_h').value=this.value">
-      <option value="0">All Parties</option>
-      <?php foreach ($partiesAll as $p): ?><option value="<?= $p['id'] ?>" <?= $fParty == $p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?></option><?php endforeach; ?>
-    </select></div>
-    <div><label>Status</label><select onchange="document.getElementById('f_status_h').value=this.value">
-      <?php foreach (['' => 'All', 'paid' => 'Paid', 'partial' => 'Partial', 'due' => 'Due'] as $sv => $sl): ?>
-      <option value="<?= $sv ?>" <?= $fStatus === $sv ? 'selected' : '' ?>><?= $sl ?></option>
-      <?php endforeach; ?>
-    </select></div>
-  </div>
-  <div class="page-actions" style="margin:10px 0 0">
-    <a class="btn btn-sm btn-outline" href="reports.php?r=<?= e($r) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>">Reset</a>
-    <button class="btn btn-sm" type="submit" form="reportFilterForm">Apply</button>
+<?php
+// Vyapar-style tabbed Filters sheet. Each tab writes into the same hidden
+// f_* inputs the report form already submits; "Apply" just submits that form.
+$statusOpts = ['' => 'All', 'paid' => 'Paid', 'due' => 'Unpaid', 'partial' => 'Partial', 'cancelled' => 'Cancelled', 'overdue' => 'Overdue'];
+$vyTabs = [
+    'firm'   => ['By Firm',   'f_company_h', array_merge([['id' => 0, 'name' => 'All Firms']], $companiesAll), $fCompany],
+    'user'   => ['By User',   'f_user_h',    array_merge([['id' => 0, 'name' => 'All Users']], $usersAll), $fUser],
+    'party'  => ['By Party',  'f_party_h',   array_merge([['id' => 0, 'name' => 'All Party']], $partiesAll), $fParty],
+];
+?>
+<div class="modal-overlay no-print" id="filterModal">
+  <div class="modal-box vyf-box">
+    <div class="vyf-head"><h3>Filters</h3><button type="button" class="vyf-x" onclick="closeFilterModal()">✕</button></div>
+    <div class="vyf-body">
+      <div class="vyf-tabs" id="vyfTabs">
+        <?php $first = true; foreach ($vyTabs as $key => $t): ?>
+        <button type="button" class="vyf-tab<?= $first ? ' on' : '' ?>" data-tab="<?= $key ?>" onclick="vyfTab('<?= $key ?>')"><?= e($t[0]) ?></button>
+        <?php $first = false; endforeach; ?>
+        <button type="button" class="vyf-tab" data-tab="status" onclick="vyfTab('status')">By Status</button>
+      </div>
+      <div class="vyf-panels">
+        <?php $first = true; foreach ($vyTabs as $key => $t): [$label, $hid, $opts, $cur] = $t; ?>
+        <div class="vyf-panel<?= $first ? ' on' : '' ?>" data-panel="<?= $key ?>">
+          <?php foreach ($opts as $o): ?>
+          <label class="vyf-opt"><span><?= e($o['name']) ?></span>
+            <input type="radio" name="vy_<?= $key ?>" value="<?= (int)$o['id'] ?>" <?= (int)$cur === (int)$o['id'] ? 'checked' : '' ?>
+              onclick="document.getElementById('<?= $hid ?>').value=this.value"></label>
+          <?php endforeach; ?>
+        </div>
+        <?php $first = false; endforeach; ?>
+        <div class="vyf-panel" data-panel="status">
+          <?php foreach ($statusOpts as $sv => $sl): ?>
+          <label class="vyf-opt"><span><?= e($sl) ?></span>
+            <input type="radio" name="vy_status" value="<?= e($sv) ?>" <?= $fStatus === $sv ? 'checked' : '' ?>
+              onclick="document.getElementById('f_status_h').value=this.value"></label>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    </div>
+    <div class="vyf-foot">
+      <a class="btn btn-outline" href="reports.php?r=<?= e($r) ?>&from=<?= e($from) ?>&to=<?= e($to) ?><?= $preset !== '' ? '&preset=' . e($preset) : '' ?>">Reset</a>
+      <button class="btn" type="submit" form="reportFilterForm">Apply</button>
+    </div>
   </div>
 </div>
-<?php if ($fCompany || $fParty || $fStatus): ?>
-<div class="mb">
-  <span class="muted">Filters Applied: </span>
-  <?php if ($fCompany): $cn = array_values(array_filter($companiesAll, fn($c) => $c['id'] == $fCompany))[0]['name'] ?? ''; ?><span class="badge badge-info">Firm: <?= e($cn) ?></span><?php endif; ?>
-  <?php if ($fParty): $pn = array_values(array_filter($partiesAll, fn($p) => $p['id'] == $fParty))[0]['name'] ?? ''; ?><span class="badge badge-info">Party: <?= e($pn) ?></span><?php endif; ?>
-  <?php if ($fStatus): ?><span class="badge badge-info">Status: <?= e(ucfirst($fStatus)) ?></span><?php endif; ?>
+<?php if ($fCompany || $fParty || $fStatus || $fUser): ?>
+<div class="vyf-chips mb">
+  <span class="muted">Filters Applied:</span>
+  <?php if ($fCompany): $cn = array_values(array_filter($companiesAll, fn($c) => $c['id'] == $fCompany))[0]['name'] ?? ''; ?><span class="vyf-chip">Firm: <?= e($cn) ?></span><?php endif; ?>
+  <?php if ($fUser): $un = array_values(array_filter($usersAll, fn($x) => $x['id'] == $fUser))[0]['name'] ?? ''; ?><span class="vyf-chip">User: <?= e($un) ?></span><?php endif; ?>
+  <?php if ($fParty): $pn = array_values(array_filter($partiesAll, fn($p) => $p['id'] == $fParty))[0]['name'] ?? ''; ?><span class="vyf-chip">Party: <?= e($pn) ?></span><?php endif; ?>
+  <?php if ($fStatus): ?><span class="vyf-chip">Status: <?= e($statusOpts[$fStatus] ?? ucfirst($fStatus)) ?></span><?php endif; ?>
 </div>
 <?php endif; endif; ?>
 <script>
 var TODAY = <?= json_encode(today()) ?>;
+// ---- Vyapar-style Filters sheet ----
+function openFilterModal() { var m = document.getElementById('filterModal'); if (m) m.classList.add('show'); }
+function closeFilterModal() { var m = document.getElementById('filterModal'); if (m) m.classList.remove('show'); }
+function vyfTab(key) {
+  document.querySelectorAll('#filterModal .vyf-tab').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === key); });
+  document.querySelectorAll('#filterModal .vyf-panel').forEach(function (p) { p.classList.toggle('on', p.dataset.panel === key); });
+}
+(function () { var m = document.getElementById('filterModal'); if (m) m.addEventListener('click', function (e) { if (e.target === m) closeFilterModal(); }); })();
 function fmt(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function applyPreset(p) {
   if (!p) return;

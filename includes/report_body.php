@@ -64,7 +64,19 @@ if ($r === 'business' && can('reports.profit')) {
 
 // ---------------- daily sales ----------------
 if ($r === 'daily') {
-    list($ew, $ep) = report_extra_where('sales', $fCompany, $fParty, $fStatus);
+    list($ew, $ep) = report_extra_where('sales', $fCompany, $fParty, $fStatus, $fUser);
+    // Vyapar-style summary cards (No. of Txns / Total Sale / Balance Due).
+    // These are <div> cards so they only appear on screen, never in the
+    // table-only PDF export - so a plain ₹ here is fine.
+    $summ = row("SELECT COUNT(*) txns, COALESCE(SUM(total),0) total, COALESCE(SUM(total - paid),0) due
+                 FROM sales WHERE sale_date BETWEEN ? AND ? $ew", array_merge([$from, $to], $ep));
+    if (empty($reportPdf)) {
+        echo '<div class="grid-stats mb">';
+        echo '<div class="stat"><div class="stat-label">🧾 No. of Txns</div><div class="stat-value">' . (int)$summ['txns'] . '</div></div>';
+        echo '<div class="stat"><div class="stat-label">💰 Total Sale</div><div class="stat-value">₹' . money($summ['total']) . '</div></div>';
+        echo '<div class="stat s-ok"><div class="stat-label">⏳ Balance Due</div><div class="stat-value">₹' . money($summ['due']) . '</div></div>';
+        echo '</div>';
+    }
     $rows = all("SELECT sale_date d, COUNT(*) bills, SUM(total) total, SUM(paid) paid FROM sales
                  WHERE sale_date BETWEEN ? AND ? $ew GROUP BY sale_date ORDER BY sale_date DESC", array_merge([$from, $to], $ep));
     echo '<div class="table-wrap"><table><thead><tr><th>Date</th><th class="num">Bills</th><th class="num">Sales ₹</th><th class="num">Collected ₹</th><th class="num">Credit ₹</th></tr></thead><tbody>';
@@ -80,7 +92,7 @@ if ($r === 'daily') {
 
 // ---------------- item-wise sales ----------------
 if ($r === 'sales') {
-    list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus);
+    list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus, $fUser);
     $rows = all("SELECT i.name, SUM(si.qty) qty, SUM(si.total) amount FROM sale_items si
                  JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
                  WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $ew GROUP BY si.item_id ORDER BY amount DESC", array_merge([$from, $to], $ep));
@@ -91,7 +103,7 @@ if ($r === 'sales') {
 
 // ---------------- purchase ----------------
 if ($r === 'purchase') {
-    list($ew, $ep) = report_extra_where('p', $fCompany, $fParty, $fStatus);
+    list($ew, $ep) = report_extra_where('p', $fCompany, $fParty, $fStatus, $fUser);
     $rows = all("SELECT pt.name, COUNT(*) bills, SUM(p.total) total, SUM(p.paid) paid FROM purchases p
                  JOIN parties pt ON pt.id = p.party_id
                  WHERE p.purchase_date BETWEEN ? AND ? $ew GROUP BY p.party_id ORDER BY total DESC", array_merge([$from, $to], $ep));
@@ -102,7 +114,7 @@ if ($r === 'purchase') {
 
 // ---------------- vendor performance ----------------
 if ($r === 'vendor_perf') {
-    list($ew, $ep) = report_extra_where('p', $fCompany, $fParty, $fStatus);
+    list($ew, $ep) = report_extra_where('p', $fCompany, $fParty, $fStatus, $fUser);
     $rows = all("SELECT pt.id, pt.name,
                  COUNT(p.id) bills, COALESCE(SUM(p.total),0) spend,
                  COALESCE((SELECT SUM(pr.total) FROM purchase_returns pr WHERE pr.party_id = pt.id AND pr.return_date BETWEEN ? AND ?),0) returns,
@@ -124,7 +136,7 @@ if ($r === 'vendor_perf') {
 
 // ---------------- GST (company-wise) ----------------
 if ($r === 'gst' && can('reports.gst')) {
-    list($ew, $ep) = report_extra_where('sales', 0, $fParty, $fStatus); // company handled by the loop itself
+    list($ew, $ep) = report_extra_where('sales', 0, $fParty, $fStatus, $fUser); // company handled by the loop itself
     foreach (all('SELECT * FROM companies WHERE is_active = 1' . ($fCompany ? ' AND id = ' . (int)$fCompany : '')) as $co) {
         $s = row("SELECT COUNT(*) bills, COALESCE(SUM(subtotal - discount),0) taxable, COALESCE(SUM(tax_amount),0) tax, COALESCE(SUM(total),0) total
                   FROM sales WHERE is_cancelled = 0 AND company_id = ? AND sale_date BETWEEN ? AND ? $ew", array_merge([$co['id'], $from, $to], $ep));
@@ -151,7 +163,7 @@ if ($r === 'gst' && can('reports.gst')) {
 
 // ---------------- profit ----------------
 if ($r === 'profit' && can('reports.profit')) {
-    list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus);
+    list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus, $fUser);
     $rows = all("SELECT i.name, SUM(si.qty) qty, SUM(si.total) revenue, SUM(si.qty * i.purchase_price) cost
                  FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
                  WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $ew GROUP BY si.item_id ORDER BY (SUM(si.total) - SUM(si.qty * i.purchase_price)) DESC", array_merge([$from, $to], $ep));
@@ -221,7 +233,7 @@ if ($r === 'branch_staff' && can('reports.profit')) {
 
 // ---------------- party-wise sales ----------------
 if ($r === 'party_sales') {
-    list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus);
+    list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus, $fUser);
     $rows = all("SELECT COALESCE(p.name, CONCAT(s.customer_name, ' (walk-in)'), 'Walk-in') pname,
                  COUNT(*) bills, SUM(s.total) total, SUM(s.paid) paid
                  FROM sales s LEFT JOIN parties p ON p.id = s.party_id
@@ -491,7 +503,7 @@ if ($r === 'expense' && can('expenses.view')) {
 
 // ---------------- bill-wise profit ----------------
 if ($r === 'bill_profit' && can('reports.profit')) {
-    list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus);
+    list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus, $fUser);
     $rows = all("SELECT s.id, s.invoice_no, s.sale_date, s.customer_name, s.total,
                  SUM(si.total) rev, SUM(si.qty * IF(si.cost_price > 0, si.cost_price, i.purchase_price)) cost
                  FROM sales s JOIN sale_items si ON si.sale_id = s.id JOIN items i ON i.id = si.item_id

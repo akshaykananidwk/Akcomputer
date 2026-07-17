@@ -14,6 +14,7 @@ $to = get('to', today());
 $fCompany = (int)get('f_company');
 $fParty = (int)get('f_party');
 $fStatus = get('f_status');
+$fUser = (int)get('f_user');
 $bankId = (int)get('bank_id');
 $glAccount = (int)get('gl_account');
 $stockLoc = (int)get('stock_loc');

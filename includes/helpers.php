@@ -294,11 +294,21 @@ function walkin_due() {
 // Used by both reports.php and report_pdf.php (via includes/report_body.php)
 // so every sales/purchase-family report tab applies the same filters
 // consistently instead of each query reinventing it.
-function report_extra_where($alias, $fCompany, $fParty, $fStatus) {
+function report_extra_where($alias, $fCompany, $fParty, $fStatus, $fUser = 0) {
     $where = ''; $params = [];
     if ($fCompany) { $where .= " AND $alias.company_id = ?"; $params[] = $fCompany; }
     if ($fParty) { $where .= " AND $alias.party_id = ?"; $params[] = $fParty; }
-    if ($fStatus) { $where .= " AND $alias.status = ?"; $params[] = $fStatus; }
+    if ($fUser) { $where .= " AND $alias.created_by = ?"; $params[] = $fUser; }
+    // Status: 'paid' / 'partial' / 'due' map straight to the status column;
+    // 'cancelled' and 'overdue' are derived (Vyapar-style) so the Reports
+    // filter can offer the same choices the app owner expects.
+    if ($fStatus === 'cancelled') {
+        $where .= " AND $alias.is_cancelled = 1";
+    } elseif ($fStatus === 'overdue') {
+        $where .= " AND $alias.is_cancelled = 0 AND $alias.status <> 'paid' AND $alias.due_date IS NOT NULL AND $alias.due_date < CURDATE()";
+    } elseif ($fStatus) {
+        $where .= " AND $alias.status = ?"; $params[] = $fStatus;
+    }
     return [$where, $params];
 }
 
