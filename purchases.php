@@ -184,7 +184,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $discPct = $discType === 'percent' ? $discRaw : 0;
     $shipping = max(0, (float)post('shipping'));
     $total = $subtotal - $discount + $tax + $shipping;
-    $paid = min((float)$purchase['paid'], $total);
+    // Paid amount is editable now - clamped to [0, total]. The difference from
+    // the old value is posted as its own payment-ledger entry (an increase in
+    // what we've paid the supplier is money 'out', a decrease is 'in') so the
+    // party balance and cash/bank books stay in sync with the bill.
+    $paid = max(0, min((float)post('paid', $purchase['paid']), $total));
+    $paidDelta = round($paid - (float)$purchase['paid'], 2);
     $credit_days = (int)post('credit_days');
     $pdate = post('purchase_date', $purchase['purchase_date']);
 
@@ -224,6 +229,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
           [(int)post('company_id', 1), post('bill_no'), $party_id, $loc_id, $pdate, $credit_days,
            $credit_days ? date('Y-m-d', strtotime("$pdate +$credit_days days")) : null,
            $subtotal, $discount, $discType, $discPct, $tax, $shipping, $total, $paid, payment_status($total, $paid), post('notes'), $pid]);
+
+        if (abs($paidDelta) > 0.009) {
+            q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, ref_type, ref_id, pay_date, notes, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?)',
+              [$party_id, $paidDelta > 0 ? 'out' : 'in', abs($paidDelta), post('payment_mode', 'cash'),
+               (int)post('bank_account_id') ?: null, 'purchase', $pid, today(),
+               'Paid amount adjusted on edit of ' . ($purchase['bill_no'] ?: "#$pid"), $u['id']]);
+        }
 
         $pdo->commit();
         log_activity('purchase_edit', ($purchase['bill_no'] ?: "#$pid") . " total $total");
@@ -326,11 +339,9 @@ if ($action === 'new' || $action === 'edit') {
             <input type="hidden" name="discount_type" id="discount_type" value="amount">
           </div>
           <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= $isEdit ? money($editPurchase['shipping']) : '0' ?>" oninput="Bill.totals()"></div>
-          <?php if ($isEdit): ?>
-          <div><label>Already paid</label><input type="text" value="₹<?= money($editPurchase['paid']) ?> (unaffected by this edit)" disabled></div>
-          <?php else: ?>
-          <div><label>Paid now (₹)</label><input type="number" step="any" name="paid" id="paid" value="0"></div>
-          <div><label>Payment mode</label>
+          <div><label><?= $isEdit ? 'Already paid (₹)' : 'Paid now (₹)' ?> <?php if ($isEdit): ?><span class="muted" style="font-weight:normal">(edit to correct the amount)</span><?php endif; ?></label>
+            <input type="number" step="any" name="paid" id="paid" value="<?= $isEdit ? money($editPurchase['paid']) : '0' ?>"></div>
+          <div><label>Payment mode <?php if ($isEdit): ?><span class="muted" style="font-weight:normal">(used if you change the paid amount)</span><?php endif; ?></label>
             <select name="payment_mode" id="payment_mode" onchange="pmChange()">
               <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
             </select></div>
@@ -338,7 +349,6 @@ if ($action === 'new' || $action === 'edit') {
             <select name="bank_account_id">
               <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
             </select></div>
-          <?php endif; ?>
         </div>
         <div class="field"><label>Notes</label><input type="text" name="notes" value="<?= $isEdit ? e($editPurchase['notes']) : '' ?>"></div>
         <div class="bill-totals">

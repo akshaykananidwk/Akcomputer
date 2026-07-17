@@ -482,13 +482,29 @@ if ($action === 'new' || $action === 'edit') {
         </div>
         <div class="field"><label>Price type</label>
           <select name="price_type" id="price_type"><option value="retail">Retail</option><option value="b2b">B2B</option></select></div>
-        <div class="field"><label>Party (pick an existing customer, optional)</label>
+        <div class="field"><label>Party
+            <span class="muted" id="partyReqHint" style="font-weight:normal;color:var(--bad);display:none">— required for a Credit bill</span>
+            <?php if (can('parties.add')): ?><a href="#" onclick="document.getElementById('qpModal').style.display='block';document.getElementById('qp_name').focus();return false" style="float:right;font-weight:normal">+ New party</a><?php endif; ?></label>
           <select name="party_id" id="party_id">
             <option value="">-- Walk-in customer --</option>
             <?php foreach ($parties as $p): ?>
             <option value="<?= $p['id'] ?>" data-mobile="<?= e($p['mobile']) ?>" data-credit="<?= $p['credit_days'] ?>" data-points="<?= (int)$p['loyalty_points'] ?>"><?= e($p['name']) ?></option>
             <?php endforeach; ?>
           </select></div>
+        <?php if (can('parties.add')): ?>
+        <div id="qpModal" style="display:none;border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--bg)">
+          <strong>Quick add new party</strong>
+          <div class="form-row cols-3" style="margin-top:8px">
+            <div><input type="text" id="qp_name" placeholder="Party name *"></div>
+            <div><input type="tel" id="qp_mobile" placeholder="Mobile"></div>
+            <div><input type="text" id="qp_gstin" placeholder="GSTIN (optional)"></div>
+          </div>
+          <div class="page-actions" style="margin-top:8px">
+            <button type="button" class="btn btn-sm" onclick="quickParty()">Add &amp; select</button>
+            <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('qpModal').style.display='none'">Cancel</button>
+          </div>
+        </div>
+        <?php endif; ?>
         <div class="field"><label>Customer</label><input type="text" name="customer_name" id="customer_name" placeholder="Customer name (leave blank for walk-in)"></div>
         <div class="field"><label>Phone Number</label><input type="tel" name="customer_mobile" id="customer_mobile" placeholder="WhatsApp number"></div>
       </div>
@@ -703,9 +719,49 @@ if ($action === 'new' || $action === 'edit') {
         var sel = document.getElementById('payment_mode');
         if (m === 'cash') { payFull(); if (sel.value === 'credit') sel.value = 'cash'; }
         else { document.getElementById('paid').value = 0; sel.value = 'credit'; Bill.totals(); }
+        var hint = document.getElementById('partyReqHint'); if (hint) hint.style.display = m === 'credit' ? '' : 'none';
         pmChange();
       }
       window.setCC = setCC;
+      // Quick-add a new customer right from the bill (Credit needs a party).
+      function quickParty() {
+        var name = (document.getElementById('qp_name').value || '').trim();
+        if (!name) { alert('Enter the party name.'); return; }
+        var fd = new FormData();
+        fd.append('csrf', document.querySelector('input[name=csrf]').value);
+        fd.append('name', name);
+        fd.append('mobile', document.getElementById('qp_mobile').value);
+        fd.append('gstin', document.getElementById('qp_gstin').value);
+        fd.append('type', 'customer');
+        fetch('ajax.php?a=party_add', { method: 'POST', body: fd })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.error) { alert(d.error); return; }
+            var sel = document.getElementById('party_id');
+            var o = document.createElement('option');
+            o.value = d.id; o.textContent = d.name; o.dataset.mobile = document.getElementById('qp_mobile').value; o.dataset.credit = 0; o.dataset.points = 0;
+            o.selected = true; sel.appendChild(o);
+            sel.dispatchEvent(new Event('change'));
+            document.getElementById('qpModal').style.display = 'none';
+            document.getElementById('qp_name').value = document.getElementById('qp_mobile').value = document.getElementById('qp_gstin').value = '';
+          }).catch(function () { alert('Could not add the party. Try again.'); });
+      }
+      window.quickParty = quickParty;
+      (function () { var h = document.getElementById('partyReqHint'); if (h) h.style.display = ccMode === 'credit' ? '' : 'none'; })();
+      // On a Credit bill a party (or at least a customer name) is required, so
+      // the due always lands on someone's ledger instead of a walk-in.
+      document.getElementById('billForm').addEventListener('submit', function (e) {
+        if (ccMode === 'credit') {
+          var hasParty = document.getElementById('party_id').value;
+          var hasName = (document.getElementById('customer_name').value || '').trim();
+          if (!hasParty && !hasName) {
+            e.preventDefault();
+            alert('Select a party (or add a new one) for a Credit bill — otherwise the pending amount can\'t be tracked. Use Cash for a walk-in sale.');
+            document.getElementById('qpModal').style.display = 'block';
+            document.getElementById('qp_name').focus();
+          }
+        }
+      });
       function pmChange() {
         var sel = document.getElementById('payment_mode');
         var opt = sel.options[sel.selectedIndex];
