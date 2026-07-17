@@ -312,6 +312,57 @@ function report_extra_where($alias, $fCompany, $fParty, $fStatus, $fUser = 0) {
     return [$where, $params];
 }
 
+// ---------- Reminder module ----------
+/** Emoji shown for each reminder category (falls back to the bell). */
+function reminder_category_icon($cat) {
+    return ['general' => '🔔', 'computer' => '💻', 'cctv' => '📹', 'staff' => '🧑‍🔧',
+            'customer' => '👤', 'payment' => '💰', 'delivery' => '📦'][$cat] ?? '🔔';
+}
+
+/** Builds the WhatsApp text for one reminder (optionally greeting a recipient). */
+function reminder_message($rem, $recipientName = '') {
+    $shop = setting('app_name', 'AK Computer');
+    $lines = ['🔔 *Reminder* — ' . $shop, ''];
+    if (trim((string)$recipientName) !== '') $lines[] = 'Hello ' . trim($recipientName) . ',';
+    $lines[] = '*' . $rem['title'] . '*';
+    if (trim((string)$rem['notes']) !== '') { $lines[] = ''; $lines[] = $rem['notes']; }
+    $lines[] = '';
+    $lines[] = '📅 ' . dmy(substr($rem['remind_at'], 0, 10)) . '   🕒 ' . date('h:i A', strtotime($rem['remind_at']));
+    return implode("\n", $lines);
+}
+
+/** Next fire time for a recurring reminder (null for a one-time reminder). */
+function reminder_next_at($current, $freq) {
+    $t = strtotime($current);
+    if ($freq === 'daily') return date('Y-m-d H:i:s', strtotime('+1 day', $t));
+    if ($freq === 'weekly') return date('Y-m-d H:i:s', strtotime('+7 days', $t));
+    if ($freq === 'monthly') return date('Y-m-d H:i:s', strtotime('+1 month', $t));
+    return null;
+}
+
+/** Sends one reminder to all its recipients now, then either advances a
+ *  recurring reminder to its next slot or marks a one-time one as sent.
+ *  Returns [sentCount, failedCount]. */
+function reminder_fire($rem) {
+    $recips = all('SELECT * FROM reminder_recipients WHERE reminder_id = ?', [$rem['id']]);
+    $sent = 0; $failed = 0;
+    foreach ($recips as $rc) {
+        if (trim((string)$rc['mobile']) === '') continue;
+        if (send_whatsapp($rc['mobile'], reminder_message($rem, (string)$rc['name']))) $sent++;
+        else $failed++;
+        usleep(300000); // gentle on the WhatsApp API
+    }
+    $next = reminder_next_at($rem['remind_at'], $rem['repeat_freq']);
+    if ($rem['repeat_freq'] !== 'once' && $next
+        && (empty($rem['repeat_until']) || $next <= $rem['repeat_until'] . ' 23:59:59')) {
+        q('UPDATE reminders SET last_sent_at = NOW(), send_count = send_count + 1, remind_at = ?, status = "pending" WHERE id = ?',
+          [$next, $rem['id']]);
+    } else {
+        q('UPDATE reminders SET last_sent_at = NOW(), send_count = send_count + 1, status = "sent" WHERE id = ?', [$rem['id']]);
+    }
+    return [$sent, $failed];
+}
+
 // ---------- Loyalty points ----------
 /** Adds (or, with a negative $points, deducts) loyalty points for a party
  *  and logs the change. The parties.loyalty_points column is a running

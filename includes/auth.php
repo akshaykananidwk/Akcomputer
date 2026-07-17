@@ -33,6 +33,7 @@ function permission_catalog() {
         'leads' => ['view', 'add', 'edit', 'delete', 'all'],
         'tickets' => ['view', 'add', 'edit', 'delete', 'all'],
         'followups' => ['view', 'add', 'edit', 'delete', 'all'],
+        'reminders' => ['view', 'add', 'edit', 'delete'],
         'stock_audit' => ['view', 'add', 'edit'],
         'bins' => ['view', 'add', 'edit'],
         'reservations' => ['view', 'add', 'edit'],

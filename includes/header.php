@@ -66,6 +66,7 @@ $_navMenu = [
         ['leads.php', 'Leads', 'leads.view', 'leads.php?action=new', 'leads.add'],
         ['tickets.php', 'Complaints / Tickets', 'tickets.view', 'tickets.php?action=new', 'tickets.add'],
         ['follow_ups.php', 'Follow-ups', 'followups.view', 'follow_ups.php?action=new', 'followups.add'],
+        ['reminders.php', 'Reminders', 'reminders.view', 'reminders.php?action=new', 'reminders.add'],
     ]],
     ['group', 'reports', 'bar-chart', 'Reports', [
         ['reports.php', 'All Reports', 'reports.view', null, null],
