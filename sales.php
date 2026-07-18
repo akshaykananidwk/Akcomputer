@@ -378,10 +378,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
                 $expiry = $item['warranty_months'] > 0
                     ? date('Y-m-d', strtotime($sale_date . ' +' . $item['warranty_months'] . ' months'))
                     : null;
-                $upd = q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL, warranty_expiry=?
-                          WHERE item_id=? AND serial_no=? AND status='in_stock' AND location_id=?",
-                         [$sid, $expiry, $r['item_id'], $sn, $loc_id]);
-                if ($upd->rowCount() === 0) throw new Exception("Serial $sn is not available in stock.");
+                // Re-attach the serial to this bill. We already reversed this
+                // bill's own serials to in_stock above, so normally it's back
+                // in stock now. Be tolerant so a price-only edit never fails on
+                // serials: accept a serial that's in stock OR already sold to
+                // THIS same bill (regardless of which godown), and only reject
+                // one that has genuinely moved on (sold on another bill /
+                // returned / warranty). The old code additionally required an
+                // exact location match, which wrongly errored ("Serial X is not
+                // available in stock") whenever the posted godown didn't line up
+                // with where the serial was reversed to.
+                $srow = row("SELECT status, sale_id FROM item_serials WHERE item_id=? AND serial_no=?", [$r['item_id'], $sn]);
+                if (!$srow) throw new Exception("Serial $sn does not exist for {$item['name']}.");
+                $onThisBill = ($srow['status'] === 'sold' && (int)$srow['sale_id'] === $sid);
+                if ($srow['status'] !== 'in_stock' && !$onThisBill) {
+                    throw new Exception("Serial $sn has already been sold or returned on another bill, so it can't be added here.");
+                }
+                q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL, warranty_expiry=?
+                   WHERE item_id=? AND serial_no=?", [$sid, $expiry, $r['item_id'], $sn]);
             }
         }
 
