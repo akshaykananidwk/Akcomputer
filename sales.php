@@ -388,14 +388,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
                 // exact location match, which wrongly errored ("Serial X is not
                 // available in stock") whenever the posted godown didn't line up
                 // with where the serial was reversed to.
-                $srow = row("SELECT status, sale_id FROM item_serials WHERE item_id=? AND serial_no=?", [$r['item_id'], $sn]);
-                if (!$srow) throw new Exception("Serial $sn does not exist for {$item['name']}.");
-                $onThisBill = ($srow['status'] === 'sold' && (int)$srow['sale_id'] === $sid);
-                if ($srow['status'] !== 'in_stock' && !$onThisBill) {
-                    throw new Exception("Serial $sn has already been sold or returned on another bill, so it can't be added here.");
+                $srow = row("SELECT id, status, sale_id FROM item_serials WHERE item_id=? AND serial_no=?", [$r['item_id'], $sn]);
+                if ($srow) {
+                    $onThisBill = ($srow['status'] === 'sold' && (int)$srow['sale_id'] === $sid);
+                    if ($srow['status'] !== 'in_stock' && !$onThisBill) {
+                        throw new Exception("Serial $sn has already been sold or returned on another bill, so it can't be added here.");
+                    }
+                    q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL, warranty_expiry=? WHERE id=?",
+                      [$sid, $expiry, $srow['id']]);
+                } else {
+                    // The bill references this serial but its stock row is gone
+                    // (e.g. the purchase that created it was later deleted/edited).
+                    // Reconcile by recreating the record, marked sold to this
+                    // bill, so editing the bill never dead-ends on missing serial
+                    // bookkeeping - the physical unit was, after all, sold here.
+                    q("INSERT INTO item_serials (item_id, serial_no, status, sale_id, location_id, warranty_expiry, warranty_months)
+                       VALUES (?,?,'sold',?,NULL,?,?)",
+                      [$r['item_id'], $sn, $sid, $expiry, (int)$item['warranty_months']]);
                 }
-                q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL, warranty_expiry=?
-                   WHERE item_id=? AND serial_no=?", [$sid, $expiry, $r['item_id'], $sn]);
             }
         }
 
