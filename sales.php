@@ -35,20 +35,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $descriptions = post('description', []);
     $activeCF = all('SELECT id, label FROM item_custom_fields WHERE is_active = 1');
 
+    $rowNs = post('row_n', []);
     $rows = [];
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
+        // Pair this item with ITS OWN serials by the row's stable id (row_n),
+        // not by array position - positions shift when a row is deleted, which
+        // used to hand one item another item's serial numbers.
+        $n = (int)($rowNs[$i] ?? ($i + 1));
         $qty = (float)($qtys[$i] ?? 0);
         // Serial-tracked line: the number of serial numbers entered IS the
         // quantity (each serial = one physical unit). So 4 serials with qty
         // left at 1 is treated as qty 4 automatically instead of erroring.
-        $rowSerials = array_values(array_filter(array_map('trim', (array)($serialSel[$i + 1] ?? []))));
+        $rowSerials = array_values(array_filter(array_map('trim', (array)($serialSel[$n] ?? []))));
         if ($rowSerials) $qty = count($rowSerials);
         if (!$iid || $qty <= 0) continue;
         $price = (float)($prices[$i] ?? 0);
         $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'free' => (float)($freeQtys[$i] ?? 0),
-                   'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $i + 1,
+                   'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $n,
                    'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=new'); }
@@ -280,20 +285,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $descriptions = post('description', []);
     $activeCF = all('SELECT id, label FROM item_custom_fields WHERE is_active = 1');
 
+    $rowNs = post('row_n', []);
     $rows = [];
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
+        // Pair this item with ITS OWN serials by the row's stable id (row_n),
+        // not by array position - positions shift when a row is deleted, which
+        // used to hand one item another item's serial numbers.
+        $n = (int)($rowNs[$i] ?? ($i + 1));
         $qty = (float)($qtys[$i] ?? 0);
         // Serial-tracked line: the number of serial numbers entered IS the
         // quantity (each serial = one physical unit). So 4 serials with qty
         // left at 1 is treated as qty 4 automatically instead of erroring.
-        $rowSerials = array_values(array_filter(array_map('trim', (array)($serialSel[$i + 1] ?? []))));
+        $rowSerials = array_values(array_filter(array_map('trim', (array)($serialSel[$n] ?? []))));
         if ($rowSerials) $qty = count($rowSerials);
         if (!$iid || $qty <= 0) continue;
         $price = (float)($prices[$i] ?? 0);
         $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'free' => (float)($freeQtys[$i] ?? 0),
-                   'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $i + 1,
+                   'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $n,
                    'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=edit&id=' . $sid); }

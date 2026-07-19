@@ -324,6 +324,11 @@ var Bill = {
       (('BarcodeDetector' in window) ? '  <button type="button" class="btn btn-sm btn-outline i-scanbtn" title="Scan barcode with camera" style="flex-shrink:0">📷</button>' : '') +
       '  </div>' +
       '  <input type="hidden" name="item_id[]" class="i-id">' +
+      // This row's stable id travels alongside item_id[] so the server can pair
+      // each item with ITS OWN serials (serial_sel[n][]). Without it the server
+      // guessed by array position, which broke the moment a row was deleted -
+      // one item then picked up another item's serial numbers.
+      '  <input type="hidden" name="row_n[]" class="i-rown" value="' + n + '">' +
       '  <input type="hidden" name="tax_rate[]" class="i-tax" value="0">' +
       '  <div class="isearch-results"></div>' +
       '</div>' +
