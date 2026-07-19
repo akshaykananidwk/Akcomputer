@@ -299,9 +299,14 @@ if ($r === 'aging') {
     $cols = $canWa ? 7 : 6;
     foreach ($agg as $x) {
         echo '<tr>';
-        if ($canWa) echo '<td><input type="checkbox" class="agchk" name="mobile[]" value="' . e($x['mobile']) . '"'
-            . ($x['mobile'] ? '' : ' disabled title="No mobile number"') . '>'
-            . '<input type="hidden" name="amount[]" value="' . $x['total'] . '"><input type="hidden" name="pname[]" value="' . e($x['pname']) . '"></td>';
+        // Everything a reminder needs (mobile | amount | name) rides ON the
+        // checkbox value, so ONLY ticked rows submit - and each ticked row's
+        // amount/name always stays glued to its own mobile. (Separate hidden
+        // amount[]/pname[] inputs submitted for every row, ticked or not, which
+        // misaligned the arrays and sent one party's dues to another.)
+        if ($canWa) echo '<td><input type="checkbox" class="agchk" name="rem[]" value="'
+            . e($x['mobile'] . '|' . $x['total'] . '|' . $x['pname']) . '"'
+            . ($x['mobile'] ? '' : ' disabled title="No mobile number"') . '></td>';
         echo '<td><strong>' . e($x['pname']) . '</strong>';
         if ($isPdf) {
             // The PDF renderer flattens a cell to one line, so emoji icons turn
