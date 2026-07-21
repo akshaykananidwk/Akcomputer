@@ -25,8 +25,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        q('INSERT INTO purchase_returns (party_id, location_id, return_date, total, notes, created_by) VALUES (?,?,?,?,?,?)',
-          [$party_id, $loc_id, post('return_date', today()), $total, post('notes'), $u['id']]);
+        $refundMode = in_array(post('refund_mode'), ['cash', 'upi', 'adjust'], true) ? post('refund_mode') : 'adjust';
+        q('INSERT INTO purchase_returns (party_id, location_id, return_date, total, refund_mode, notes, created_by) VALUES (?,?,?,?,?,?,?)',
+          [$party_id, $loc_id, post('return_date', today()), $total, $refundMode, post('notes'), $u['id']]);
         $rid = insert_id();
         q('UPDATE purchase_returns SET return_no = ? WHERE id = ?', [doc_no('PR', $rid), $rid]);
         foreach ($rows as $r) {
@@ -39,6 +40,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         // serial-tracked units returned to supplier are updated on the serial itself
         foreach (array_filter(array_map('trim', preg_split('/[\r\n,]+/', post('serials')))) as $sn) {
             q("UPDATE item_serials SET status='returned_supplier', location_id=NULL WHERE serial_no=? AND status='in_stock'", [$sn]);
+        }
+        // Money side: when the supplier actually hands cash/UPI back, post it
+        // to the payments ledger (money IN) so the party balance and cashbook
+        // stay right. 'adjust' (the default, old behaviour) leaves it as a
+        // credit against the supplier's account via the returns total.
+        if (in_array($refundMode, ['cash', 'upi'], true)) {
+            q("INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?)",
+              [$party_id, 'in', $total, $refundMode, 'purchase_return', $rid,
+               post('return_date', today()), 'Refund received for return ' . doc_no('PR', $rid), $u['id']]);
         }
         $pdo->commit();
         log_activity('purchase_return', doc_no('PR', $rid));
@@ -73,6 +84,12 @@ if ($action === 'new') {
             </select></div>
           <div><label>Date</label><input type="date" name="return_date" value="<?= today() ?>"></div>
         </div>
+        <div class="field"><label>Refund</label>
+          <select name="refund_mode">
+            <option value="adjust">Adjust against supplier account (credit)</option>
+            <option value="cash">Supplier refunded CASH</option>
+            <option value="upi">Supplier refunded UPI/bank</option>
+          </select></div>
         <div class="field"><label>Serial numbers being returned (comma / new line, optional)</label>
           <textarea name="serials" rows="2"></textarea></div>
         <div class="field"><label>Notes / reason</label><input type="text" name="notes"></div>
@@ -114,6 +131,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         $pdo = db();
         $pdo->beginTransaction();
         foreach ($ritems as $ri) adjust_stock($ri['item_id'], $ret['location_id'], (float)$ri['qty'], 'purchase_return_delete', $rid);
+        // reverse any refund this return posted to the ledger
+        q("DELETE FROM payments WHERE ref_type = 'purchase_return' AND ref_id = ?", [$rid]);
         q('DELETE FROM purchase_return_items WHERE return_id = ?', [$rid]);
         q('DELETE FROM purchase_returns WHERE id = ?', [$rid]);
         $pdo->commit();

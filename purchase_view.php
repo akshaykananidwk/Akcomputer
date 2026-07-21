@@ -11,6 +11,9 @@ if (!$p) die('Purchase not found.');
 if (!can('purchases.all') && $p['created_by'] != current_user()['id']) die('Access denied.');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' && can('payments.add')) {
+    // same guard as sale_view: no payments onto a cancelled bill
+    if ($p['is_cancelled']) { flash('This purchase bill is cancelled - no payment can be recorded on it.', 'error'); redirect('purchase_view.php?id=' . $id); }
+    if (is_period_locked(today())) { flash(period_lock_message(), 'error'); redirect('purchase_view.php?id=' . $id); }
     $amt = min((float)post('amount'), $p['total'] - $p['paid']);
     if ($amt > 0) {
         q('UPDATE purchases SET paid = paid + ?, status = ? WHERE id = ?',

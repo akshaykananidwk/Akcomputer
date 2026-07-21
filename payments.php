@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
             $amt = round((float)($allocAmts[$i] ?? 0), 2);
             if (!$bid || $amt <= 0) continue;
             if ($dir === 'in') {
-                $bill = row('SELECT * FROM sales WHERE id = ? AND party_id = ?', [$bid, $party_id]);
+                $bill = row('SELECT * FROM sales WHERE id = ? AND party_id = ? AND is_cancelled = 0', [$bid, $party_id]);
                 if (!$bill) continue;
                 $amt = min($amt, $bill['total'] - $bill['paid']);
                 if ($amt <= 0) continue;
@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
                 $allocNotes[] = $bill['invoice_no'] . ': ₹' . money($amt);
                 $allocRows[] = ['ref_type' => 'sale', 'ref_id' => $bid, 'amount' => $amt];
             } else {
-                $bill = row('SELECT * FROM purchases WHERE id = ? AND party_id = ?', [$bid, $party_id]);
+                $bill = row('SELECT * FROM purchases WHERE id = ? AND party_id = ? AND is_cancelled = 0', [$bid, $party_id]);
                 if (!$bill) continue;
                 $amt = min($amt, $bill['total'] - $bill['paid']);
                 if ($amt <= 0) continue;
@@ -231,7 +231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_contra') {
             $bid = (int)$bid;
             $amt = round((float)($saleAllocAmts[$i] ?? 0), 2);
             if (!$bid || $amt <= 0) continue;
-            $bill = row('SELECT * FROM sales WHERE id = ? AND party_id = ?', [$bid, $party_id]);
+            $bill = row('SELECT * FROM sales WHERE id = ? AND party_id = ? AND is_cancelled = 0', [$bid, $party_id]);
             if (!$bill) continue;
             $amt = min($amt, $bill['total'] - $bill['paid']);
             if ($amt <= 0) continue;
@@ -246,7 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_contra') {
             $bid = (int)$bid;
             $amt = round((float)($purchAllocAmts[$i] ?? 0), 2);
             if (!$bid || $amt <= 0) continue;
-            $bill = row('SELECT * FROM purchases WHERE id = ? AND party_id = ?', [$bid, $party_id]);
+            $bill = row('SELECT * FROM purchases WHERE id = ? AND party_id = ? AND is_cancelled = 0', [$bid, $party_id]);
             if (!$bill) continue;
             $amt = min($amt, $bill['total'] - $bill['paid']);
             if ($amt <= 0) continue;

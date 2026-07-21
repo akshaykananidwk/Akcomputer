@@ -92,6 +92,10 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'review'
 
 // ---------- record payment ----------
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' && can('payments.add')) {
+    // A cancelled invoice has no collectible due - without this guard a
+    // posted payment bumped its paid AND hit the ledger, drifting the books.
+    if ($sale['is_cancelled']) { flash('This invoice is cancelled - no payment can be recorded on it.', 'error'); redirect('sale_view.php?id=' . $id); }
+    if (is_period_locked(today())) { flash(period_lock_message(), 'error'); redirect('sale_view.php?id=' . $id); }
     $amt = min((float)post('amount'), $sale['total'] - $sale['paid']);
     if ($amt > 0) {
         q('UPDATE sales SET paid = paid + ?, status = ? WHERE id = ?',

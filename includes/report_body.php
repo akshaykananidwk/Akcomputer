@@ -403,12 +403,14 @@ if ($r === 'cashbook') {
     // mode <> 'contra' - a Contra/Settle entry (payments.php?action=contra)
     // nets a party's sales due against their purchase due with no real cash
     // or bank movement, so it must never show up as actual cash flow here.
-    foreach (all("SELECT pay_date d, SUM(amount) a, mode FROM payments WHERE direction='in' AND mode <> 'contra' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode", [$from, $to]) as $x)
-        $in[] = ['d' => $x['d'], 'desc' => 'Party receipt (' . $x['mode'] . ')', 'in' => $x['a'], 'out' => 0];
-    foreach (all("SELECT sale_date d, SUM(paid) a FROM sales WHERE party_id IS NULL AND paid > 0 AND sale_date BETWEEN ? AND ? GROUP BY sale_date", [$from, $to]) as $x)
-        $in[] = ['d' => $x['d'], 'desc' => 'Walk-in sales collection', 'in' => $x['a'], 'out' => 0];
-    foreach (all("SELECT pay_date d, SUM(amount) a, mode FROM payments WHERE direction='out' AND mode <> 'contra' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode", [$from, $to]) as $x)
-        $in[] = ['d' => $x['d'], 'desc' => 'Supplier payment (' . $x['mode'] . ')', 'in' => 0, 'out' => $x['a']];
+    // Every collection - party bills, walk-in bills, quick-pay, Razorpay -
+    // posts a payments row, so this ONE source covers all money-in. (The old
+    // extra "Walk-in sales collection" line summed sales.paid on top of the
+    // walk-in payments rows and double-counted every walk-in collection.)
+    foreach (all("SELECT pay_date d, SUM(amount) a, mode, (party_id IS NULL) walkin FROM payments WHERE direction='in' AND mode <> 'contra' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode, (party_id IS NULL)", [$from, $to]) as $x)
+        $in[] = ['d' => $x['d'], 'desc' => ($x['walkin'] ? 'Walk-in collection (' : 'Party receipt (') . $x['mode'] . ')', 'in' => $x['a'], 'out' => 0];
+    foreach (all("SELECT pay_date d, SUM(amount) a, mode, (ref_type = 'sales_return') refund FROM payments WHERE direction='out' AND mode <> 'contra' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode, (ref_type = 'sales_return')", [$from, $to]) as $x)
+        $in[] = ['d' => $x['d'], 'desc' => ($x['refund'] ? 'Customer refund (' : 'Supplier payment (') . $x['mode'] . ')', 'in' => 0, 'out' => $x['a']];
     if (can('expenses.view')) {
         foreach (all("SELECT exp_date d, SUM(amount) a FROM expenses WHERE exp_date BETWEEN ? AND ? GROUP BY exp_date", [$from, $to]) as $x)
             $in[] = ['d' => $x['d'], 'desc' => 'Expenses', 'in' => 0, 'out' => $x['a']];

@@ -44,6 +44,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                   [$loc_id, $r['item_id'], $sn]);
             }
         }
+        // Money side of the return - without this the books drifted:
+        // - cash/upi refund: the money handed back is posted to the payments
+        //   ledger (direction 'out'), so the party balance stays right (a paid
+        //   bill + cash refund used to show a fake "advance") and the cashbook
+        //   shows the cash leaving.
+        // - adjust: the return credit knocks down the ORIGINAL bill's
+        //   outstanding, so bill-level dues (Aging etc.) agree with the party
+        //   ledger. The applied amount is remembered for a clean delete.
+        $refundMode = post('refund_mode', 'cash');
+        if (in_array($refundMode, ['cash', 'upi'], true)) {
+            q("INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?)",
+              [$sale['party_id'] ?? null, 'out', $total, $refundMode, 'sales_return', $rid,
+               post('return_date', today()), 'Refund for return ' . doc_no('SR', $rid) . ($sale ? ' (bill ' . $sale['invoice_no'] . ')' : ''), $u['id']]);
+        } elseif ($refundMode === 'adjust' && $sale) {
+            $due = round((float)$sale['total'] - (float)$sale['paid'], 2);
+            $apply = min($total, max(0, $due));
+            if ($apply > 0.009) {
+                q('UPDATE sales SET paid = paid + ?, status = ? WHERE id = ?',
+                  [$apply, payment_status($sale['total'], $sale['paid'] + $apply), $sale['id']]);
+                q('UPDATE sales_returns SET adjusted_amount = ? WHERE id = ?', [$apply, $rid]);
+            }
+        }
         $pdo->commit();
         log_activity('sales_return', doc_no('SR', $rid));
         flash('Sales return saved, stock restored.');
@@ -122,6 +145,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
                     q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL WHERE item_id=? AND serial_no=?",
                       [$ret['sale_id'], $ri['item_id'], trim($sn)]);
                 }
+            }
+        }
+        // reverse the money side too: drop any refund payment this return
+        // posted, and un-apply an 'adjust' credit from the original bill
+        q("DELETE FROM payments WHERE ref_type = 'sales_return' AND ref_id = ?", [$rid]);
+        if ((float)($ret['adjusted_amount'] ?? 0) > 0.009 && $ret['sale_id']) {
+            $bill = row('SELECT total, paid FROM sales WHERE id = ?', [$ret['sale_id']]);
+            if ($bill) {
+                $newPaid = max(0, round($bill['paid'] - (float)$ret['adjusted_amount'], 2));
+                q('UPDATE sales SET paid = ?, status = ? WHERE id = ?', [$newPaid, payment_status($bill['total'], $newPaid), $ret['sale_id']]);
             }
         }
         q('DELETE FROM sales_return_items WHERE return_id = ?', [$rid]);
