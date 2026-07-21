@@ -8,22 +8,30 @@
 // hosting (this project's target deployment) can't have Tesseract or
 // similar installed.
 
-/** Sends the image to OCR.space and returns the raw extracted text, or
- *  null if no API key is configured or the call fails. */
+/** Sends the file (photo OR PDF) to OCR.space and returns the raw extracted
+ *  text, or null if no API key is configured or the call fails. PDFs are read
+ *  page by page by OCR.space when filetype=PDF is passed, so a bill saved as a
+ *  PDF works the same as a photo. */
 function ocr_extract_text($imagePath) {
     $apiKey = setting('ocr_api_key');
     if (!$apiKey || !is_file($imagePath) || !function_exists('curl_init')) return null;
+    $ext = strtolower(pathinfo($imagePath, PATHINFO_EXTENSION));
+    $fields = [
+        'file' => new CURLFile($imagePath),
+        'language' => 'eng',
+        'OCREngine' => '2',
+        'scale' => 'true',
+        'isTable' => 'true',
+    ];
+    // Tell OCR.space the format explicitly - it otherwise guesses from the
+    // upload and can reject a PDF or an unusual image extension.
+    $typeMap = ['pdf' => 'PDF', 'jpg' => 'JPG', 'jpeg' => 'JPG', 'png' => 'PNG', 'gif' => 'GIF', 'webp' => 'WEBP', 'bmp' => 'BMP', 'tif' => 'TIF', 'tiff' => 'TIF'];
+    if (isset($typeMap[$ext])) $fields['filetype'] = $typeMap[$ext];
     $ch = curl_init('https://api.ocr.space/parse/image');
     curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 30,
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 60,
         CURLOPT_HTTPHEADER => ['apikey: ' . $apiKey],
-        CURLOPT_POSTFIELDS => [
-            'file' => new CURLFile($imagePath),
-            'language' => 'eng',
-            'OCREngine' => '2',
-            'scale' => 'true',
-            'isTable' => 'true',
-        ],
+        CURLOPT_POSTFIELDS => $fields,
     ]);
     $resp = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -31,8 +39,38 @@ function ocr_extract_text($imagePath) {
     if ($resp === false || $code >= 300) return null;
     $data = json_decode($resp, true);
     if (!empty($data['IsErroredOnProcessing'])) return null;
-    if (empty($data['ParsedResults'][0]['ParsedText'])) return null;
-    return $data['ParsedResults'][0]['ParsedText'];
+    // A PDF returns one ParsedResults entry per page - join them all so a
+    // multi-page bill is read whole, not just page 1.
+    if (empty($data['ParsedResults'])) return null;
+    $text = '';
+    foreach ($data['ParsedResults'] as $pr) {
+        if (!empty($pr['ParsedText'])) $text .= $pr['ParsedText'] . "\n";
+    }
+    return $text !== '' ? $text : null;
+}
+
+/** Best-effort guess of a line-item price for a token, read straight off the
+ *  bill: finds the OCR text line(s) mentioning the token and returns the
+ *  right-most money-looking number on it (vendor bills put the amount at the
+ *  end of the row). Returns 0.0 when nothing convincing is found - the review
+ *  screen always shows the price as an EDITABLE field, so this is only ever a
+ *  starting suggestion, never trusted blindly. */
+function ocr_guess_price($text, $token) {
+    $token = (string)$token;
+    if ($token === '') return 0.0;
+    $best = 0.0;
+    foreach (preg_split('/\r\n|\r|\n/', (string)$text) as $line) {
+        if (stripos($line, $token) === false) continue;
+        // amounts like 1,234.56 / 1234.00 / 599 - prefer decimals, take the last
+        if (preg_match_all('/\d[\d,]*(?:\.\d{1,2})?/', $line, $m)) {
+            foreach ($m[0] as $numStr) {
+                $val = (float)str_replace(',', '', $numStr);
+                // skip tiny numbers (qty, serials) and absurd ones (phone/GSTIN)
+                if ($val >= 1 && $val < 100000000) $best = $val;
+            }
+        }
+    }
+    return $best;
 }
 
 /** Pulls tokens that look like a product model/part number out of raw OCR
