@@ -13,20 +13,29 @@
  *  page by page by OCR.space when filetype=PDF is passed, so a bill saved as a
  *  PDF works the same as a photo. */
 function ocr_extract_text($imagePath) {
-    $apiKey = setting('ocr_api_key');
-    if (!$apiKey || !is_file($imagePath) || !function_exists('curl_init')) return null;
+    // Fall back to OCR.space's public free demo key ("helloworld") when the
+    // owner hasn't pasted their own in Settings, so bill-scanning works out of
+    // the box. That key is shared and rate-limited, so Settings still lets them
+    // add a personal free key (ocr.space/ocrapi) for reliable, higher volume.
+    $apiKey = setting('ocr_api_key') ?: 'helloworld';
+    if (!is_file($imagePath) || !function_exists('curl_init')) return null;
     $ext = strtolower(pathinfo($imagePath, PATHINFO_EXTENSION));
+    // The free tier rejects files over ~1MB, and phone photos are usually
+    // bigger - shrink an oversized image to fit so a normal photo still reads.
+    $sendPath = ocr_prepare_upload($imagePath);
     $fields = [
-        'file' => new CURLFile($imagePath),
+        'file' => new CURLFile($sendPath),
         'language' => 'eng',
         'OCREngine' => '2',
         'scale' => 'true',
         'isTable' => 'true',
     ];
     // Tell OCR.space the format explicitly - it otherwise guesses from the
-    // upload and can reject a PDF or an unusual image extension.
+    // upload and can reject a PDF or an unusual image extension. Use the
+    // extension of what we actually send (a shrunk photo becomes a .jpg).
+    $sendExt = strtolower(pathinfo($sendPath, PATHINFO_EXTENSION));
     $typeMap = ['pdf' => 'PDF', 'jpg' => 'JPG', 'jpeg' => 'JPG', 'png' => 'PNG', 'gif' => 'GIF', 'webp' => 'WEBP', 'bmp' => 'BMP', 'tif' => 'TIF', 'tiff' => 'TIF'];
-    if (isset($typeMap[$ext])) $fields['filetype'] = $typeMap[$ext];
+    if (isset($typeMap[$sendExt])) $fields['filetype'] = $typeMap[$sendExt];
     $ch = curl_init('https://api.ocr.space/parse/image');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 60,
@@ -36,6 +45,7 @@ function ocr_extract_text($imagePath) {
     $resp = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    if ($sendPath !== $imagePath && is_file($sendPath)) @unlink($sendPath); // drop the temp shrunk copy
     if ($resp === false || $code >= 300) return null;
     $data = json_decode($resp, true);
     if (!empty($data['IsErroredOnProcessing'])) return null;
@@ -47,6 +57,28 @@ function ocr_extract_text($imagePath) {
         if (!empty($pr['ParsedText'])) $text .= $pr['ParsedText'] . "\n";
     }
     return $text !== '' ? $text : null;
+}
+
+/** Shrinks an oversized photo so it fits OCR.space's ~1MB free-tier limit
+ *  (phone photos are routinely 2-5MB). Returns a path to a temporary JPEG when
+ *  it had to shrink, or the original path unchanged (PDFs, already-small images,
+ *  or when GD isn't available). The caller deletes any temp file it gets back. */
+function ocr_prepare_upload($path) {
+    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    if ($ext === 'pdf' || !function_exists('imagecreatefromstring')) return $path;
+    if (!is_file($path) || filesize($path) <= 950 * 1024) return $path;
+    $img = @imagecreatefromstring(file_get_contents($path));
+    if (!$img) return $path;
+    $w = imagesx($img); $h = imagesy($img);
+    $scale = min(1, 2200 / max(1, max($w, $h)));   // cap the long edge at ~2200px
+    $nw = max(1, (int)round($w * $scale)); $nh = max(1, (int)round($h * $scale));
+    $dst = imagecreatetruecolor($nw, $nh);
+    imagecopyresampled($dst, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
+    $tmp = tempnam(sys_get_temp_dir(), 'ocr_') . '.jpg';
+    $q = 82;
+    do { imagejpeg($dst, $tmp, $q); $q -= 12; } while (filesize($tmp) > 950 * 1024 && $q >= 30);
+    imagedestroy($img); imagedestroy($dst);
+    return is_file($tmp) && filesize($tmp) > 0 ? $tmp : $path;
 }
 
 /** Best-effort guess of a line-item price for a token, read straight off the

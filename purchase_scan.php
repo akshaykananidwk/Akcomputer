@@ -34,9 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'scan') {
 
     $text = ocr_extract_text($dir . '/' . $scanFile);
     if ($text === null) {
-        flash(setting('ocr_api_key')
-            ? 'Could not read the bill - try a clearer, well-lit photo or a text-based PDF, or add items manually.'
-            : 'OCR is not set up yet - add an OCR.space API key in Settings > Invoice first.', 'error');
+        flash('Could not read this bill. Try a clearer, well-lit photo or a text-based PDF. '
+            . 'The built-in free reader is shared and rate-limited - if it keeps failing, add your own free OCR.space key in Settings > Invoice, then try again.', 'error');
         redirect('purchase_scan.php');
     }
     $tokens = ocr_candidate_tokens($text);

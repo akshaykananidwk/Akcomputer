@@ -460,7 +460,9 @@ exit;
       <div><label>Razorpay Webhook Secret <span class="muted" style="font-weight:normal">(from the webhook you create below - auto-marks a bill paid when the customer pays online)</span></label><input type="password" name="razorpay_webhook_secret" value="<?= e(setting('razorpay_webhook_secret')) ?>"></div>
     </div>
     <div class="form-row cols-2">
-      <div><label>OCR.space API Key <span class="muted" style="font-weight:normal">(for Purchase &gt; Scan Bill - free key at ocr.space/ocrapi, optional)</span></label><input type="password" name="ocr_api_key" value="<?= e(setting('ocr_api_key')) ?>"></div>
+      <div><label>OCR.space API Key <span class="muted" style="font-weight:normal">(for Purchase &gt; Upload Bill)</span>
+        <br><span class="muted" style="font-weight:normal;font-size:12.5px">Leave blank to use the built-in free reader (shared &amp; rate-limited). For your own reliable, higher-volume key, register free at <strong>ocr.space/ocrapi</strong> — they email you a key — then paste it here.</span></label>
+        <input type="password" name="ocr_api_key" value="<?= e(setting('ocr_api_key')) ?>" placeholder="Using built-in free reader"></div>
     </div>
     <button class="btn" type="submit">Save</button>
   </form>
