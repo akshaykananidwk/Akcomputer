@@ -72,8 +72,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                 $sns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $r['serials']))));
                 if (count($sns) != $r['qty']) throw new Exception("Enter {$r['qty']} serial number(s) for {$item['name']} (one per line).");
                 foreach ($sns as $sn) {
-                    q("INSERT INTO item_serials (item_id, serial_no, location_id, status, purchase_id, warranty_months)
-                       VALUES (?,?,?,'in_stock',?,?)", [$r['item_id'], $sn, $loc_id, $pid, $item['warranty_months']]);
+                    // Advance billing reconciliation: this serial may already be
+                    // SOLD (sale entered before the vendor's bill arrived). Link
+                    // it to this purchase and leave it sold - the stock +qty
+                    // above cancels the sale's earlier -qty, and the unit's
+                    // history is complete. A serial already sitting in stock is
+                    // a genuine duplicate and is refused.
+                    $srow = row('SELECT id, status FROM item_serials WHERE item_id=? AND serial_no=?', [$r['item_id'], $sn]);
+                    if ($srow && $srow['status'] === 'sold') {
+                        q('UPDATE item_serials SET purchase_id=? WHERE id=?', [$pid, $srow['id']]);
+                    } elseif ($srow) {
+                        throw new Exception("Serial $sn already exists in stock for {$item['name']} - it can't be purchased twice.");
+                    } else {
+                        q("INSERT INTO item_serials (item_id, serial_no, location_id, status, purchase_id, warranty_months)
+                           VALUES (?,?,?,'in_stock',?,?)", [$r['item_id'], $sn, $loc_id, $pid, $item['warranty_months']]);
+                    }
                 }
             }
         }
@@ -236,6 +249,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
                     // moved serials already exist in the table - leave them as-is,
                     // only (re)create the ones still in stock so nothing dupes.
                     if (in_array($sn, $movedForItem, true)) continue;
+                    // advance-billing reconcile (same as save): a serial already
+                    // SOLD elsewhere gets linked to this purchase, not re-created
+                    $srow = row('SELECT id, status FROM item_serials WHERE item_id=? AND serial_no=?', [$r['item_id'], $sn]);
+                    if ($srow && $srow['status'] === 'sold') {
+                        q('UPDATE item_serials SET purchase_id=? WHERE id=?', [$pid, $srow['id']]);
+                        continue;
+                    } elseif ($srow) {
+                        throw new Exception("Serial $sn already exists in stock for {$item['name']} - it can't be purchased twice.");
+                    }
                     q("INSERT INTO item_serials (item_id, serial_no, location_id, status, purchase_id, warranty_months)
                        VALUES (?,?,?,'in_stock',?,?)", [$r['item_id'], $sn, $loc_id, $pid, $item['warranty_months']]);
                 }

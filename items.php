@@ -99,7 +99,7 @@ if ($action === 'new' || $action === 'edit') {
               <option value="product" <?= ($it['item_type'] ?? 'product') === 'product' ? 'selected' : '' ?>>Product</option>
               <option value="service" <?= ($it['item_type'] ?? '') === 'service' ? 'selected' : '' ?>>Service (no stock)</option>
             </select></div>
-          <div><label>Purchase Price</label><input type="number" step="any" name="purchase_price" id="f_pp" value="<?= e($it['purchase_price'] ?? '0') ?>" oninput="mCalc()"></div>
+          <?php if (can('items.cost')): ?><div><label>Purchase Price</label><input type="number" step="any" name="purchase_price" id="f_pp" value="<?= e($it['purchase_price'] ?? '0') ?>" oninput="mCalc()"></div><?php else: ?><input type="hidden" name="purchase_price" value="<?= e($it['purchase_price'] ?? '0') ?>"><?php endif; ?>
           <div id="marginBox"><label>Margin % (fill this and Selling auto-calculates)</label><input type="number" step="any" name="margin_pct" id="f_mg" value="<?= e($it['margin_pct'] ?? '0') ?>" oninput="mCalc()"></div>
           <div><label>Selling Price (Retail)</label><input type="number" step="any" name="selling_price" id="f_sp" value="<?= e($it['selling_price'] ?? '0') ?>"></div>
           <div><label>B2B Price</label><input type="number" step="any" name="b2b_price" value="<?= e($it['b2b_price'] ?? '0') ?>"></div>
@@ -158,7 +158,7 @@ include __DIR__ . '/includes/header.php';
 <div class="list-count"><?= count($items) ?> items</div>
 <div class="table-wrap">
 <table id="itemTable">
-  <thead><tr><th>Item</th><th>Category</th><th class="num">Purchase</th><th class="num">Retail</th><th class="num">B2B</th><th class="num">Stock</th><th>Flags</th><th></th></tr></thead>
+  <thead><tr><th>Item</th><th>Category</th><?php if (can('items.cost')): ?><th class="num">Purchase</th><?php endif; ?><th class="num">Retail</th><th class="num">B2B</th><th class="num">Stock</th><th>Flags</th><th></th></tr></thead>
   <tbody>
   <?php foreach ($items as $it): ?>
     <tr>
@@ -169,7 +169,7 @@ include __DIR__ . '/includes/header.php';
         <?php if ($it['brand'] || $it['model']): ?><br><span class="muted"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></span><?php endif; ?>
       </td>
       <td><?= e($it['cat_name'] ?? '-') ?></td>
-      <td class="num"><?= money($it['purchase_price']) ?></td>
+      <?php if (can('items.cost')): ?><td class="num"><?= money($it['purchase_price']) ?></td><?php endif; ?>
       <td class="num"><?= money($it['selling_price']) ?></td>
       <td class="num"><?= money($it['b2b_price']) ?></td>
       <td class="num"><?= $it['item_type'] === 'service' ? '<span class="muted">-</span>' : (float)$it['total_stock'] . ' ' . e($it['unit']) ?></td>

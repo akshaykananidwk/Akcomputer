@@ -442,7 +442,11 @@ if ($r === 'bank_ledger' && can('payments.view')) {
             + COALESCE((SELECT SUM(amount) FROM payments WHERE bank_account_id=? AND direction='in' AND pay_date < ?),0)
             - COALESCE((SELECT SUM(amount) FROM payments WHERE bank_account_id=? AND direction='out' AND pay_date < ?),0)
             - COALESCE((SELECT SUM(amount) FROM expenses WHERE bank_account_id=? AND exp_date < ?),0)
-            FROM bank_accounts b WHERE b.id=?", [$bankId, $from, $bankId, $from, $bankId, $from, $bankId]);
+            + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND to_bank_id=? AND txn_type IN ('cash_to_bank','bank_to_bank') AND txn_date < ?),0)
+            - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND from_bank_id=? AND txn_type IN ('bank_to_cash','bank_to_bank') AND txn_date < ?),0)
+            + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND to_bank_id=? AND txn_type='bank_adjust' AND adjust_dir='add' AND txn_date < ?),0)
+            - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND to_bank_id=? AND txn_type='bank_adjust' AND adjust_dir='reduce' AND txn_date < ?),0)
+            FROM bank_accounts b WHERE b.id=?", [$bankId, $from, $bankId, $from, $bankId, $from, $bankId, $from, $bankId, $from, $bankId, $from, $bankId, $from, $bankId]);
 
         $rows = [];
         $pays = all("SELECT p.*, pt.name party_name FROM payments p LEFT JOIN parties pt ON pt.id = p.party_id
@@ -468,6 +472,21 @@ if ($r === 'bank_ledger' && can('payments.view')) {
                        'date' => $x['exp_date'], 'type' => 'Expense', 'ref' => '-', 'name' => $x['category'], 'mode' => $x['mode'],
                        'link' => (can('expenses.view') ? 'expenses.php?from=' . $x['exp_date'] . '&to=' . $x['exp_date'] : null),
                        'in' => 0, 'out' => (float)$x['amount']];
+        }
+        // internal money movements touching this account (deposits, withdrawals,
+        // bank-to-bank, balance adjustments) - so the passbook matches reality
+        foreach (all("SELECT mt.*, fb.account_name from_bank, tb.account_name to_bank FROM money_transfers mt
+                      LEFT JOIN bank_accounts fb ON fb.id = mt.from_bank_id LEFT JOIN bank_accounts tb ON tb.id = mt.to_bank_id
+                      WHERE mt.status='done' AND (mt.from_bank_id = ? OR mt.to_bank_id = ?) AND mt.txn_date BETWEEN ? AND ?
+                      ORDER BY mt.txn_date, mt.id", [$bankId, $bankId, $from, $to]) as $t) {
+            $isIn = ((int)$t['to_bank_id'] === (int)$bankId && in_array($t['txn_type'], ['cash_to_bank', 'bank_to_bank'], true))
+                 || ($t['txn_type'] === 'bank_adjust' && $t['adjust_dir'] === 'add');
+            $label = ['cash_to_bank' => 'Cash deposited', 'bank_to_cash' => 'Cash withdrawn',
+                      'bank_to_bank' => ((int)$t['from_bank_id'] === (int)$bankId ? 'Transfer to ' . $t['to_bank'] : 'Transfer from ' . $t['from_bank']),
+                      'bank_adjust' => ($t['adjust_dir'] === 'add' ? 'Balance adjusted (add)' : 'Balance adjusted (reduce)')][$t['txn_type']] ?? $t['txn_type'];
+            $rows[] = ['sort' => $t['txn_date'] . '-5' . str_pad($t['id'], 8, '0', STR_PAD_LEFT),
+                       'date' => $t['txn_date'], 'type' => $label, 'ref' => '-', 'name' => $t['notes'] ?: '-', 'mode' => 'transfer',
+                       'link' => 'cash_bank.php', 'in' => $isIn ? (float)$t['amount'] : 0, 'out' => $isIn ? 0 : (float)$t['amount']];
         }
         usort($rows, fn($a, $b) => strcmp($a['sort'], $b['sort']));
 

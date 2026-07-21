@@ -93,7 +93,7 @@ include __DIR__ . '/includes/header.php';
 
 <div class="grid-stats">
   <div class="stat"><div class="stat-label">Sale Price</div><div class="stat-value">₹<?= money($item['selling_price']) ?></div></div>
-  <div class="stat"><div class="stat-label">Purchase Price</div><div class="stat-value">₹<?= money($item['purchase_price']) ?></div></div>
+  <?php if (can('items.cost')): ?><div class="stat"><div class="stat-label">Purchase Price</div><div class="stat-value">₹<?= money($item['purchase_price']) ?></div></div><?php endif; ?>
   <?php if (!$isService): ?>
   <div class="stat <?= $item['min_stock'] > 0 && $totalQty < $item['min_stock'] ? 's-bad' : '' ?>">
     <div class="stat-label">Stock Quantity <?= $item['min_stock'] > 0 && $totalQty < $item['min_stock'] ? '<span class="badge badge-bad">LOW</span>' : '' ?></div>

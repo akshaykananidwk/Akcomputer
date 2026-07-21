@@ -11,9 +11,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'adjust') {
     $loc_id = (int)post('location_id');
     $delta = (float)post('delta');
     if ($item_id && $loc_id && $delta != 0) {
+        $item = row('SELECT * FROM items WHERE id = ?', [$item_id]);
+        // Serial-tracked items: the adjustment must say WHICH serial numbers,
+        // so the serial book always matches the quantity book. Adding stock
+        // registers the serials as in_stock; reducing marks them adjusted_out.
+        $sns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', (string)post('serials')))));
+        if ($item && $item['serial_tracked']) {
+            if (count($sns) != abs($delta)) {
+                flash('This item is serial-tracked: enter exactly ' . abs($delta) . ' serial number(s) for the adjustment.', 'error');
+                redirect('stock.php');
+            }
+            foreach ($sns as $sn) {
+                $srow = row('SELECT id, status FROM item_serials WHERE item_id=? AND serial_no=?', [$item_id, $sn]);
+                if ($delta > 0) {
+                    if ($srow && $srow['status'] === 'in_stock') { flash("Serial $sn is already in stock.", 'error'); redirect('stock.php'); }
+                    if ($srow) q("UPDATE item_serials SET status='in_stock', location_id=?, sale_id=NULL WHERE id=?", [$loc_id, $srow['id']]);
+                    else q("INSERT INTO item_serials (item_id, serial_no, location_id, status, warranty_months) VALUES (?,?,?,'in_stock',?)",
+                           [$item_id, $sn, $loc_id, (int)$item['warranty_months']]);
+                } else {
+                    if (!$srow || $srow['status'] !== 'in_stock') { flash("Serial $sn is not in stock, so it can't be adjusted out.", 'error'); redirect('stock.php'); }
+                    q("UPDATE item_serials SET status='adjusted_out', location_id=NULL WHERE id=?", [$srow['id']]);
+                }
+            }
+        }
         adjust_stock($item_id, $loc_id, $delta, 'manual_adjust', null, post('reason'));
-        log_activity('stock_adjust', "item=$item_id loc=$loc_id delta=$delta " . post('reason'));
-        flash('Stock adjusted.');
+        log_activity('stock_adjust', "item=$item_id loc=$loc_id delta=$delta " . post('reason') . ($sns ? ' SN:' . implode(',', $sns) : ''));
+        flash('Stock adjusted.' . ($sns ? ' ' . count($sns) . ' serial number(s) updated too.' : ''));
     }
     redirect('stock.php');
 }
@@ -115,13 +138,22 @@ include __DIR__ . '/includes/header.php';
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="adjust">
     <div><label>Item</label>
-      <select name="item_id"><?php foreach ($stockRows as $it): ?><option value="<?= $it['id'] ?>"><?= e($it['name']) ?></option><?php endforeach; ?></select></div>
+      <select name="item_id" id="adjItem" onchange="adjSN()"><?php foreach ($stockRows as $it): ?><option value="<?= $it['id'] ?>" data-sn="<?= (int)$it['serial_tracked'] ?>"><?= e($it['name']) ?></option><?php endforeach; ?></select></div>
     <div><label>Location</label>
       <select name="location_id"><?php foreach ($locations as $l): ?><option value="<?= $l['id'] ?>"><?= e($l['name']) ?></option><?php endforeach; ?></select></div>
     <div><label>+/- Qty</label><input type="number" step="any" name="delta" required placeholder="-2 or 5"></div>
     <div><label>Reason</label><input type="text" name="reason" required placeholder="opening / damage / count fix"></div>
+    <div id="adjSnBox" style="display:none;flex-basis:100%"><label>Serial numbers (one per line — must match the qty)</label>
+      <textarea name="serials" rows="2" placeholder="SN001&#10;SN002"></textarea></div>
     <button class="btn btn-sm" type="submit">Adjust</button>
   </form>
+  <script>
+    function adjSN() {
+      var sel = document.getElementById('adjItem');
+      document.getElementById('adjSnBox').style.display = sel.options[sel.selectedIndex].dataset.sn === '1' ? '' : 'none';
+    }
+    adjSN();
+  </script>
 </div>
 <?php endif; ?>
 <script>tableFilter('sFilter', 'sTable');</script>

@@ -283,6 +283,50 @@ function party_balance_expr($alias = 'p') {
 function party_balance($party_id) {
     return (float)val('SELECT ' . party_balance_expr('p') . ' FROM parties p WHERE p.id = ?', [$party_id]);
 }
+// ---------- Staff cash wallets & internal money movements ----------
+/** How much CASH one staff member is holding right now. Every cash payment
+ *  row carries created_by, so the shop's cash naturally partitions by who
+ *  collected/spent it; money_transfers moves it between wallets / to-from
+ *  the bank / adjusts it. Only status='done' transfers count - a pending
+ *  staff handover (waiting for the receiver's OTP) moves nothing yet. */
+function staff_cash($userId) {
+    $uid = (int)$userId;
+    return (float)val("SELECT
+        COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='in' AND created_by=$uid),0)
+      - COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='out' AND created_by=$uid),0)
+      - COALESCE((SELECT SUM(amount) FROM expenses WHERE mode='cash' AND created_by=$uid),0)
+      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND to_user_id=$uid AND txn_type IN ('staff_transfer','bank_to_cash')),0)
+      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND from_user_id=$uid AND txn_type IN ('staff_transfer','cash_to_bank')),0)
+      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND from_user_id=$uid AND txn_type='cash_adjust' AND adjust_dir='add'),0)
+      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND from_user_id=$uid AND txn_type='cash_adjust' AND adjust_dir='reduce'),0)");
+}
+
+/** Total cash in hand across the whole shop (all wallets together). */
+function total_cash_in_hand() {
+    return (float)val("SELECT
+        COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='in'),0)
+      - COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='out'),0)
+      - COALESCE((SELECT SUM(amount) FROM expenses WHERE mode='cash'),0)
+      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_to_bank'),0)
+      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='bank_to_cash'),0)
+      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='add'),0)
+      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='reduce'),0)");
+}
+
+/** One bank account's live balance, transfers and adjustments included. */
+function bank_account_balance($bankId) {
+    $bid = (int)$bankId;
+    return (float)val("SELECT b.opening_balance
+      + COALESCE((SELECT SUM(amount) FROM payments WHERE bank_account_id=b.id AND direction='in'),0)
+      - COALESCE((SELECT SUM(amount) FROM payments WHERE bank_account_id=b.id AND direction='out'),0)
+      - COALESCE((SELECT SUM(amount) FROM expenses WHERE bank_account_id=b.id),0)
+      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND to_bank_id=b.id AND txn_type IN ('cash_to_bank','bank_to_bank')),0)
+      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND from_bank_id=b.id AND txn_type IN ('bank_to_cash','bank_to_bank')),0)
+      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND to_bank_id=b.id AND txn_type='bank_adjust' AND adjust_dir='add'),0)
+      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND to_bank_id=b.id AND txn_type='bank_adjust' AND adjust_dir='reduce'),0)
+      FROM bank_accounts b WHERE b.id = ?", [$bid]);
+}
+
 /** Unpaid amount on walk-in bills (no party attached) - can't be collected
  *  via Payment-In (there's no party to pick); shown separately so totals
  *  stay honest instead of silently disagreeing across pages. */

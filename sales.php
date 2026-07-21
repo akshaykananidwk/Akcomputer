@@ -170,10 +170,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                 $expiry = $item['warranty_months'] > 0
                     ? date('Y-m-d', strtotime(post('sale_date', today()) . ' +' . $item['warranty_months'] . ' months'))
                     : null;
-                $upd = q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL, warranty_expiry=?
-                          WHERE item_id=? AND serial_no=? AND status='in_stock' AND location_id=?",
-                         [$sale_id, $expiry, $r['item_id'], $sn, $loc_id]);
-                if ($upd->rowCount() === 0) throw new Exception("Serial $sn is not available in stock.");
+                // Same tolerant rule as bill-edit: an in-stock serial gets sold;
+                // an unknown serial is CREATED as sold (advance billing - the
+                // vendor's bill arrives days later, and the purchase entry will
+                // reconcile it); only a serial already sold on ANOTHER bill is
+                // refused.
+                $srow = row('SELECT id, status, sale_id FROM item_serials WHERE item_id=? AND serial_no=?', [$r['item_id'], $sn]);
+                if ($srow) {
+                    if ($srow['status'] !== 'in_stock') {
+                        throw new Exception("Serial $sn has already been sold/used on another bill.");
+                    }
+                    q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL, warranty_expiry=? WHERE id=?",
+                      [$sale_id, $expiry, $srow['id']]);
+                } else {
+                    q("INSERT INTO item_serials (item_id, serial_no, status, sale_id, location_id, warranty_expiry, warranty_months)
+                       VALUES (?,?,'sold',?,NULL,?,?)", [$r['item_id'], $sn, $sale_id, $expiry, (int)$item['warranty_months']]);
+                }
             }
         }
         // post initial payment to the party ledger (and to cash/bank books -
@@ -631,7 +643,7 @@ if ($action === 'new' || $action === 'edit') {
           <?php endif; ?>
           <div class="t-line" id="roundRow" style="display:none"><span>Round Off</span><span>₹ <span id="t_round">0.00</span></span></div>
           <div class="t-line t-grand"><span>Total</span><span>₹ <span id="t_grand">0.00</span></span></div>
-          <?php if (!$isEdit && setting('show_profit_billing') === '1'): ?>
+          <?php if (!$isEdit && setting('show_profit_billing') === '1' && can('items.cost')): ?>
           <div class="t-line" id="profitRow"><span>Estimated Profit</span><span>₹ <span id="t_profit">0.00</span></span></div>
           <?php endif; ?>
           <label class="check-inline"><input type="checkbox" name="round_off_on" id="round_off_chk" value="1" <?= (!$isEdit && setting('round_off_default', '1') === '1') || ($isEdit && abs((float)$editSale['round_off']) > 0.004) ? 'checked' : '' ?> onchange="Bill.totals()"> Round Off Total</label>
@@ -651,7 +663,7 @@ if ($action === 'new' || $action === 'edit') {
     </form>
     <script>
       Bill.init({mode: 'sale', serials: true, freeQty: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1,
-        showPurchasePrice: <?= json_encode(setting('show_purchase_price_billing') === '1') ?>,
+        showPurchasePrice: <?= json_encode(setting('show_purchase_price_billing') === '1' && can('items.cost')) ?>,
         customFields: <?= json_encode(array_map(fn($f) => ['id' => $f['id'], 'label' => $f['label']], $customFields)) ?><?= $isEdit ? ', editSaleId: ' . (int)$editSale['id'] : '' ?>});
       // barcode scan shortcut next to "+ Add Items" - opens a fresh item
       // row already in the panel and starts the camera scan immediately

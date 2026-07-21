@@ -542,7 +542,21 @@ var Bill = {
               extra.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
                 if (cb.value.toLowerCase() === v.toLowerCase()) { cb.checked = true; found = true; }
               });
-              if (!found) alert('Serial "' + v + '" is not in stock.');
+              if (!found) {
+                // Advance billing: the unit is physically here but its purchase
+                // bill hasn't been entered yet. Accept the typed serial as a NEW
+                // one (marked so) - the server records it sold to this bill, and
+                // the later purchase entry reconciles it automatically.
+                if (!confirm('Serial "' + v + '" is not in stock.\n\nSell it anyway (advance billing - purchase bill will come later)?')) { spInp.value = ''; return; }
+                var lbl = document.createElement('label');
+                lbl.className = 'sp-row';
+                lbl.innerHTML = '<input type="checkbox" name="serial_sel[' + n + '][]" checked> ';
+                lbl.querySelector('input').value = v;
+                lbl.appendChild(document.createTextNode(v + ' '));
+                var b = document.createElement('span'); b.className = 'badge badge-warn'; b.textContent = 'new';
+                lbl.appendChild(b);
+                extra.querySelector('.sp-list').appendChild(lbl);
+              }
               spInp.value = '';
               updCount();
             });

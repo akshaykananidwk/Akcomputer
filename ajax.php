@@ -14,6 +14,10 @@ if ($a === 'item_search') {
                   FROM items i
                   WHERE i.is_active = 1 AND (i.name LIKE ? OR i.brand LIKE ? OR i.model LIKE ? OR i.barcode LIKE ?)
                   ORDER BY i.name LIMIT 15", [$loc, $qs, $qs, $qs, $qs]);
+    // The purchase (cost) price is a guarded number: staff without the
+    // items.cost permission never receive it, so it can't show up in the
+    // billing UI, profit hints, or the browser's network tab.
+    if (!can('items.cost')) foreach ($items as &$_i) { $_i['purchase_price'] = 0; } unset($_i);
     echo json_encode($items);
     exit;
 }

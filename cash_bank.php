@@ -1,43 +1,220 @@
 <?php
-// Cash & Bank: cash-in-hand, per-bank-account balances, today's cash summary
+// Cash & Bank: Vyapar-style money movement centre.
+// - Cash in Hand split into per-staff WALLETS (each cash payment row carries
+//   created_by, so the shop's cash naturally partitions by who holds it)
+// - Adjust Cash / Adjust Bank balance (e.g. bank SMS charges, counting diff)
+// - Cash->Bank, Bank->Cash, Bank->Bank transfers
+// - Staff-to-staff cash handover confirmed by a WhatsApp OTP sent to the
+//   RECEIVER: money only moves once the receiver's OTP is typed back in.
 require_once __DIR__ . '/includes/init.php';
 require_perm('payments.view');
+$u = current_user();
 
-function cash_balance() {
-    return (float)val("SELECT
-        COALESCE((SELECT SUM(amount) FROM payments WHERE mode = 'cash' AND direction = 'in'), 0)
-        - COALESCE((SELECT SUM(amount) FROM payments WHERE mode = 'cash' AND direction = 'out'), 0)
-        - COALESCE((SELECT SUM(amount) FROM expenses WHERE mode = 'cash'), 0)");
-}
-function bank_balance($id) {
-    return (float)val("SELECT b.opening_balance
-        + COALESCE((SELECT SUM(amount) FROM payments WHERE bank_account_id = b.id AND direction = 'in'), 0)
-        - COALESCE((SELECT SUM(amount) FROM payments WHERE bank_account_id = b.id AND direction = 'out'), 0)
-        - COALESCE((SELECT SUM(amount) FROM expenses WHERE bank_account_id = b.id), 0)
-        FROM bank_accounts b WHERE b.id = ?", [$id]);
+$isSelfAdjust = fn() => can('cashbank.adjust');
+$canTransfer = can('cashbank.transfer');
+$canAdjust = can('cashbank.adjust');
+
+// ---------- record an adjustment (cash or bank) ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'adjust') {
+    require_perm('cashbank.adjust');
+    $kind = post('kind') === 'bank' ? 'bank_adjust' : 'cash_adjust';
+    $dirAdj = post('adjust_dir') === 'reduce' ? 'reduce' : 'add';
+    $amount = round((float)post('amount'), 2);
+    $bankId = (int)post('bank_id') ?: null;
+    $walletUser = (int)post('wallet_user') ?: $u['id'];
+    if ($amount <= 0) { flash('Amount must be more than zero.', 'error'); redirect('cash_bank.php'); }
+    if ($kind === 'bank_adjust' && !$bankId) { flash('Pick the bank account.', 'error'); redirect('cash_bank.php'); }
+    q('INSERT INTO money_transfers (txn_type, amount, adjust_dir, from_user_id, to_bank_id, txn_date, notes, status, created_by)
+       VALUES (?,?,?,?,?,?,?,\'done\',?)',
+      [$kind, $amount, $dirAdj, $kind === 'cash_adjust' ? $walletUser : null, $kind === 'bank_adjust' ? $bankId : null,
+       post('txn_date', today()), trim(post('notes')), $u['id']]);
+    log_activity('cashbank_adjust', "$kind $dirAdj $amount");
+    flash(($kind === 'cash_adjust' ? 'Cash' : 'Bank') . ' balance ' . ($dirAdj === 'add' ? 'increased' : 'reduced') . ' by ₹' . money($amount) . '.');
+    redirect('cash_bank.php');
 }
 
+// ---------- cash<->bank / bank<->bank transfer ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'transfer') {
+    require_perm('cashbank.transfer');
+    $type = post('txn_type');
+    if (!in_array($type, ['cash_to_bank', 'bank_to_cash', 'bank_to_bank'], true)) { flash('Bad transfer type.', 'error'); redirect('cash_bank.php'); }
+    $amount = round((float)post('amount'), 2);
+    if ($amount <= 0) { flash('Amount must be more than zero.', 'error'); redirect('cash_bank.php'); }
+    $fromBank = (int)post('from_bank_id') ?: null;
+    $toBank = (int)post('to_bank_id') ?: null;
+    $walletUser = (int)post('wallet_user') ?: $u['id'];
+    if ($type !== 'cash_to_bank' && !$fromBank && $type !== 'bank_to_cash') { /* covered below */ }
+    if (in_array($type, ['bank_to_cash', 'bank_to_bank'], true) && !$fromBank) { flash('Pick the FROM bank account.', 'error'); redirect('cash_bank.php'); }
+    if (in_array($type, ['cash_to_bank', 'bank_to_bank'], true) && !$toBank) { flash('Pick the TO bank account.', 'error'); redirect('cash_bank.php'); }
+    if ($type === 'bank_to_bank' && $fromBank === $toBank) { flash('FROM and TO bank must differ.', 'error'); redirect('cash_bank.php'); }
+    q('INSERT INTO money_transfers (txn_type, amount, from_user_id, to_user_id, from_bank_id, to_bank_id, txn_date, notes, status, created_by)
+       VALUES (?,?,?,?,?,?,?,?,\'done\',?)',
+      [$type, $amount,
+       $type === 'cash_to_bank' ? $walletUser : null,     // whose wallet the cash left
+       $type === 'bank_to_cash' ? $walletUser : null,     // whose wallet the cash entered
+       in_array($type, ['bank_to_cash', 'bank_to_bank'], true) ? $fromBank : null,
+       in_array($type, ['cash_to_bank', 'bank_to_bank'], true) ? $toBank : null,
+       post('txn_date', today()), trim(post('notes')), $u['id']]);
+    log_activity('cashbank_transfer', "$type $amount");
+    flash('Transfer of ₹' . money($amount) . ' recorded.');
+    redirect('cash_bank.php');
+}
+
+// ---------- staff-to-staff cash handover: step 1, create + send OTP ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_transfer') {
+    require_perm('cashbank.transfer');
+    $toUser = (int)post('to_user');
+    $amount = round((float)post('amount'), 2);
+    $receiver = row('SELECT * FROM users WHERE id = ? AND is_active = 1', [$toUser]);
+    if (!$receiver || $amount <= 0) { flash('Pick the staff member and a valid amount.', 'error'); redirect('cash_bank.php'); }
+    if ($toUser === (int)$u['id']) { flash('You cannot transfer to yourself.', 'error'); redirect('cash_bank.php'); }
+    $otp = (string)random_int(100000, 999999);
+    q('INSERT INTO money_transfers (txn_type, amount, from_user_id, to_user_id, txn_date, notes, status, otp_hash, otp_expires, created_by)
+       VALUES (\'staff_transfer\',?,?,?,?,?,\'pending\',?,?,?)',
+      [$amount, $u['id'], $toUser, today(), trim(post('notes')), hash('sha256', $otp),
+       date('Y-m-d H:i:s', time() + 15 * 60), $u['id']]);
+    $tid = insert_id();
+    $sent = false;
+    if ($receiver['mobile']) {
+        $sent = send_whatsapp($receiver['mobile'],
+            "🔐 *Cash handover OTP*\n\n" . $u['name'] . ' is handing you ₹' . money($amount) . " cash.\nIf you HAVE received the cash, give them this OTP: *$otp*\n\nDo not share the OTP before the cash is in your hand. Valid 15 minutes.");
+    }
+    if ($sent) {
+        log_activity('staff_transfer_start', "T-$tid ₹$amount to {$receiver['name']}");
+        flash('OTP sent on WhatsApp to ' . $receiver['name'] . ' (' . $receiver['mobile'] . '). Ask them for the OTP once the cash is in their hand, then enter it below.');
+    } else {
+        // No mobile / gateway down: keep the transfer pending and show the
+        // OTP to the SENDER once, so the handover can still be completed by
+        // reading it to the receiver in person.
+        log_activity('staff_transfer_start', "T-$tid ₹$amount to {$receiver['name']} (WA failed, OTP shown on screen)");
+        flash('WhatsApp could not be sent (' . ($receiver['mobile'] ? 'gateway problem' : 'no mobile on this staff') . '). OTP for this handover: ' . $otp . ' — tell it to ' . $receiver['name'] . ' and enter it below to complete.', 'error');
+    }
+    redirect('cash_bank.php');
+}
+
+// ---------- staff transfer: step 2, confirm with OTP ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_confirm') {
+    require_perm('cashbank.transfer');
+    $tid = (int)post('id');
+    $t = row("SELECT * FROM money_transfers WHERE id = ? AND txn_type = 'staff_transfer' AND status = 'pending'", [$tid]);
+    if (!$t) { flash('Transfer not found or already completed.', 'error'); redirect('cash_bank.php'); }
+    if ($t['otp_expires'] && $t['otp_expires'] < date('Y-m-d H:i:s')) { flash('OTP expired — cancel this transfer and start a new one.', 'error'); redirect('cash_bank.php'); }
+    if (!hash_equals($t['otp_hash'], hash('sha256', trim(post('otp'))))) {
+        log_activity('staff_transfer_badotp', "T-$tid");
+        flash('Wrong OTP. Ask the receiver for the exact 6-digit code.', 'error');
+        redirect('cash_bank.php');
+    }
+    q("UPDATE money_transfers SET status = 'done', otp_hash = NULL WHERE id = ?", [$tid]);
+    log_activity('staff_transfer_done', "T-$tid ₹{$t['amount']}");
+    flash('✅ Cash handover of ₹' . money($t['amount']) . ' confirmed — wallets updated.');
+    redirect('cash_bank.php');
+}
+
+// ---------- staff transfer: cancel a pending one ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_cancel') {
+    require_perm('cashbank.transfer');
+    $tid = (int)post('id');
+    $t = row("SELECT * FROM money_transfers WHERE id = ? AND txn_type = 'staff_transfer' AND status = 'pending'", [$tid]);
+    if ($t) { q("UPDATE money_transfers SET status = 'cancelled' WHERE id = ?", [$tid]); flash('Pending handover cancelled — no money moved.'); }
+    redirect('cash_bank.php');
+}
+
+// ---------- data for the page ----------
 $today = today();
 $todayCashIn = (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE mode = 'cash' AND direction = 'in' AND pay_date = ?", [$today]);
 $todayCashOut = (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE mode = 'cash' AND direction = 'out' AND pay_date = ?", [$today]);
 $todayCashExp = (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE mode = 'cash' AND exp_date = ?", [$today]);
-$cashInHand = cash_balance();
+$cashInHand = total_cash_in_hand();
+
+$staffAll = all('SELECT id, name, mobile FROM users WHERE is_active = 1 ORDER BY name');
+$wallets = [];
+foreach ($staffAll as $s) $wallets[] = ['id' => $s['id'], 'name' => $s['name'], 'cash' => staff_cash($s['id'])];
 
 $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
 $totalBankBal = 0;
-foreach ($banks as &$b) { $b['balance'] = bank_balance($b['id']); $totalBankBal += $b['balance']; }
+foreach ($banks as &$b) { $b['balance'] = bank_account_balance($b['id']); $totalBankBal += $b['balance']; }
 unset($b);
 
-$recentCash = all("SELECT p.*, pt.name party_name FROM payments p LEFT JOIN parties pt ON pt.id = p.party_id
-                   WHERE p.mode = 'cash' ORDER BY p.id DESC LIMIT 15");
+$pending = all("SELECT mt.*, fu.name from_name, tu.name to_name FROM money_transfers mt
+                LEFT JOIN users fu ON fu.id = mt.from_user_id LEFT JOIN users tu ON tu.id = mt.to_user_id
+                WHERE mt.txn_type = 'staff_transfer' AND mt.status = 'pending' ORDER BY mt.id DESC");
+$recentMoves = all("SELECT mt.*, fu.name from_name, tu.name to_name, fb.account_name from_bank, tb.account_name to_bank
+                    FROM money_transfers mt
+                    LEFT JOIN users fu ON fu.id = mt.from_user_id LEFT JOIN users tu ON tu.id = mt.to_user_id
+                    LEFT JOIN bank_accounts fb ON fb.id = mt.from_bank_id LEFT JOIN bank_accounts tb ON tb.id = mt.to_bank_id
+                    WHERE mt.status <> 'pending' ORDER BY mt.id DESC LIMIT 15");
+$recentCash = all("SELECT p.*, pt.name party_name, u2.name staff_name FROM payments p LEFT JOIN parties pt ON pt.id = p.party_id
+                   JOIN users u2 ON u2.id = p.created_by WHERE p.mode = 'cash' ORDER BY p.id DESC LIMIT 10");
+
+function mt_label($t) {
+    switch ($t['txn_type']) {
+        case 'cash_to_bank': return '💵→🏦 Cash to Bank (' . ($t['to_bank'] ?? '') . ')' . ($t['from_name'] ? ' from ' . $t['from_name'] . "'s cash" : '');
+        case 'bank_to_cash': return '🏦→💵 Bank to Cash (' . ($t['from_bank'] ?? '') . ')' . ($t['to_name'] ? ' to ' . $t['to_name'] . "'s cash" : '');
+        case 'bank_to_bank': return '🏦→🏦 ' . ($t['from_bank'] ?? '') . ' → ' . ($t['to_bank'] ?? '');
+        case 'cash_adjust': return ($t['adjust_dir'] === 'add' ? '➕' : '➖') . ' Cash adjust (' . ($t['from_name'] ?: '') . ')';
+        case 'bank_adjust': return ($t['adjust_dir'] === 'add' ? '➕' : '➖') . ' Bank adjust (' . ($t['to_bank'] ?? '') . ')';
+        case 'staff_transfer': return '🤝 ' . ($t['from_name'] ?: '?') . ' → ' . ($t['to_name'] ?: '?') . ($t['status'] === 'cancelled' ? ' (cancelled)' : '');
+    }
+    return $t['txn_type'];
+}
 
 $page_title = 'Cash & Bank';
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="duo-cards">
-  <div class="duo-card duo-get"><div class="duo-label">💵 Cash in Hand</div><div class="duo-value">₹ <?= money($cashInHand) ?></div></div>
+  <div class="duo-card duo-get"><div class="duo-label">💵 Cash in Hand (total)</div><div class="duo-value">₹ <?= money($cashInHand) ?></div></div>
   <div class="duo-card" style="background:#e0f2fe"><div class="duo-label" style="color:#075985">🏦 Total Bank Balance</div><div class="duo-value" style="color:#0369a1">₹ <?= money($totalBankBal) ?></div></div>
 </div>
+
+<?php if ($canAdjust || $canTransfer): ?>
+<div class="page-actions">
+  <?php if ($canAdjust): ?>
+  <button class="btn btn-sm btn-outline" onclick="cbShow('cbAdjust')">⚖️ Adjust Cash / Bank</button>
+  <?php endif; ?>
+  <?php if ($canTransfer): ?>
+  <button class="btn btn-sm btn-outline" onclick="cbShowTransfer('cash_to_bank')">💵→🏦 Cash to Bank</button>
+  <button class="btn btn-sm btn-outline" onclick="cbShowTransfer('bank_to_cash')">🏦→💵 Bank to Cash</button>
+  <button class="btn btn-sm btn-outline" onclick="cbShowTransfer('bank_to_bank')">🏦→🏦 Bank to Bank</button>
+  <button class="btn btn-sm" onclick="cbShow('cbStaff')">🤝 Staff Cash Handover (OTP)</button>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<!-- staff wallets -->
+<div class="card">
+  <h2>👥 Whose hand holds how much cash?</h2>
+  <table class="table-sm">
+    <?php foreach ($wallets as $w): ?>
+    <tr><td><?= e($w['name']) ?><?= $w['id'] == $u['id'] ? ' <span class="badge badge-info">you</span>' : '' ?></td>
+        <td class="num" style="font-weight:700;color:<?= $w['cash'] < -0.009 ? 'var(--bad)' : 'var(--ok)' ?>">₹<?= money($w['cash']) ?></td></tr>
+    <?php endforeach; ?>
+    <tr style="border-top:2px solid var(--text)"><td><strong>Total</strong></td><td class="num"><strong>₹<?= money($cashInHand) ?></strong></td></tr>
+  </table>
+  <p class="muted mt" style="font-size:12.5px">Each staff's wallet = cash they collected − cash they paid/spent ± handovers/bank deposits. Older entries (before wallets existed) all sit under whoever recorded them.</p>
+</div>
+
+<?php if ($pending): ?>
+<div class="card" style="border:2px solid var(--warn, #f59e0b)">
+  <h2>⏳ Pending cash handovers (waiting for OTP)</h2>
+  <?php foreach ($pending as $p): ?>
+  <div class="list-row" style="cursor:default;display:block">
+    <div class="list-row-main"><strong><?= e($p['from_name']) ?> → <?= e($p['to_name']) ?></strong> · ₹<?= money($p['amount']) ?>
+      <div class="muted list-row-sub">Started <?= dmyt($p['created_at']) ?> · OTP valid till <?= date('h:i A', strtotime($p['otp_expires'])) ?><?= $p['notes'] ? ' · ' . e($p['notes']) : '' ?></div></div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <form method="post" style="display:flex;gap:6px">
+        <?= csrf_field() ?><input type="hidden" name="do" value="staff_confirm"><input type="hidden" name="id" value="<?= $p['id'] ?>">
+        <input type="text" name="otp" placeholder="6-digit OTP" inputmode="numeric" maxlength="6" style="width:120px" required>
+        <button class="btn btn-sm" type="submit">✅ Confirm</button>
+      </form>
+      <form method="post" onsubmit="return confirm('Cancel this handover? No money will move.')">
+        <?= csrf_field() ?><input type="hidden" name="do" value="staff_cancel"><input type="hidden" name="id" value="<?= $p['id'] ?>">
+        <button class="btn btn-sm btn-outline" type="submit">✕ Cancel</button>
+      </form>
+    </div>
+  </div>
+  <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <div class="card">
   <h2>📅 Today's Cash Summary (<?= dmy($today) ?>)</h2>
@@ -62,20 +239,136 @@ include __DIR__ . '/includes/header.php';
   <?php endif; ?>
 </div>
 
+<?php if ($recentMoves): ?>
+<div class="card">
+  <h2>🔁 Recent transfers & adjustments</h2>
+  <table class="table-sm">
+    <thead><tr><th>Date</th><th>What</th><th class="num">Amount</th><th>Notes</th></tr></thead>
+    <tbody><?php foreach ($recentMoves as $t): ?>
+    <tr <?= $t['status'] === 'cancelled' ? 'style="opacity:.5;text-decoration:line-through"' : '' ?>>
+      <td><?= dmy($t['txn_date']) ?></td><td><?= e(mt_label($t)) ?></td>
+      <td class="num">₹<?= money($t['amount']) ?></td><td><?= e($t['notes']) ?></td></tr>
+    <?php endforeach; ?></tbody>
+  </table>
+</div>
+<?php endif; ?>
+
 <div class="card">
   <h2>Recent cash entries</h2>
   <table class="table-sm">
-    <thead><tr><th>Date</th><th>Party</th><th>Dir</th><th class="num">Amount</th><th>Notes</th></tr></thead>
+    <thead><tr><th>Date</th><th>Party</th><th>By (wallet)</th><th>Dir</th><th class="num">Amount</th></tr></thead>
     <tbody><?php foreach ($recentCash as $c): ?>
     <tr>
       <td><?= dmy($c['pay_date']) ?></td>
       <td><?= $c['party_id'] ? '<a href="parties.php?action=ledger&id=' . $c['party_id'] . '">' . e($c['party_name']) . '</a>' : e($c['party_name'] ?: 'Walk-in') ?></td>
+      <td><?= e($c['staff_name']) ?></td>
       <td><?= $c['direction'] === 'in' ? '<span class="badge badge-ok">IN</span>' : '<span class="badge badge-bad">OUT</span>' ?></td>
       <td class="num">₹<?= money($c['amount']) ?></td>
-      <td><?= e($c['notes']) ?></td>
     </tr>
     <?php endforeach; if (!$recentCash): ?><tr><td colspan="5" class="muted">No cash entries.</td></tr><?php endif; ?></tbody>
   </table>
   <p class="mt"><a href="reports.php?r=cashbook">Full Cashbook Report →</a></p>
 </div>
+
+<?php if ($canAdjust): ?>
+<!-- adjust modal -->
+<div class="modal-overlay no-print" id="cbAdjust">
+  <div class="modal-box">
+    <h3>⚖️ Adjust Cash / Bank balance</h3>
+    <form method="post">
+      <?= csrf_field() ?><input type="hidden" name="do" value="adjust">
+      <div class="field"><label>What to adjust?</label>
+        <select name="kind" id="adjKind" onchange="document.getElementById('adjBankRow').style.display=this.value==='bank'?'':'none';document.getElementById('adjWalletRow').style.display=this.value==='bank'?'none':''">
+          <option value="cash">💵 Cash in hand</option>
+          <option value="bank">🏦 Bank balance</option>
+        </select></div>
+      <div class="field" id="adjWalletRow"><label>Whose cash wallet?</label>
+        <select name="wallet_user"><?php foreach ($staffAll as $s): ?><option value="<?= $s['id'] ?>" <?= $s['id'] == $u['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option><?php endforeach; ?></select></div>
+      <div class="field" id="adjBankRow" style="display:none"><label>Bank account</label>
+        <select name="bank_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?></select></div>
+      <div class="form-row cols-2">
+        <div><label>Add or reduce?</label>
+          <select name="adjust_dir"><option value="add">➕ Add to balance</option><option value="reduce">➖ Reduce balance (charges etc.)</option></select></div>
+        <div><label>Amount ₹ *</label><input type="number" step="any" min="0.01" name="amount" required></div>
+      </div>
+      <div class="form-row cols-2">
+        <div><label>Date</label><input type="date" name="txn_date" value="<?= today() ?>"></div>
+        <div><label>Reason / note</label><input type="text" name="notes" placeholder="e.g. Bank SMS charges"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="cbHide('cbAdjust')">Cancel</button>
+        <button class="btn" type="submit">Save adjustment</button>
+      </div>
+    </form>
+  </div>
+</div>
+<?php endif; ?>
+
+<?php if ($canTransfer): ?>
+<!-- cash/bank transfer modal -->
+<div class="modal-overlay no-print" id="cbTransfer">
+  <div class="modal-box">
+    <h3 id="cbTransferTitle">Transfer</h3>
+    <form method="post">
+      <?= csrf_field() ?><input type="hidden" name="do" value="transfer">
+      <input type="hidden" name="txn_type" id="tType">
+      <div class="field" id="tFromBankRow"><label>From bank account</label>
+        <select name="from_bank_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?> (₹<?= money($b['balance']) ?>)</option><?php endforeach; ?></select></div>
+      <div class="field" id="tToBankRow"><label>To bank account</label>
+        <select name="to_bank_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?> (₹<?= money($b['balance']) ?>)</option><?php endforeach; ?></select></div>
+      <div class="field" id="tWalletRow"><label>Whose cash wallet?</label>
+        <select name="wallet_user"><?php foreach ($staffAll as $s): ?><option value="<?= $s['id'] ?>" <?= $s['id'] == $u['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option><?php endforeach; ?></select></div>
+      <div class="form-row cols-2">
+        <div><label>Amount ₹ *</label><input type="number" step="any" min="0.01" name="amount" required></div>
+        <div><label>Date</label><input type="date" name="txn_date" value="<?= today() ?>"></div>
+      </div>
+      <div class="field"><label>Note</label><input type="text" name="notes" placeholder="optional"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="cbHide('cbTransfer')">Cancel</button>
+        <button class="btn" type="submit">Save transfer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- staff handover modal -->
+<div class="modal-overlay no-print" id="cbStaff">
+  <div class="modal-box">
+    <h3>🤝 Staff cash handover (with OTP)</h3>
+    <p class="muted" style="font-size:13px">An OTP goes on WhatsApp to the RECEIVER. Hand over the cash, ask them for the OTP, enter it in the "Pending" box — only then the wallets move.</p>
+    <form method="post">
+      <?= csrf_field() ?><input type="hidden" name="do" value="staff_transfer">
+      <div class="field"><label>Give cash TO *</label>
+        <select name="to_user" required><option value="">-- staff --</option>
+          <?php foreach ($staffAll as $s): if ($s['id'] == $u['id']) continue; ?>
+          <option value="<?= $s['id'] ?>"><?= e($s['name']) ?><?= $s['mobile'] ? ' (' . e($s['mobile']) . ')' : ' (no mobile!)' ?></option>
+          <?php endforeach; ?>
+        </select></div>
+      <div class="form-row cols-2">
+        <div><label>Amount ₹ *</label><input type="number" step="any" min="0.01" name="amount" required></div>
+        <div><label>Note</label><input type="text" name="notes" placeholder="optional"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="cbHide('cbStaff')">Cancel</button>
+        <button class="btn" type="submit">📲 Send OTP & start handover</button>
+      </div>
+    </form>
+  </div>
+</div>
+<?php endif; ?>
+
+<script>
+function cbShow(id) { document.getElementById(id).classList.add('show'); }
+function cbHide(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.modal-overlay').forEach(function (m) { m.addEventListener('click', function (e) { if (e.target === m) m.classList.remove('show'); }); });
+var T_TITLES = {cash_to_bank: '💵→🏦 Cash to Bank', bank_to_cash: '🏦→💵 Bank to Cash', bank_to_bank: '🏦→🏦 Bank to Bank'};
+function cbShowTransfer(type) {
+  document.getElementById('tType').value = type;
+  document.getElementById('cbTransferTitle').textContent = T_TITLES[type];
+  document.getElementById('tFromBankRow').style.display = (type === 'bank_to_cash' || type === 'bank_to_bank') ? '' : 'none';
+  document.getElementById('tToBankRow').style.display = (type === 'cash_to_bank' || type === 'bank_to_bank') ? '' : 'none';
+  document.getElementById('tWalletRow').style.display = (type === 'bank_to_bank') ? 'none' : '';
+  cbShow('cbTransfer');
+}
+</script>
 <?php include __DIR__ . '/includes/footer.php'; ?>

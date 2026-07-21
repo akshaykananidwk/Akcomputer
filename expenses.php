@@ -28,9 +28,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
 
 $from = get('from', date('Y-m-01'));
 $to = get('to', today());
-$rows = all('SELECT e.*, u2.name by_name, l.name loc_name FROM expenses e
+// staff-wise view: filter to one staff member's expenses (whose pocket/wallet
+// the money left), so the owner's own spend and each staff's spend stay apart
+$fStaff = (int)get('staff');
+$staffWhere = $fStaff ? ' AND e.created_by = ' . $fStaff : '';
+$rows = all("SELECT e.*, u2.name by_name, l.name loc_name FROM expenses e
              JOIN users u2 ON u2.id = e.created_by JOIN locations l ON l.id = e.location_id
-             WHERE e.exp_date BETWEEN ? AND ? ORDER BY e.exp_date DESC, e.id DESC', [$from, $to]);
+             WHERE e.exp_date BETWEEN ? AND ? $staffWhere ORDER BY e.exp_date DESC, e.id DESC", [$from, $to]);
+$staffAll = all('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name');
 $cats = ['General', 'Rent', 'Salary', 'Electricity', 'Internet', 'Transport', 'Tea/Food', 'Stationery', 'Repair/Maintenance', 'Marketing', 'Other'];
 $pms = active_payment_methods();
 $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
@@ -80,8 +85,16 @@ include __DIR__ . '/includes/header.php';
 <form method="get" class="filterbar">
   <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>
   <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>
+  <div><label>Staff</label>
+    <select name="staff">
+      <option value="0">All staff</option>
+      <?php foreach ($staffAll as $s): ?><option value="<?= $s['id'] ?>" <?= $fStaff == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option><?php endforeach; ?>
+    </select></div>
   <button class="btn btn-sm" type="submit">Filter</button>
 </form>
+<?php if ($fStaff): $sn = array_values(array_filter($staffAll, fn($s) => $s['id'] == $fStaff))[0]['name'] ?? ''; ?>
+<div class="mb"><span class="vyf-chip">Staff: <?= e($sn) ?> — ₹<?= money(array_sum(array_column($rows, 'amount'))) ?> spent</span></div>
+<?php endif; ?>
 <div class="list-count"><?= count($rows) ?> entries · Total ₹<?= money(array_sum(array_column($rows, 'amount'))) ?></div>
 <div class="table-wrap">
 <table>
