@@ -119,6 +119,129 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_cancel') {
     redirect('cash_bank.php');
 }
 
+// ---------- delete a transfer / adjustment ----------
+// All balances (wallets, cash total, bank) are COMPUTED from the tables, so
+// deleting the row is a clean reversal - nothing else to unwind.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'mt_delete') {
+    if (!can('cashbank.adjust') && !can('cashbank.transfer')) { flash('No permission.', 'error'); redirect('cash_bank.php'); }
+    $t = row('SELECT * FROM money_transfers WHERE id = ?', [(int)post('id')]);
+    if ($t && $t['status'] !== 'pending') {
+        q('DELETE FROM money_transfers WHERE id = ?', [$t['id']]);
+        log_activity('cashbank_mt_delete', "T-{$t['id']} {$t['txn_type']} ₹{$t['amount']}");
+        flash('Entry deleted — balances recalculated.');
+    }
+    redirect(post('back') === 'ledger' ? 'cash_bank.php?action=cash_ledger' : 'cash_bank.php');
+}
+
+// ---------- full CASH ledger (tap on the Cash in Hand card) ----------
+// Every cash movement in one date-wise list - who collected/paid it, which
+// bill/party it belongs to - with Open (edit/delete) on payments & expenses
+// and Delete on transfers/adjustments.
+if (get('action') === 'cash_ledger') {
+    $from = get('from', date('Y-m-01'));
+    $to = get('to', today());
+    $fStaff = (int)get('staff');
+    $staffAll = all('SELECT id, name FROM users ORDER BY name');
+
+    $rows = [];
+    $pw = $fStaff ? ' AND p.created_by = ' . $fStaff : '';
+    foreach (all("SELECT p.*, pt.name party_name, u2.name staff_name FROM payments p
+                  LEFT JOIN parties pt ON pt.id = p.party_id JOIN users u2 ON u2.id = p.created_by
+                  WHERE p.mode = 'cash' AND p.pay_date BETWEEN ? AND ? $pw ORDER BY p.pay_date, p.id", [$from, $to]) as $p) {
+        $desc = ($p['direction'] === 'in' ? 'Received' : 'Paid') . ' — ' . ($p['party_name'] ?: 'Walk-in');
+        if ($p['notes']) $desc .= ' · ' . $p['notes'];
+        $rows[] = ['sort' => $p['pay_date'] . '-2' . str_pad($p['id'], 8, '0', STR_PAD_LEFT), 'date' => $p['pay_date'],
+                   'desc' => $desc, 'staff' => $p['staff_name'],
+                   'in' => $p['direction'] === 'in' ? (float)$p['amount'] : 0, 'out' => $p['direction'] === 'out' ? (float)$p['amount'] : 0,
+                   'open' => 'payments.php?action=view&id=' . $p['id'], 'del' => null];
+    }
+    $ew = $fStaff ? ' AND e.created_by = ' . $fStaff : '';
+    foreach (all("SELECT e.*, u2.name staff_name FROM expenses e JOIN users u2 ON u2.id = e.created_by
+                  WHERE e.mode = 'cash' AND e.exp_date BETWEEN ? AND ? $ew ORDER BY e.exp_date, e.id", [$from, $to]) as $x) {
+        $rows[] = ['sort' => $x['exp_date'] . '-3' . str_pad($x['id'], 8, '0', STR_PAD_LEFT), 'date' => $x['exp_date'],
+                   'desc' => 'Expense — ' . $x['category'] . ($x['notes'] ? ' · ' . $x['notes'] : ''), 'staff' => $x['staff_name'],
+                   'in' => 0, 'out' => (float)$x['amount'],
+                   'open' => 'expenses.php?from=' . $x['exp_date'] . '&to=' . $x['exp_date'], 'del' => null];
+    }
+    foreach (all("SELECT mt.*, fu.name from_name, tu.name to_name, fb.account_name from_bank, tb.account_name to_bank
+                  FROM money_transfers mt
+                  LEFT JOIN users fu ON fu.id = mt.from_user_id LEFT JOIN users tu ON tu.id = mt.to_user_id
+                  LEFT JOIN bank_accounts fb ON fb.id = mt.from_bank_id LEFT JOIN bank_accounts tb ON tb.id = mt.to_bank_id
+                  WHERE mt.status = 'done' AND mt.txn_type IN ('cash_to_bank','bank_to_cash','cash_adjust','staff_transfer')
+                    AND mt.txn_date BETWEEN ? AND ? ORDER BY mt.txn_date, mt.id", [$from, $to]) as $t) {
+        if ($fStaff && (int)$t['from_user_id'] !== $fStaff && (int)$t['to_user_id'] !== $fStaff) continue;
+        $in = 0; $out = 0;
+        switch ($t['txn_type']) {
+            case 'cash_to_bank': $out = (float)$t['amount']; $desc = 'Deposited to bank (' . $t['to_bank'] . ') from ' . $t['from_name'] . "'s cash"; break;
+            case 'bank_to_cash': $in = (float)$t['amount']; $desc = 'Withdrawn from bank (' . $t['from_bank'] . ') to ' . $t['to_name'] . "'s cash"; break;
+            case 'cash_adjust':
+                if ($t['adjust_dir'] === 'add') $in = (float)$t['amount']; else $out = (float)$t['amount'];
+                $desc = 'Cash adjusted (' . $t['from_name'] . ')' . ($t['notes'] ? ' · ' . $t['notes'] : ''); break;
+            default: // staff_transfer
+                if ($fStaff) { if ((int)$t['to_user_id'] === $fStaff) $in = (float)$t['amount']; else $out = (float)$t['amount']; }
+                else { $in = (float)$t['amount']; $out = (float)$t['amount']; } // whole-shop view: internal move, net zero
+                $desc = 'Handover ' . $t['from_name'] . ' → ' . $t['to_name'];
+        }
+        $rows[] = ['sort' => $t['txn_date'] . '-5' . str_pad($t['id'], 8, '0', STR_PAD_LEFT), 'date' => $t['txn_date'],
+                   'desc' => $desc . ($t['notes'] && $t['txn_type'] !== 'cash_adjust' ? ' · ' . $t['notes'] : ''),
+                   'staff' => $t['from_name'] ?: $t['to_name'], 'in' => $in, 'out' => $out,
+                   'open' => null, 'del' => (int)$t['id']];
+    }
+    usort($rows, fn($a, $b) => strcmp($a['sort'], $b['sort']));
+
+    $liveBal = $fStaff ? staff_cash($fStaff) : total_cash_in_hand();
+    $canDelMt = can('cashbank.adjust') || can('cashbank.transfer');
+    $page_title = 'Cash Ledger';
+    include __DIR__ . '/includes/header.php';
+    ?>
+    <div class="page-actions no-print">
+      <a class="btn btn-outline" href="cash_bank.php">← Cash &amp; Bank</a>
+      <button class="btn btn-outline btn-sm" onclick="window.print()">🖨️ Print</button>
+    </div>
+    <div class="duo-cards">
+      <div class="duo-card duo-get"><div class="duo-label">💵 <?= $fStaff ? e(array_values(array_filter($staffAll, fn($s) => $s['id'] == $fStaff))[0]['name'] ?? '') . "'s cash now" : 'Cash in Hand now (total)' ?></div>
+        <div class="duo-value">₹ <?= money($liveBal) ?></div></div>
+    </div>
+    <form method="get" class="filterbar no-print">
+      <input type="hidden" name="action" value="cash_ledger">
+      <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>
+      <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>
+      <div><label>Whose cash?</label>
+        <select name="staff"><option value="0">Whole shop</option>
+          <?php foreach ($staffAll as $s): ?><option value="<?= $s['id'] ?>" <?= $fStaff == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option><?php endforeach; ?>
+        </select></div>
+      <button class="btn btn-sm" type="submit">Show</button>
+    </form>
+    <div class="table-wrap list-style-table">
+    <table>
+      <thead><tr><th>Entry</th><th class="num">In ₹</th><th class="num">Out ₹</th><th class="num">Running</th><th class="no-print"></th></tr></thead>
+      <tbody>
+      <?php $bal = 0; foreach ($rows as $x): $bal += $x['in'] - $x['out']; ?>
+      <tr>
+        <td><strong><?= $x['open'] ? '<a href="' . e($x['open']) . '">' . e($x['desc']) . '</a>' : e($x['desc']) ?></strong>
+          <span class="list-row-sub muted"><?= dmy($x['date']) ?> · <?= e($x['staff']) ?></span></td>
+        <td class="num" style="color:var(--ok)"><?= $x['in'] ? money($x['in']) : '' ?></td>
+        <td class="num" style="color:var(--bad)"><?= $x['out'] ? money($x['out']) : '' ?></td>
+        <td class="num"><?= money($bal) ?></td>
+        <td class="no-print" style="white-space:nowrap">
+          <?php if ($x['open']): ?><a class="btn btn-sm btn-outline" href="<?= e($x['open']) ?>">Open</a><?php endif; ?>
+          <?php if ($x['del'] && $canDelMt): ?>
+          <form method="post" style="display:inline" onsubmit="return confirm('Delete this entry? Balances will be recalculated.')">
+            <?= csrf_field() ?><input type="hidden" name="do" value="mt_delete"><input type="hidden" name="id" value="<?= $x['del'] ?>"><input type="hidden" name="back" value="ledger">
+            <button class="btn btn-sm btn-danger" type="submit">✕</button></form>
+          <?php endif; ?>
+        </td>
+      </tr>
+      <?php endforeach; if (!$rows): ?><tr><td colspan="5" class="muted">No cash entries in this period.</td></tr><?php endif; ?>
+      </tbody>
+    </table>
+    </div>
+    <p class="muted mt" style="font-size:12.5px">"Running" adds up this period's entries only (period start = 0). "Open" on a receipt/payment goes to its page, where it can be edited or deleted; handovers/adjustments/deposits delete here with ✕.</p>
+    <?php
+    include __DIR__ . '/includes/footer.php';
+    exit;
+}
+
 // ---------- data for the page ----------
 $today = today();
 $todayCashIn = (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE mode = 'cash' AND direction = 'in' AND pay_date = ?", [$today]);
@@ -162,8 +285,8 @@ $page_title = 'Cash & Bank';
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="duo-cards">
-  <div class="duo-card duo-get"><div class="duo-label">💵 Cash in Hand (total)</div><div class="duo-value">₹ <?= money($cashInHand) ?></div></div>
-  <div class="duo-card" style="background:#e0f2fe"><div class="duo-label" style="color:#075985">🏦 Total Bank Balance</div><div class="duo-value" style="color:#0369a1">₹ <?= money($totalBankBal) ?></div></div>
+  <a class="duo-card duo-get" href="cash_bank.php?action=cash_ledger"><div class="duo-label">💵 Cash in Hand (total)</div><div class="duo-value">₹ <?= money($cashInHand) ?></div><div class="muted" style="font-size:12px;margin-top:4px">Tap for the full ledger →</div></a>
+  <a class="duo-card" style="background:#e0f2fe" href="reports.php?r=bank_ledger"><div class="duo-label" style="color:#075985">🏦 Total Bank Balance</div><div class="duo-value" style="color:#0369a1">₹ <?= money($totalBankBal) ?></div><div class="muted" style="font-size:12px;margin-top:4px">Tap for the passbook →</div></a>
 </div>
 
 <?php if ($canAdjust || $canTransfer): ?>

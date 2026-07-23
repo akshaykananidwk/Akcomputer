@@ -53,10 +53,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         //   outstanding, so bill-level dues (Aging etc.) agree with the party
         //   ledger. The applied amount is remembered for a clean delete.
         $refundMode = post('refund_mode', 'cash');
-        if (in_array($refundMode, ['cash', 'upi'], true)) {
-            q("INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
-               VALUES (?,?,?,?,?,?,?,?,?)",
-              [$sale['party_id'] ?? null, 'out', $total, $refundMode, 'sales_return', $rid,
+        if (in_array($refundMode, ['cash', 'bank', 'upi'], true)) {
+            // bank refunds carry the default bank account so the bank ledger
+            // knows exactly which account the money left ('upi' only lingers
+            // from very old forms and is treated as bank)
+            $refBank = $refundMode === 'cash' ? null : ((int)val('SELECT id FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1') ?: null);
+            q("INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, ref_type, ref_id, pay_date, notes, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?)",
+              [$sale['party_id'] ?? null, 'out', $total, $refundMode === 'cash' ? 'cash' : 'bank', $refBank, 'sales_return', $rid,
                post('return_date', today()), 'Refund for return ' . doc_no('SR', $rid) . ($sale ? ' (bill ' . $sale['invoice_no'] . ')' : ''), $u['id']]);
         } elseif ($refundMode === 'adjust' && $sale) {
             $due = round((float)$sale['total'] - (float)$sale['paid'], 2);
@@ -95,7 +99,7 @@ if ($action === 'new') {
           <div><label>Date</label><input type="date" name="return_date" value="<?= today() ?>"></div>
         </div>
         <div class="form-row cols-2">
-          <div><label>Refund mode</label><select name="refund_mode"><option>cash</option><option>upi</option><option>adjust</option></select></div>
+          <div><label>Refund mode</label><select name="refund_mode"><option value="cash">cash</option><option value="bank">bank</option><option value="adjust">adjust</option></select></div>
           <div><label>Notes / reason</label><input type="text" name="notes"></div>
         </div>
       </div>

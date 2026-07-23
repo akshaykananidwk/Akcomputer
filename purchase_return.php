@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $pdo = db();
     $pdo->beginTransaction();
     try {
-        $refundMode = in_array(post('refund_mode'), ['cash', 'upi', 'adjust'], true) ? post('refund_mode') : 'adjust';
+        $refundMode = in_array(post('refund_mode'), ['cash', 'bank', 'adjust'], true) ? post('refund_mode') : 'adjust';
         q('INSERT INTO purchase_returns (party_id, location_id, return_date, total, refund_mode, notes, created_by) VALUES (?,?,?,?,?,?,?)',
           [$party_id, $loc_id, post('return_date', today()), $total, $refundMode, post('notes'), $u['id']]);
         $rid = insert_id();
@@ -45,10 +45,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         // to the payments ledger (money IN) so the party balance and cashbook
         // stay right. 'adjust' (the default, old behaviour) leaves it as a
         // credit against the supplier's account via the returns total.
-        if (in_array($refundMode, ['cash', 'upi'], true)) {
-            q("INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
-               VALUES (?,?,?,?,?,?,?,?,?)",
-              [$party_id, 'in', $total, $refundMode, 'purchase_return', $rid,
+        if (in_array($refundMode, ['cash', 'bank'], true)) {
+            $refBank = $refundMode === 'cash' ? null : ((int)val('SELECT id FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1') ?: null);
+            q("INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, ref_type, ref_id, pay_date, notes, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?)",
+              [$party_id, 'in', $total, $refundMode, $refBank, 'purchase_return', $rid,
                post('return_date', today()), 'Refund received for return ' . doc_no('PR', $rid), $u['id']]);
         }
         $pdo->commit();
@@ -88,7 +89,7 @@ if ($action === 'new') {
           <select name="refund_mode">
             <option value="adjust">Adjust against supplier account (credit)</option>
             <option value="cash">Supplier refunded CASH</option>
-            <option value="upi">Supplier refunded UPI/bank</option>
+            <option value="bank">Supplier refunded to BANK</option>
           </select></div>
         <div class="field"><label>Serial numbers being returned (comma / new line, optional)</label>
           <textarea name="serials" rows="2"></textarea></div>
