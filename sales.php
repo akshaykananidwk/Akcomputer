@@ -634,6 +634,7 @@ if ($action === 'new' || $action === 'edit') {
         </div>
         <div class="field"><label>Notes</label><input type="text" name="notes" <?= $isEdit ? 'value="' . e($editSale['notes']) . '"' : '' ?>></div>
         <div class="bill-totals">
+          <div class="t-line"><span>Items</span><span id="t_items">0 items · 0 qty</span></div>
           <div class="t-line"><span>Subtotal</span><span>₹ <span id="t_sub">0.00</span></span></div>
           <div class="t-line"><span>GST</span><span>₹ <span id="t_tax">0.00</span></span></div>
           <div class="t-line"><span>Shipping</span><span>₹ <span id="t_ship">0.00</span></span></div>

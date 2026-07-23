@@ -385,7 +385,7 @@ if ($action === 'new' || $action === 'edit') {
           </div>
           <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= $isEdit ? money($editPurchase['shipping']) : '0' ?>" oninput="Bill.totals()"></div>
           <div><label><?= $isEdit ? 'Already paid (₹)' : 'Paid now (₹)' ?> <?php if ($isEdit): ?><span class="muted" style="font-weight:normal">(edit to correct the amount)</span><?php endif; ?></label>
-            <input type="number" step="any" name="paid" id="paid" value="<?= $isEdit ? money($editPurchase['paid']) : '0' ?>"></div>
+            <input type="number" step="any" name="paid" id="paid" value="<?= $isEdit ? money($editPurchase['paid']) : '0' ?>" oninput="Bill.totals()"></div>
           <div><label>Payment mode <?php if ($isEdit): ?><span class="muted" style="font-weight:normal">(used if you change the paid amount)</span><?php endif; ?></label>
             <select name="payment_mode" id="payment_mode" onchange="pmChange()">
               <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
@@ -397,10 +397,12 @@ if ($action === 'new' || $action === 'edit') {
         </div>
         <div class="field"><label>Notes</label><input type="text" name="notes" value="<?= $isEdit ? e($editPurchase['notes']) : '' ?>"></div>
         <div class="bill-totals">
+          <div class="t-line"><span>Items</span><span id="t_items">0 items · 0 qty</span></div>
           <div class="t-line"><span>Subtotal</span><span>₹ <span id="t_sub">0.00</span></span></div>
           <div class="t-line"><span>GST</span><span>₹ <span id="t_tax">0.00</span></span></div>
           <div class="t-line"><span>Shipping</span><span>₹ <span id="t_ship">0.00</span></span></div>
           <div class="t-line t-grand"><span>Total</span><span>₹ <span id="t_grand">0.00</span></span></div>
+          <div class="t-line"><span>Balance due</span><span>₹ <span id="t_due">0.00</span></span></div>
         </div>
         <?php if ($isEdit): ?>
         <div class="form-row cols-2 mt">

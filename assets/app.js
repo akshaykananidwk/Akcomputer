@@ -604,13 +604,14 @@ var Bill = {
   },
 
   totals: function () {
-    var sub = 0, tax = 0;
+    var sub = 0, tax = 0, lines = 0, qtyTotal = 0;
     var gst = this.cfg.gst;
     document.querySelectorAll('#billItems .bill-row').forEach(function (div) {
       var qty = parseFloat(div.querySelector('.i-qty').value) || 0;
       var price = parseFloat(div.querySelector('.i-price').value) || 0;
       var tr = parseFloat(div.querySelector('.i-tax').value) || 0;
       var line = qty * price;
+      if (qty > 0) { lines++; qtyTotal += qty; }
       sub += line;
       if (gst) tax += line * tr / 100;
     });
@@ -631,6 +632,9 @@ var Bill = {
     var total = sub - disc + tax + shipping;
     var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v.toFixed(2); };
     set('t_sub', sub); set('t_tax', tax); set('t_ship', shipping); set('t_grand', total);
+    // live "how many items on this bill" line (lines + total quantity)
+    var ti = document.getElementById('t_items');
+    if (ti) ti.textContent = lines + ' item' + (lines === 1 ? '' : 's') + ' · ' + (Math.round(qtyTotal * 100) / 100) + ' qty';
     var due = document.getElementById('t_due');
     if (due) {
       var paid = parseFloat((document.getElementById('paid') || {}).value) || 0;

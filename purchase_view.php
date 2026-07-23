@@ -80,6 +80,7 @@ include __DIR__ . '/includes/header.php';
 </div>
 <div class="card">
   <div class="bill-totals">
+    <div class="t-line"><span>Items</span><span><?= count($items) ?> item<?= count($items) === 1 ? '' : 's' ?> · <?= (float)array_sum(array_column($items, 'qty')) ?> qty</span></div>
     <div class="t-line"><span>Subtotal</span><span>₹<?= money($p['subtotal']) ?></span></div>
     <?php if ($p['discount'] > 0): ?><div class="t-line"><span>Discount</span><span>- ₹<?= money($p['discount']) ?></span></div><?php endif; ?>
     <div class="t-line"><span>GST</span><span>₹<?= money($p['tax_amount']) ?></span></div>
