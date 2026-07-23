@@ -7,13 +7,28 @@ header('Content-Type: application/json');
 $a = get('a');
 
 if ($a === 'item_search') {
-    $qs = '%' . get('q') . '%';
     $loc = (int)get('loc');
+    // Word-wise matching: every typed word must appear SOMEWHERE in the item's
+    // name/brand/model/barcode, in any order. So for "Ultra HD Gaming Monitor
+    // 27 inch Curved Display", typing just "ultra curved" (first + last words,
+    // middle skipped) still lists it - the old single-phrase LIKE required the
+    // words to sit together in the same order and found nothing.
+    $words = array_values(array_filter(preg_split('/\s+/', trim((string)get('q'))), fn($w) => $w !== ''));
+    $conds = []; $params = [$loc];
+    foreach ($words as $w) {
+        $like = '%' . $w . '%';
+        $conds[] = "(i.name LIKE ? OR i.brand LIKE ? OR i.model LIKE ? OR i.barcode LIKE ?)";
+        array_push($params, $like, $like, $like, $like);
+    }
+    $where = $conds ? implode(' AND ', $conds) : '0';
+    // items whose name STARTS with the first typed word rank on top
+    $first = ($words[0] ?? '') . '%';
+    $params[] = $first;
     $items = all("SELECT i.id, i.name, i.unit, i.tax_rate, i.purchase_price, i.selling_price, i.b2b_price, i.serial_tracked, i.barcode, i.item_type,
                   IF(i.item_type = 'service', NULL, COALESCE((SELECT qty FROM stock s WHERE s.item_id = i.id AND s.location_id = ?), 0)) AS stock
                   FROM items i
-                  WHERE i.is_active = 1 AND (i.name LIKE ? OR i.brand LIKE ? OR i.model LIKE ? OR i.barcode LIKE ?)
-                  ORDER BY i.name LIMIT 15", [$loc, $qs, $qs, $qs, $qs]);
+                  WHERE i.is_active = 1 AND ($where)
+                  ORDER BY (i.name LIKE ?) DESC, i.name LIMIT 15", $params);
     // The purchase (cost) price is a guarded number: staff without the
     // items.cost permission never receive it, so it can't show up in the
     // billing UI, profit hints, or the browser's network tab.

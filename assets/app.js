@@ -181,9 +181,12 @@ function tableFilter(inputId, tableId) {
   var inp = document.getElementById(inputId), tbl = document.getElementById(tableId);
   if (!inp || !tbl) return;
   inp.addEventListener('input', function () {
-    var q = inp.value.toLowerCase();
+    // word-wise: every typed word must appear somewhere in the row, any order -
+    // so "ultra curved" finds "Ultra HD Gaming Monitor 27 inch Curved Display"
+    var words = inp.value.toLowerCase().split(/\s+/).filter(Boolean);
     tbl.querySelectorAll('tbody tr').forEach(function (tr) {
-      tr.style.display = tr.textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
+      var txt = tr.textContent.toLowerCase();
+      tr.style.display = words.every(function (w) { return txt.indexOf(w) > -1; }) ? '' : 'none';
     });
   });
 }
