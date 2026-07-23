@@ -416,11 +416,14 @@ if ($r === 'cashbook') {
             $in[] = ['d' => $x['d'], 'desc' => 'Expenses', 'in' => 0, 'out' => $x['a']];
     }
     usort($in, fn($a, $b) => strcmp($a['d'], $b['d']));
+    // running total in date order, shown newest-first (today's rows on top)
     $bal = 0;
+    foreach ($in as &$x) { $bal += $x['in'] - $x['out']; $x['bal'] = $bal; }
+    unset($x);
+    $in = array_reverse($in);
     echo '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th class="num">In ₹</th><th class="num">Out ₹</th><th class="num">Running</th></tr></thead><tbody>';
     foreach ($in as $x) {
-        $bal += $x['in'] - $x['out'];
-        echo '<tr><td>' . dmy($x['d']) . '</td><td>' . e($x['desc']) . '</td><td class="num">' . ($x['in'] ? money($x['in']) : '') . '</td><td class="num">' . ($x['out'] ? money($x['out']) : '') . '</td><td class="num">' . money($bal) . '</td></tr>';
+        echo '<tr><td>' . dmy($x['d']) . '</td><td>' . e($x['desc']) . '</td><td class="num">' . ($x['in'] ? money($x['in']) : '') . '</td><td class="num">' . ($x['out'] ? money($x['out']) : '') . '</td><td class="num">' . money($x['bal']) . '</td></tr>';
     }
     if (!$in) echo '<tr><td colspan="5" class="muted">No entries in this period.</td></tr>';
     echo '</tbody></table></div>';
@@ -490,7 +493,18 @@ if ($r === 'bank_ledger' && can('payments.view')) {
         }
         usort($rows, fn($a, $b) => strcmp($a['sort'], $b['sort']));
 
+        // Running balance is computed in true date order, but the passbook is
+        // SHOWN newest-first: the closing balance sits at the very top, then
+        // today's entries, down to the oldest and finally the opening balance -
+        // so the fresh activity never needs scrolling for.
         $bal = $openingBal; $totalIn = 0; $totalOut = 0;
+        foreach ($rows as &$x) {
+            $bal += $x['in'] - $x['out'];
+            $totalIn += $x['in']; $totalOut += $x['out'];
+            $x['bal'] = $bal;
+        }
+        unset($x);
+        $rows = array_reverse($rows);
         echo '<h3>' . e($bank['account_name']) . ' - ' . e($bank['bank_name']) . ($bank['account_number'] ? ' (A/C: ' . e($bank['account_number']) . ')' : '') . '</h3>';
         // 3 columns (Description+date combined, signed Amount, running Balance)
         // instead of 8 - reads as a clean passbook-style list on screen, while
@@ -498,10 +512,8 @@ if ($r === 'bank_ledger' && can('payments.view')) {
         // converter and the CSV exporter (both of which only understand
         // <table> markup) keep working unchanged.
         echo '<div class="table-wrap list-style-table"><table><thead><tr><th data-w="54">Description</th><th class="num" data-w="23">Amount ₹</th><th class="num" data-w="23">Balance ₹</th></tr></thead><tbody>';
-        echo '<tr><td><strong>Opening Balance</strong></td><td class="num"></td><td class="num"><strong>₹' . money($openingBal) . '</strong></td></tr>';
+        echo '<tr><td><strong>Balance now</strong> <span class="list-row-sub muted">' . dmy($to) . ' · this period: ' . ($totalIn - $totalOut >= 0 ? '+' : '-') . '₹' . money(abs($totalIn - $totalOut)) . '</span></td><td class="num"></td><td class="num"><strong>₹' . money($bal) . '</strong></td></tr>';
         foreach ($rows as $x) {
-            $bal += $x['in'] - $x['out'];
-            $totalIn += $x['in']; $totalOut += $x['out'];
             $amt = $x['in'] ?: -$x['out'];
             $descBits = [$x['type']];
             if ($x['ref'] !== '-') $descBits[] = $x['ref'];
@@ -510,10 +522,10 @@ if ($r === 'bank_ledger' && can('payments.view')) {
             $descHtml = !empty($x['link']) ? '<a href="' . e($x['link']) . '">' . $descText . '</a>' : $descText;
             echo '<tr><td><strong>' . $descHtml . '</strong> <span class="list-row-sub muted">' . dmy($x['date']) . ' · ' . e(ucfirst($x['mode'])) . '</span></td>'
                . '<td class="num" style="color:' . ($amt >= 0 ? 'var(--ok)' : 'var(--bad)') . '"><strong>' . ($amt >= 0 ? '+' : '-') . '₹' . money(abs($amt)) . '</strong></td>'
-               . '<td class="num">₹' . money($bal) . '</td></tr>';
+               . '<td class="num">₹' . money($x['bal']) . '</td></tr>';
         }
         if (!$rows) echo '<tr><td colspan="3" class="muted">No transactions in this period.</td></tr>';
-        echo '<tr><td><strong>Total</strong></td><td class="num"><strong>' . ($totalIn - $totalOut >= 0 ? '+' : '-') . '₹' . money(abs($totalIn - $totalOut)) . '</strong></td><td class="num"><strong>₹' . money($bal) . '</strong></td></tr>';
+        echo '<tr><td><strong>Opening Balance</strong> <span class="list-row-sub muted">before ' . dmy($from) . '</span></td><td class="num"></td><td class="num"><strong>₹' . money($openingBal) . '</strong></td></tr>';
         echo '</tbody></table></div>';
     }
 }
