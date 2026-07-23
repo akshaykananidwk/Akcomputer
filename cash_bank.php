@@ -188,6 +188,13 @@ if (get('action') === 'cash_ledger') {
                    'open' => null, 'del' => (int)$t['id']];
     }
     usort($rows, fn($a, $b) => strcmp($a['sort'], $b['sort']));
+    // Running balance is computed in date order, but the list is SHOWN newest
+    // first - today's entries sit on top, oldest fall to the bottom, so the
+    // fresh stuff never needs scrolling for.
+    $bal = 0;
+    foreach ($rows as &$x) { $bal += $x['in'] - $x['out']; $x['bal'] = $bal; }
+    unset($x);
+    $rows = array_reverse($rows);
 
     $liveBal = $fStaff ? staff_cash($fStaff) : total_cash_in_hand();
     $canDelMt = can('cashbank.adjust') || can('cashbank.transfer');
@@ -216,13 +223,13 @@ if (get('action') === 'cash_ledger') {
     <table>
       <thead><tr><th>Entry</th><th class="num">In ₹</th><th class="num">Out ₹</th><th class="num">Running</th><th class="no-print"></th></tr></thead>
       <tbody>
-      <?php $bal = 0; foreach ($rows as $x): $bal += $x['in'] - $x['out']; ?>
+      <?php foreach ($rows as $x): ?>
       <tr>
         <td><strong><?= $x['open'] ? '<a href="' . e($x['open']) . '">' . e($x['desc']) . '</a>' : e($x['desc']) ?></strong>
           <span class="list-row-sub muted"><?= dmy($x['date']) ?> · <?= e($x['staff']) ?></span></td>
         <td class="num" style="color:var(--ok)"><?= $x['in'] ? money($x['in']) : '' ?></td>
         <td class="num" style="color:var(--bad)"><?= $x['out'] ? money($x['out']) : '' ?></td>
-        <td class="num"><?= money($bal) ?></td>
+        <td class="num"><?= money($x['bal']) ?></td>
         <td class="no-print" style="white-space:nowrap">
           <?php if ($x['open']): ?><a class="btn btn-sm btn-outline" href="<?= e($x['open']) ?>">Open</a><?php endif; ?>
           <?php if ($x['del'] && $canDelMt): ?>
