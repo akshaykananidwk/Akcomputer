@@ -5,7 +5,25 @@ require_perm('weborders.view');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'status') {
     require_perm('weborders.edit');
-    q('UPDATE web_orders SET status = ? WHERE id = ?', [post('status'), (int)post('id')]);
+    $oid = (int)post('id');
+    $newStatus = post('status');
+    q('UPDATE web_orders SET status = ? WHERE id = ?', [$newStatus, $oid]);
+    // Referral commission follows the order automatically:
+    // completed -> APPROVED (credited to the partner's balance, WhatsApp sent),
+    // cancelled -> cancelled, back to new/contacted -> pending again.
+    // Already-PAID commissions are never touched.
+    $earn = row("SELECT re.*, r.name r_name, r.mobile r_mobile, r.token r_token FROM referral_earnings re
+                 JOIN referrers r ON r.id = re.referrer_id WHERE re.web_order_id = ? AND re.status <> 'paid'", [$oid]);
+    if ($earn) {
+        $map = ['completed' => 'approved', 'cancelled' => 'cancelled', 'new' => 'pending', 'contacted' => 'pending'];
+        $to = $map[$newStatus] ?? null;
+        if ($to && $to !== $earn['status']) {
+            q('UPDATE referral_earnings SET status = ? WHERE id = ?', [$to, $earn['id']]);
+            if ($to === 'approved' && $earn['r_mobile']) {
+                send_whatsapp($earn['r_mobile'], "✅ *" . setting('app_name', 'AK Computer') . "*\n\nતમારું કમિશન જમા થયું! 🎉\nOrder " . $earn['order_no'] . " પૂરો થયો.\n*₹" . money($earn['commission']) . "* તમારા ખાતામાં જમા.\n\nબેલેન્સ જુઓ: " . base_url('referral.php?t=' . $earn['r_token']));
+            }
+        }
+    }
     flash('Order status updated.');
     redirect('web_orders.php');
 }

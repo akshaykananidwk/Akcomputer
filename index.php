@@ -1,6 +1,9 @@
 <?php
 // Business Dashboard (Vyapar-style)
 require_once __DIR__ . '/includes/init.php';
+// A visitor (not logged in) landing on the site sees the STORE with all the
+// products, not a login wall - staff reach the dashboard via Staff Login.
+if (!current_user()) redirect('catalog.php');
 require_perm('dashboard.view');
 $u = current_user();
 

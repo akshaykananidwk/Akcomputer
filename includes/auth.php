@@ -28,6 +28,7 @@ function permission_catalog() {
         'expenses' => ['view', 'add', 'delete'],
         'challans' => ['view', 'add', 'edit', 'delete'],
         'weborders' => ['view', 'edit', 'delete'],
+        'referrals' => ['view', 'edit', 'pay'],
         'amc' => ['view', 'add', 'edit', 'delete'],
         'sites' => ['view', 'add', 'edit', 'delete'],
         'batches' => ['view', 'add', 'edit', 'delete'],
