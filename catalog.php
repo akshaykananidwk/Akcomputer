@@ -128,7 +128,16 @@ body { padding-bottom: 90px; }
     <a class="btn mt" href="catalog.php">← Back to Store</a>
   </div>
 <?php else: ?>
-  <div class="searchbox"><input type="text" id="cFilter" placeholder="🔍 Search products..."></div>
+  <div class="searchbox" style="display:flex;gap:8px;align-items:center">
+    <input type="text" id="cFilter" placeholder="🔍 Search products..." style="flex:1">
+    <select id="cSort" style="max-width:170px;padding:10px 8px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--text)">
+      <option value="">↕️ Sort</option>
+      <option value="price_asc">₹ Low → High</option>
+      <option value="price_desc">₹ High → Low</option>
+      <option value="name">Name A–Z</option>
+      <option value="new">Newest first</option>
+    </select>
+  </div>
   <?php if ($cats): ?>
   <div class="cat-chips">
     <div class="cat-chip on" data-cat="">All</div>
@@ -137,7 +146,7 @@ body { padding-bottom: 90px; }
   <?php endif; ?>
   <div class="cat-grid" id="cGrid">
   <?php foreach ($items as $it): ?>
-    <div class="cat-card" data-cat="<?= e($it['cat_name'] ?? '') ?>">
+    <div class="cat-card" data-cat="<?= e($it['cat_name'] ?? '') ?>" data-price="<?= (float)$it['selling_price'] ?>" data-name="<?= e(mb_strtolower($it['name'])) ?>" data-newid="<?= (int)$it['id'] ?>">
       <?php if ($it['photo']): ?><img src="<?= e($it['photo']) ?>" alt="<?= e($it['name']) ?>" loading="lazy">
       <?php else: ?><div class="ph">📦</div><?php endif; ?>
       <div class="cbody">
@@ -251,6 +260,21 @@ function applyFilter() {
   });
 }
 if (filterInp) filterInp.addEventListener('input', applyFilter);
+// sort: reorder the cards inside the grid (works together with search + category)
+var sortSel = document.getElementById('cSort');
+if (sortSel) sortSel.addEventListener('change', function () {
+  var grid = document.getElementById('cGrid');
+  var cards = Array.prototype.slice.call(grid.querySelectorAll('.cat-card'));
+  var v = sortSel.value;
+  cards.sort(function (a, b) {
+    if (v === 'price_asc') return parseFloat(a.dataset.price) - parseFloat(b.dataset.price);
+    if (v === 'price_desc') return parseFloat(b.dataset.price) - parseFloat(a.dataset.price);
+    if (v === 'name') return a.dataset.name < b.dataset.name ? -1 : 1;
+    if (v === 'new') return parseInt(b.dataset.newid) - parseInt(a.dataset.newid);
+    return 0;
+  });
+  cards.forEach(function (c) { grid.appendChild(c); });
+});
 document.querySelectorAll('.cat-chip').forEach(function (ch) {
   ch.addEventListener('click', function () {
     document.querySelectorAll('.cat-chip').forEach(function (x) { x.classList.remove('on'); });
