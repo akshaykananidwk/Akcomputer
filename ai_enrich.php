@@ -18,6 +18,23 @@ function ai_need_where($text, $photo) {
     return $conds ? 'is_active = 1 AND (' . implode(' OR ', $conds) . ')' : '0';
 }
 
+// one-click key check: 1 tiny Gemini call + 1 image search, so the owner
+// knows both keys work BEFORE burning quota on a big run
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'test') {
+    header('Content-Type: application/json');
+    $out = [];
+    list($t, $e) = gemini_generate([['text' => 'Reply with exactly: OK']], 30);
+    $out['gemini'] = $e ? ('❌ ' . $e) : '✅ Gemini key works (model: ' . setting('gemini_model') . ')';
+    if (setting('gcs_api_key') && setting('gcs_cx')) {
+        list($urls, $e2) = gcs_image_search('cctv camera', 1);
+        $out['gcs'] = $e2 ? ('❌ ' . $e2) : '✅ Image Search key works (' . count($urls) . ' result)';
+    } else {
+        $out['gcs'] = 'Image Search keys not set — photos will be skipped.';
+    }
+    echo json_encode($out, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'run') {
     header('Content-Type: application/json');
     $modeText = post('text') === '1';
@@ -153,6 +170,7 @@ include __DIR__ . '/includes/header.php';
     <div class="flash flash-success mt">Photos are off: the Google Image Search key / engine ID is not set (see <a href="settings.php?cat=invoice">Settings</a>). Category + description will still work.</div>
   <?php endif; ?>
   <button class="btn mt" id="runBtn" <?= $geminiKey ? '' : 'disabled' ?>>▶ Start Auto-Fill</button>
+  <button class="btn btn-outline mt" id="testBtn" <?= $geminiKey ? '' : 'disabled' ?>>🧪 Test Keys</button>
   <button class="btn btn-muted mt" id="stopBtn" style="display:none">⏸ Stop</button>
   <div class="mt" id="progWrap" style="display:none">
     <div style="background:var(--bg);border-radius:8px;overflow:hidden;height:14px"><div id="progBar" style="height:14px;width:0%;background:var(--primary);transition:width .3s"></div></div>
@@ -221,6 +239,17 @@ include __DIR__ . '/includes/header.php';
     step();
   });
   stopBtn.addEventListener('click',function(){stopped=true;});
+  var testBtn=document.getElementById('testBtn');
+  testBtn.addEventListener('click',function(){
+    testBtn.disabled=true;testBtn.textContent='Testing…';
+    var fd=new FormData();
+    fd.append('csrf','<?= csrf_token() ?>');
+    fd.append('do','test');
+    fetch('ai_enrich.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(j){
+      line('<strong>Key test:</strong><br>Gemini: '+esc(j.gemini)+'<br>Image Search: '+esc(j.gcs));
+      testBtn.disabled=false;testBtn.textContent='🧪 Test Keys';
+    }).catch(function(e){line('Test failed: '+esc(e.message),'err');testBtn.disabled=false;testBtn.textContent='🧪 Test Keys';});
+  });
 })();
 </script>
 <?php include __DIR__ . '/includes/footer.php'; ?>

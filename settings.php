@@ -471,7 +471,7 @@ exit;
     </div>
     <div class="form-row cols-2">
       <div><label>Google Image Search API Key <span class="muted" style="font-weight:normal">(for AI Auto-Fill product photos, optional)</span>
-        <br><span class="muted" style="font-weight:normal;font-size:12.5px">From <strong>console.cloud.google.com</strong> → enable "Custom Search API" → Credentials → API key. 100 photo searches/day are free; beyond that Google charges about ₹450 per 1000.</span></label>
+        <br><span class="muted" style="font-weight:normal;font-size:12.5px">⚠️ NOT the same key as Gemini — the Gemini key will not work here. From <strong>console.cloud.google.com</strong>: pick/create a project → search "Custom Search API" → Enable → Credentials → Create credentials → API key. 100 photo searches/day are free; beyond that Google charges about ₹450 per 1000.</span></label>
         <input type="password" name="gcs_api_key" value="<?= e(setting('gcs_api_key')) ?>" placeholder="AIza..."></div>
       <div><label>Search Engine ID (cx) <span class="muted" style="font-weight:normal">(pairs with the image key)</span>
         <br><span class="muted" style="font-weight:normal;font-size:12.5px">Make one at <strong>programmablesearchengine.google.com</strong> — "Search the entire web" ON, "Image search" ON — then copy its Search engine ID.</span></label>

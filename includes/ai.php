@@ -165,7 +165,19 @@ function gcs_image_search($query, $count = 4) {
     $j = json_decode($resp, true);
     if ($code !== 200) {
         $msg = $j['error']['message'] ?? ('HTTP ' . $code);
-        if ($code === 429 || stripos($msg, 'quota') !== false) $msg = "Today's 100 free image searches are used up — run again tomorrow (photos only; text continues).";
+        if ($code === 429 || stripos($msg, 'quota') !== false) {
+            $msg = "Today's 100 free image searches are used up — run again tomorrow (photos only; text continues).";
+        } elseif (stripos($msg, 'API keys are not supported') !== false
+            || stripos($msg, 'has not been used in project') !== false
+            || stripos($msg, 'accessNotConfigured') !== false
+            || stripos($msg, 'it is disabled') !== false
+            || stripos($msg, 'API key not valid') !== false) {
+            // the classic mistake: the Gemini (AI Studio) key pasted into the
+            // image-search field — that key's project can't call Custom Search
+            $msg = 'The Image Search key is wrong — note it is a DIFFERENT key than the Gemini one. '
+                 . 'Make it at console.cloud.google.com: create/select a project, search "Custom Search API" and press Enable, '
+                 . 'then Credentials > Create credentials > API key. Paste that key in Settings.';
+        }
         return [[], $msg];
     }
     $urls = [];
