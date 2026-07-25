@@ -43,28 +43,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'run') {
         if ($modeText && ((string)$it['description'] === '' || !$it['category_id'])) {
             list($meta, $err) = gemini_item_meta($it, array_column($cats, 'name'));
             $geminiCalls++;
-            if ($err) {
+            if ($err === 'bad-json') {
+                // one product's reply came back unreadable (twice) — skip
+                // just that item; stopping the whole run for it would strand
+                // hundreds of fixable items behind one odd product name
+                $r['notes'][] = 'AI reply unreadable — skipped, fill by hand';
+                $meta = null;
+            } elseif ($err) {
                 // key missing / rate limit stops the whole run so the browser
                 // loop doesn't hammer a dead API
                 $fatal = $err; $results[] = $r; break;
             }
             $set = []; $params = [];
-            if ((string)$it['description'] === '' && $meta['description'] !== '') {
-                $set[] = 'description = ?'; $params[] = mb_substr($meta['description'], 0, 500);
-                $r['notes'][] = 'description ✔';
-            }
-            if (!$it['category_id'] && $meta['category'] !== '') {
-                $ck = mb_strtolower(trim($meta['category']));
-                if (!isset($catByLower[$ck])) {
-                    q('INSERT INTO categories (name) VALUES (?)', [trim($meta['category'])]);
-                    $catByLower[$ck] = insert_id();
-                    $cats[] = ['id' => $catByLower[$ck], 'name' => trim($meta['category'])];
-                    $r['notes'][] = 'new category "' . trim($meta['category']) . '"';
+            if ($meta) {
+                if ((string)$it['description'] === '' && $meta['description'] !== '') {
+                    $set[] = 'description = ?'; $params[] = mb_substr($meta['description'], 0, 500);
+                    $r['notes'][] = 'description ✔';
                 }
-                $set[] = 'category_id = ?'; $params[] = $catByLower[$ck];
-                $r['notes'][] = 'category: ' . trim($meta['category']);
+                if (!$it['category_id'] && $meta['category'] !== '') {
+                    $ck = mb_strtolower(trim($meta['category']));
+                    if (!isset($catByLower[$ck])) {
+                        q('INSERT INTO categories (name) VALUES (?)', [trim($meta['category'])]);
+                        $catByLower[$ck] = insert_id();
+                        $cats[] = ['id' => $catByLower[$ck], 'name' => trim($meta['category'])];
+                        $r['notes'][] = 'new category "' . trim($meta['category']) . '"';
+                    }
+                    $set[] = 'category_id = ?'; $params[] = $catByLower[$ck];
+                    $r['notes'][] = 'category: ' . trim($meta['category']);
+                }
+                if ($meta['category'] === '' && $meta['description'] === '') $r['notes'][] = 'AI could not identify this product — fill by hand';
             }
-            if ($meta['category'] === '' && $meta['description'] === '') $r['notes'][] = 'AI could not identify this product — fill by hand';
             if ($set) { $params[] = $it['id']; q('UPDATE items SET ' . implode(', ', $set) . ' WHERE id = ?', $params); }
         }
 

@@ -13,13 +13,19 @@
  *  a last resort the ListModels API discovers whatever flash model the key
  *  can use today. Whichever answers is cached so every later call pays for
  *  exactly one HTTP request again. */
-function gemini_generate(array $parts, $timeout = 45) {
+function gemini_generate(array $parts, $timeout = 45, $forceJson = false) {
     $key = setting('gemini_api_key');
     if (!$key) return [null, 'Gemini API key is not set (Settings > Invoice & Payment).'];
     if (!function_exists('curl_init')) return [null, 'The server does not have curl.'];
+    // 2.5-era flash models "think" before answering and the thoughts count
+    // against maxOutputTokens — a small cap truncates the real answer into
+    // broken JSON, so the cap is generous. responseMimeType makes the API
+    // itself guarantee parseable JSON instead of prompt-begging for it.
+    $genCfg = ['temperature' => 0.2, 'maxOutputTokens' => 4096];
+    if ($forceJson) $genCfg['responseMimeType'] = 'application/json';
     $body = json_encode([
         'contents' => [['parts' => $parts]],
-        'generationConfig' => ['temperature' => 0.2, 'maxOutputTokens' => 512],
+        'generationConfig' => $genCfg,
     ], JSON_UNESCAPED_UNICODE);
     $models = array_values(array_unique(array_filter([
         setting('gemini_model'), 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash',
@@ -42,8 +48,17 @@ function gemini_generate(array $parts, $timeout = 45) {
         $j = json_decode($resp, true);
         if ($code === 200) {
             if ($model !== setting('gemini_model')) set_setting('gemini_model', $model);
-            $text = $j['candidates'][0]['content']['parts'][0]['text'] ?? null;
-            if ($text === null) return [null, 'Gemini returned no text (safety block?).'];
+            // thinking models can return several parts (thoughts first) —
+            // keep only the real answer parts
+            $text = null;
+            foreach (($j['candidates'][0]['content']['parts'] ?? []) as $p) {
+                if (!empty($p['thought'])) continue;
+                if (isset($p['text'])) $text = ($text ?? '') . $p['text'];
+            }
+            if ($text === null || trim($text) === '') {
+                $fr = $j['candidates'][0]['finishReason'] ?? '?';
+                return [null, 'Gemini returned no text (finishReason: ' . $fr . ').'];
+            }
             return [trim($text), null];
         }
         $msg = $j['error']['message'] ?? ('HTTP ' . $code);
@@ -103,15 +118,18 @@ function gemini_item_meta($item, array $categoryNames) {
         . "- category: pick the best-fitting EXISTING category name from the list above when one fits; otherwise give one short new category name in English (max 3 words).\n"
         . "- description: 1-2 sentences (max 220 characters) in simple English a customer understands — what the product is, its key spec, and what it is used for. No price, no emojis, no quotes inside.\n"
         . "- If you genuinely cannot tell what the product is, use category \"\" and description \"\".";
-    list($text, $err) = gemini_generate([['text' => $prompt]]);
-    if ($err) return [null, $err];
-    // tolerate ```json fences despite the instruction
-    if (preg_match('/\{.*\}/s', $text, $m)) $text = $m[0];
-    $j = json_decode($text, true);
-    if (!is_array($j) || !array_key_exists('category', $j) || !array_key_exists('description', $j)) {
-        return [null, 'Gemini reply was not the expected JSON.'];
+    // one silent retry: a single malformed reply shouldn't cost the item
+    for ($try = 0; $try < 2; $try++) {
+        list($text, $err) = gemini_generate([['text' => $prompt]], 45, true);
+        if ($err) return [null, $err];
+        // tolerate ```json fences / stray prose despite responseMimeType
+        if (preg_match('/\{.*\}/s', $text, $m)) $text = $m[0];
+        $j = json_decode($text, true);
+        if (is_array($j) && array_key_exists('category', $j) && array_key_exists('description', $j)) {
+            return [['category' => trim((string)$j['category']), 'description' => trim((string)$j['description'])], null];
+        }
     }
-    return [['category' => trim((string)$j['category']), 'description' => trim((string)$j['description'])], null];
+    return [null, 'bad-json'];
 }
 
 /** Gemini vision gatekeeper: does this image show exactly this product?
