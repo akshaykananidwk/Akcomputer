@@ -200,6 +200,12 @@ function ai_fetch_image($url) {
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     if ($raw === false || $code !== 200 || strlen($raw) < 1000 || strlen($raw) > 12 * 1024 * 1024) return null;
+    return ai_image_to_jpeg($raw);
+}
+
+/** Normalise raw image bytes (any format GD reads) to a bounded JPEG.
+ *  Returns JPEG bytes or null. */
+function ai_image_to_jpeg($raw) {
     if (!function_exists('imagecreatefromstring')) return null;
     $img = @imagecreatefromstring($raw);
     if (!$img) return null;
@@ -225,4 +231,86 @@ function ai_fetch_image($url) {
     $jpeg = ob_get_clean();
     imagedestroy($img);
     return $jpeg ?: null;
+}
+
+/** Generate a product photo with Gemini's image model (same API key as text
+ *  — no Custom Search setup needed). Returns [jpegBytes|null, error|null].
+ *  The image is AI-made and representative: right product type and look,
+ *  but not a factory photo of the exact unit. Same self-healing model
+ *  fallback as gemini_generate. */
+function gemini_generate_image($productLabel, $timeout = 90) {
+    $key = setting('gemini_api_key');
+    if (!$key) return [null, 'Gemini API key is not set (Settings > Invoice & Payment).'];
+    if (!function_exists('curl_init')) return [null, 'The server does not have curl.'];
+    $prompt = "A clean e-commerce product photograph of exactly this product: \"{$productLabel}\".\n"
+        . "Plain white background, product centered and fully visible, realistic studio lighting, no added text, no watermark, no people, no packaging collage.";
+    $body = json_encode([
+        'contents' => [['parts' => [['text' => $prompt]]]],
+        'generationConfig' => ['responseModalities' => ['TEXT', 'IMAGE']],
+    ], JSON_UNESCAPED_UNICODE);
+    $models = array_values(array_unique(array_filter([
+        setting('gemini_image_model'), 'gemini-2.5-flash-image', 'gemini-2.0-flash-preview-image-generation',
+    ])));
+    $lastErr = 'Gemini image call failed.';
+    $discovered = false;
+    for ($i = 0; $i < count($models); $i++) {
+        $model = $models[$i];
+        $ch = curl_init('https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent?key=' . urlencode($key));
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => $body, CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+        $resp = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+        if ($resp === false) return [null, 'Network error: ' . $err];
+        $j = json_decode($resp, true);
+        if ($code === 200) {
+            if ($model !== setting('gemini_image_model')) set_setting('gemini_image_model', $model);
+            foreach (($j['candidates'][0]['content']['parts'] ?? []) as $p) {
+                if (!empty($p['inlineData']['data'])) return [ai_image_to_jpeg(base64_decode($p['inlineData']['data'])), null];
+                if (!empty($p['inline_data']['data'])) return [ai_image_to_jpeg(base64_decode($p['inline_data']['data'])), null];
+            }
+            return [null, 'no-image']; // model answered but produced no picture (per-item skip)
+        }
+        $msg = $j['error']['message'] ?? ('HTTP ' . $code);
+        if ($code === 429) return [null, "Gemini image quota for today is used up — press Start again tomorrow (text keeps working)."];
+        $modelGone = $code === 404 || stripos($msg, 'no longer available') !== false
+            || stripos($msg, 'not found') !== false || stripos($msg, 'is not supported') !== false
+            || stripos($msg, 'does not support') !== false;
+        if (!$modelGone) return [null, $msg];
+        $lastErr = $msg;
+        if ($model === setting('gemini_image_model')) set_setting('gemini_image_model', '');
+        if ($i === count($models) - 1 && !$discovered) {
+            $discovered = true;
+            $found = gemini_discover_image_model($key);
+            if ($found) $models[] = $found;
+        }
+    }
+    return [null, 'No usable Gemini image model found (' . $lastErr . ').'];
+}
+
+/** ListModels, but for an image-generation model. */
+function gemini_discover_image_model($key) {
+    $ch = curl_init('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' . urlencode($key));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_SSL_VERIFYPEER => true]);
+    $resp = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($resp === false || $code !== 200) return null;
+    $j = json_decode($resp, true);
+    $best = null; $bestScore = -1;
+    foreach (($j['models'] ?? []) as $m) {
+        $name = str_replace('models/', '', (string)($m['name'] ?? ''));
+        if (stripos($name, 'image') === false || stripos($name, 'gemini') === false) continue;
+        if (!in_array('generateContent', $m['supportedGenerationMethods'] ?? [], true)) continue;
+        if (preg_match('/tts|audio|live|embedding|veo/i', $name)) continue;
+        $score = 0;
+        if (!preg_match('/preview|exp/i', $name)) $score += 100;
+        if (preg_match('/(\d+(?:\.\d+)?)/', $name, $v)) $score += (float)$v[1];
+        if ($score > $bestScore) { $best = $name; $bestScore = $score; }
+    }
+    return $best;
 }

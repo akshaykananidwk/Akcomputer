@@ -38,7 +38,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'test') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'run') {
     header('Content-Type: application/json');
     $modeText = post('text') === '1';
-    $modePhoto = post('photo') === '1';
+    // photo sources: 'search' = real photos from Google Image Search (needs
+    // its own key, vision-verified), 'ai' = Gemini draws a representative
+    // product photo with the same key, 'off' = no photos
+    $photoSrc = in_array(post('photo_src'), ['search', 'ai'], true) ? post('photo_src') : 'off';
+    $modePhoto = $photoSrc !== 'off';
     $where = ai_need_where($modeText, $modePhoto);
     $batch = $modePhoto ? 2 : 4;
     // keyset pagination (id > after_id) instead of re-querying from the top:
@@ -93,7 +97,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'run') {
             if ($set) { $params[] = $it['id']; q('UPDATE items SET ' . implode(', ', $set) . ' WHERE id = ?', $params); }
         }
 
-        if ($modePhoto && !$photoStop && (string)$it['photo'] === '' && $it['item_type'] === 'product') {
+        if ($photoSrc === 'ai' && !$photoStop && (string)$it['photo'] === '' && $it['item_type'] === 'product') {
+            list($jpeg, $err) = gemini_generate_image($label);
+            $geminiCalls++;
+            if ($err === 'no-image') {
+                $r['notes'][] = 'no photo — AI declined to draw this one';
+            } elseif ($err) {
+                // quota / model errors pause photos for the rest of the run
+                // but let the text side keep going
+                $photoStop = $err; $r['notes'][] = 'photo stopped: ' . $err;
+            } elseif (!$jpeg) {
+                $r['notes'][] = 'no photo — generated image was unusable';
+            } else {
+                if (!is_dir(__DIR__ . '/uploads')) mkdir(__DIR__ . '/uploads', 0755, true);
+                $path = 'uploads/item_ai_' . $it['id'] . '_' . time() . '.jpg';
+                file_put_contents(__DIR__ . '/' . $path, $jpeg);
+                q('UPDATE items SET photo = ? WHERE id = ?', [$path, $it['id']]);
+                $r['notes'][] = 'photo ✔ (AI-drawn)';
+            }
+        }
+
+        if ($photoSrc === 'search' && !$photoStop && (string)$it['photo'] === '' && $it['item_type'] === 'product') {
             list($urls, $err) = gcs_image_search($label . ' product photo', 4);
             $searchCalls++;
             if ($err) {
@@ -158,16 +182,20 @@ include __DIR__ . '/includes/header.php';
 
 <div class="card">
   <h3>🤖 What this does</h3>
-  <p class="muted">For every item that is missing something, Google Gemini AI writes a short <strong>description</strong>, picks/creates the right <strong>category</strong>, and (optionally) finds a <strong>photo</strong> from Google Image Search. Every photo is double-checked by AI vision — <strong>if the image is not clearly that exact product, no photo is saved</strong>. Existing values are never overwritten.</p>
+  <p class="muted">For every item that is missing something, Google Gemini AI writes a short <strong>description</strong>, picks/creates the right <strong>category</strong>, and (optionally) adds a <strong>photo</strong>. Existing values are never overwritten.</p>
   <div class="form-row cols-2 mt">
     <label class="check-inline"><input type="checkbox" id="optText" checked <?= $geminiKey ? '' : 'disabled' ?>> Fill category + description <?= $geminiKey ? '' : '<span class="muted">(needs Gemini key)</span>' ?></label>
-    <label class="check-inline"><input type="checkbox" id="optPhoto" <?= ($geminiKey && $gcsReady) ? 'checked' : 'disabled' ?>> Find + verify photos <?= ($geminiKey && $gcsReady) ? '' : '<span class="muted">(needs Gemini + Image Search keys)</span>' ?></label>
+    <div><label>Photos</label>
+      <select id="optPhotoSrc" <?= $geminiKey ? '' : 'disabled' ?>>
+        <option value="ai" <?= (!$gcsReady) ? 'selected' : '' ?>>AI-drawn by Gemini — same key, no extra setup</option>
+        <option value="search" <?= $gcsReady ? 'selected' : '' ?> <?= $gcsReady ? '' : 'disabled' ?>>Real photos from Google Image Search<?= $gcsReady ? '' : ' (keys not set)' ?></option>
+        <option value="off">No photos</option>
+      </select>
+      <span class="muted" style="font-size:12.5px;display:block;margin-top:4px">AI-drawn = Gemini paints a clean representative product photo (right type &amp; look, not a factory shot of that exact unit). Real photos = found on Google and vision-verified — <strong>if no image clearly matches the exact product, none is saved</strong>.</span>
+    </div>
   </div>
   <?php if (!$geminiKey): ?>
     <div class="flash flash-error mt">Gemini API key is not set. Get a <strong>free</strong> key at <strong>aistudio.google.com/apikey</strong> and paste it in <a href="settings.php?cat=invoice">Settings → Invoice &amp; Payment</a>.</div>
-  <?php endif; ?>
-  <?php if ($geminiKey && !$gcsReady): ?>
-    <div class="flash flash-success mt">Photos are off: the Google Image Search key / engine ID is not set (see <a href="settings.php?cat=invoice">Settings</a>). Category + description will still work.</div>
   <?php endif; ?>
   <button class="btn mt" id="runBtn" <?= $geminiKey ? '' : 'disabled' ?>>▶ Start Auto-Fill</button>
   <button class="btn btn-outline mt" id="testBtn" <?= $geminiKey ? '' : 'disabled' ?>>🧪 Test Keys</button>
@@ -185,11 +213,11 @@ include __DIR__ . '/includes/header.php';
     <thead><tr><th>Work</th><th>Service</th><th>Price</th><th>For this shop (~<?= $total ?> items)</th></tr></thead>
     <tbody>
       <tr><td>Category + description</td><td>Gemini Flash (free tier)</td><td><strong>₹0</strong> — free tier allows ~1,500 requests/day</td><td><strong>₹0</strong> (1 request per item)</td></tr>
-      <tr><td>Photo check (AI vision)</td><td>Gemini Flash (free tier)</td><td><strong>₹0</strong> within the same free limit</td><td><strong>₹0</strong> (1–3 checks per photo)</td></tr>
-      <tr><td>Photo search</td><td>Google Custom Search</td><td>First <strong>100/day free</strong>, then ≈ ₹450 per 1,000 searches ($5)</td><td><strong>₹0</strong> if you run ~100 items per day; all in one day ≈ ₹<?= max(0, (int)ceil(($noPhoto - 100) / 1000 * 450)) ?></td></tr>
+      <tr><td>AI-drawn photo</td><td>Gemini image model</td><td>A limited number/day free on the free tier; with billing on ≈ ₹3.5 per photo</td><td><strong>₹0</strong> spread over some days; all at once with billing ≈ ₹<?= (int)ceil($noPhoto * 3.5) ?></td></tr>
+      <tr><td>Real photo search + AI check</td><td>Google Custom Search + Gemini vision</td><td>First <strong>100 searches/day free</strong>, then ≈ ₹450 per 1,000; the vision check is ₹0</td><td><strong>₹0</strong> at ~100 items/day; all in one day ≈ ₹<?= max(0, (int)ceil(($noPhoto - 100) / 1000 * 450)) ?></td></tr>
     </tbody>
   </table>
-  <p class="muted mt">Cheapest plan: leave photos ON and just run it once a day — 100 photos fill each day for free, and descriptions/categories finish entirely free on day one. The live counters above show exactly how many API calls this page has made.</p>
+  <p class="muted mt">Cheapest plan: run it once a day — the daily free photo quota fills another batch each day, and descriptions/categories finish entirely free on day one. If a quota runs out mid-run, photos pause but text keeps going. The live counters above show exactly how many API calls this page has made.</p>
   <p class="muted" id="usageLine" style="display:none"></p>
 </div>
 
@@ -208,13 +236,13 @@ include __DIR__ . '/includes/header.php';
     fd.append('csrf','<?= csrf_token() ?>');
     fd.append('do','run');
     fd.append('text',document.getElementById('optText').checked?'1':'0');
-    fd.append('photo',document.getElementById('optPhoto').checked?'1':'0');
+    fd.append('photo_src',document.getElementById('optPhotoSrc').value);
     fd.append('after_id',afterId);
     fetch('ai_enrich.php',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(j){
       gCalls+=j.gemini_calls||0;sCalls+=j.search_calls||0;
       usage.style.display='';usage.textContent='This session: '+gCalls+' Gemini calls (free tier), '+sCalls+' image searches ('+(sCalls>100?'over':'within')+' the 100/day free quota).';
       (j.results||[]).forEach(function(r){line('<strong>'+esc(r.name)+'</strong> — '+esc((r.notes||[]).join(', ')));});
-      if(j.photo_stop){line('Photos paused: '+esc(j.photo_stop),'err');document.getElementById('optPhoto').checked=false;}
+      if(j.photo_stop){line('Photos paused: '+esc(j.photo_stop),'err');document.getElementById('optPhotoSrc').value='off';}
       if(j.fatal){line('Stopped: '+esc(j.fatal),'err');runBtn.style.display='';stopBtn.style.display='none';pt.textContent='Stopped — fix the message above, then press Start to continue.';return;}
       doneCount+=(j.results||[]).length;
       afterId=j.last_id||afterId;
@@ -232,7 +260,7 @@ include __DIR__ . '/includes/header.php';
   }
   runBtn.addEventListener('click',function(){
     stopped=false;runBtn.style.display='none';stopBtn.style.display='';pw.style.display='';
-    var t=document.getElementById('optText').checked,p=document.getElementById('optPhoto').checked;
+    var t=document.getElementById('optText').checked,p=document.getElementById('optPhotoSrc').value!=='off';
     if(!t&&!p){alert('Tick at least one option.');runBtn.style.display='';stopBtn.style.display='none';return;}
     startTotal=0;doneCount=0;afterId=0;
     pt.textContent='Starting…';
