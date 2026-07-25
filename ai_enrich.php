@@ -158,8 +158,8 @@ include __DIR__ . '/includes/header.php';
   <table>
     <thead><tr><th>Work</th><th>Service</th><th>Price</th><th>For this shop (~<?= $total ?> items)</th></tr></thead>
     <tbody>
-      <tr><td>Category + description</td><td>Gemini 2.0 Flash (free tier)</td><td><strong>₹0</strong> — free tier allows ~1,500 requests/day</td><td><strong>₹0</strong> (1 request per item)</td></tr>
-      <tr><td>Photo check (AI vision)</td><td>Gemini 2.0 Flash (free tier)</td><td><strong>₹0</strong> within the same free limit</td><td><strong>₹0</strong> (1–3 checks per photo)</td></tr>
+      <tr><td>Category + description</td><td>Gemini Flash (free tier)</td><td><strong>₹0</strong> — free tier allows ~1,500 requests/day</td><td><strong>₹0</strong> (1 request per item)</td></tr>
+      <tr><td>Photo check (AI vision)</td><td>Gemini Flash (free tier)</td><td><strong>₹0</strong> within the same free limit</td><td><strong>₹0</strong> (1–3 checks per photo)</td></tr>
       <tr><td>Photo search</td><td>Google Custom Search</td><td>First <strong>100/day free</strong>, then ≈ ₹450 per 1,000 searches ($5)</td><td><strong>₹0</strong> if you run ~100 items per day; all in one day ≈ ₹<?= max(0, (int)ceil(($noPhoto - 100) / 1000 * 450)) ?></td></tr>
     </tbody>
   </table>

@@ -5,7 +5,14 @@
 // exactly that product?") before it is saved; anything unverified is skipped.
 
 /** Low-level Gemini generateContent call. $parts is the API's parts array
- *  (text and/or inline_data). Returns [text|null, errorString|null]. */
+ *  (text and/or inline_data). Returns [text|null, errorString|null].
+ *
+ *  Google retires model names over time (gemini-2.0-flash died mid-2026 with
+ *  "no longer available"), so the model is never hardcoded: a cached working
+ *  name is tried first, then the -latest alias and known flash names, and as
+ *  a last resort the ListModels API discovers whatever flash model the key
+ *  can use today. Whichever answers is cached so every later call pays for
+ *  exactly one HTTP request again. */
 function gemini_generate(array $parts, $timeout = 45) {
     $key = setting('gemini_api_key');
     if (!$key) return [null, 'Gemini API key is not set (Settings > Invoice & Payment).'];
@@ -14,26 +21,73 @@ function gemini_generate(array $parts, $timeout = 45) {
         'contents' => [['parts' => $parts]],
         'generationConfig' => ['temperature' => 0.2, 'maxOutputTokens' => 512],
     ], JSON_UNESCAPED_UNICODE);
-    $ch = curl_init('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' . urlencode($key));
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => $timeout,
-        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-        CURLOPT_POSTFIELDS => $body, CURLOPT_SSL_VERIFYPEER => true,
-    ]);
+    $models = array_values(array_unique(array_filter([
+        setting('gemini_model'), 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.0-flash',
+    ])));
+    $lastErr = 'Gemini call failed.';
+    $discovered = false;
+    for ($i = 0; $i < count($models); $i++) {
+        $model = $models[$i];
+        $ch = curl_init('https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent?key=' . urlencode($key));
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => $body, CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+        $resp = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+        if ($resp === false) return [null, 'Network error: ' . $err];
+        $j = json_decode($resp, true);
+        if ($code === 200) {
+            if ($model !== setting('gemini_model')) set_setting('gemini_model', $model);
+            $text = $j['candidates'][0]['content']['parts'][0]['text'] ?? null;
+            if ($text === null) return [null, 'Gemini returned no text (safety block?).'];
+            return [trim($text), null];
+        }
+        $msg = $j['error']['message'] ?? ('HTTP ' . $code);
+        if ($code === 429) return [null, 'Gemini free-tier rate limit hit — wait a minute and press Continue.'];
+        $modelGone = $code === 404 || stripos($msg, 'no longer available') !== false
+            || stripos($msg, 'not found') !== false || stripos($msg, 'is not supported') !== false;
+        if (!$modelGone) return [null, $msg];
+        $lastErr = $msg;
+        // this name is dead — forget it if it was the cached one
+        if ($model === setting('gemini_model')) set_setting('gemini_model', '');
+        if ($i === count($models) - 1 && !$discovered) {
+            $discovered = true;
+            $found = gemini_discover_model($key);
+            if ($found) $models[] = $found;
+        }
+    }
+    return [null, 'No usable Gemini model found (' . $lastErr . '). Check the key at aistudio.google.com.'];
+}
+
+/** Ask ListModels which flash model this key can actually use right now.
+ *  Returns a model name or null. */
+function gemini_discover_model($key) {
+    $ch = curl_init('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' . urlencode($key));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_SSL_VERIFYPEER => true]);
     $resp = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err = curl_error($ch);
     curl_close($ch);
-    if ($resp === false) return [null, 'Network error: ' . $err];
+    if ($resp === false || $code !== 200) return null;
     $j = json_decode($resp, true);
-    if ($code !== 200) {
-        $msg = $j['error']['message'] ?? ('HTTP ' . $code);
-        if ($code === 429) $msg = 'Gemini free-tier rate limit hit — wait a minute and press Continue.';
-        return [null, $msg];
+    $best = null; $bestScore = -1;
+    foreach (($j['models'] ?? []) as $m) {
+        $name = str_replace('models/', '', (string)($m['name'] ?? ''));
+        if (stripos($name, 'flash') === false) continue;
+        if (!in_array('generateContent', $m['supportedGenerationMethods'] ?? [], true)) continue;
+        // needs vision for the photo check, so skip specialised variants
+        if (preg_match('/image|tts|audio|live|embedding|thinking|gemma/i', $name)) continue;
+        // prefer stable full-flash names over lite/preview/exp builds, and
+        // newer versions over older (version number sorts inside the name)
+        $score = 0;
+        if (!preg_match('/lite|preview|exp/i', $name)) $score += 100;
+        if (preg_match('/(\d+(?:\.\d+)?)/', $name, $v)) $score += (float)$v[1];
+        if ($score > $bestScore || ($score === $bestScore && strcmp($name, $best) > 0)) { $best = $name; $bestScore = $score; }
     }
-    $text = $j['candidates'][0]['content']['parts'][0]['text'] ?? null;
-    if ($text === null) return [null, 'Gemini returned no text (safety block?).'];
-    return [trim($text), null];
+    return $best;
 }
 
 /** Ask Gemini for a category + short sales description for one item.
