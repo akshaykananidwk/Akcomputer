@@ -96,6 +96,7 @@ body { padding-bottom: 90px; }
 .cat-card .ph { width: 100%; height: 135px; display: flex; align-items: center; justify-content: center; font-size: 42px; background: var(--bg); }
 .cat-card .cbody { padding: 10px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .cat-card .cname { font-weight: 600; font-size: 14px; }
+.cat-card .cdesc { font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .cat-card .cprice { color: var(--primary); font-weight: 800; font-size: 16px; margin-top: auto; }
 .addbtn { width: 100%; margin-top: 8px; }
 .qtyrow { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
@@ -152,6 +153,7 @@ body { padding-bottom: 90px; }
       <div class="cbody">
         <div class="cname"><?= e($it['name']) ?></div>
         <?php if ($it['brand']): ?><div class="muted"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></div><?php endif; ?>
+        <?php if (!empty($it['description'])): ?><div class="cdesc"><?= e($it['description']) ?></div><?php endif; ?>
         <div class="cprice">₹<?= money($it['selling_price']) ?></div>
         <button type="button" class="btn btn-sm addbtn" data-id="<?= $it['id'] ?>" data-name="<?= e($it['name']) ?>" data-price="<?= (float)$it['selling_price'] ?>">🛒 Add to Cart</button>
         <div class="qtyrow" style="display:none" data-qid="<?= $it['id'] ?>">

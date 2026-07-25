@@ -24,17 +24,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             (float)post('b2b_price'), post('serial_tracked') ? 1 : 0, (float)post('margin_pct'),
             post('item_type') === 'service' ? 'service' : 'product', (int)post('warranty_months'),
             (float)post('min_stock'), post('show_on_website') ? 1 : 0, $photo, post('barcode'),
-            post('is_active') ? 1 : 0,
+            post('is_active') ? 1 : 0, post('description'),
         ];
         if ($id) {
             q('UPDATE items SET name=?, category_id=?, brand=?, model=?, unit=?, hsn=?, tax_rate=?, purchase_price=?,
                selling_price=?, b2b_price=?, serial_tracked=?, margin_pct=?, item_type=?, warranty_months=?, min_stock=?, show_on_website=?,
-               photo=?, barcode=?, is_active=? WHERE id=?', array_merge($data, [$id]));
+               photo=?, barcode=?, is_active=?, description=? WHERE id=?', array_merge($data, [$id]));
             flash('Item updated.');
         } else {
             q('INSERT INTO items (name, category_id, brand, model, unit, hsn, tax_rate, purchase_price, selling_price,
-               b2b_price, serial_tracked, margin_pct, item_type, warranty_months, min_stock, show_on_website, photo, barcode, is_active)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', $data);
+               b2b_price, serial_tracked, margin_pct, item_type, warranty_months, min_stock, show_on_website, photo, barcode, is_active, description)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', $data);
             flash('Item added.');
         }
         log_activity('item_save', post('name'));
@@ -114,6 +114,8 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Barcode</label><input type="text" name="barcode" value="<?= e($it['barcode'] ?? '') ?>"></div>
           <div><label>Photo (for website)</label><input type="file" name="photo" accept="image/*"></div>
         </div>
+        <div class="field"><label>Description (shows on the website; AI Auto-Fill can write this)</label>
+          <textarea name="description" rows="3"><?= e($it['description'] ?? '') ?></textarea></div>
         <div class="form-row cols-3">
           <label class="check-inline"><input type="checkbox" name="serial_tracked" value="1" <?= !empty($it['serial_tracked']) ? 'checked' : '' ?>> Serial number tracked</label>
           <label class="check-inline"><input type="checkbox" name="show_on_website" value="1" <?= !empty($it['show_on_website']) ? 'checked' : '' ?>> Show on website</label>

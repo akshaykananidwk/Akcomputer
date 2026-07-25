@@ -135,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_transaction') 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_invoice') {
     require_perm('settings.edit');
-    foreach (['google_review_link', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret', 'ocr_api_key'] as $k) set_setting($k, post($k));
+    foreach (['google_review_link', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret', 'ocr_api_key', 'gemini_api_key', 'gcs_api_key', 'gcs_cx'] as $k) set_setting($k, post($k));
     log_activity('settings_save');
     flash('Invoice settings saved.');
     redirect('settings.php?cat=invoice');
@@ -463,6 +463,19 @@ exit;
       <div><label>OCR.space API Key <span class="muted" style="font-weight:normal">(for Purchase &gt; Upload Bill)</span>
         <br><span class="muted" style="font-weight:normal;font-size:12.5px">Leave blank to use the built-in free reader (shared &amp; rate-limited). For your own reliable, higher-volume key, register free at <strong>ocr.space/ocrapi</strong> — they email you a key — then paste it here.</span></label>
         <input type="password" name="ocr_api_key" value="<?= e(setting('ocr_api_key')) ?>" placeholder="Using built-in free reader"></div>
+    </div>
+    <div class="form-row cols-2">
+      <div><label>Google Gemini API Key <span class="muted" style="font-weight:normal">(for Items &gt; AI Auto-Fill — category + description)</span>
+        <br><span class="muted" style="font-weight:normal;font-size:12.5px">Free at <strong>aistudio.google.com/apikey</strong> — sign in with Google, press "Create API key", paste it here. The free tier covers this shop's whole item list at ₹0.</span></label>
+        <input type="password" name="gemini_api_key" value="<?= e(setting('gemini_api_key')) ?>" placeholder="AIza..."></div>
+    </div>
+    <div class="form-row cols-2">
+      <div><label>Google Image Search API Key <span class="muted" style="font-weight:normal">(for AI Auto-Fill product photos, optional)</span>
+        <br><span class="muted" style="font-weight:normal;font-size:12.5px">From <strong>console.cloud.google.com</strong> → enable "Custom Search API" → Credentials → API key. 100 photo searches/day are free; beyond that Google charges about ₹450 per 1000.</span></label>
+        <input type="password" name="gcs_api_key" value="<?= e(setting('gcs_api_key')) ?>" placeholder="AIza..."></div>
+      <div><label>Search Engine ID (cx) <span class="muted" style="font-weight:normal">(pairs with the image key)</span>
+        <br><span class="muted" style="font-weight:normal;font-size:12.5px">Make one at <strong>programmablesearchengine.google.com</strong> — "Search the entire web" ON, "Image search" ON — then copy its Search engine ID.</span></label>
+        <input type="text" name="gcs_cx" value="<?= e(setting('gcs_cx')) ?>" placeholder="a12bc34..."></div>
     </div>
     <button class="btn" type="submit">Save</button>
   </form>
