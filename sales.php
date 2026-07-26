@@ -96,8 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 
     $paid = post('payment_mode') === 'credit' ? 0 : min((float)post('paid'), $total);
     $credit_days = (int)post('credit_days');
-    $bankAccId = (int)post('bank_account_id') ?: null;
-    $pmId = (int)post('payment_method_id') ?: null;
+    list($pmId, $bankAccId) = resolve_payment_target(post('payment_mode', 'cash'), post('bank_account_id'));
 
     // Auto-link/create a Party from the mobile number (Vyapar-style) so
     // every customer becomes a trackable ledger party even when staff just
@@ -344,6 +343,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     // stay in sync instead of silently drifting from the invoice.
     $paid = max(0, min((float)post('paid', $sale['paid']), $total));
     $paidDelta = round($paid - (float)$sale['paid'], 2);
+    $modeCode = post('payment_mode', $sale['payment_mode'] ?: 'cash');
+    list($pmId, $bankAccId) = resolve_payment_target($modeCode, post('bank_account_id'));
     $credit_days = (int)post('credit_days');
     $sale_date = post('sale_date', $sale['sale_date']);
 
@@ -433,17 +434,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
 
         q('UPDATE sales SET company_id=?, party_id=?, customer_name=?, customer_mobile=?, location_id=?, sale_date=?, price_type=?,
            credit_days=?, due_date=?, subtotal=?, discount=?, discount_type=?, discount_pct=?, tax_amount=?, shipping=?, adjustment=?, round_off=?, total=?, paid=?,
-           status=?, notes=? WHERE id=?',
+           payment_mode=?, payment_method_id=?, bank_account_id=?, status=?, notes=? WHERE id=?',
           [$company['id'], $party_id, post('customer_name'), post('customer_mobile'), $loc_id,
            $sale_date, post('price_type', 'retail'), $credit_days,
            $credit_days ? date('Y-m-d', strtotime("$sale_date +$credit_days days")) : null,
            $subtotal, $discount, $discType, $discPct, $tax, $shipping, $adjustment, $roundOff, $total, $paid,
-           payment_status($total, $paid), post('notes'), $sid]);
+           $modeCode, $pmId, $bankAccId, payment_status($total, $paid), post('notes'), $sid]);
+
+        // Mode/bank changed on the bill itself → move this bill's existing
+        // ledger entries with it, so the money shows in the right cashbook/
+        // bank. Switching TO credit doesn't rewrite anything: money already
+        // received stays in whichever book it actually arrived in.
+        if ($modeCode !== 'credit' && ($modeCode !== $sale['payment_mode'] || (int)$bankAccId != (int)$sale['bank_account_id'])) {
+            q("UPDATE payments SET mode = ?, bank_account_id = ?, payment_method_id = ? WHERE ref_type = 'sale' AND ref_id = ?",
+              [$modeCode, $bankAccId, $pmId, $sid]);
+        }
 
         if (abs($paidDelta) > 0.009) {
-            q('INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
-               VALUES (?,?,?,?,?,?,?,?,?)',
-              [$party_id, $paidDelta > 0 ? 'in' : 'out', abs($paidDelta), post('payment_mode', $sale['payment_mode']),
+            // 'credit' is not a money book - a paid correction on a credit
+            // bill still moved real money, count it as cash
+            $deltaMode = $modeCode === 'credit' ? 'cash' : $modeCode;
+            q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+              [$party_id, $paidDelta > 0 ? 'in' : 'out', abs($paidDelta), $deltaMode,
+               $deltaMode === $modeCode ? $bankAccId : null, $deltaMode === $modeCode ? $pmId : null,
                'sale', $sid, today(), 'Paid amount adjusted on edit of ' . $sale['invoice_no'], $u['id']]);
         }
 
@@ -607,17 +621,22 @@ if ($action === 'new' || $action === 'edit') {
             <input type="hidden" name="discount" id="discount" value="0">
             <input type="hidden" name="discount_type" id="discount_type" value="amount">
           </div>
-          <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= $isEdit ? money($editSale['shipping']) : '0' ?>" oninput="Bill.totals()"></div>
-          <div><label>Adjustment (₹, +/-)</label><input type="number" step="any" name="adjustment" id="adjustment" value="<?= $isEdit ? money($editSale['adjustment']) : '0' ?>" oninput="Bill.totals()"></div>
+          <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= $isEdit ? 0 + $editSale['shipping'] : '0' ?>" oninput="Bill.totals()"></div>
+          <div><label>Adjustment (₹, +/-)</label><input type="number" step="any" name="adjustment" id="adjustment" value="<?= $isEdit ? 0 + $editSale['adjustment'] : '0' ?>" oninput="Bill.totals()"></div>
           <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
           <div><label>⭐ Redeem Points <span class="muted" id="pointsAvail" style="font-weight:normal"></span></label>
             <input type="number" step="1" min="0" name="redeem_points" id="redeem_points" value="0" oninput="Bill.totals()"></div>
           <?php endif; ?>
           <?php if ($isEdit): ?>
-          <div><label>Paid (₹)</label><input type="number" step="any" name="paid" id="paid" value="<?= money($editSale['paid']) ?>" max="<?= money($editSale['total']) ?>"></div>
-          <div><label>Payment mode <span class="muted" style="font-weight:normal">(if you change the paid amount)</span></label>
-            <select name="payment_mode">
-              <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" <?= $pm['code'] === $editSale['payment_mode'] ? 'selected' : '' ?>><?= e($pm['name']) ?></option><?php endforeach; ?>
+          <div><label>Paid (₹)</label><input type="number" step="any" name="paid" id="paid" value="<?= 0 + $editSale['paid'] ?>" max="<?= 0 + $editSale['total'] ?>"></div>
+          <div><label>Payment mode</label>
+            <select name="payment_mode" id="payment_mode" onchange="pmChange()">
+              <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>" <?= $pm['code'] === $editSale['payment_mode'] ? 'selected' : '' ?>><?= e($pm['name']) ?></option><?php endforeach; ?>
+              <?php if (!in_array('credit', array_column($pms, 'code'), true)): ?><option value="credit" <?= $editSale['payment_mode'] === 'credit' ? 'selected' : '' ?>>Credit / Udhar</option><?php endif; ?>
+            </select></div>
+          <div id="bankAccBox" style="display:none"><label>Bank Account</label>
+            <select name="bank_account_id">
+              <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>" <?= (int)$editSale['bank_account_id'] === (int)$b['id'] ? 'selected' : '' ?>><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
             </select></div>
           <?php else: ?>
           <div><label>Paid now (₹) <a href="javascript:payFull()" style="font-weight:normal">[full]</a></label><input type="number" step="any" name="paid" id="paid" value="0"></div>
@@ -826,9 +845,11 @@ if ($action === 'new' || $action === 'edit') {
         var sel = document.getElementById('payment_mode');
         var opt = sel.options[sel.selectedIndex];
         document.getElementById('bankAccBox').style.display = opt.dataset.type === 'bank' ? '' : 'none';
+        if (!document.getElementById('ccCash')) return; // edit form has no Cash/Credit toggle
         if (sel.value === 'credit' && ccMode !== 'credit') setCC('credit');
         else if (sel.value !== 'credit' && ccMode === 'credit') setCC('cash');
       }
+      pmChange(); // on load: show the bank picker if the saved/default mode is a bank one
       window.pmChange = pmChange;
       function setDiscType(t) {
         document.getElementById('discount_type').value = t;

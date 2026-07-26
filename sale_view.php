@@ -157,7 +157,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
   <form method="post" class="filterbar">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="pay">
-    <div><input type="number" step="any" name="amount" value="<?= money($due) ?>" max="<?= $due ?>"></div>
+    <div><input type="number" step="any" name="amount" value="<?= 0 + $due ?>" max="<?= 0 + $due ?>"></div>
     <div><select name="mode" id="pv_mode" onchange="document.getElementById('pv_bank').style.display=this.selectedOptions[0].dataset.type==='bank'?'':'none'">
       <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-id="<?= $pm['id'] ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
     </select></div>

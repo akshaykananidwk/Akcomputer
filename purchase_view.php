@@ -97,7 +97,7 @@ include __DIR__ . '/includes/header.php';
   <form method="post" class="filterbar">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="pay">
-    <div><input type="number" step="any" name="amount" value="<?= money($due) ?>"></div>
+    <div><input type="number" step="any" name="amount" value="<?= 0 + $due ?>"></div>
     <div><select name="mode" id="pv2_mode" onchange="document.getElementById('pv2_bank').style.display=this.selectedOptions[0].dataset.type==='bank'?'':'none'">
       <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
     </select></div>

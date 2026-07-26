@@ -608,7 +608,7 @@ if ($action === 'edit' && $id) {
         <h2>Edit <?= $pay['direction'] === 'in' ? 'Payment-In' : 'Payment-Out' ?> — <?= e($pay['party_name'] ?: 'Walk-in') ?></h2>
         <p class="muted mb">Changing the amount recalculates the linked bills and the party's balance automatically. The updated amount is re-applied to the oldest unpaid bill(s) first.</p>
         <div class="form-row cols-2">
-          <div><label>Amount (₹)</label><input type="number" step="any" name="amount" value="<?= money($pay['amount']) ?>" required></div>
+          <div><label>Amount (₹)</label><input type="number" step="any" name="amount" value="<?= 0 + $pay['amount'] ?>" required></div>
           <div><label>Date</label><input type="date" name="pay_date" value="<?= e($pay['pay_date']) ?>"></div>
         </div>
         <div class="form-row cols-2">

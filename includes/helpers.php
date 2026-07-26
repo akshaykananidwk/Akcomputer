@@ -441,6 +441,21 @@ function active_payment_methods() {
     if ($l === null) $l = all('SELECT * FROM payment_methods WHERE is_active = 1 ORDER BY sort_order, id');
     return $l;
 }
+/** Resolve a posted payment_mode code to [payment_method_id|null, bank_account_id|null].
+ *  The bank id is kept ONLY for bank-type modes (falling back to the default
+ *  account when none was picked). This guard matters: the bank <select> also
+ *  submits when hidden behind a cash mode, and bank balances sum payments by
+ *  bank_account_id alone — a cash payment carrying a stray bank id would
+ *  silently drain the bank ledger. */
+function resolve_payment_target($modeCode, $postedBankId) {
+    $pm = row('SELECT id, type FROM payment_methods WHERE code = ?', [$modeCode]);
+    $pmId = $pm ? (int)$pm['id'] : null;
+    $bank = null;
+    if ($pm && $pm['type'] === 'bank') {
+        $bank = (int)$postedBankId ?: ((int)val('SELECT id FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1') ?: null);
+    }
+    return [$pmId, $bank];
+}
 function upi_uri($vpa, $payee, $amount, $note) {
     return 'upi://pay?pa=' . rawurlencode($vpa) . '&pn=' . rawurlencode($payee) .
            '&am=' . number_format((float)$amount, 2, '.', '') . '&cu=INR&tn=' . rawurlencode($note);

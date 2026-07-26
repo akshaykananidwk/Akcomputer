@@ -47,8 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $paid = min((float)post('paid'), $total);
     $credit_days = (int)post('credit_days');
     $pdate = post('purchase_date', today());
-    $bankAccId = (int)post('bank_account_id') ?: null;
-    $pmId = (int)post('payment_method_id') ?: null;
+    $modeCode = post('payment_mode', 'cash');
+    list($pmId, $bankAccId) = resolve_payment_target($modeCode, post('bank_account_id'));
 
     $pdo = db();
     $pdo->beginTransaction();
@@ -100,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if ($paid > 0) {
             q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-              [$party_id, 'out', $paid, post('payment_mode', 'cash'), $bankAccId, $pmId, 'purchase', $pid, $pdate, 'Against purchase bill ' . post('bill_no'), $u['id']]);
+              [$party_id, 'out', $paid, $modeCode, $bankAccId, $pmId, 'purchase', $pid, $pdate, 'Against purchase bill ' . post('bill_no'), $u['id']]);
         }
         $pdo->commit();
         log_activity('purchase_add', "#$pid total $total");
@@ -219,6 +219,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $paidDelta = round($paid - (float)$purchase['paid'], 2);
     $credit_days = (int)post('credit_days');
     $pdate = post('purchase_date', $purchase['purchase_date']);
+    $modeCode = post('payment_mode', 'cash');
+    list($pmId, $bankAccId) = resolve_payment_target($modeCode, post('bank_account_id'));
 
     $pdo = db();
     $pdo->beginTransaction();
@@ -270,16 +272,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         }
 
         q('UPDATE purchases SET company_id=?, bill_no=?, party_id=?, location_id=?, purchase_date=?, credit_days=?, due_date=?,
-           subtotal=?, discount=?, discount_type=?, discount_pct=?, tax_amount=?, shipping=?, total=?, paid=?, status=?, notes=? WHERE id=?',
+           subtotal=?, discount=?, discount_type=?, discount_pct=?, tax_amount=?, shipping=?, total=?, paid=?, payment_method_id=?, bank_account_id=?, status=?, notes=? WHERE id=?',
           [(int)post('company_id', 1), post('bill_no'), $party_id, $loc_id, $pdate, $credit_days,
            $credit_days ? date('Y-m-d', strtotime("$pdate +$credit_days days")) : null,
-           $subtotal, $discount, $discType, $discPct, $tax, $shipping, $total, $paid, payment_status($total, $paid), post('notes'), $pid]);
+           $subtotal, $discount, $discType, $discPct, $tax, $shipping, $total, $paid, $pmId, $bankAccId, payment_status($total, $paid), post('notes'), $pid]);
+
+        // The owner changed the mode/bank on the bill itself, so the money
+        // ledger must follow: move this bill's payment entries to the newly
+        // chosen mode/bank, otherwise the old bank keeps showing the outflow.
+        if ($pmId != (int)$purchase['payment_method_id'] || (int)$bankAccId != (int)$purchase['bank_account_id']) {
+            q("UPDATE payments SET mode = ?, bank_account_id = ?, payment_method_id = ? WHERE ref_type = 'purchase' AND ref_id = ?",
+              [$modeCode, $bankAccId, $pmId, $pid]);
+        }
 
         if (abs($paidDelta) > 0.009) {
-            q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, ref_type, ref_id, pay_date, notes, created_by)
-               VALUES (?,?,?,?,?,?,?,?,?,?)',
-              [$party_id, $paidDelta > 0 ? 'out' : 'in', abs($paidDelta), post('payment_mode', 'cash'),
-               (int)post('bank_account_id') ?: null, 'purchase', $pid, today(),
+            q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+              [$party_id, $paidDelta > 0 ? 'out' : 'in', abs($paidDelta), $modeCode,
+               $bankAccId, $pmId, 'purchase', $pid, today(),
                'Paid amount adjusted on edit of ' . ($purchase['bill_no'] ?: "#$pid"), $u['id']]);
         }
 
@@ -383,16 +393,16 @@ if ($action === 'new' || $action === 'edit') {
             <input type="hidden" name="discount" id="discount" value="0">
             <input type="hidden" name="discount_type" id="discount_type" value="amount">
           </div>
-          <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= $isEdit ? money($editPurchase['shipping']) : '0' ?>" oninput="Bill.totals()"></div>
+          <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= $isEdit ? 0 + $editPurchase['shipping'] : '0' ?>" oninput="Bill.totals()"></div>
           <div><label><?= $isEdit ? 'Already paid (₹)' : 'Paid now (₹)' ?> <?php if ($isEdit): ?><span class="muted" style="font-weight:normal">(edit to correct the amount)</span><?php endif; ?></label>
-            <input type="number" step="any" name="paid" id="paid" value="<?= $isEdit ? money($editPurchase['paid']) : '0' ?>" oninput="Bill.totals()"></div>
-          <div><label>Payment mode <?php if ($isEdit): ?><span class="muted" style="font-weight:normal">(used if you change the paid amount)</span><?php endif; ?></label>
+            <input type="number" step="any" name="paid" id="paid" value="<?= $isEdit ? 0 + $editPurchase['paid'] : '0' ?>" oninput="Bill.totals()"></div>
+          <div><label>Payment mode</label>
             <select name="payment_mode" id="payment_mode" onchange="pmChange()">
-              <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
+              <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>" <?= $isEdit && (int)$editPurchase['payment_method_id'] === (int)$pm['id'] ? 'selected' : '' ?>><?= e($pm['name']) ?></option><?php endforeach; ?>
             </select></div>
           <div id="bankAccBox" style="display:none"><label>Bank Account</label>
             <select name="bank_account_id">
-              <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
+              <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>" <?= $isEdit && (int)$editPurchase['bank_account_id'] === (int)$b['id'] ? 'selected' : '' ?>><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
             </select></div>
         </div>
         <div class="field"><label>Notes</label><input type="text" name="notes" value="<?= $isEdit ? e($editPurchase['notes']) : '' ?>"></div>
@@ -427,6 +437,7 @@ if ($action === 'new' || $action === 'edit') {
     </div>
     <script>
       Bill.init({mode: 'purchase', serials: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1});
+      pmChange(); // show the bank picker when the bill's saved mode is a bank one
       document.getElementById('company_id').addEventListener('change', function () {
         Bill.cfg.gst = this.options[this.selectedIndex].dataset.gst == 1;
         Bill.totals();
