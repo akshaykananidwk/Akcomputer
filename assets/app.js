@@ -265,7 +265,7 @@ var Bill = {
     if (!box) return;
     var qty = parseFloat(div.querySelector('.i-qty').value) || 0;
     var price = parseFloat(div.querySelector('.i-price').value) || 0;
-    box.querySelector('.aip-sub').textContent = (qty * price).toFixed(2);
+    box.querySelector('.aip-sub').textContent = (qty * price - this.lineDisc(div)).toFixed(2);
   },
 
   renderSummary: function () {
@@ -285,7 +285,7 @@ var Bill = {
       row.className = 'bsum-row';
       row.innerHTML =
         '<div class="bsum-main"><strong></strong><div class="muted">' + qty + ' ' + unit + ' × ₹' + price.toFixed(2) + (desc ? ' · ' + '<span class="bsum-desc"></span>' : '') + '</div></div>' +
-        '<div class="bsum-val">₹' + (qty * price).toFixed(2) + '</div>' +
+        '<div class="bsum-val">₹' + (qty * price - self.lineDisc(div)).toFixed(2) + '</div>' +
         '<button type="button" class="bsum-del" title="Remove">✕</button>';
       row.querySelector('strong').textContent = name;
       if (desc) row.querySelector('.bsum-desc').textContent = desc;
@@ -338,6 +338,11 @@ var Bill = {
       '<div><label>Quantity</label><input type="number" step="any" min="0" name="qty[]" class="i-qty" value="1"></div>' +
       (this.cfg.freeQty ? '<div><label>Free Quantity</label><input type="number" step="any" min="0" name="free_qty[]" class="i-freeq" value="0" title="Free quantity (scheme)"></div>' : '') +
       '<div><label>Rate (Price/Unit)</label><input type="number" step="any" min="0" name="price[]" class="i-price" value="0"></div>' +
+      (this.cfg.lineDisc ?
+      '<div><label>Disc</label><div style="display:flex;gap:4px">' +
+      '<input type="number" step="any" min="0" name="ldisc[]" class="i-ldisc" value="0" style="flex:1;min-width:56px" title="Discount for this item">' +
+      '<select name="ldisc_t[]" class="i-ldisct" style="width:52px;flex-shrink:0"><option value="amount">\u20b9</option><option value="percent">%</option></select>' +
+      '</div></div>' : '') +
       '<div class="i-total-wrap"><label>Total</label><input type="text" class="i-total" value="0.00" readonly tabindex="-1"></div>' +
       '<div><button type="button" class="row-del" title="Remove">✕</button></div>' +
       '</div>' +
@@ -350,9 +355,12 @@ var Bill = {
     div.querySelector('.row-del').addEventListener('click', function () {
       div.remove(); self.totals();
     });
-    ['.i-qty', '.i-price'].forEach(function (sel) {
-      div.querySelector(sel).addEventListener('input', function () { self.rowTotal(div); });
+    ['.i-qty', '.i-price', '.i-ldisc'].forEach(function (sel) {
+      var el = div.querySelector(sel);
+      if (el) el.addEventListener('input', function () { self.rowTotal(div); });
     });
+    var ldtSel = div.querySelector('.i-ldisct');
+    if (ldtSel) ldtSel.addEventListener('change', function () { self.rowTotal(div); });
     var descInp = div.querySelector('.i-desc');
     if (descInp) descInp.addEventListener('input', function () { self.renderSummary(); });
     this.attachSearch(div);
@@ -598,26 +606,47 @@ var Bill = {
     sync();
   },
 
+  // Rupee discount for one row: reads the row's Disc input (fixed rupees for
+  // the whole line, or % of qty x rate), clamped so a line never goes negative.
+  lineDisc: function (div) {
+    var inp = div.querySelector('.i-ldisc');
+    if (!inp) return 0;
+    var qty = parseFloat(div.querySelector('.i-qty').value) || 0;
+    var price = parseFloat(div.querySelector('.i-price').value) || 0;
+    var gross = qty * price;
+    var v = parseFloat(inp.value) || 0;
+    var t = (div.querySelector('.i-ldisct') || {}).value;
+    var d = t === 'percent' ? gross * v / 100 : v;
+    return Math.max(0, Math.min(gross, d));
+  },
+
   rowTotal: function (div) {
     var qty = parseFloat(div.querySelector('.i-qty').value) || 0;
     var price = parseFloat(div.querySelector('.i-price').value) || 0;
-    div.querySelector('.i-total').value = (qty * price).toFixed(2);
+    div.querySelector('.i-total').value = (qty * price - this.lineDisc(div)).toFixed(2);
     if (div.classList.contains('panel-mode')) this.updatePanelTotal(div);
     this.totals();
   },
 
   totals: function () {
-    var sub = 0, tax = 0, lines = 0, qtyTotal = 0;
+    var sub = 0, tax = 0, lines = 0, qtyTotal = 0, ldTotal = 0;
     var gst = this.cfg.gst;
+    var self = this;
     document.querySelectorAll('#billItems .bill-row').forEach(function (div) {
       var qty = parseFloat(div.querySelector('.i-qty').value) || 0;
       var price = parseFloat(div.querySelector('.i-price').value) || 0;
       var tr = parseFloat(div.querySelector('.i-tax').value) || 0;
-      var line = qty * price;
+      var ld = self.lineDisc(div);
+      var line = qty * price - ld;
       if (qty > 0) { lines++; qtyTotal += qty; }
       sub += line;
+      ldTotal += ld;
       if (gst) tax += line * tr / 100;
     });
+    var ldRow = document.getElementById('ldiscRow');
+    if (ldRow) ldRow.style.display = ldTotal > 0.004 ? '' : 'none';
+    var ldEl = document.getElementById('t_ldisc');
+    if (ldEl) ldEl.textContent = ldTotal.toFixed(2);
     // discount: percent-aware when the ₹/% toggle markup is present on the page,
     // otherwise fall back to reading #discount as a plain rupee amount
     var discType = document.getElementById('discount_type');

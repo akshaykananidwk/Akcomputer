@@ -36,6 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $activeCF = all('SELECT id, label FROM item_custom_fields WHERE is_active = 1');
 
     $rowNs = post('row_n', []);
+    $ldiscs = post('ldisc', []);
+    $ldiscTs = post('ldisc_t', []);
     $rows = [];
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
@@ -52,8 +54,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if (!$iid || $qty <= 0) continue;
         $price = (float)($prices[$i] ?? 0);
         $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
+        // Per-item discount: a fixed rupee amount for the whole line, or a
+        // percent of qty x rate - clamped so the line never goes negative.
+        // The stored line total is NET of this discount (GST applies after).
+        $ldType = ($ldiscTs[$i] ?? 'amount') === 'percent' ? 'percent' : 'amount';
+        $ldVal = max(0, (float)($ldiscs[$i] ?? 0));
+        $gross = $qty * $price;
+        $ld = round(min($gross, $ldType === 'percent' ? $gross * $ldVal / 100 : $ldVal), 2);
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'free' => (float)($freeQtys[$i] ?? 0),
-                   'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $n,
+                   'price' => $price, 'tax_rate' => $tr, 'total' => $gross - $ld, 'n' => $n,
+                   'ld_type' => $ldType, 'ld_val' => $ldVal, 'ld' => $ld,
                    'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=new'); }
@@ -155,8 +165,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                 $layerCost = stock_layer_consume($r['item_id'], $loc_id, $r['qty'] + $r['free']);
                 if ($layerCost !== null) $costPrice = $layerCost;
             }
-            q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-              [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], $costPrice, $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null,
+            q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, line_disc_type, line_disc_val, line_disc, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+              [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], $costPrice, $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
                $r['description'], $r['custom_data']]);
 
             if ($item['item_type'] === 'service') { continue; } // service: no stock effect
@@ -297,6 +307,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $activeCF = all('SELECT id, label FROM item_custom_fields WHERE is_active = 1');
 
     $rowNs = post('row_n', []);
+    $ldiscs = post('ldisc', []);
+    $ldiscTs = post('ldisc_t', []);
     $rows = [];
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
@@ -313,8 +325,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         if (!$iid || $qty <= 0) continue;
         $price = (float)($prices[$i] ?? 0);
         $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
+        // Per-item discount: a fixed rupee amount for the whole line, or a
+        // percent of qty x rate - clamped so the line never goes negative.
+        // The stored line total is NET of this discount (GST applies after).
+        $ldType = ($ldiscTs[$i] ?? 'amount') === 'percent' ? 'percent' : 'amount';
+        $ldVal = max(0, (float)($ldiscs[$i] ?? 0));
+        $gross = $qty * $price;
+        $ld = round(min($gross, $ldType === 'percent' ? $gross * $ldVal / 100 : $ldVal), 2);
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'free' => (float)($freeQtys[$i] ?? 0),
-                   'price' => $price, 'tax_rate' => $tr, 'total' => $qty * $price, 'n' => $n,
+                   'price' => $price, 'tax_rate' => $tr, 'total' => $gross - $ld, 'n' => $n,
+                   'ld_type' => $ldType, 'ld_val' => $ldVal, 'ld' => $ld,
                    'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=edit&id=' . $sid); }
@@ -387,8 +407,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
             if ($item['serial_tracked'] && !$serials && !$allowNeg) {
                 throw new Exception("Select serial number(s) for {$item['name']}.");
             }
-            q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-              [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $serials ? implode(',', $serials) : null,
+            q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, line_disc_type, line_disc_val, line_disc, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+              [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
                $r['description'], $r['custom_data']]);
 
             if ($item['item_type'] === 'service') { continue; }
@@ -654,6 +674,7 @@ if ($action === 'new' || $action === 'edit') {
         <div class="field"><label>Notes</label><input type="text" name="notes" <?= $isEdit ? 'value="' . e($editSale['notes']) . '"' : '' ?>></div>
         <div class="bill-totals">
           <div class="t-line"><span>Items</span><span id="t_items">0 items · 0 qty</span></div>
+          <div class="t-line" id="ldiscRow" style="display:none"><span>Item Discounts</span><span>- ₹ <span id="t_ldisc">0.00</span></span></div>
           <div class="t-line"><span>Subtotal</span><span>₹ <span id="t_sub">0.00</span></span></div>
           <div class="t-line"><span>GST</span><span>₹ <span id="t_tax">0.00</span></span></div>
           <div class="t-line"><span>Shipping</span><span>₹ <span id="t_ship">0.00</span></span></div>
@@ -682,7 +703,7 @@ if ($action === 'new' || $action === 'edit') {
       </div>
     </form>
     <script>
-      Bill.init({mode: 'sale', serials: true, freeQty: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1,
+      Bill.init({mode: 'sale', serials: true, freeQty: true, lineDisc: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1,
         showPurchasePrice: <?= json_encode(setting('show_purchase_price_billing') === '1' && can('items.cost')) ?>,
         customFields: <?= json_encode(array_map(fn($f) => ['id' => $f['id'], 'label' => $f['label']], $customFields)) ?><?= $isEdit ? ', editSaleId: ' . (int)$editSale['id'] : '' ?>});
       // barcode scan shortcut next to "+ Add Items" - opens a fresh item
@@ -738,6 +759,7 @@ if ($action === 'new' || $action === 'edit') {
         var pre = <?= json_encode(array_map(fn($x) => [
             'id' => (int)$x['item_id'], 'name' => $x['name'], 'qty' => (float)$x['qty'],
             'free' => (float)($x['free_qty'] ?? 0), 'price' => (float)$x['price'], 'tax' => (float)$x['tax_rate'],
+            'ldiscVal' => (float)($x['line_disc_val'] ?? 0), 'ldiscType' => $x['line_disc_type'] ?? 'amount',
             'serialTracked' => (int)$x['serial_tracked'],
             'serials' => $x['serials'] ? array_values(array_filter(array_map('trim', explode(',', $x['serials'])))) : [],
             'description' => $x['description'] ?? '',
@@ -774,6 +796,8 @@ if ($action === 'new' || $action === 'edit') {
             div.querySelector('.i-price').value = it.price;
           }
           var descInp = div.querySelector('.i-desc'); if (descInp) descInp.value = it.description;
+          var ldi = div.querySelector('.i-ldisc'); if (ldi) ldi.value = it.ldiscVal || 0;
+          var ldts = div.querySelector('.i-ldisct'); if (ldts) ldts.value = it.ldiscType || 'amount';
           div.querySelectorAll('.i-cf').forEach(function (cf) {
             if (it.customData && it.customData[cf.dataset.label] !== undefined) cf.value = it.customData[cf.dataset.label];
           });

@@ -17,7 +17,8 @@ if ($r === 'business' && can('reports.profit')) {
     $repairIncome = (float)val('SELECT COALESCE(SUM(final_charge),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$from, $to]);
     $repairCost = (float)val('SELECT COALESCE(SUM(outsource_cost),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$from, $to]);
     $exp = (float)val('SELECT COALESCE(SUM(amount),0) FROM expenses WHERE exp_date BETWEEN ? AND ?', [$from, $to]);
-    $discGiven = (float)val('SELECT COALESCE(SUM(discount + loyalty_discount),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?', [$from, $to]);
+    $discGiven = (float)val('SELECT COALESCE(SUM(discount + loyalty_discount),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?', [$from, $to])
+               + (float)val('SELECT COALESCE(SUM(si.line_disc),0) FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?', [$from, $to]);
     $recv = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid' AND is_cancelled = 0");
     $paybl = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid'");
     $stockVal = (float)val('SELECT COALESCE(SUM(sq.q * i.purchase_price),0) FROM
@@ -71,8 +72,10 @@ if ($r === 'daily') {
     // These are <div> cards so they only appear on screen, never in the
     // table-only PDF export - so a plain ₹ here is fine.
     $summ = row("SELECT COUNT(*) txns, COALESCE(SUM(total),0) total, COALESCE(SUM(total - paid),0) due,
-                 COALESCE(SUM(discount + loyalty_discount),0) disc
-                 FROM sales WHERE sale_date BETWEEN ? AND ? $ew", array_merge([$from, $to], $ep));
+                 COALESCE(SUM(discount + loyalty_discount),0)
+                 + COALESCE((SELECT SUM(si.line_disc) FROM sale_items si JOIN sales s2 ON s2.id = si.sale_id
+                             WHERE s2.sale_date BETWEEN ? AND ?), 0) disc
+                 FROM sales WHERE sale_date BETWEEN ? AND ? $ew", array_merge([$from, $to, $from, $to], $ep));
     if (empty($reportPdf)) {
         echo '<div class="grid-stats mb">';
         echo '<div class="stat"><div class="stat-label">🧾 No. of Txns</div><div class="stat-value">' . (int)$summ['txns'] . '</div></div>';
@@ -548,7 +551,8 @@ if ($r === 'bill_profit' && can('reports.profit')) {
     list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus, $fUser);
     $rows = all("SELECT s.id, s.invoice_no, s.sale_date, s.customer_name, s.total,
                  s.discount, s.loyalty_discount, s.adjustment, s.round_off,
-                 SUM(si.total) rev, SUM(si.qty * IF(si.cost_price > 0, si.cost_price, i.purchase_price)) cost
+                 SUM(si.total) rev, COALESCE(SUM(si.line_disc),0) ldisc,
+                 SUM(si.qty * IF(si.cost_price > 0, si.cost_price, i.purchase_price)) cost
                  FROM sales s JOIN sale_items si ON si.sale_id = s.id JOIN items i ON i.id = si.item_id
                  WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $ew GROUP BY s.id ORDER BY s.id DESC", array_merge([$from, $to], $ep));
     // Profit is what actually stays in the pocket: item margin MINUS the
@@ -558,8 +562,12 @@ if ($r === 'bill_profit' && can('reports.profit')) {
     $tp = 0; $td = 0; $tb = 0;
     $body = '';
     foreach ($rows as $x) {
-        $disc = (float)$x['discount'] + (float)$x['loyalty_discount'];
-        $netRev = (float)$x['rev'] - $disc + (float)$x['adjustment'] + (float)$x['round_off'];
+        // si.total (rev) is already net of per-item line discounts, so only
+        // the bill-level ones reduce netRev here; the Discount column shows
+        // everything given (line + bill + loyalty).
+        $billDisc = (float)$x['discount'] + (float)$x['loyalty_discount'];
+        $disc = $billDisc + (float)$x['ldisc'];
+        $netRev = (float)$x['rev'] - $billDisc + (float)$x['adjustment'] + (float)$x['round_off'];
         $pf = $netRev - (float)$x['cost'];
         $tp += $pf; $td += $disc; $tb += (float)$x['total'];
         $mg = $netRev > 0 ? round($pf / $netRev * 100, 1) : 0;
