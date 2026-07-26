@@ -87,6 +87,79 @@ function wa_bot_reply_text(array $matches, $photoGuess = '') {
     return $out;
 }
 
+// ---------- tiny per-number conversation memory (for follow-up questions) ----------
+function wa_bot_get_state($mobile) {
+    $s = row('SELECT * FROM wa_bot_state WHERE mobile = ?', [$mobile]);
+    // a stale question (>30 min old) is forgotten - the person moved on
+    if ($s && strtotime($s['updated_at']) < time() - 1800) { wa_bot_clear_state($mobile); return null; }
+    return $s;
+}
+function wa_bot_set_state($mobile, $state, $data = []) {
+    q('INSERT INTO wa_bot_state (mobile, state, data) VALUES (?,?,?)
+       ON DUPLICATE KEY UPDATE state = VALUES(state), data = VALUES(data)', [$mobile, $state, json_encode($data, JSON_UNESCAPED_UNICODE)]);
+}
+function wa_bot_clear_state($mobile) { q('DELETE FROM wa_bot_state WHERE mobile = ?', [$mobile]); }
+
+/** Customer's own account: matched by THEIR WhatsApp number against the
+ *  parties list, so nobody can ever see anyone else's ledger. */
+function wa_bot_party_for($mobile) {
+    return row("SELECT * FROM parties WHERE mobile <> '' AND ? LIKE CONCAT('%', RIGHT(REPLACE(REPLACE(mobile, '+', ''), ' ', ''), 10)) ORDER BY is_active DESC LIMIT 1", [$mobile]);
+}
+
+/** "મારા કેટલા બાકી?" - the customer's own balance + their last 3 entries. */
+function wa_bot_ledger_reply($party) {
+    $shop = setting('app_name', 'AK Computer');
+    $bx = party_balance_expr('p');
+    $bal = (float)val("SELECT $bx FROM parties p WHERE p.id = ?", [$party['id']]);
+    $out = "🙏 *$shop*\nનમસ્તે *" . $party['name'] . "*!\n";
+    if ($bal > 0.009) $out .= "તમારા બાકી: *₹" . money($bal) . "* (આપવાના)\n";
+    elseif ($bal < -0.009) $out .= "તમારી જમા: *₹" . money(-$bal) . "* (અમારે આપવાના)\n";
+    else $out .= "તમારો હિસાબ ચોખ્ખો છે — કંઈ બાકી નથી ✅\n";
+    $lines = all("(SELECT sale_date d, CONCAT('બિલ ', invoice_no) label, total amt FROM sales WHERE party_id = ? AND is_cancelled = 0)
+                  UNION ALL
+                  (SELECT pay_date d, IF(direction='in','ચુકવણી મળી','ચુકવણી કરી') label, amount amt FROM payments WHERE party_id = ?)
+                  ORDER BY d DESC LIMIT 3", [$party['id'], $party['id']]);
+    if ($lines) {
+        $out .= "\nછેલ્લી એન્ટ્રી:";
+        foreach ($lines as $l) $out .= "\n- " . dmy($l['d']) . ' ' . $l['label'] . ' ₹' . money($l['amt']);
+    }
+    $out .= "\n\nકોઈ ફરક લાગે તો આ મેસેજનો જવાબ આપો. 🙏";
+    return $out;
+}
+
+/** "મારે 4 કેમેરા લગાડવા છે" (પછી IP/HD) -> stock-based mini quotation. */
+function wa_bot_camera_quote($qty, $type) {
+    $shop = setting('app_name', 'AK Computer');
+    $qty = max(1, min(64, (int)$qty));
+    $typeLike = $type === 'ip' ? '%ip%' : '%hd%';
+    $cams = all("SELECT i.id, i.name, i.selling_price, COALESCE((SELECT SUM(qty) FROM stock s WHERE s.item_id = i.id),0) stk
+                 FROM items i LEFT JOIN categories c ON c.id = i.category_id
+                 WHERE i.is_active = 1 AND i.show_on_website = 1
+                 AND (i.name LIKE '%camera%' OR i.name LIKE '%કેમેરા%' OR i.name LIKE '%cctv%' OR c.name LIKE '%camera%' OR c.name LIKE '%cctv%')
+                 AND (i.name LIKE ? OR c.name LIKE ?)
+                 ORDER BY (stk >= ?) DESC, i.selling_price ASC LIMIT 3", [$typeLike, $typeLike, $qty]);
+    if (!$cams) {
+        // type-specific search found nothing - fall back to any camera
+        $cams = all("SELECT i.id, i.name, i.selling_price, COALESCE((SELECT SUM(qty) FROM stock s WHERE s.item_id = i.id),0) stk
+                     FROM items i LEFT JOIN categories c ON c.id = i.category_id
+                     WHERE i.is_active = 1 AND i.show_on_website = 1
+                     AND (i.name LIKE '%camera%' OR i.name LIKE '%કેમેરા%' OR i.name LIKE '%cctv%' OR c.name LIKE '%camera%' OR c.name LIKE '%cctv%')
+                     ORDER BY i.selling_price ASC LIMIT 3");
+    }
+    if (!$cams) return "🙏 *$shop*\nહમણાં કેમેરાની વિગત ઓનલાઇન નથી — અમારા માણસ તરત કોટેશન મોકલશે!";
+    $out = "🙏 *$shop*\n📋 *કોટેશન — $qty " . ($type === 'ip' ? 'IP' : 'HD') . " કેમેરા*\n";
+    $n = 1;
+    foreach ($cams as $c) {
+        $tot = $qty * (float)$c['selling_price'];
+        $out .= "\n$n) *{$c['name']}*\n   ₹" . money($c['selling_price']) . " × $qty = *₹" . money($tot) . "*"
+              . ((float)$c['stk'] >= $qty ? " ✅ સ્ટોકમાં" : " 📦 ઓર્ડરથી")
+              . "\n   " . base_url('product.php?id=' . $c['id']) . "\n";
+        $n++;
+    }
+    $out .= "\n📌 " . ($type === 'ip' ? 'NVR' : 'DVR') . ", હાર્ડ ડિસ્ક, કેબલ અને ફિટિંગ ચાર્જ અલગથી લાગશે.\nપાક્કા ભાવ માટે આ મેસેજનો જવાબ આપો — અમે તરત ફોન કરીશું! 📞";
+    return $out;
+}
+
 /** The whole bot: takes [mobile, text, jpegBytes|null], decides, replies, logs.
  *  Returns a short status string (for the webhook's JSON echo / debugging).
  *
@@ -130,17 +203,47 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
         if ($lastHello) return 'greeted-recently';
         $reply = "🙏 નમસ્તે! *" . setting('app_name', 'AK Computer') . "* માં આપનું સ્વાગત છે.\n\nકોઈપણ પ્રોડક્ટનું નામ લખો (કે ફોટો મોકલો) — ભાવ અને લિંક તરત મળશે!\n\n🌐 આખો સ્ટોર: " . base_url('catalog.php');
     } elseif (trim($text) !== '') {
-        $matches = wa_bot_search($text);
-        if ($matches) {
-            $reply = wa_bot_reply_text($matches);
-        } elseif (mb_strlen(trim($text)) >= 5 && wa_bot_ai_allowed()) {
-            // local search understood nothing - ONE tiny AI call so the
-            // customer still gets a helpful 1-2 line answer
-            $reply = wa_bot_ai_reply($text);
-            if ($reply !== null) $usedAi = 1;
+        $t = mb_strtolower($text);
+        $st = wa_bot_get_state($mobile);
+
+        // 1) pending follow-up: we asked "IP કે HD?" - understand the answer
+        if ($st && $st['state'] === 'camera_type') {
+            $d = json_decode($st['data'], true) ?: [];
+            if (preg_match('/ip|આઈપી|આઇપી/iu', $t)) {
+                $reply = wa_bot_camera_quote($d['qty'] ?? 4, 'ip'); wa_bot_clear_state($mobile);
+            } elseif (preg_match('/hd|analog|એચડી|dvr/iu', $t)) {
+                $reply = wa_bot_camera_quote($d['qty'] ?? 4, 'hd'); wa_bot_clear_state($mobile);
+            } else {
+                $reply = "🙏 ફક્ત *IP* કે *HD* લખી દો — એટલે તરત કોટેશન મોકલી દઉં!";
+            }
         }
-        // still nothing -> stay SILENT so the bot never talks over a real
-        // conversation the owner is having with the customer
+        // 2) "મારે 4 કેમેરા લગાડવા છે" -> first ASK which type, then quote
+        elseif (preg_match('/(\d+)\s*(camera|cam|કેમેરા|કૅમેરા|कैमरा)/iu', $t, $cm)
+                || (preg_match('/(camera|કેમેરા|कैमरा)/iu', $t) && preg_match('/lagad|લગાડ|લગાવ|फिट|install|setup|જોઈએ|joie|chahiye/iu', $t))) {
+            $qn = isset($cm[1]) ? (int)$cm[1] : 4;
+            wa_bot_set_state($mobile, 'camera_type', ['qty' => max(1, $qn)]);
+            $reply = "🙏 *" . setting('app_name', 'AK Computer') . "*\nસરસ! " . max(1, $qn) . " કેમેરા માટે એક સવાલ:\n\n*IP કેમેરા* જોઈએ કે *HD (analog)*?\nફક્ત IP અથવા HD લખી દો — તરત ભાવ સાથે કોટેશન મોકલું. 📋";
+        }
+        // 3) the customer's OWN account: balance / ledger (matched by number)
+        elseif (preg_match('/baki|બાકી|balance|hisab|હિસાબ|ledger|ઉધાર|udhar|खाता|बकाया/iu', $t)) {
+            $party = wa_bot_party_for($mobile);
+            $reply = $party ? wa_bot_ledger_reply($party)
+                : "🙏 *" . setting('app_name', 'AK Computer') . "*\nઆ નંબર પર કોઈ ખાતું નથી મળ્યું. દુકાને તમારો આ નંબર નોંધાવેલો હશે તો હિસાબ અહીં જ મળી જશે — એક વાર દુકાનનો સંપર્ક કરો. 📞";
+        }
+        // 4) product search (any language - matches name/brand/model/category)
+        else {
+            $matches = wa_bot_search($text);
+            if ($matches) {
+                $reply = wa_bot_reply_text($matches);
+            } elseif (mb_strlen(trim($text)) >= 5 && wa_bot_ai_allowed()) {
+                // local search understood nothing - ONE tiny AI call so the
+                // customer still gets a helpful 1-2 line answer
+                $reply = wa_bot_ai_reply($text);
+                if ($reply !== null) $usedAi = 1;
+            }
+            // still nothing -> stay SILENT so the bot never talks over a real
+            // conversation the owner is having with the customer
+        }
     }
 
     q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
