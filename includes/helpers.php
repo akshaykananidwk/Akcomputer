@@ -441,6 +441,36 @@ function active_payment_methods() {
     if ($l === null) $l = all('SELECT * FROM payment_methods WHERE is_active = 1 ORDER BY sort_order, id');
     return $l;
 }
+// ---------- Public website (catalog.php / product.php) ----------
+/** Dealer price: the selling price reduced by a web account's discount % -
+ *  the ONE place this maths lives, used for display AND order pricing so the
+ *  browser is never trusted with it. */
+function dealer_price($selling, $pct) {
+    return $pct > 0 ? round((float)$selling * (1 - $pct / 100), 2) : (float)$selling;
+}
+/** Emoji for a category name - purely cosmetic, keyword-matched. */
+function cat_icon($name) {
+    $n = mb_strtolower((string)$name);
+    foreach (['cctv' => '📹', 'camera' => '📹', 'laptop' => '💻', 'computer' => '🖥️', 'desktop' => '🖥️', 'monitor' => '🖥️',
+              'printer' => '🖨️', 'cable' => '🔌', 'wire' => '🔌', 'power' => '🔌', 'ups' => '🔋', 'battery' => '🔋',
+              'storage' => '💾', 'hdd' => '💾', 'ssd' => '💾', 'pen' => '💾', 'memory' => '💾', 'ram' => '💾',
+              'network' => '📡', 'router' => '📡', 'wifi' => '📡', 'keyboard' => '⌨️', 'mouse' => '🖱️',
+              'speaker' => '🔊', 'audio' => '🔊', 'headphone' => '🎧', 'cctv accessories' => '📹', 'service' => '🛠️'] as $k => $ico) {
+        if (strpos($n, $k) !== false) return $ico;
+    }
+    return '📦';
+}
+/** Counts one row per visitor per day (guests only; staff browsing the shop's
+ *  own site would inflate the numbers). The hash holds no personal data. */
+function site_visit_track($page = '') {
+    if (current_user()) return;
+    $vh = substr(sha1(($_SERVER['REMOTE_ADDR'] ?? '') . '|' . ($_SERVER['HTTP_USER_AGENT'] ?? '')), 0, 40);
+    try {
+        q('INSERT INTO site_visits (visit_date, visitor_hash, views) VALUES (CURDATE(), ?, 1)
+           ON DUPLICATE KEY UPDATE views = views + 1', [$vh]);
+    } catch (Exception $e) { /* table not migrated yet - never break the public site */ }
+}
+
 /** Resolve a posted payment_mode code to [payment_method_id|null, bank_account_id|null].
  *  The bank id is kept ONLY for bank-type modes (falling back to the default
  *  account when none was picked). This guard matters: the bank <select> also

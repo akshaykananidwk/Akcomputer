@@ -588,6 +588,29 @@ if ($r === 'bill_profit' && can('reports.profit')) {
     echo '<p class="muted">Profit = items (sale − cost) − discount − loyalty points ± adjustment/round-off. GST is not counted as profit. Cost = the purchase price at the time of the bill; for old bills, the current purchase price is used.</p>';
 }
 
+// ---------------- website visitors (daily unique) ----------------
+if ($r === 'web_visits') {
+    $rows = all('SELECT visit_date d, COUNT(*) uniq_visitors, SUM(views) views FROM site_visits
+                 WHERE visit_date BETWEEN ? AND ? GROUP BY visit_date ORDER BY visit_date DESC', [$from, $to]);
+    $tu = array_sum(array_column($rows, 'uniq_visitors')); $tv = array_sum(array_column($rows, 'views'));
+    if (empty($reportPdf)) {
+        echo '<div class="grid-stats mb">';
+        echo '<div class="stat"><div class="stat-label">👥 Unique Visitors (period)</div><div class="stat-value">' . $tu . '</div></div>';
+        echo '<div class="stat"><div class="stat-label">👀 Page Views</div><div class="stat-value">' . $tv . '</div></div>';
+        $today = row('SELECT COUNT(*) u, COALESCE(SUM(views),0) v FROM site_visits WHERE visit_date = CURDATE()');
+        echo '<div class="stat s-ok"><div class="stat-label">📅 Today</div><div class="stat-value">' . (int)$today['u'] . ' <span style="font-size:13px;font-weight:500">visitors</span></div></div>';
+        echo '</div>';
+        if ($rows && function_exists('svg_line_chart')) {
+            $cd = array_reverse(array_map(fn($x) => ['label' => date('d/m', strtotime($x['d'])), 'val' => (int)$x['uniq_visitors']], array_slice($rows, 0, 14)));
+            echo '<div class="card"><h3>Unique visitors per day</h3>' . svg_line_chart($cd, '#4f46e5') . '</div>';
+        }
+    }
+    echo '<div class="table-wrap"><table><thead><tr><th>Date</th><th class="num">Unique Visitors</th><th class="num">Page Views</th></tr></thead><tbody>';
+    foreach ($rows as $x) echo '<tr><td>' . dmy($x['d']) . '</td><td class="num">' . (int)$x['uniq_visitors'] . '</td><td class="num">' . (int)$x['views'] . '</td></tr>';
+    if (!$rows) echo '<tr><td colspan="3" class="muted">No visits recorded in this period yet. (Counting starts once this update is live; staff logins are not counted.)</td></tr>';
+    echo '</tbody></table></div>';
+}
+
 // ---------------- staff stock ----------------
 if ($r === 'staff') {
     $rows = all('SELECT u2.name staff, i.name item, ss.qty, i.unit FROM staff_stock ss

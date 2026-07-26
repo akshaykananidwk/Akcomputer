@@ -148,6 +148,11 @@ include __DIR__ . '/includes/header.php';
 <?php if ($walkinDue > 0.009): ?>
 <p class="muted mt" style="margin-top:-6px;margin-bottom:14px">+ ₹<?= money($walkinDue) ?> due on walk-in bills (no party - collect directly from the Sale List)</p>
 <?php endif; ?>
+<?php if (can('weborders.view')):
+    try { $_wv = row('SELECT COUNT(*) u, COALESCE(SUM(views),0) v FROM site_visits WHERE visit_date = CURDATE()'); } catch (Exception $e) { $_wv = null; }
+    if ($_wv): ?>
+<p class="muted" style="margin-top:-6px;margin-bottom:14px">🌐 Website today: <strong><?= (int)$_wv['u'] ?></strong> visitors · <?= (int)$_wv['v'] ?> views — <a href="reports.php?r=web_visits">full report</a></p>
+<?php endif; endif; ?>
 <?php elseif ($_w === 'sale_overview'): ?>
 <div class="card">
   <h2>Sale Overview <span class="muted" style="font-weight:400;font-size:13px">(Last 6 Months<?= $dashLoc ? ' - ' . e($locsAllDash[array_search($dashLoc, array_column($locsAllDash, 'id'))]['name'] ?? '') : '' ?>)</span></h2>

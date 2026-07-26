@@ -33,8 +33,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'add') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     require_perm('webcustomers.edit');
     $id = (int)post('id');
+    $before = row('SELECT * FROM web_accounts WHERE id = ?', [$id]);
     q('UPDATE web_accounts SET discount_pct = ?, is_active = ? WHERE id = ?',
       [max(0, min(90, (float)post('discount_pct'))), post('is_active') ? 1 : 0, $id]);
+    // approving a self-registered dealer: tell them their login is live now
+    if ($before && !$before['is_active'] && post('is_active')) {
+        send_whatsapp($before['mobile'], "✅ *" . setting('app_name', 'AK Computer') . "*\n\n" . $before['name'] . ", તમારું ડીલર એકાઉન્ટ મંજૂર થઈ ગયું! 🎉\nહવે લોગિન કરો એટલે તમારો સ્પેશિયલ ભાવ દેખાશે:\n" . base_url('catalog.php?dlogin=1'));
+    }
     if (post('new_password') !== '') {
         q('UPDATE web_accounts SET password_hash = ? WHERE id = ?', [password_hash(post('new_password'), PASSWORD_DEFAULT), $id]);
         $acc = row('SELECT * FROM web_accounts WHERE id = ?', [$id]);
@@ -65,6 +70,14 @@ $parties = all("SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name")
 $page_title = 'Dealer Website Logins (B2B)';
 include __DIR__ . '/includes/header.php';
 ?>
+<?php $pending = array_values(array_filter($accounts, fn($a) => !$a['is_active'] && $a['self_registered'])); ?>
+<?php if ($pending): ?>
+<div class="card" style="border:2px solid var(--warn, #f59e0b)">
+  <h3>⏳ Waiting for your approval (<?= count($pending) ?>)</h3>
+  <p class="muted">These dealers registered themselves on the website. Set their discount % and tick Active in the table below — they get a WhatsApp automatically when approved.</p>
+  <ul><?php foreach ($pending as $p): ?><li><strong><?= e($p['name']) ?></strong> — <?= e($p['mobile']) ?> (<?= dmyt($p['created_at']) ?>)</li><?php endforeach; ?></ul>
+</div>
+<?php endif; ?>
 <div class="card">
   <h3>How it works</h3>
   <p class="muted">Give an electrician/dealer a login here. The website shows everyone the normal price — but when they log in at <strong><?= e(base_url('catalog.php?dlogin=1')) ?></strong>, every product automatically shows THEIR price (normal price minus their discount %), and their orders are saved with those prices.</p>
