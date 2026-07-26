@@ -88,7 +88,15 @@ function wa_bot_reply_text(array $matches, $photoGuess = '') {
 }
 
 /** The whole bot: takes [mobile, text, jpegBytes|null], decides, replies, logs.
- *  Returns a short status string (for the webhook's JSON echo / debugging). */
+ *  Returns a short status string (for the webhook's JSON echo / debugging).
+ *
+ *  Cost design ("AI kanjoos" mode, per the owner): every message is FIRST
+ *  handled locally for free - product search, greetings, and the owner's shop
+ *  commands are pure database work. Only when a question is not understood
+ *  locally does ONE tiny Gemini call run, and it never sees the whole
+ *  catalog: just the question plus at most 5 candidate products (name +
+ *  price), answer capped at 2-3 short sentences. A monthly AI-call cap in
+ *  Settings makes the worst-case bill impossible to blow past. */
 function wa_bot_handle($mobile, $text, $jpeg = null) {
     $mobile = wa_normalize_number($mobile);
     if (strlen($mobile) < 12) return 'bad-number';
@@ -99,11 +107,18 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
     if ($recent && strtotime($recent['created_at']) > time() - 15) return 'rate-limited';
     if ($recent && $text !== '' && trim($recent['reply'] ?? '') === trim($text)) return 'own-echo';
 
-    $matches = []; $photoGuess = ''; $reply = null;
+    // staff/owner? their WhatsApp number matches an active user -> the bot
+    // becomes a shop assistant (answers straight from the database, free)
+    $staff = row("SELECT * FROM users WHERE is_active = 1 AND mobile <> '' AND ? LIKE CONCAT('%', RIGHT(REPLACE(REPLACE(mobile, '+', ''), ' ', ''), 10)) LIMIT 1", [$mobile]);
+    $role = $staff ? 'owner' : 'customer';
 
-    if ($jpeg) {
+    $matches = []; $photoGuess = ''; $reply = null; $usedAi = 0;
+
+    if ($staff && trim($text) !== '' && !$jpeg) {
+        $reply = wa_bot_owner_answer($text, $usedAi);
+    } elseif ($jpeg) {
         $photoGuess = (string)wa_bot_identify_photo($jpeg);
-        if ($photoGuess !== '') $matches = wa_bot_search($photoGuess);
+        if ($photoGuess !== '') { $usedAi = 1; $matches = wa_bot_search($photoGuess); }
         if ($matches) {
             $reply = wa_bot_reply_text($matches, $photoGuess);
         } else {
@@ -116,15 +131,146 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
         $reply = "🙏 નમસ્તે! *" . setting('app_name', 'AK Computer') . "* માં આપનું સ્વાગત છે.\n\nકોઈપણ પ્રોડક્ટનું નામ લખો (કે ફોટો મોકલો) — ભાવ અને લિંક તરત મળશે!\n\n🌐 આખો સ્ટોર: " . base_url('catalog.php');
     } elseif (trim($text) !== '') {
         $matches = wa_bot_search($text);
-        if ($matches) $reply = wa_bot_reply_text($matches);
-        // no match on plain text -> stay SILENT so the bot never talks over a
-        // real conversation the owner is having with the customer
+        if ($matches) {
+            $reply = wa_bot_reply_text($matches);
+        } elseif (mb_strlen(trim($text)) >= 5 && wa_bot_ai_allowed()) {
+            // local search understood nothing - ONE tiny AI call so the
+            // customer still gets a helpful 1-2 line answer
+            $reply = wa_bot_ai_reply($text);
+            if ($reply !== null) $usedAi = 1;
+        }
+        // still nothing -> stay SILENT so the bot never talks over a real
+        // conversation the owner is having with the customer
     }
 
-    q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched) VALUES (?,?,?,?,?)',
-      [$mobile, mb_substr((string)$text, 0, 500), $jpeg ? 1 : 0, $reply ? mb_substr($reply, 0, 1500) : null, count($matches)]);
+    q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
+      [$mobile, mb_substr((string)$text, 0, 500), $jpeg ? 1 : 0, $reply ? mb_substr($reply, 0, 1500) : null, count($matches), $usedAi, $role]);
 
     if ($reply === null) return 'silent';
     send_whatsapp($mobile, $reply);
-    return 'replied:' . count($matches);
+    return 'replied:' . count($matches) . ($usedAi ? ':ai' : '') . ($staff ? ':owner' : '');
+}
+
+/** Monthly AI budget guard: counts this month's AI-flagged replies against
+ *  the cap in Settings (default 1500/month - comfortably inside the Gemini
+ *  free tier, i.e. ₹0; even on paid flash pricing these tiny calls cost a
+ *  few paise each, so the month can never cross a few rupees). */
+function wa_bot_ai_allowed() {
+    if (!setting('gemini_api_key')) return false;
+    $cap = (int)setting('wa_bot_ai_monthly_cap', '1500');
+    if ($cap <= 0) return false;
+    $used = (int)val("SELECT COUNT(*) FROM wa_bot_log WHERE used_ai = 1 AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')");
+    return $used < $cap;
+}
+
+/** This month's AI usage [used, cap] - shown on the Settings card. */
+function wa_bot_ai_usage() {
+    $used = (int)val("SELECT COUNT(*) FROM wa_bot_log WHERE used_ai = 1 AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')");
+    return [$used, (int)setting('wa_bot_ai_monthly_cap', '1500')];
+}
+
+/** One SMALL Gemini call for a customer question local search couldn't
+ *  handle. The prompt carries the question + at most 5 loosely-matching
+ *  products (name/price only) - never the 1000-item catalog - and demands a
+ *  <=2 sentence Gujarati answer. Roughly 400 tokens in, 80 out. */
+function wa_bot_ai_reply($text) {
+    // loose candidates: any single word may hit (no half-match requirement)
+    $t = mb_strtolower(preg_replace('/[^\p{L}\p{N} ]+/u', ' ', (string)$text));
+    $words = array_values(array_filter(preg_split('/\s+/u', $t), fn($w) => mb_strlen($w) >= 3 && !in_array($w, wa_bot_stopwords(), true)));
+    $cands = [];
+    if ($words) {
+        $conds = []; $params = [];
+        foreach (array_slice($words, 0, 4) as $w) { $conds[] = 'i.name LIKE ?'; $params[] = '%' . $w . '%'; }
+        $cands = all('SELECT i.id, i.name, i.selling_price FROM items i WHERE i.is_active = 1 AND i.show_on_website = 1
+                      AND (' . implode(' OR ', $conds) . ') LIMIT 5', $params);
+    }
+    $catList = '';
+    foreach ($cands as $c) $catList .= '- ' . $c['name'] . ' = ₹' . money($c['selling_price']) . ' (' . base_url('product.php?id=' . $c['id']) . ")\n";
+    $prompt = "You are the WhatsApp helper of \"" . setting('app_name', 'AK Computer') . "\", a computer & CCTV shop in Dwarka, Gujarat.\n"
+        . "Customer message: \"" . mb_substr($text, 0, 200) . "\"\n"
+        . ($catList !== '' ? "Possibly matching products from our stock:\n$catList" : "No matching product found in our stock list.\n")
+        . "Store link: " . base_url('catalog.php') . "\n\n"
+        . "Reply in simple Gujarati, MAXIMUM 2 short sentences. If a listed product fits, mention its price and link. "
+        . "If none fits, politely say our team will reply soon and share the store link. Never invent products or prices. Plain text only.";
+    list($out, $err) = gemini_generate([['text' => $prompt]], 30);
+    if ($err || $out === null || trim($out) === '') return null;
+    return "🙏 " . mb_substr(trim($out), 0, 600);
+}
+
+/** Owner/staff shop-assistant: answers business questions straight from the
+ *  database - zero AI for the common ones, one compact AI call otherwise. */
+function wa_bot_owner_answer($text, &$usedAi) {
+    $t = mb_strtolower($text);
+    $has = function (...$kws) use ($t) { foreach ($kws as $k) if (mb_strpos($t, $k) !== false) return true; return false; };
+    $shop = setting('app_name', 'AK Computer');
+
+    if ($has('help', 'મદદ', 'menu')) {
+        return "*$shop bot* 🤖 તમે પૂછી શકો:\n- આજનું વેચાણ / sale\n- ઉધાર / baki\n- કેશ / cash\n- stock <આઇટમ નામ>\n- ઓર્ડર / order\n- રિપેર / repair\n- વિઝિટર / visitors\nબીજું કંઈ પણ લખશો તો AI ટૂંકો જવાબ આપશે.";
+    }
+    if ($has('sale', 'sales', 'વેચાણ', 'vechan')) {
+        $td = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t, COALESCE(SUM(total-paid),0) due FROM sales WHERE is_cancelled = 0 AND sale_date = CURDATE()");
+        $mo = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date >= DATE_FORMAT(NOW(), '%Y-%m-01')");
+        return "📊 *$shop*\nઆજે: *₹" . money($td['t']) . "* ({$td['c']} બિલ, બાકી ₹" . money($td['due']) . ")\nઆ મહિને: *₹" . money($mo) . "*";
+    }
+    if ($has('baki', 'udhar', 'ઉધાર', 'બાકી', 'લેણા', 'due', 'receive')) {
+        $recv = 0; $pay = 0;
+        $bx = party_balance_expr('p');
+        foreach (all("SELECT $bx AS bal FROM parties p WHERE p.is_active = 1 OR ABS($bx) > 0.009") as $b) {
+            if ($b['bal'] > 0.009) $recv += $b['bal']; elseif ($b['bal'] < -0.009) $pay += -$b['bal'];
+        }
+        return "💰 *$shop*\nલેવાના (To Receive): *₹" . money($recv) . "*\nદેવાના (To Pay): *₹" . money($pay) . "*";
+    }
+    if ($has('cash', 'કેશ', 'રોકડ', 'bank', 'બેંક')) {
+        $cash = function_exists('total_cash_in_hand') ? total_cash_in_hand() : 0;
+        $out = "💵 *$shop*\nકુલ કેશ: *₹" . money($cash) . "*";
+        foreach (all('SELECT * FROM bank_accounts WHERE is_active = 1') as $b) {
+            $out .= "\n🏦 " . $b['account_name'] . ": ₹" . money(bank_account_balance($b['id']));
+        }
+        return $out;
+    }
+    if (preg_match('/^\s*stock\s+(.+)/iu', $text, $m) || $has('સ્ટોક')) {
+        $q2 = isset($m[1]) ? $m[1] : trim(preg_replace('/સ્ટોક/u', '', $text));
+        $found = $q2 !== '' ? wa_bot_search($q2) : [];
+        if (!$found) return "🔍 \"$q2\" જેવી કોઈ આઇટમ ન મળી. 'stock <નામ>' લખો.";
+        $out = "📦 *Stock*";
+        foreach ($found as $f) {
+            $qty = (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$f['id']]);
+            $out .= "\n- " . $f['name'] . ": *" . (0 + $qty) . "* (₹" . money($f['selling_price']) . ")";
+        }
+        return $out;
+    }
+    if ($has('order', 'ઓર્ડર')) {
+        $new = all("SELECT order_no, customer_name, total FROM web_orders WHERE status = 'new' ORDER BY id DESC LIMIT 3");
+        $c = (int)val("SELECT COUNT(*) FROM web_orders WHERE status = 'new'");
+        $out = "🌐 *Website Orders*\nનવા ઓર્ડર: *$c*";
+        foreach ($new as $o) $out .= "\n- {$o['order_no']} {$o['customer_name']} ₹" . money($o['total']);
+        return $out;
+    }
+    if ($has('repair', 'રિપેર', 'રીપેર')) {
+        $c = (int)val("SELECT COUNT(*) FROM repairs WHERE status NOT IN ('delivered','returned_unrepaired')");
+        return "🛠️ ચાલુ રિપેર જોબ: *$c*";
+    }
+    if ($has('visitor', 'વિઝિટર', 'views', 'વ્યુ')) {
+        $v = row('SELECT COUNT(*) u, COALESCE(SUM(views),0) v FROM site_visits WHERE visit_date = CURDATE()');
+        return "🌐 આજે વેબસાઇટ પર: *" . (int)$v['u'] . "* મુલાકાતી (" . (int)$v['v'] . " views)";
+    }
+    if (wa_bot_is_greeting($text)) {
+        return "🙏 બોલો શેઠ! 'help' લખો એટલે બધા સવાલોની યાદી મળશે.";
+    }
+
+    // free intents exhausted - one compact AI call with a tiny shop snapshot
+    if (!wa_bot_ai_allowed()) return "🤖 આ મહિનાની AI મર્યાદા પતી ગઈ. 'help' લખો — સીધા સવાલ (વેચાણ/કેશ/સ્ટોક...) મફતમાં ચાલે જ છે.";
+    $td = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date = CURDATE()");
+    $mo = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date >= DATE_FORMAT(NOW(), '%Y-%m-01')");
+    $cash = function_exists('total_cash_in_hand') ? total_cash_in_hand() : 0;
+    $snapshot = "Today's sales: ₹" . money($td['t']) . " ({$td['c']} bills). Month sales: ₹" . money($mo) . ". Cash in hand: ₹" . money($cash) . ".";
+    $prompt = "You are the private WhatsApp assistant of the OWNER of \"" . setting('app_name', 'AK Computer') . "\" (computer shop, Dwarka).\n"
+        . "Shop snapshot: $snapshot\n"
+        . "Owner's message: \"" . mb_substr($text, 0, 200) . "\"\n\n"
+        . "Answer in simple Gujarati, MAXIMUM 3 short sentences, using ONLY the snapshot numbers (never invent figures). "
+        . "If the question needs data you don't have, say which section of the software to open. Plain text only.";
+    list($out, $err) = gemini_generate([['text' => $prompt]], 30);
+    if ($err || $out === null || trim($out) === '') return null;
+    $usedAi = 1;
+    return "🤖 " . mb_substr(trim($out), 0, 700);
 }

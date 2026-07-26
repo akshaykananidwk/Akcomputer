@@ -42,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_whatsapp') {
     require_perm('settings.edit');
     foreach (['wa_api_url', 'wa_session_id', 'wa_api_key', 'wa_shop_number'] as $k) set_setting($k, post($k));
     set_setting('wa_bot_enabled', post('wa_bot_enabled') ? '1' : '0');
+    if (post('wa_bot_ai_monthly_cap') !== '') set_setting('wa_bot_ai_monthly_cap', (string)max(0, (int)post('wa_bot_ai_monthly_cap')));
     log_activity('settings_save');
     flash('WhatsApp settings saved.');
     redirect('settings.php?cat=whatsapp');
@@ -419,6 +420,14 @@ exit;
     <input type="hidden" name="wa_api_key" value="<?= e(setting('wa_api_key')) ?>">
     <input type="hidden" name="wa_shop_number" value="<?= e(setting('wa_shop_number')) ?>">
     <label class="check-inline"><input type="checkbox" name="wa_bot_enabled" value="1" <?= setting('wa_bot_enabled', '0') === '1' ? 'checked' : '' ?>> Bot ON — auto-reply to product questions</label>
+    <div class="form-row cols-2 mt">
+      <div><label>AI calls / month limit <span class="muted" style="font-weight:normal">(cost brake — most replies use 0 AI; 1500 stays inside Gemini's FREE tier = ₹0)</span></label>
+        <input type="number" min="0" name="wa_bot_ai_monthly_cap" value="<?= (int)setting('wa_bot_ai_monthly_cap', '1500') ?>"></div>
+      <?php require_once __DIR__ . '/includes/wa_bot.php'; try { list($aiUsed, $aiCap) = wa_bot_ai_usage(); } catch (Exception $e) { $aiUsed = 0; $aiCap = 1500; } ?>
+      <div><label>This month's AI use</label>
+        <p style="padding:10px 0;font-weight:700"><?= $aiUsed ?> / <?= $aiCap ?> calls <span class="muted" style="font-weight:normal">(est. cost: ₹0 within free tier)</span></p></div>
+    </div>
+    <p class="muted" style="font-size:12.5px">💡 Staff/owner numbers (from Staff Users) get the SHOP ASSISTANT: WhatsApp 'sale', 'cash', 'baki', 'stock &lt;item&gt;', 'order', 'visitors' to the shop number — instant answers from the database, zero AI. Type 'help' for the list.</p>
     <button class="btn btn-sm" type="submit">Save</button>
   </form>
   <p class="muted mt">Paste this URL in your WhatsApp gateway's (bulk.akdwk.in) <strong>Webhook / incoming message URL</strong> box:</p>
