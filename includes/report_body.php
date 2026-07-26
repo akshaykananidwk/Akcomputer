@@ -17,6 +17,7 @@ if ($r === 'business' && can('reports.profit')) {
     $repairIncome = (float)val('SELECT COALESCE(SUM(final_charge),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$from, $to]);
     $repairCost = (float)val('SELECT COALESCE(SUM(outsource_cost),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$from, $to]);
     $exp = (float)val('SELECT COALESCE(SUM(amount),0) FROM expenses WHERE exp_date BETWEEN ? AND ?', [$from, $to]);
+    $discGiven = (float)val('SELECT COALESCE(SUM(discount + loyalty_discount),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?', [$from, $to]);
     $recv = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid' AND is_cancelled = 0");
     $paybl = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid'");
     $stockVal = (float)val('SELECT COALESCE(SUM(sq.q * i.purchase_price),0) FROM
@@ -56,6 +57,7 @@ if ($r === 'business' && can('reports.profit')) {
 
     echo '<div class="grid-stats">';
     echo '<div class="stat"><div class="stat-label">Purchases (period)</div><div class="stat-value">₹' . money($purch - $purchRet) . '</div></div>';
+    echo '<div class="stat s-warn"><div class="stat-label">Discount Given (period)</div><div class="stat-value">₹' . money($discGiven) . '</div></div>';
     echo '<div class="stat s-ok"><div class="stat-label">To Receive</div><div class="stat-value">₹' . money($recv) . '</div></div>';
     echo '<div class="stat s-bad"><div class="stat-label">To Pay</div><div class="stat-value">₹' . money($paybl) . '</div></div>';
     echo '<div class="stat"><div class="stat-label">Stock Value (today)</div><div class="stat-value">₹' . money($stockVal) . '</div></div>';
@@ -68,12 +70,14 @@ if ($r === 'daily') {
     // Vyapar-style summary cards (No. of Txns / Total Sale / Balance Due).
     // These are <div> cards so they only appear on screen, never in the
     // table-only PDF export - so a plain ₹ here is fine.
-    $summ = row("SELECT COUNT(*) txns, COALESCE(SUM(total),0) total, COALESCE(SUM(total - paid),0) due
+    $summ = row("SELECT COUNT(*) txns, COALESCE(SUM(total),0) total, COALESCE(SUM(total - paid),0) due,
+                 COALESCE(SUM(discount + loyalty_discount),0) disc
                  FROM sales WHERE sale_date BETWEEN ? AND ? $ew", array_merge([$from, $to], $ep));
     if (empty($reportPdf)) {
         echo '<div class="grid-stats mb">';
         echo '<div class="stat"><div class="stat-label">🧾 No. of Txns</div><div class="stat-value">' . (int)$summ['txns'] . '</div></div>';
         echo '<div class="stat"><div class="stat-label">💰 Total Sale</div><div class="stat-value">₹' . money($summ['total']) . '</div></div>';
+        echo '<div class="stat s-warn"><div class="stat-label">🏷️ Discount Given</div><div class="stat-value">₹' . money($summ['disc']) . '</div></div>';
         echo '<div class="stat s-ok"><div class="stat-label">⏳ Balance Due</div><div class="stat-value">₹' . money($summ['due']) . '</div></div>';
         echo '</div>';
     }
@@ -543,19 +547,37 @@ if ($r === 'expense' && can('expenses.view')) {
 if ($r === 'bill_profit' && can('reports.profit')) {
     list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus, $fUser);
     $rows = all("SELECT s.id, s.invoice_no, s.sale_date, s.customer_name, s.total,
+                 s.discount, s.loyalty_discount, s.adjustment, s.round_off,
                  SUM(si.total) rev, SUM(si.qty * IF(si.cost_price > 0, si.cost_price, i.purchase_price)) cost
                  FROM sales s JOIN sale_items si ON si.sale_id = s.id JOIN items i ON i.id = si.item_id
                  WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $ew GROUP BY s.id ORDER BY s.id DESC", array_merge([$from, $to], $ep));
-    echo '<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th class="num">Bill ₹</th><th class="num">Cost ₹</th><th class="num">Profit ₹</th><th class="num">Margin %</th></tr></thead><tbody>';
-    $tp = 0;
+    // Profit is what actually stays in the pocket: item margin MINUS the
+    // discount given on the bill (incl. loyalty points), +/- adjustment and
+    // round-off. GST is excluded from both sides. Earlier the discount was
+    // ignored, so a discounted bill showed more profit than it really made.
+    $tp = 0; $td = 0; $tb = 0;
+    $body = '';
     foreach ($rows as $x) {
-        $pf = $x['rev'] - $x['cost']; $tp += $pf;
-        $mg = $x['rev'] > 0 ? round($pf / $x['rev'] * 100, 1) : 0;
-        echo '<tr><td><a href="sale_view.php?id=' . $x['id'] . '">' . e($x['invoice_no']) . '</a></td><td>' . dmy($x['sale_date']) . '</td><td>' . e($x['customer_name'] ?: 'Walk-in') . '</td><td class="num">' . money($x['total']) . '</td><td class="num">' . money($x['cost']) . '</td><td class="num" style="color:' . ($pf >= 0 ? 'var(--ok)' : 'var(--bad)') . '">' . money($pf) . '</td><td class="num">' . $mg . '%</td></tr>';
+        $disc = (float)$x['discount'] + (float)$x['loyalty_discount'];
+        $netRev = (float)$x['rev'] - $disc + (float)$x['adjustment'] + (float)$x['round_off'];
+        $pf = $netRev - (float)$x['cost'];
+        $tp += $pf; $td += $disc; $tb += (float)$x['total'];
+        $mg = $netRev > 0 ? round($pf / $netRev * 100, 1) : 0;
+        $body .= '<tr><td><a href="sale_view.php?id=' . $x['id'] . '">' . e($x['invoice_no']) . '</a></td><td>' . dmy($x['sale_date']) . '</td><td>' . e($x['customer_name'] ?: 'Walk-in') . '</td><td class="num">' . money($x['total']) . '</td><td class="num">' . money($x['cost']) . '</td><td class="num">' . ($disc > 0 ? money($disc) : '-') . '</td><td class="num" style="color:' . ($pf >= 0 ? 'var(--ok)' : 'var(--bad)') . '">' . money($pf) . '</td><td class="num">' . $mg . '%</td></tr>';
     }
-    echo '<tr><td colspan="5"><strong>Total profit</strong></td><td class="num"><strong>' . money($tp) . '</strong></td><td></td></tr>';
+    if (empty($reportPdf)) {
+        echo '<div class="grid-stats mb">';
+        echo '<div class="stat"><div class="stat-label">🧾 Bills</div><div class="stat-value">' . count($rows) . '</div></div>';
+        echo '<div class="stat"><div class="stat-label">💰 Total Bill</div><div class="stat-value">₹' . money($tb) . '</div></div>';
+        echo '<div class="stat s-warn"><div class="stat-label">🏷️ Discount Given</div><div class="stat-value">₹' . money($td) . '</div></div>';
+        echo '<div class="stat ' . ($tp >= 0 ? 's-ok' : 's-bad') . '"><div class="stat-label">📈 Net Profit</div><div class="stat-value">₹' . money($tp) . '</div></div>';
+        echo '</div>';
+    }
+    echo '<div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th class="num">Bill ₹</th><th class="num">Cost ₹</th><th class="num">Discount ₹</th><th class="num">Profit ₹</th><th class="num">Margin %</th></tr></thead><tbody>';
+    echo $body;
+    echo '<tr><td colspan="5"><strong>Total</strong></td><td class="num"><strong>' . money($td) . '</strong></td><td class="num"><strong>' . money($tp) . '</strong></td><td></td></tr>';
     echo '</tbody></table></div>';
-    echo '<p class="muted">Cost = the purchase price at the time of the bill (saved per item). For old bills, the current purchase price is used.</p>';
+    echo '<p class="muted">Profit = items (sale − cost) − discount − loyalty points ± adjustment/round-off. GST is not counted as profit. Cost = the purchase price at the time of the bill; for old bills, the current purchase price is used.</p>';
 }
 
 // ---------------- staff stock ----------------

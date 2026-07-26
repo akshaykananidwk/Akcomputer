@@ -872,22 +872,21 @@ if ($action === 'new' || $action === 'edit') {
         var adjT = document.getElementById('t_adj'); if (adjT) adjT.textContent = (adj >= 0 ? '' : '- ') + Math.abs(adj).toFixed(2);
 
         var profitEl = document.getElementById('t_profit');
+        var billCost = 0;
         if (profitEl) {
-          var sub = parseFloat(document.getElementById('t_sub').textContent) || 0;
-          var cost = 0;
           document.querySelectorAll('#billItems .bill-row').forEach(function (div) {
             var qty = parseFloat(div.querySelector('.i-qty').value) || 0;
-            cost += qty * (parseFloat(div.dataset.cost) || 0);
+            billCost += qty * (parseFloat(div.dataset.cost) || 0);
           });
-          profitEl.textContent = (sub - cost).toFixed(2);
         }
 
+        var loyaltyDisc = 0;
         var redeemInp = document.getElementById('redeem_points');
         if (redeemInp) {
           var avail = parseInt(document.getElementById('party_id').selectedOptions[0].dataset.points || 0, 10);
           var pts = Math.max(0, Math.min(parseInt(redeemInp.value, 10) || 0, avail, Math.floor(grand / LOYALTY_REDEEM_VALUE)));
           redeemInp.value = pts;
-          var loyaltyDisc = pts * LOYALTY_REDEEM_VALUE;
+          loyaltyDisc = pts * LOYALTY_REDEEM_VALUE;
           var row = document.getElementById('loyaltyRow');
           if (row) row.style.display = loyaltyDisc > 0 ? '' : 'none';
           var ld = document.getElementById('t_loyalty'); if (ld) ld.textContent = loyaltyDisc.toFixed(2);
@@ -904,6 +903,15 @@ if ($action === 'new' || $action === 'edit') {
         var roInp = document.getElementById('round_off'); if (roInp) roInp.value = roundOffVal.toFixed(2);
         var roRow = document.getElementById('roundRow'); if (roRow) roRow.style.display = Math.abs(roundOffVal) > 0.004 ? '' : 'none';
         var roT = document.getElementById('t_round'); if (roT) roT.textContent = (roundOffVal >= 0 ? '' : '- ') + Math.abs(roundOffVal).toFixed(2);
+
+        // real profit = what actually lands in the pocket: after the bill
+        // discount, loyalty points, +/- adjustment and round-off (GST is the
+        // government's money, so it's already excluded from both sides)
+        if (profitEl) {
+          var subP = parseFloat(document.getElementById('t_sub').textContent) || 0;
+          var discP = parseFloat((document.getElementById('discount') || {}).value) || 0;
+          profitEl.textContent = (subP - discP - loyaltyDisc + adj + roundOffVal - billCost).toFixed(2);
+        }
 
         g.textContent = grand.toFixed(2);
         var due = document.getElementById('t_due');
