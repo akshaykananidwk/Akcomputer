@@ -28,7 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'status') {
     redirect('web_orders.php');
 }
 
-$orders = all('SELECT * FROM web_orders ORDER BY id DESC LIMIT 200');
+$orders = all('SELECT wo.*, wa.name dealer_name, wa.discount_pct dealer_pct FROM web_orders wo
+               LEFT JOIN web_accounts wa ON wa.id = wo.web_account_id ORDER BY wo.id DESC LIMIT 200');
 $page_title = 'Website Orders';
 include __DIR__ . '/includes/header.php';
 ?>
@@ -38,6 +39,7 @@ include __DIR__ . '/includes/header.php';
   <h3><?= e($o['order_no']) ?> <?= status_badge($o['status'] === 'new' ? 'pending' : ($o['status'] === 'completed' ? 'completed' : ($o['status'] === 'cancelled' ? 'cancelled' : 'in_progress'))) ?>
     <span class="muted" style="font-weight:normal;font-size:12px"> · <?= dmyt($o['created_at']) ?></span></h3>
   <p><strong><?= e($o['customer_name']) ?></strong> · <a href="tel:<?= e($o['mobile']) ?>"><?= e($o['mobile']) ?></a>
+    <?php if (!empty($o['dealer_name'])): ?><span class="badge badge-ok" title="Ordered while logged in as a dealer — prices already include their discount">👷 Dealer: <?= e($o['dealer_name']) ?> (<?= 0 + $o['dealer_pct'] ?>%)</span><?php endif; ?>
     <a class="btn btn-sm btn-wa" href="https://wa.me/<?= e(wa_normalize_number($o['mobile'])) ?>" target="_blank" rel="noopener">📲 WhatsApp</a><br>
   <?= $o['address'] ? '📍 ' . e($o['address']) . '<br>' : '' ?>
   <?= $o['notes'] ? '📝 ' . e($o['notes']) : '' ?></p>

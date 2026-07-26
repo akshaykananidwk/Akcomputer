@@ -79,6 +79,7 @@ $_navMenu = [
         ['web_orders.php', 'Website Orders', 'weborders.view', null, null],
         ['items.php', 'Website Items (ON/OFF)', 'items.view', null, null],
         ['referrals.php', 'Referral Partners (Refer & Earn)', 'referrals.view', null, null],
+        ['web_customers.php', 'Dealer Logins (B2B Price)', 'webcustomers.view', null, null],
     ]],
     ['group', 'integrations', 'link', 'API & Integrations', [
         ['my_account.php?tab=api', 'API Tokens', null, null, null],

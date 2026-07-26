@@ -20,6 +20,30 @@ if (get('ref') !== '') {
     }
 }
 
+// ---------- dealer (electrician/B2B) web login ----------
+// Dealers get a mobile+password from the shop (admin: web_customers.php).
+// Once logged in, every price on this page is shown already reduced by the
+// discount % set on their account, and their orders are priced the same way
+// server-side - the browser is never trusted with the maths.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wlogin') {
+    $acc = row('SELECT * FROM web_accounts WHERE mobile = ? AND is_active = 1', [preg_replace('/\D/', '', post('wmobile'))]);
+    if ($acc && password_verify(post('wpassword'), $acc['password_hash'])) {
+        $_SESSION['web_account_id'] = (int)$acc['id'];
+        q('UPDATE web_accounts SET last_login = NOW() WHERE id = ?', [$acc['id']]);
+        redirect('catalog.php');
+    }
+    $wloginError = 'Mobile or password is wrong. Ask the shop if you need an account.';
+}
+if (get('wlogout') === '1') { unset($_SESSION['web_account_id']); redirect('catalog.php'); }
+$webAcct = null;
+if (!empty($_SESSION['web_account_id'])) {
+    $webAcct = row('SELECT * FROM web_accounts WHERE id = ? AND is_active = 1', [(int)$_SESSION['web_account_id']]);
+    if (!$webAcct) unset($_SESSION['web_account_id']);
+}
+$waPct = $webAcct ? (float)$webAcct['discount_pct'] : 0;
+// dealer price for one item - single source of truth for display AND orders
+function dealer_price($selling, $pct) { return $pct > 0 ? round((float)$selling * (1 - $pct / 100), 2) : (float)$selling; }
+
 // ---------- place order ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'order') {
     $cart = json_decode(post('cart_json'), true) ?: [];
@@ -34,16 +58,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'order') {
             $it = row('SELECT id, name, selling_price FROM items WHERE id = ? AND is_active = 1 AND show_on_website = 1', [(int)$cid]);
             $qty = max(1, (int)$cqty);
             if (!$it) continue;
-            $line = $qty * (float)$it['selling_price'];
+            $unit = dealer_price($it['selling_price'], $waPct);
+            $line = $qty * $unit;
             $total += $line;
-            $clean[] = ['id' => $it['id'], 'name' => $it['name'], 'qty' => $qty, 'price' => (float)$it['selling_price'], 'total' => $line];
+            $clean[] = ['id' => $it['id'], 'name' => $it['name'], 'qty' => $qty, 'price' => $unit, 'total' => $line];
             $itemsTxt .= '- ' . $it['name'] . ' x' . $qty . ' = ₹' . money($line) . "\n";
         }
         if ($clean) {
             $refCode = strtoupper(trim($_COOKIE['akc_ref'] ?? ''));
             $referrer = $refCode !== '' ? row('SELECT * FROM referrers WHERE code = ? AND is_active = 1', [$refCode]) : null;
-            q('INSERT INTO web_orders (customer_name, mobile, address, notes, items_json, total, ref_code) VALUES (?,?,?,?,?,?,?)',
-              [$name, $mobile, post('address'), post('order_notes'), json_encode($clean, JSON_UNESCAPED_UNICODE), $total, $referrer ? $referrer['code'] : null]);
+            q('INSERT INTO web_orders (customer_name, mobile, address, notes, items_json, total, ref_code, web_account_id) VALUES (?,?,?,?,?,?,?,?)',
+              [$name, $mobile, post('address'), post('order_notes'), json_encode($clean, JSON_UNESCAPED_UNICODE), $total, $referrer ? $referrer['code'] : null,
+               $webAcct ? (int)$webAcct['id'] : null]);
             $oid = insert_id();
             q('UPDATE web_orders SET order_no = ? WHERE id = ?', [doc_no('WEB', $oid), $oid]);
             // partner commission books itself as PENDING right away; it turns
@@ -98,6 +124,9 @@ body { padding-bottom: 90px; }
 .cat-card .cname { font-weight: 600; font-size: 14px; }
 .cat-card .cdesc { font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .cat-card .cprice { color: var(--primary); font-weight: 800; font-size: 16px; margin-top: auto; }
+.cat-card .cprice-old { color: var(--muted); font-weight: 500; font-size: 13px; text-decoration: line-through; }
+.dealer-bar { max-width: 1100px; margin: 10px auto 0; padding: 10px 14px; border-radius: 12px; background: var(--card); color: var(--text);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 .addbtn { width: 100%; margin-top: 8px; }
 .qtyrow { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .qtyrow button { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--primary); background: var(--card); color: var(--primary); font-size: 17px; font-weight: 700; cursor: pointer; }
@@ -120,6 +149,25 @@ body { padding-bottom: 90px; }
   <h1>🖥️ <?= e($app_name) ?></h1>
   <p>Computers · Laptops · Accessories · CCTV · Repairs</p>
 </div>
+<?php if ($webAcct): ?>
+<div class="dealer-bar">
+  <span>👷 <strong><?= e($webAcct['name']) ?></strong> — dealer price active (<?= 0 + $waPct ?>% off)</span>
+  <a class="btn btn-sm btn-outline" href="catalog.php?wlogout=1">Logout</a>
+</div>
+<?php elseif (get('dlogin') === '1' || !empty($wloginError)): ?>
+<div class="dealer-bar" style="display:block">
+  <form method="post" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="wlogin">
+    <strong style="width:100%">🔑 Dealer / Electrician Login</strong>
+    <?php if (!empty($wloginError)): ?><span style="color:#dc2626;width:100%"><?= e($wloginError) ?></span><?php endif; ?>
+    <input type="tel" name="wmobile" placeholder="Mobile number" required style="flex:1;min-width:140px">
+    <input type="password" name="wpassword" placeholder="Password" required style="flex:1;min-width:140px">
+    <button class="btn btn-sm" type="submit">Login</button>
+    <a class="btn btn-sm btn-outline" href="catalog.php">Cancel</a>
+  </form>
+</div>
+<?php endif; ?>
 <div class="store-wrap">
 <?php if ($orderOk): ?>
   <div class="card ok-box">
@@ -147,15 +195,16 @@ body { padding-bottom: 90px; }
   <?php endif; ?>
   <div class="cat-grid" id="cGrid">
   <?php foreach ($items as $it): ?>
-    <div class="cat-card" data-cat="<?= e($it['cat_name'] ?? '') ?>" data-price="<?= (float)$it['selling_price'] ?>" data-name="<?= e(mb_strtolower($it['name'])) ?>" data-newid="<?= (int)$it['id'] ?>">
+    <?php $dp = dealer_price($it['selling_price'], $waPct); ?>
+    <div class="cat-card" data-cat="<?= e($it['cat_name'] ?? '') ?>" data-price="<?= $dp ?>" data-name="<?= e(mb_strtolower($it['name'])) ?>" data-newid="<?= (int)$it['id'] ?>">
       <?php if ($it['photo']): ?><img src="<?= e($it['photo']) ?>" alt="<?= e($it['name']) ?>" loading="lazy">
       <?php else: ?><div class="ph">📦</div><?php endif; ?>
       <div class="cbody">
         <div class="cname"><?= e($it['name']) ?></div>
         <?php if ($it['brand']): ?><div class="muted"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></div><?php endif; ?>
         <?php if (!empty($it['description'])): ?><div class="cdesc"><?= e($it['description']) ?></div><?php endif; ?>
-        <div class="cprice">₹<?= money($it['selling_price']) ?></div>
-        <button type="button" class="btn btn-sm addbtn" data-id="<?= $it['id'] ?>" data-name="<?= e($it['name']) ?>" data-price="<?= (float)$it['selling_price'] ?>">🛒 Add to Cart</button>
+        <div class="cprice"><?php if ($waPct > 0 && $dp < (float)$it['selling_price']): ?><span class="cprice-old">₹<?= money($it['selling_price']) ?></span> <?php endif; ?>₹<?= money($dp) ?></div>
+        <button type="button" class="btn btn-sm addbtn" data-id="<?= $it['id'] ?>" data-name="<?= e($it['name']) ?>" data-price="<?= $dp ?>">🛒 Add to Cart</button>
         <div class="qtyrow" style="display:none" data-qid="<?= $it['id'] ?>">
           <button type="button" class="q-minus">−</button><span class="q-num">1</span><button type="button" class="q-plus">＋</button>
         </div>
@@ -186,7 +235,8 @@ body { padding-bottom: 90px; }
   </div>
 <?php endif; ?>
   <?php if ($waShop): ?><p class="muted mt" style="text-align:center">📞 Contact directly: <a href="https://wa.me/<?= e($waShop) ?>" target="_blank" rel="noopener">WhatsApp us</a></p><?php endif; ?>
-  <p class="mt" style="text-align:center"><a class="btn btn-sm btn-outline" href="referral.php">💰 Refer &amp; Earn — પાર્ટનર બનો</a></p>
+  <p class="mt" style="text-align:center"><a class="btn btn-sm btn-outline" href="referral.php">💰 Refer &amp; Earn — પાર્ટનર બનો</a>
+    <?php if (!$webAcct): ?> <a class="btn btn-sm btn-outline" href="catalog.php?dlogin=1">🔑 Dealer Login</a><?php endif; ?></p>
   <?php if (!current_user()): ?><p class="muted mt" style="text-align:center;font-size:12px"><a href="login.php" style="color:inherit">Staff Login</a></p><?php endif; ?>
   <?php if (current_user() && can('items.edit')): $hidden = (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 0'); ?>
     <?php if ($hidden): ?><p class="muted mt" style="text-align:center">ℹ️ (Admin: <?= $hidden ?> items are OFF on the website — turn them ON via 🌐 on the Items page.)</p><?php endif; ?>
