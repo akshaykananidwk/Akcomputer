@@ -52,7 +52,7 @@ function csrf_check() {
         // request their own way and have no browser session/CSRF token to
         // check against - both are genuinely different trust boundaries
         // from the rest of this cookie-session-based app.
-        $exempt = ['api.php', 'razorpay_webhook.php'];
+        $exempt = ['api.php', 'razorpay_webhook.php', 'wa_webhook.php'];
         if (in_array(basename($_SERVER['SCRIPT_NAME'] ?? ''), $exempt, true)) return;
         if (!hash_equals(csrf_token(), (string)post('csrf'))) {
             http_response_code(400);

@@ -41,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_general') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_whatsapp') {
     require_perm('settings.edit');
     foreach (['wa_api_url', 'wa_session_id', 'wa_api_key', 'wa_shop_number'] as $k) set_setting($k, post($k));
+    set_setting('wa_bot_enabled', post('wa_bot_enabled') ? '1' : '0');
     log_activity('settings_save');
     flash('WhatsApp settings saved.');
     redirect('settings.php?cat=whatsapp');
@@ -404,6 +405,38 @@ exit;
     <div><input type="tel" name="test_mobile" placeholder="10-digit mobile" required></div>
     <button class="btn btn-wa btn-sm" type="submit">Send test</button>
   </form>
+</div>
+<div class="card">
+  <h3>🤖 WhatsApp Product Bot (auto-reply)</h3>
+  <?php if (setting('wa_webhook_key', '') === '') set_setting('wa_webhook_key', bin2hex(random_bytes(16)));
+        $whUrl = base_url('wa_webhook.php?key=' . setting('wa_webhook_key')); ?>
+  <p class="muted">A customer messages "CP Plus camera che?" (or sends a product photo) → the bot searches YOUR items database and replies with the price + product link automatically. Text answers cost ₹0 (pure database search); a photo uses one free-tier Gemini call to recognise the product. If nothing matches, the bot stays silent so it never talks over your own chat.</p>
+  <form method="post" class="mt">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_whatsapp">
+    <input type="hidden" name="wa_api_url" value="<?= e(setting('wa_api_url', 'https://bulk.akdwk.in/api.php')) ?>">
+    <input type="hidden" name="wa_session_id" value="<?= e(setting('wa_session_id')) ?>">
+    <input type="hidden" name="wa_api_key" value="<?= e(setting('wa_api_key')) ?>">
+    <input type="hidden" name="wa_shop_number" value="<?= e(setting('wa_shop_number')) ?>">
+    <label class="check-inline"><input type="checkbox" name="wa_bot_enabled" value="1" <?= setting('wa_bot_enabled', '0') === '1' ? 'checked' : '' ?>> Bot ON — auto-reply to product questions</label>
+    <button class="btn btn-sm" type="submit">Save</button>
+  </form>
+  <p class="muted mt">Paste this URL in your WhatsApp gateway's (bulk.akdwk.in) <strong>Webhook / incoming message URL</strong> box:</p>
+  <p><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block"><?= e($whUrl) ?></code></p>
+  <?php $botLog = [];
+        try { $botLog = all('SELECT * FROM wa_bot_log ORDER BY id DESC LIMIT 10'); } catch (Exception $e) {} ?>
+  <?php if ($botLog): ?>
+  <h4 class="mt">Last 10 bot conversations</h4>
+  <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
+    <thead><tr><th>Time</th><th>From</th><th>Asked</th><th class="num">Matches</th><th>Bot replied?</th></tr></thead>
+    <tbody><?php foreach ($botLog as $b): ?>
+      <tr><td><?= dmyt($b['created_at']) ?></td><td><?= e($b['mobile']) ?></td>
+      <td><?= $b['had_image'] ? '🖼️ ' : '' ?><?= e(mb_substr($b['in_text'], 0, 60)) ?></td>
+      <td class="num"><?= (int)$b['matched'] ?></td>
+      <td><?= $b['reply'] ? '✅' : '<span class="muted">silent</span>' ?></td></tr>
+    <?php endforeach; ?></tbody>
+  </table></div>
+  <?php endif; ?>
 </div>
 <div class="card">
   <h3>💬 Message Templates</h3>
