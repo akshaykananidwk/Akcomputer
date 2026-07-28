@@ -91,7 +91,11 @@ foreach (all("SELECT item_id, SUM(qty) q FROM stock_reservations WHERE status = 
 $page_title = 'Stock';
 include __DIR__ . '/includes/header.php';
 ?>
-<div class="searchbox"><input type="text" id="sFilter" placeholder="🔍 Search item..."></div>
+<div class="searchbox" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+  <input type="text" id="sFilter" placeholder="🔍 Search item..." style="flex:1;min-width:180px">
+  <label class="check-inline" style="white-space:nowrap"><input type="checkbox" id="hideZero"> Hide zero-stock items</label>
+  <label class="check-inline" style="white-space:nowrap"><input type="checkbox" id="onlyNeg"> ⚠️ Only transfer-needed</label>
+</div>
 <div class="table-wrap">
 <table id="sTable">
   <thead><tr><th>Item</th>
@@ -99,23 +103,48 @@ include __DIR__ . '/includes/header.php';
   <th class="num">Staff</th><th class="num">Total</th><th class="num">Reserved</th><th class="num">Available</th><th></th></tr></thead>
   <tbody>
   <?php foreach ($stockRows as $it):
-      $rowTotal = 0; ?>
-    <tr>
-      <td><?= e($it['name']) ?><?= $it['serial_tracked'] ? ' <span class="badge badge-info">SN</span>' : '' ?></td>
+      $rowTotal = 0;
+      // godown sold past zero while the office still has pieces (or the other
+      // way round): the negative cell turns red and the row gets a one-tap
+      // "Transfer" hint - exactly the "office ma che, godown ma minus" case.
+      $hasNeg = false; $hasPos = false;
+      foreach ($locations as $l) { $q0 = $stockMap[$it['id']][$l['id']] ?? 0; if ($q0 < 0) $hasNeg = true; if ($q0 > 0) $hasPos = true; }
+      $needTransfer = $hasNeg && $hasPos; ?>
+    <tr data-neg="<?= $needTransfer ? 1 : 0 ?>">
+      <td><?= e($it['name']) ?><?= $it['serial_tracked'] ? ' <span class="badge badge-info">SN</span>' : '' ?>
+        <?= $needTransfer ? ' <span class="badge badge-bad">⚠️ TRANSFER</span>' : '' ?></td>
       <?php foreach ($locations as $l): $qv = $stockMap[$it['id']][$l['id']] ?? 0; $rowTotal += $qv; ?>
-        <td class="num"><?= $qv ?: '·' ?></td>
+        <td class="num"<?= $qv < 0 ? ' style="color:var(--bad);font-weight:700"' : '' ?>><?= $qv ?: '·' ?></td>
       <?php endforeach; $sh = $staffHeld[$it['id']] ?? 0; $rowTotal += $sh; $reserved = $reservedMap[$it['id']] ?? 0; ?>
       <td class="num"><?= $sh ?: '·' ?></td>
-      <td class="num"><strong><?= $rowTotal ?></strong>
+      <td class="num" data-total="<?= $rowTotal ?>"><strong><?= $rowTotal ?></strong>
         <?= $it['min_stock'] > 0 && $rowTotal < $it['min_stock'] ? '<span class="badge badge-bad">LOW</span>' : '' ?></td>
       <td class="num"><?= $reserved ?: '·' ?></td>
       <td class="num"><?= $rowTotal - $reserved ?></td>
-      <td><a class="btn btn-sm btn-outline" href="stock.php?action=ledger&item_id=<?= $it['id'] ?>">Ledger</a></td>
+      <td style="white-space:nowrap"><a class="btn btn-sm btn-outline" href="stock.php?action=ledger&item_id=<?= $it['id'] ?>">Ledger</a>
+        <?= $needTransfer ? ' <a class="btn btn-sm" href="handover.php?action=new&type=transfer" title="Move stock between locations">→ Transfer</a>' : '' ?></td>
     </tr>
   <?php endforeach; ?>
   </tbody>
 </table>
 </div>
+<script>
+(function () {
+  function apply() {
+    var hz = document.getElementById('hideZero').checked;
+    var on = document.getElementById('onlyNeg').checked;
+    document.querySelectorAll('#sTable tbody tr').forEach(function (tr) {
+      var tot = parseFloat((tr.querySelector('[data-total]') || {}).dataset ? tr.querySelector('[data-total]').dataset.total : '0') || 0;
+      var neg = tr.dataset.neg === '1';
+      var hide = (hz && tot === 0 && !neg) || (on && !neg);
+      tr.dataset.zhide = hide ? '1' : '0';
+      tr.style.display = hide ? 'none' : '';
+    });
+  }
+  document.getElementById('hideZero').addEventListener('change', apply);
+  document.getElementById('onlyNeg').addEventListener('change', apply);
+})();
+</script>
 
 <?php if ($staffDetail): ?>
 <div class="card">

@@ -48,14 +48,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (post('do') === 'delete') {
         require_perm('items.delete');
         $iid = (int)post('id');
-        // Always actually deletes, even if used on old bills - views that
-        // display past sale/purchase/estimate/challan lines LEFT JOIN to
-        // items and fall back to "(deleted item)" so old invoices still
-        // show every line (and their totals still add up), instead of a
-        // deleted item's row silently vanishing from historical documents.
-        q('DELETE FROM items WHERE id = ?', [$iid]);
-        flash('Item deleted.');
-        log_activity('item_delete', "#$iid");
+        // An item that lives on real bills is NOT silently erased: the owner
+        // gets told exactly where it is linked and the item is deactivated
+        // instead (history intact, item hidden everywhere). Only an unused
+        // item deletes for real.
+        $inSales = (int)val('SELECT COUNT(DISTINCT sale_id) FROM sale_items WHERE item_id = ?', [$iid]);
+        $inPurch = (int)val('SELECT COUNT(DISTINCT purchase_id) FROM purchase_items WHERE item_id = ?', [$iid]);
+        if ($inSales || $inPurch) {
+            q('UPDATE items SET is_active = 0, show_on_website = 0 WHERE id = ?', [$iid]);
+            flash("આ આઇટમ $inSales સેલ બિલ અને $inPurch પરચેસ બિલમાં લિંક છે — ડિલીટ કરવાને બદલે INACTIVE કરી છે (જૂનાં બિલ સલામત). પાછી જોઈએ તો Show Inactive માંથી Edit કરી Active કરો.", 'error');
+            log_activity('item_delete_blocked', "#$iid sales=$inSales purch=$inPurch -> deactivated");
+        } else {
+            q('DELETE FROM items WHERE id = ?', [$iid]);
+            flash('Item deleted.');
+            log_activity('item_delete', "#$iid");
+        }
         redirect('items.php' . (get('show') === 'all' ? '?show=all' : ''));
     }
     if (post('do') === 'toggle_web') {
@@ -141,14 +148,27 @@ if ($action === 'new' || $action === 'edit') {
     exit;
 }
 
-// ---- list ----
+// ---- list (with proper filters: category / stock status / website) ----
 $showAll = get('show') === 'all';
+$fCat = (int)get('f_cat');
+$fStock = get('f_stock');   // '', 'in', 'zero', 'neg', 'low'
+$fWeb = get('f_web');       // '', 'on', 'off'
+$w = [];
+if (!$showAll) $w[] = 'i.is_active = 1';
+if ($fCat) $w[] = 'i.category_id = ' . $fCat;
+if ($fWeb === 'on') $w[] = 'i.show_on_website = 1';
+if ($fWeb === 'off') $w[] = 'i.show_on_website = 0';
+$having = '';
+if ($fStock === 'in') $having = 'HAVING total_stock > 0';
+if ($fStock === 'zero') $having = 'HAVING total_stock = 0';
+if ($fStock === 'neg') $having = 'HAVING total_stock < 0';
+if ($fStock === 'low') $having = 'HAVING i.min_stock > 0 AND total_stock < i.min_stock';
 $items = all('SELECT i.*, c.name AS cat_name, COALESCE(SUM(s.qty),0) AS total_stock
               FROM items i
               LEFT JOIN categories c ON c.id = i.category_id
               LEFT JOIN stock s ON s.item_id = i.id
-              ' . (!$showAll ? 'WHERE i.is_active = 1' : '') . '
-              GROUP BY i.id ORDER BY i.name');
+              ' . ($w ? 'WHERE ' . implode(' AND ', $w) : '') . '
+              GROUP BY i.id ' . $having . ' ORDER BY i.name');
 $page_title = 'Items';
 include __DIR__ . '/includes/header.php';
 ?>
@@ -156,7 +176,26 @@ include __DIR__ . '/includes/header.php';
   <?php if (can('items.add')): ?><a class="btn" href="items.php?action=new">+ New Item</a><?php endif; ?>
   <a class="btn btn-outline" href="items.php<?= $showAll ? '' : '?show=all' ?>"><?= $showAll ? 'Show Active only' : 'Show Inactive too' ?></a>
 </div>
-<div class="searchbox"><input type="text" id="itemFilter" placeholder="🔍 Search items..."></div>
+<form method="get" class="filterbar no-print">
+  <?php if ($showAll): ?><input type="hidden" name="show" value="all"><?php endif; ?>
+  <div style="flex:1;min-width:170px"><input type="text" id="itemFilter" placeholder="🔍 Search items..."></div>
+  <div><select name="f_cat" onchange="this.form.submit()">
+    <option value="">All categories</option>
+    <?php foreach ($cats as $c): ?><option value="<?= $c['id'] ?>" <?= $fCat == $c['id'] ? 'selected' : '' ?>><?= e($c['name']) ?></option><?php endforeach; ?>
+  </select></div>
+  <div><select name="f_stock" onchange="this.form.submit()">
+    <option value="">All stock</option>
+    <option value="in" <?= $fStock === 'in' ? 'selected' : '' ?>>In stock</option>
+    <option value="zero" <?= $fStock === 'zero' ? 'selected' : '' ?>>Zero stock</option>
+    <option value="neg" <?= $fStock === 'neg' ? 'selected' : '' ?>>Negative (minus)</option>
+    <option value="low" <?= $fStock === 'low' ? 'selected' : '' ?>>Low stock</option>
+  </select></div>
+  <div><select name="f_web" onchange="this.form.submit()">
+    <option value="">Website: all</option>
+    <option value="on" <?= $fWeb === 'on' ? 'selected' : '' ?>>Website ON</option>
+    <option value="off" <?= $fWeb === 'off' ? 'selected' : '' ?>>Website OFF</option>
+  </select></div>
+</form>
 <div class="list-count"><?= count($items) ?> items</div>
 <div class="table-wrap">
 <table id="itemTable">

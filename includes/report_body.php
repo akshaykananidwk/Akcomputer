@@ -360,10 +360,22 @@ if ($r === 'stockval' && can('reports.profit')) {
     foreach (all('SELECT item_id, SUM(qty) q FROM staff_stock GROUP BY item_id') as $s) $staffHeld[$s['item_id']] = (float)$s['q'];
     $items = all("SELECT * FROM items WHERE is_active = 1 AND item_type <> 'service' ORDER BY name");
     $grandQty = 0; $grandVal = 0; $grandSale = 0;
+    // "hide zero" per the owner: rows with 0 everywhere clutter the count and
+    // the totals page during stock checking - one tap hides them
+    $hideZero = get('hide_zero') === '1';
+    if (empty($reportPdf)) {
+        $qsBase = $_GET; unset($qsBase['hide_zero']);
+        $qs = http_build_query($qsBase);
+        echo '<p class="no-print" style="margin-bottom:8px"><a class="btn btn-sm ' . ($hideZero ? '' : 'btn-outline') . '" href="reports.php?' . e($qs) . ($hideZero ? '' : '&hide_zero=1') . '">'
+           . ($hideZero ? '✅ Hiding zero-stock items — show all' : 'Hide zero-stock items') . '</a></p>';
+    }
     echo '<div class="table-wrap"><table><thead><tr><th>Item</th>';
     foreach ($locs as $l) echo '<th class="num">' . e($l['code']) . '</th>';
     echo '<th class="num">Staff</th><th class="num">Total Qty</th><th class="num">Value (purchase) ₹</th><th class="num">Value (selling) ₹</th></tr></thead><tbody>';
     foreach ($items as $it) {
+        $rowQty = $staffHeld[$it['id']] ?? 0;
+        foreach ($locs as $l) $rowQty += $stockMap[$it['id']][$l['id']] ?? 0;
+        if ($hideZero && abs($rowQty) < 0.0001) continue;
         $rowQty = $staffHeld[$it['id']] ?? 0;
         echo '<tr><td>' . e($it['name']) . '</td>';
         foreach ($locs as $l) {
