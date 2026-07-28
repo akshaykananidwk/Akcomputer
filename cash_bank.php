@@ -7,7 +7,10 @@
 // - Staff-to-staff cash handover confirmed by a WhatsApp OTP sent to the
 //   RECEIVER: money only moves once the receiver's OTP is typed back in.
 require_once __DIR__ . '/includes/init.php';
-require_perm('payments.view');
+// Every staff member may open this page: without cashbank.viewall it only
+// shows THEIR wallet + THEIR handover history, and the OTP staff handover is
+// meant for everyone (money moves only when the receiver's OTP is entered).
+require_login();
 $u = current_user();
 
 $isSelfAdjust = fn() => can('cashbank.adjust');
@@ -66,7 +69,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'transfer') {
 
 // ---------- staff-to-staff cash handover: step 1, create + send OTP ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_transfer') {
-    require_perm('cashbank.transfer');
+    // any staff can HAND OVER their own cash - the sender is always the
+    // logged-in user and money moves only on the receiver's OTP
     $toUser = (int)post('to_user');
     $amount = round((float)post('amount'), 2);
     $receiver = row('SELECT * FROM users WHERE id = ? AND is_active = 1', [$toUser]);
@@ -98,10 +102,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_transfer') {
 
 // ---------- staff transfer: step 2, confirm with OTP ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_confirm') {
-    require_perm('cashbank.transfer');
     $tid = (int)post('id');
     $t = row("SELECT * FROM money_transfers WHERE id = ? AND txn_type = 'staff_transfer' AND status = 'pending'", [$tid]);
     if (!$t) { flash('Transfer not found or already completed.', 'error'); redirect('cash_bank.php'); }
+    // only the two people involved (or someone with full cash rights) may
+    // type the OTP for this handover
+    if (!can('cashbank.viewall') && !can('cashbank.transfer')
+        && (int)$t['from_user_id'] !== (int)$u['id'] && (int)$t['to_user_id'] !== (int)$u['id']) {
+        flash('This handover is between two other staff members.', 'error'); redirect('cash_bank.php');
+    }
     if ($t['otp_expires'] && $t['otp_expires'] < date('Y-m-d H:i:s')) { flash('OTP expired — cancel this transfer and start a new one.', 'error'); redirect('cash_bank.php'); }
     if (!hash_equals($t['otp_hash'], hash('sha256', trim(post('otp'))))) {
         log_activity('staff_transfer_badotp', "T-$tid");
@@ -116,9 +125,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_confirm') {
 
 // ---------- staff transfer: cancel a pending one ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_cancel') {
-    require_perm('cashbank.transfer');
     $tid = (int)post('id');
     $t = row("SELECT * FROM money_transfers WHERE id = ? AND txn_type = 'staff_transfer' AND status = 'pending'", [$tid]);
+    if ($t && !can('cashbank.viewall') && !can('cashbank.transfer')
+        && (int)$t['from_user_id'] !== (int)$u['id'] && (int)$t['to_user_id'] !== (int)$u['id']) {
+        flash('This handover is between two other staff members.', 'error'); redirect('cash_bank.php');
+    }
     if ($t) { q("UPDATE money_transfers SET status = 'cancelled' WHERE id = ?", [$tid]); flash('Pending handover cancelled — no money moved.'); }
     redirect('cash_bank.php');
 }
@@ -310,7 +322,6 @@ include __DIR__ . '/includes/header.php';
   <?php endif; ?>
 </div>
 
-<?php if ($canAdjust || $canTransfer): ?>
 <div class="page-actions">
   <?php if ($canAdjust): ?>
   <button class="btn btn-sm btn-outline" onclick="cbShow('cbAdjust')">⚖️ Adjust Cash / Bank</button>
@@ -319,10 +330,9 @@ include __DIR__ . '/includes/header.php';
   <button class="btn btn-sm btn-outline" onclick="cbShowTransfer('cash_to_bank')">💵→🏦 Cash to Bank</button>
   <button class="btn btn-sm btn-outline" onclick="cbShowTransfer('bank_to_cash')">🏦→💵 Bank to Cash</button>
   <button class="btn btn-sm btn-outline" onclick="cbShowTransfer('bank_to_bank')">🏦→🏦 Bank to Bank</button>
-  <button class="btn btn-sm" onclick="cbShow('cbStaff')">🤝 Staff Cash Handover (OTP)</button>
   <?php endif; ?>
+  <button class="btn btn-sm" onclick="cbShow('cbStaff')">🤝 Staff Cash Handover (OTP)</button>
 </div>
-<?php endif; ?>
 
 <!-- staff wallets -->
 <div class="card">
@@ -477,6 +487,7 @@ include __DIR__ . '/includes/header.php';
   </div>
 </div>
 
+<?php endif; ?>
 <!-- staff handover modal -->
 <div class="modal-overlay no-print" id="cbStaff">
   <div class="modal-box">
@@ -501,7 +512,6 @@ include __DIR__ . '/includes/header.php';
     </form>
   </div>
 </div>
-<?php endif; ?>
 
 <script>
 function cbShow(id) { document.getElementById(id).classList.add('show'); }

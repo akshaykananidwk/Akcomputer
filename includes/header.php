@@ -32,7 +32,7 @@ $_navMenu = [
     ]],
     ['link', 'expenses.php', 'wallet', 'Expenses', 'expenses.view'],
     ['group', 'cashbank', 'card', 'Cash & Bank', [
-        ['cash_bank.php', 'Cash & Bank Overview', 'payments.view', null, null],
+        ['cash_bank.php', 'Cash & Bank Overview', null, null, null],
         ['bank_accounts.php', 'Bank Accounts', 'settings.view', 'bank_accounts.php', 'settings.edit'],
         ['payment_methods.php', 'Payment Methods', 'settings.view', 'payment_methods.php', 'settings.edit'],
     ]],
