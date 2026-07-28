@@ -210,8 +210,10 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
           <td><?= $n + 1 ?></td>
           <td><?= e($it['name']) ?><?= $it['serials'] ? '<br><small>SN: ' . e($it['serials']) . '</small>' : '' ?>
             <?php if (!empty($it['description'])): ?><br><small class="muted"><?= e($it['description']) ?></small><?php endif; ?>
-            <?php if (!empty($it['custom_data'])): $cd = json_decode($it['custom_data'], true) ?: []; foreach ($cd as $cfLabel => $cfVal): ?>
-            <br><small class="muted"><?= e($cfLabel) ?>: <?= e($cfVal) ?></small>
+            <?php if (!empty($it['custom_data'])): $cd = json_decode($it['custom_data'], true) ?: [];
+                  foreach ($cd as $cfLabel => $cfVal): if (trim((string)$cfVal) === '') continue;
+                      $cfPub = custom_field_printable($cfLabel); // internal-only points: staff screen only, never printed ?>
+            <br><small class="muted<?= $cfPub ? '' : ' no-print' ?>"><?= $cfPub ? '' : '🔒 ' ?><?= e($cfLabel) ?>: <?= e($cfVal) ?></small>
             <?php endforeach; endif; ?>
           </td>
           <?php if ($sale['is_gst']): ?><td><?= e($it['hsn']) ?></td><?php endif; ?>

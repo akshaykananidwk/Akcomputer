@@ -433,6 +433,20 @@ function pdf_invoice_waves(&$pdf, $C) {
     ], $C['gold']);
 }
 
+/** One small grey line under an item's name: the per-bill description plus
+ *  the custom fields marked "show on print" in Settings. Internal-only
+ *  fields never reach a printed/PDF/WhatsApp bill. */
+function pdf_item_extras($it) {
+    $parts = [];
+    if (!empty($it['description'])) $parts[] = $it['description'];
+    if (!empty($it['custom_data'])) {
+        foreach (json_decode($it['custom_data'], true) ?: [] as $k => $v) {
+            if (trim((string)$v) !== '' && custom_field_printable($k)) $parts[] = $k . ': ' . $v;
+        }
+    }
+    return implode('  |  ', $parts);
+}
+
 /** Build the invoice PDF bytes for a sale row + items. Dispatches to the
  *  design chosen in Settings (invoice_design: 1 = teal/orange default,
  *  2 = purple). Both produce genuine selectable-text PDFs. */
@@ -553,7 +567,8 @@ function invoice_pdf_design1($sale, $items) {
         // wrap the item name onto extra lines instead of cutting it off
         $nameLines = array_slice(pdf_wrap($it['name'], 9.5, false, $itemMaxW), 0, 4);
         $nLines = count($nameLines);
-        $rowNeed = $rowH + ($nLines - 1) * 12 + ($it['serials'] ? 10 : 0);
+        $extras = pdf_item_extras($it);
+        $rowNeed = $rowH + ($nLines - 1) * 12 + ($it['serials'] ? 10 : 0) + ($extras !== '' ? 10 : 0);
         // page break for very long bills
         if ($y + $rowNeed > 706) {
             $pdf->new_page();
@@ -580,9 +595,12 @@ function invoice_pdf_design1($sale, $items) {
         $pdf->text_right($cRateR, $ty, 9.5, money($it['price']), '', [0.15, 0.2, 0.28]);
         if ($hasGst) $pdf->text_right($cGstR, $ty, 9, (float)$it['tax_rate'] . '%', '', $C['gray']);
         $pdf->text_right($cAmtR, $ty, 9.5, money($it['total']), '', [0.15, 0.2, 0.28]);
+        $suby = $ty + $nLines * 12 - 2;
         if ($it['serials']) {
-            $pdf->text($cItem, $ty + $nLines * 12 - 2, 7.3, $pdf->fit('SN: ' . $it['serials'], $itemMaxW, 7.3), '', $C['gray']);
+            $pdf->text($cItem, $suby, 7.3, $pdf->fit('SN: ' . $it['serials'], $itemMaxW, 7.3), '', $C['gray']);
+            $suby += 10;
         }
+        if ($extras !== '') $pdf->text($cItem, $suby, 7.3, $pdf->fit($extras, $itemMaxW, 7.3), '', $C['gray']);
         $y += $rowNeed;
         $pdf->line($L, $y, $R, $y, 0.5, [0.9, 0.92, 0.94]);
         $rowIdx++;
@@ -925,7 +943,8 @@ function invoice_pdf_design2($sale, $items) {
     foreach ($items as $n => $it) {
         $nameLines = array_slice(pdf_wrap($it['name'], 9.5, false, $itemMaxW), 0, 4);
         $nLines = count($nameLines);
-        $rowNeed = $rowH + ($nLines - 1) * 12 + ($it['serials'] ? 10 : 0);
+        $extras = pdf_item_extras($it);
+        $rowNeed = $rowH + ($nLines - 1) * 12 + ($it['serials'] ? 10 : 0) + ($extras !== '' ? 10 : 0);
         if ($y + $rowNeed > 690) {
             $pdf->new_page(); $paginated = true; $y = 44; $drawHead($y); $y += $headH; $bodyTop = $y;
         }
@@ -941,7 +960,9 @@ function invoice_pdf_design2($sale, $items) {
         $pdf->text_right($cRateR, $ty, 9.5, money($it['price']), '', [0.15, 0.15, 0.22]);
         if ($hasGst) $pdf->text_right($cGstR, $ty, 9, (float)$it['tax_rate'] . '%', '', $C['gray']);
         $pdf->text_right($cAmtR, $ty, 9.5, money($it['total']), '', [0.15, 0.15, 0.22]);
-        if ($it['serials']) $pdf->text($cItem, $ty + $nLines * 12 - 2, 7.3, $pdf->fit('SN: ' . $it['serials'], $itemMaxW, 7.3), '', $C['gray']);
+        $suby = $ty + $nLines * 12 - 2;
+        if ($it['serials']) { $pdf->text($cItem, $suby, 7.3, $pdf->fit('SN: ' . $it['serials'], $itemMaxW, 7.3), '', $C['gray']); $suby += 10; }
+        if ($extras !== '') $pdf->text($cItem, $suby, 7.3, $pdf->fit($extras, $itemMaxW, 7.3), '', $C['gray']);
         $y += $rowNeed;
         $pdf->line($L, $y, $R, $y, 0.5, [0.9, 0.88, 0.95]);
     }

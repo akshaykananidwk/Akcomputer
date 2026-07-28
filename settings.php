@@ -284,7 +284,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'custom_field_add') 
     $label = trim(post('label'));
     if ($label !== '') {
         $next = (int)val('SELECT COALESCE(MAX(sort_order),0)+1 FROM item_custom_fields');
-        q('INSERT INTO item_custom_fields (label, sort_order, is_active) VALUES (?, ?, 1)', [$label, $next]);
+        q('INSERT INTO item_custom_fields (label, sort_order, is_active, show_on_print) VALUES (?, ?, 1, ?)', [$label, $next, post('show_on_print') ? 1 : 0]);
         flash('Custom field added.');
     }
     redirect('settings.php?cat=transaction');
@@ -293,6 +293,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'custom_field_del') 
     require_perm('settings.edit');
     q('DELETE FROM item_custom_fields WHERE id = ?', [(int)post('id')]);
     flash('Custom field removed.');
+    redirect('settings.php?cat=transaction');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'custom_field_print') {
+    require_perm('settings.edit');
+    q('UPDATE item_custom_fields SET show_on_print = 1 - show_on_print WHERE id = ?', [(int)post('id')]);
+    flash('Field visibility changed.');
     redirect('settings.php?cat=transaction');
 }
 
@@ -387,13 +393,18 @@ exit;
 </div>
 
 <div class="card">
-  <h3>Item Custom Fields</h3>
-  <p class="muted mb">Extra labeled fields (e.g. "Exp. Date", "Brand") that show up under every item while adding it to a sale. Add as many as you need.</p>
+  <h3>Item Custom Fields / Description Points</h3>
+  <p class="muted mb">Extra labeled fields (e.g. "Exp. Date", "Brand", "Warranty", "Install note") that show up under every item while adding it to a sale — 6-7 જેટલા પોઇન્ટ ઉમેરી શકાય. દરેક પોઇન્ટ માટે નક્કી કરો: <strong>🖨️ Print+PDF</strong> = ગ્રાહકના બિલ/PDF/WhatsApp માં દેખાય · <strong>🔒 Internal</strong> = ફક્ત તમને સ્ક્રીન પર દેખાય, બિલમાં ક્યારેય નહીં.</p>
   <table class="table-sm mb">
-    <?php foreach ($customFields as $cf): ?>
+    <?php foreach ($customFields as $cf): $cfPrint = (int)($cf['show_on_print'] ?? 1); ?>
     <tr>
       <td><?= e($cf['label']) ?></td>
-      <td class="right">
+      <td><?= $cfPrint ? '<span class="badge badge-ok">🖨️ Print + PDF</span>' : '<span class="badge">🔒 Only internal</span>' ?></td>
+      <td class="right" style="white-space:nowrap">
+        <form method="post" style="display:inline"><?= csrf_field() ?>
+          <input type="hidden" name="do" value="custom_field_print"><input type="hidden" name="id" value="<?= $cf['id'] ?>">
+          <button class="btn btn-sm btn-outline" type="submit" title="Switch where this point is visible"><?= $cfPrint ? 'Make internal 🔒' : 'Show on print 🖨️' ?></button>
+        </form>
         <form method="post" style="display:inline"><?= csrf_field() ?>
           <input type="hidden" name="do" value="custom_field_del"><input type="hidden" name="id" value="<?= $cf['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit" onclick="return confirm('Remove this custom field?')">✕</button>
@@ -407,6 +418,7 @@ exit;
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="custom_field_add">
     <div><input type="text" name="label" placeholder="Field label, e.g. Brand" required></div>
+    <label class="check-inline"><input type="checkbox" name="show_on_print" value="1" checked> Print/PDF માં દેખાડવું</label>
     <button class="btn btn-sm" type="submit">Add field</button>
   </form>
 </div>

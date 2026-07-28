@@ -65,6 +65,11 @@ $trust = [
           <td><span class="inv2-sq" style="background:<?= $sqColors[$n % count($sqColors)] ?>"><?= sprintf('%02d', $n + 1) ?></span></td>
           <td><?= e($it['name']) ?><?= $it['serials'] ? '<br><small class="muted">SN: ' . e($it['serials']) . '</small>' : '' ?>
             <?php if (!empty($it['description'])): ?><br><small class="muted"><?= e($it['description']) ?></small><?php endif; ?>
+            <?php if (!empty($it['custom_data'])): $cd = json_decode($it['custom_data'], true) ?: [];
+                  foreach ($cd as $cfLabel => $cfVal): if (trim((string)$cfVal) === '') continue;
+                      $cfPub = custom_field_printable($cfLabel); ?>
+            <br><small class="muted<?= $cfPub ? '' : ' no-print' ?>"><?= $cfPub ? '' : '🔒 ' ?><?= e($cfLabel) ?>: <?= e($cfVal) ?></small>
+            <?php endforeach; endif; ?>
           </td>
           <?php if ($sale['is_gst']): ?><td><?= e($it['hsn']) ?></td><?php endif; ?>
           <td class="num" style="text-align:center"><?= (float)$it['qty'] ?> <?= e($it['unit']) ?></td>

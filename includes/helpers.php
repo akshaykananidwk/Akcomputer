@@ -517,6 +517,26 @@ function invoice_qr_web_path($sale) {
     return 'uploads/qrcache/' . basename($p);
 }
 
+// ---------- Item custom fields: print visibility ----------
+// Each custom field (Settings > Transaction) is either customer-facing
+// (bill view, print, PDF, WhatsApp copy) or internal-only (staff screen
+// only). Labels missing from the table (deleted fields on old bills, or
+// the DB not yet migrated) stay customer-facing like before.
+function custom_fields_print_map() {
+    static $map = null;
+    if ($map === null) {
+        $map = [];
+        try {
+            foreach (all('SELECT label, show_on_print FROM item_custom_fields') as $f) $map[$f['label']] = (int)$f['show_on_print'];
+        } catch (Exception $e) {}
+    }
+    return $map;
+}
+function custom_field_printable($label) {
+    $m = custom_fields_print_map();
+    return !isset($m[$label]) || $m[$label] === 1;
+}
+
 // ---------- Site credential vault (DVR/NVR passwords etc, encrypted at rest) ----------
 function vault_encrypt($plain) {
     if ($plain === '' || $plain === null) return '';
