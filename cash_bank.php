@@ -13,6 +13,10 @@ $u = current_user();
 $isSelfAdjust = fn() => can('cashbank.adjust');
 $canTransfer = can('cashbank.transfer');
 $canAdjust = can('cashbank.adjust');
+// "cashbank.viewall" (admin has it via *) = may see the WHOLE shop's money.
+// Everyone else sees only their own wallet - not the admin's, not anyone's -
+// though the OTP handover still lets them pass cash to any staff member.
+$seeAll = can('cashbank.viewall');
 
 // ---------- record an adjustment (cash or bank) ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'adjust') {
@@ -141,6 +145,7 @@ if (get('action') === 'cash_ledger') {
     $from = get('from', date('Y-m-01'));
     $to = get('to', today());
     $fStaff = (int)get('staff');
+    if (!$seeAll) $fStaff = (int)$u['id']; // own wallet only
     $staffAll = all('SELECT id, name FROM users ORDER BY name');
 
     $rows = [];
@@ -213,10 +218,12 @@ if (get('action') === 'cash_ledger') {
       <input type="hidden" name="action" value="cash_ledger">
       <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>
       <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>
+      <?php if ($seeAll): ?>
       <div><label>Whose cash?</label>
         <select name="staff"><option value="0">Whole shop</option>
           <?php foreach ($staffAll as $s): ?><option value="<?= $s['id'] ?>" <?= $fStaff == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option><?php endforeach; ?>
         </select></div>
+      <?php endif; ?>
       <button class="btn btn-sm" type="submit">Show</button>
     </form>
     <div class="table-wrap list-style-table">
@@ -251,30 +258,35 @@ if (get('action') === 'cash_ledger') {
 
 // ---------- data for the page ----------
 $today = today();
-$todayCashIn = (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE mode = 'cash' AND direction = 'in' AND pay_date = ?", [$today]);
-$todayCashOut = (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE mode = 'cash' AND direction = 'out' AND pay_date = ?", [$today]);
-$todayCashExp = (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE mode = 'cash' AND exp_date = ?", [$today]);
-$cashInHand = total_cash_in_hand();
+$ownW = $seeAll ? '' : ' AND created_by = ' . (int)$u['id'];
+$todayCashIn = (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE mode = 'cash' AND direction = 'in' AND pay_date = ?$ownW", [$today]);
+$todayCashOut = (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE mode = 'cash' AND direction = 'out' AND pay_date = ?$ownW", [$today]);
+$todayCashExp = (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE mode = 'cash' AND exp_date = ?$ownW", [$today]);
+$cashInHand = $seeAll ? total_cash_in_hand() : staff_cash($u['id']);
 
 $staffAll = all('SELECT id, name, mobile FROM users WHERE is_active = 1 ORDER BY name');
 $wallets = [];
-foreach ($staffAll as $s) $wallets[] = ['id' => $s['id'], 'name' => $s['name'], 'cash' => staff_cash($s['id'])];
+foreach ($staffAll as $s) {
+    if (!$seeAll && (int)$s['id'] !== (int)$u['id']) continue; // only my wallet
+    $wallets[] = ['id' => $s['id'], 'name' => $s['name'], 'cash' => staff_cash($s['id'])];
+}
 
 $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
 $totalBankBal = 0;
 foreach ($banks as &$b) { $b['balance'] = bank_account_balance($b['id']); $totalBankBal += $b['balance']; }
 unset($b);
 
+$ownMt = $seeAll ? '' : ' AND (mt.from_user_id = ' . (int)$u['id'] . ' OR mt.to_user_id = ' . (int)$u['id'] . ')';
 $pending = all("SELECT mt.*, fu.name from_name, tu.name to_name FROM money_transfers mt
                 LEFT JOIN users fu ON fu.id = mt.from_user_id LEFT JOIN users tu ON tu.id = mt.to_user_id
-                WHERE mt.txn_type = 'staff_transfer' AND mt.status = 'pending' ORDER BY mt.id DESC");
+                WHERE mt.txn_type = 'staff_transfer' AND mt.status = 'pending'$ownMt ORDER BY mt.id DESC");
 $recentMoves = all("SELECT mt.*, fu.name from_name, tu.name to_name, fb.account_name from_bank, tb.account_name to_bank
                     FROM money_transfers mt
                     LEFT JOIN users fu ON fu.id = mt.from_user_id LEFT JOIN users tu ON tu.id = mt.to_user_id
                     LEFT JOIN bank_accounts fb ON fb.id = mt.from_bank_id LEFT JOIN bank_accounts tb ON tb.id = mt.to_bank_id
-                    WHERE mt.status <> 'pending' ORDER BY mt.id DESC LIMIT 15");
+                    WHERE mt.status <> 'pending'$ownMt ORDER BY mt.id DESC LIMIT 15");
 $recentCash = all("SELECT p.*, pt.name party_name, u2.name staff_name FROM payments p LEFT JOIN parties pt ON pt.id = p.party_id
-                   JOIN users u2 ON u2.id = p.created_by WHERE p.mode = 'cash' ORDER BY p.id DESC LIMIT 10");
+                   JOIN users u2 ON u2.id = p.created_by WHERE p.mode = 'cash'" . ($seeAll ? '' : ' AND p.created_by = ' . (int)$u['id']) . " ORDER BY p.id DESC LIMIT 10");
 
 function mt_label($t) {
     switch ($t['txn_type']) {
@@ -291,9 +303,11 @@ function mt_label($t) {
 $page_title = 'Cash & Bank';
 include __DIR__ . '/includes/header.php';
 ?>
-<div class="duo-cards">
-  <a class="duo-card duo-get" href="cash_bank.php?action=cash_ledger"><div class="duo-label">💵 Cash in Hand (total)</div><div class="duo-value">₹ <?= money($cashInHand) ?></div><div class="muted" style="font-size:12px;margin-top:4px">Tap for the full ledger →</div></a>
+<div class="duo-cards"<?= $seeAll ? '' : ' style="grid-template-columns:1fr"' ?>>
+  <a class="duo-card duo-get" href="cash_bank.php?action=cash_ledger"><div class="duo-label">💵 <?= $seeAll ? 'Cash in Hand (total)' : 'My Cash (મારી કેશ)' ?></div><div class="duo-value">₹ <?= money($cashInHand) ?></div><div class="muted" style="font-size:12px;margin-top:4px">Tap for the full ledger →</div></a>
+  <?php if ($seeAll): ?>
   <a class="duo-card" style="background:#e0f2fe" href="reports.php?r=bank_ledger"><div class="duo-label" style="color:#075985">🏦 Total Bank Balance</div><div class="duo-value" style="color:#0369a1">₹ <?= money($totalBankBal) ?></div><div class="muted" style="font-size:12px;margin-top:4px">Tap for the passbook →</div></a>
+  <?php endif; ?>
 </div>
 
 <?php if ($canAdjust || $canTransfer): ?>
@@ -312,13 +326,13 @@ include __DIR__ . '/includes/header.php';
 
 <!-- staff wallets -->
 <div class="card">
-  <h2>👥 Whose hand holds how much cash?</h2>
+  <h2>👥 <?= $seeAll ? 'Whose hand holds how much cash?' : 'My Wallet' ?></h2>
   <table class="table-sm">
     <?php foreach ($wallets as $w): ?>
     <tr><td><?= e($w['name']) ?><?= $w['id'] == $u['id'] ? ' <span class="badge badge-info">you</span>' : '' ?></td>
         <td class="num" style="font-weight:700;color:<?= $w['cash'] < -0.009 ? 'var(--bad)' : 'var(--ok)' ?>">₹<?= money($w['cash']) ?></td></tr>
     <?php endforeach; ?>
-    <tr style="border-top:2px solid var(--text)"><td><strong>Total</strong></td><td class="num"><strong>₹<?= money($cashInHand) ?></strong></td></tr>
+    <?php if ($seeAll): ?><tr style="border-top:2px solid var(--text)"><td><strong>Total</strong></td><td class="num"><strong>₹<?= money($cashInHand) ?></strong></td></tr><?php endif; ?>
   </table>
   <p class="muted mt" style="font-size:12.5px">Each staff's wallet = cash they collected − cash they paid/spent ± handovers/bank deposits. Older entries (before wallets existed) all sit under whoever recorded them.</p>
 </div>
@@ -356,6 +370,7 @@ include __DIR__ . '/includes/header.php';
   </div>
 </div>
 
+<?php if ($seeAll): ?>
 <div class="card">
   <h2>🏦 Bank Accounts <a class="btn btn-sm btn-outline" style="float:right" href="bank_accounts.php">Manage →</a></h2>
   <?php if (!$banks): ?><p class="muted">No bank account added yet. <a href="bank_accounts.php">+ Add Bank Account</a></p><?php else: ?>
@@ -368,6 +383,7 @@ include __DIR__ . '/includes/header.php';
   </table>
   <?php endif; ?>
 </div>
+<?php endif; ?>
 
 <?php if ($recentMoves): ?>
 <div class="card">
@@ -443,9 +459,9 @@ include __DIR__ . '/includes/header.php';
       <?= csrf_field() ?><input type="hidden" name="do" value="transfer">
       <input type="hidden" name="txn_type" id="tType">
       <div class="field" id="tFromBankRow"><label>From bank account</label>
-        <select name="from_bank_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?> (₹<?= money($b['balance']) ?>)</option><?php endforeach; ?></select></div>
+        <select name="from_bank_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?><?= $seeAll ? ' (₹' . money($b['balance']) . ')' : '' ?></option><?php endforeach; ?></select></div>
       <div class="field" id="tToBankRow"><label>To bank account</label>
-        <select name="to_bank_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?> (₹<?= money($b['balance']) ?>)</option><?php endforeach; ?></select></div>
+        <select name="to_bank_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?><?= $seeAll ? ' (₹' . money($b['balance']) . ')' : '' ?></option><?php endforeach; ?></select></div>
       <div class="field" id="tWalletRow"><label>Whose cash wallet?</label>
         <select name="wallet_user"><?php foreach ($staffAll as $s): ?><option value="<?= $s['id'] ?>" <?= $s['id'] == $u['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option><?php endforeach; ?></select></div>
       <div class="form-row cols-2">

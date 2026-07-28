@@ -24,7 +24,7 @@ function permission_catalog() {
         'repairs' => ['view', 'add', 'edit', 'delete'],
         'warranty' => ['view', 'add', 'edit', 'delete'],
         'payments' => ['view', 'add', 'edit', 'delete'],
-        'cashbank' => ['adjust', 'transfer'],
+        'cashbank' => ['adjust', 'transfer', 'viewall'],
         'expenses' => ['view', 'add', 'delete'],
         'challans' => ['view', 'add', 'edit', 'delete'],
         'weborders' => ['view', 'edit', 'delete'],
@@ -94,6 +94,14 @@ function current_user() {
         }
     }
     return $user;
+}
+
+/** Full admin = holds the '*' wildcard (the Admin role). Managers/staff -
+ *  whatever else they may do - are NOT full admins and never see admin
+ *  accounts or the admin's money. */
+function is_full_admin() {
+    $u = current_user();
+    return $u && in_array('*', $u['perms'], true);
 }
 
 function can($perm) {

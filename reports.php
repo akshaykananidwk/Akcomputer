@@ -110,12 +110,16 @@ if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']
 if (!can('expenses.view')) unset($tabs['expense']);
 if (!can('users.view')) { unset($tabs['activity']); unset($tabs['login_history']); }
 if (!can('payments.view')) unset($tabs['bank_ledger']);
+// whole-shop money reports (bank passbook, full cashbook) are for the admin /
+// whoever explicitly holds cashbank.viewall - a manager only sees own cash
+if (!can('cashbank.viewall')) { unset($tabs['bank_ledger']); unset($tabs['cashbook']); }
 if (!can('reports.accounting')) { unset($tabs['general_ledger']); unset($tabs['trial_balance']); unset($tabs['balance_sheet']); unset($tabs['profit_loss']); }
 if (!can('reports.builder')) unset($tabs['custom']);
 if ($r === 'business' && !can('reports.profit')) $r = 'daily';
 if ($r === 'branch_staff' && !can('reports.profit')) $r = 'daily';
 if (in_array($r, ['activity', 'login_history'], true) && !can('users.view')) $r = 'daily';
 if ($r === 'bank_ledger' && !can('payments.view')) $r = 'daily';
+if (in_array($r, ['bank_ledger', 'cashbook'], true) && !can('cashbank.viewall')) $r = 'daily';
 if (in_array($r, ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'], true) && !can('reports.accounting')) $r = 'daily';
 if ($r === 'custom' && !can('reports.builder')) $r = 'daily';
 

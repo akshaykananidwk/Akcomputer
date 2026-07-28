@@ -25,8 +25,31 @@ require_perm('users.view');
 $action = get('action', 'list');
 $id = (int)get('id');
 
+// Admin accounts are visible/manageable ONLY to a full admin. A manager with
+// users.view runs the staff list without ever seeing the admin's login, and
+// no handler below will accept an admin account as its target either.
+function user_target_is_admin($uid) {
+    $perms = val('SELECT r.permissions FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?', [(int)$uid]);
+    return in_array('*', json_decode((string)$perms, true) ?: [], true);
+}
+function guard_admin_target($uid) {
+    if ($uid && user_target_is_admin($uid) && !is_full_admin()) {
+        flash('Only the admin can view or change admin accounts.', 'error');
+        redirect('users.php');
+    }
+}
+function role_is_admin($roleId) {
+    $perms = val('SELECT permissions FROM roles WHERE id = ?', [(int)$roleId]);
+    return in_array('*', json_decode((string)$perms, true) ?: [], true);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm($id ? 'users.edit' : 'users.add');
+    guard_admin_target($id);
+    if (role_is_admin((int)post('role_id')) && !is_full_admin()) {
+        flash('Only the admin can give someone the Admin role.', 'error');
+        redirect('users.php');
+    }
     $extra = array_values((array)post('extra_perms', []));
     $data = [post('name'), post('username'), post('mobile'), (int)post('role_id'), (int)post('location_id'),
              json_encode($extra), post('is_active') ? 1 : 0];
@@ -54,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
+    guard_admin_target((int)post('id'));
     require_perm('users.delete');
     $uid = (int)post('id');
     if ($uid === current_user()['id']) {
@@ -69,6 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'force_logout') {
+    guard_admin_target((int)post('id'));
     require_perm('users.edit');
     $uid = (int)post('id');
     q('UPDATE user_sessions SET revoked = 1 WHERE user_id = ?', [$uid]);
@@ -78,6 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'force_logout') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'disable_2fa') {
+    guard_admin_target((int)post('id'));
     require_perm('users.edit');
     $uid = (int)post('id');
     q('UPDATE users SET totp_enabled = 0, totp_secret_enc = NULL WHERE id = ?', [$uid]);
@@ -93,6 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'disable_2fa') {
 // verify what a role can/can't do without needing that person's password.
 // Fully logged (start + stop) since it's a real identity switch.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'impersonate') {
+    guard_admin_target((int)post('id'));
     require_perm('users.impersonate');
     $target = row('SELECT * FROM users WHERE id = ? AND is_active = 1', [(int)post('id')]);
     if (!$target) { flash('User not found or inactive.', 'error'); redirect('users.php'); }
@@ -106,10 +133,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'impersonate') {
 }
 
 $roles = all('SELECT * FROM roles ORDER BY name');
+// a manager may never hand out (or even see) the Admin role
+if (!is_full_admin()) {
+    $roles = array_values(array_filter($roles, fn($ro) => !in_array('*', json_decode((string)$ro['permissions'], true) ?: [], true)));
+}
 $locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
 
 if ($action === 'new' || $action === 'edit') {
     require_perm($action === 'new' ? 'users.add' : 'users.edit');
+    guard_admin_target($id);
     $usr = $id ? row('SELECT * FROM users WHERE id = ?', [$id]) : null;
     $extra = $usr ? (json_decode($usr['permissions'] ?: '[]', true) ?: []) : [];
     $page_title = $usr ? 'Edit User' : 'New User';
@@ -160,8 +192,12 @@ if ($action === 'new' || $action === 'edit') {
     exit;
 }
 
-$usersList = all('SELECT u.*, r.name role_name, l.name loc_name FROM users u
+$usersList = all('SELECT u.*, r.name role_name, r.permissions role_perms, l.name loc_name FROM users u
                   JOIN roles r ON r.id = u.role_id JOIN locations l ON l.id = u.location_id ORDER BY u.name');
+// managers never see admin logins in the list - only the admin does
+if (!is_full_admin()) {
+    $usersList = array_values(array_filter($usersList, fn($x) => !in_array('*', json_decode((string)$x['role_perms'], true) ?: [], true)));
+}
 $page_title = 'Staff Users';
 include __DIR__ . '/includes/header.php';
 ?>
