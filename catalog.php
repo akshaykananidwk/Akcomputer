@@ -167,21 +167,22 @@ body { padding-bottom: 90px; background: var(--bg); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hero { background: linear-gradient(120deg, #1e1b4b, #164e63); } }
 .hero h1 { font-size: 22px; color: var(--text); }
 .hero p { color: var(--muted); margin-top: 4px; font-size: 13.5px; }
+@media (min-width: 900px) { .hero { padding: 34px 14px 26px; } .hero h1 { font-size: 30px; } .hero p { font-size: 15px; } }
 .hero .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
 .hero .badges span { background: var(--card); color: var(--text); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 .dealer-bar { max-width: 1200px; margin: 10px auto 0; padding: 10px 14px; border-radius: 12px; background: linear-gradient(100deg, #059669, #10b981); color: #fff;
   display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; }
 .dlg-card { max-width: 460px; margin: 14px auto 0; background: var(--card); color: var(--text); border-radius: 14px; padding: 18px 16px; box-shadow: 0 2px 10px rgba(0,0,0,.1); }
-.shop-layout { max-width: 1200px; margin: 0 auto; padding: 14px 12px; display: grid; grid-template-columns: 1fr; gap: 14px; }
-@media (min-width: 900px) { .shop-layout { grid-template-columns: 230px 1fr; align-items: start; } }
+.shop-layout { max-width: 1240px; margin: 0 auto; padding: 14px 12px; display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 900px) { .shop-layout { grid-template-columns: 240px 1fr; align-items: start; padding: 20px 16px; } }
 .side { background: var(--card); color: var(--text); border-radius: 14px; padding: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 @media (min-width: 900px) { .side { position: sticky; top: 68px; } .catsBtn { display: none; } }
 @media (max-width: 899px) {
   .side { display: none; position: fixed; inset: 0 auto 0 0; width: 260px; z-index: 80; border-radius: 0 14px 14px 0; overflow-y: auto; }
   .side.open { display: block; }
-  .side-ovl { display: none; position: fixed; inset: 0; z-index: 75; background: rgba(0,0,0,.45); }
-  .side-ovl.show { display: block; }
 }
+.side-ovl { display: none; position: fixed; inset: 0; z-index: 75; background: rgba(0,0,0,.45); }
+.side-ovl.show { display: block; }
 .side h3 { font-size: 14px; margin-bottom: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
 .side .cat-link { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0;
   background: none; color: var(--text); padding: 9px 10px; border-radius: 10px; font-size: 14px; cursor: pointer; }
@@ -191,12 +192,13 @@ body { padding-bottom: 90px; background: var(--bg); }
 .side .cat-link.on .cnt { background: rgba(255,255,255,.25); color: #fff; }
 .catsBtn { margin-bottom: 4px; }
 .cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px; }
+@media (min-width: 900px) { .cat-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; } }
 .cat-card { background: var(--card); color: var(--text); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08);
   display: flex; flex-direction: column; transition: transform .15s, box-shadow .15s; }
 .cat-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.14); }
 .cat-card a.imglink { display: block; }
-.cat-card img { width: 100%; height: 140px; object-fit: contain; background: #fff; padding: 6px; }
-.cat-card .ph { width: 100%; height: 140px; display: flex; align-items: center; justify-content: center; font-size: 42px; background: var(--bg); }
+.cat-card img { width: 100%; height: 150px; object-fit: contain; background: #fff; padding: 8px; }
+.cat-card .ph { width: 100%; height: 150px; display: flex; align-items: center; justify-content: center; font-size: 46px; background: var(--bg); }
 .cat-card .cbody { padding: 10px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .cat-card .cname { font-weight: 600; font-size: 14px; }
 .cat-card .cname a { color: inherit; text-decoration: none; }
@@ -290,17 +292,18 @@ body { padding-bottom: 90px; background: var(--bg); }
 </div>
 <?php endif; ?>
 
-<div class="shop-layout">
 <?php if ($orderOk): ?>
-  <div></div>
+<div style="max-width:560px;margin:24px auto;padding:0 12px">
   <div class="card ok-box">
     <div class="big">✅</div>
     <h2>Order received! (<?= e($orderOk) ?>)</h2>
     <p class="muted mt">We'll WhatsApp/call you soon. Thank you! 🙏</p>
     <a class="btn mt" href="catalog.php">← Back to Store</a>
   </div>
+</div>
 <?php else: ?>
-  <div class="side-ovl" id="sideOvl"></div>
+<div class="side-ovl" id="sideOvl"></div>
+<div class="shop-layout">
   <aside class="side" id="sideBar">
     <h3>Categories</h3>
     <button type="button" class="cat-link on" data-cat="">🏪 All Products <span class="cnt"><?= count($items) ?></span></button>
@@ -336,6 +339,7 @@ body { padding-bottom: 90px; background: var(--bg); }
     <?php if (!$items): ?><p class="muted">No products listed yet.</p><?php endif; ?>
     </div>
   </main>
+</div>
 
   <div class="cartbar" id="cartBar"><span id="cartInfo"></span><span>Place Order →</span></div>
 
@@ -357,7 +361,6 @@ body { padding-bottom: 90px; background: var(--bg); }
     </div>
   </div>
 <?php endif; ?>
-</div>
 
 <footer class="sfoot">
   <p><strong>🖥️ <?= e($app_name) ?></strong> — Devbhoomi Dwarka, Gujarat</p>
