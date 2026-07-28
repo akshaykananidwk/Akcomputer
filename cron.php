@@ -129,6 +129,32 @@ q('INSERT INTO activity_log (user_id, action, details) VALUES (NULL, ?, ?)',
   ['cron_reminders_custom', "due=" . count($dueReminders) . " messages=$remMsgs"]);
 echo "Reminders: due " . count($dueReminders) . ", messages sent $remMsgs\n";
 
+// ---------- Internet connection expiry alerts ----------
+// 7 days before, 1 day before and ON the expiry day: WhatsApp the shop (and
+// the customer too when the connection has notify_customer ticked).
+// last_alert_date keeps one alert per connection per day even if the cron
+// runs every 15 minutes.
+try {
+    $shopNo = wa_normalize_number(setting('wa_shop_number'));
+    $due = all("SELECT *, DATEDIFF(expiry_date, CURDATE()) dl FROM net_connections
+                WHERE status = 'active' AND DATEDIFF(expiry_date, CURDATE()) IN (7, 1, 0)
+                AND (last_alert_date IS NULL OR last_alert_date < CURDATE())");
+    $ncSent = 0;
+    foreach ($due as $c) {
+        $when = $c['dl'] == 0 ? 'આજે' : ($c['dl'] == 1 ? 'કાલે' : $c['dl'] . ' દિવસમાં');
+        if (strlen($shopNo) >= 12) {
+            $ncSent += send_whatsapp($shopNo, "🌐 *Internet connection expiry*\n\n" . $c['customer_name'] . ' (' . $c['mobile'] . ")\nPlan: " . ($c['plan_name'] ?: '-') . " · ₹" . money($c['price']) . "\n*$when બંધ થાય છે* (" . dmy($c['expiry_date']) . ")\n\nRenew: " . base_url('net_connections.php')) ? 1 : 0;
+        }
+        if ($c['notify_customer'] && $c['mobile']) {
+            send_whatsapp($c['mobile'], "🙏 *" . setting('app_name', 'AK Computer') . "*\n\n" . $c['customer_name'] . ", તમારું ઇન્ટરનેટ કનેક્શન *$when* પૂરું થાય છે (" . dmy($c['expiry_date']) . ").\nચાલુ રાખવા અમને મેસેજ/કૉલ કરો. 📞");
+        }
+        q('UPDATE net_connections SET last_alert_date = CURDATE() WHERE id = ?', [$c['id']]);
+    }
+    // a lapsed connection flips to expired so the list and counts stay honest
+    q("UPDATE net_connections SET status = 'expired' WHERE status = 'active' AND expiry_date < DATE_SUB(CURDATE(), INTERVAL 3 DAY)");
+    echo "Net connections: alerts for " . count($due) . " (shop msgs $ncSent)\n";
+} catch (Exception $e) { /* table not migrated yet */ }
+
 // ---------- Housekeeping: trim old webhook delivery logs ----------
 // webhook_deliveries has no cap on insert (every fire_webhook() call adds a
 // row) - trimmed here instead, same "let cron sweep it up" pattern as

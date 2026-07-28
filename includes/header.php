@@ -61,6 +61,7 @@ $_navMenu = [
         ['warranty.php', 'Warranty Claims', 'warranty.view', 'warranty.php?action=new', 'warranty.add'],
         ['amc.php', 'AMC / Recurring Billing', 'amc.view', 'amc.php?action=new', 'amc.add'],
         ['amc.php?action=calendar', 'AMC / Visit Calendar', 'amc.view', null, null],
+        ['net_connections.php', 'Internet Connections', 'netconn.view', null, null],
         ['sites.php', 'Customer Sites / DVR-NVR Vault', 'sites.view', 'sites.php?action=new', 'sites.add'],
     ]],
     ['group', 'crm', 'handshake', 'Leads & CRM', [
