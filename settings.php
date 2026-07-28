@@ -159,6 +159,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reminder_gap') {
     redirect('settings.php?cat=reminders');
 }
 
+// ---- Telegram management bot: save token / auto-register the webhook ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'tg_save') {
+    require_perm('settings.edit');
+    set_setting('tg_bot_token', trim(post('tg_bot_token')));
+    if (setting('tg_webhook_key', '') === '') set_setting('tg_webhook_key', bin2hex(random_bytes(16)));
+    // one tap: tell Telegram where to deliver messages
+    if (trim(post('tg_bot_token')) !== '' && post('set_webhook')) {
+        $whUrl = base_url('telegram_webhook.php?key=' . setting('tg_webhook_key'));
+        $ch = curl_init('https://api.telegram.org/bot' . trim(post('tg_bot_token')) . '/setWebhook');
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 15,
+            CURLOPT_POSTFIELDS => http_build_query(['url' => $whUrl]), CURLOPT_SSL_VERIFYPEER => true]);
+        $r = json_decode((string)curl_exec($ch), true);
+        curl_close($ch);
+        flash(($r['ok'] ?? false) ? 'Telegram bot connected ✔ — હવે સ્ટાફ /link કોડથી જોડાય.' : ('Webhook set failed: ' . ($r['description'] ?? 'check the token')), ($r['ok'] ?? false) ? 'success' : 'error');
+    } else {
+        flash('Telegram settings saved.');
+    }
+    redirect('settings.php?cat=whatsapp');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'tg_gencode') {
+    require_perm('settings.edit');
+    q('UPDATE users SET tg_link_code = ? WHERE id = ?', [substr(str_shuffle('ABCDEFGHJKMNPQRSTUVWXYZ23456789'), 0, 6), (int)post('uid')]);
+    flash('Link code generated — tell it to that staff member.');
+    redirect('settings.php?cat=whatsapp');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'tg_unlink') {
+    require_perm('settings.edit');
+    q('UPDATE users SET telegram_chat_id = NULL WHERE id = ?', [(int)post('uid')]);
+    flash('Telegram unlinked for that user.');
+    redirect('settings.php?cat=whatsapp');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_test') {
     require_perm('settings.edit');
     $ok = send_whatsapp(post('test_mobile'), '✅ Test message from ' . setting('app_name', 'AK Computer') . ' billing system. WhatsApp API is working!');
@@ -445,6 +477,44 @@ exit;
       <td><?= $b['reply'] ? '✅' : '<span class="muted">silent</span>' ?></td></tr>
     <?php endforeach; ?></tbody>
   </table></div>
+  <?php endif; ?>
+</div>
+<div class="card">
+  <h3>✈️ Telegram Management Bot</h3>
+  <p class="muted">Telegram પર બટન દબાવીને આખી દુકાન: આજનું વેચાણ, ઉધાર, કેશ+બેંક, સ્ટોક, વેબ ઓર્ડર, રિપેર, સ્ટાફ વોલેટ. બનાવવા: Telegram માં <strong>@BotFather</strong> ખોલો → /newbot → જે token મળે એ અહીં નાખો.</p>
+  <form method="post" class="mt">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="tg_save">
+    <div class="form-row cols-2">
+      <div><label>Bot Token</label><input type="password" name="tg_bot_token" value="<?= e(setting('tg_bot_token')) ?>" placeholder="123456:ABC-DEF..."></div>
+      <label class="check-inline"><input type="checkbox" name="set_webhook" value="1" checked> Save થતાં જ બોટ ચાલુ કરી દો (webhook auto-set)</label>
+    </div>
+    <button class="btn btn-sm" type="submit">Save & Connect</button>
+  </form>
+  <?php if (setting('tg_bot_token')): ?>
+  <h4 class="mt">સ્ટાફ જોડાણ (કોણ બોટ વાપરી શકે)</h4>
+  <p class="muted" style="font-size:12.5px">દરેક સ્ટાફ Telegram માં બોટ ખોલીને <code>/link કોડ</code> મોકલે એટલે જોડાય. કોડ અહીંથી બનાવો:</p>
+  <table class="table-sm">
+    <thead><tr><th>Staff</th><th>Status</th><th>Link code</th><th></th></tr></thead>
+    <tbody>
+    <?php foreach (all('SELECT id, name, telegram_chat_id, tg_link_code FROM users WHERE is_active = 1 ORDER BY name') as $tu): ?>
+      <tr>
+        <td><?= e($tu['name']) ?></td>
+        <td><?= $tu['telegram_chat_id'] ? '<span class="badge badge-ok">✔ joined</span>' : '<span class="muted">not joined</span>' ?></td>
+        <td><?= $tu['tg_link_code'] ? '<code>/link ' . e($tu['tg_link_code']) . '</code>' : '<span class="muted">-</span>' ?></td>
+        <td>
+          <?php if ($tu['telegram_chat_id']): ?>
+          <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="tg_unlink"><input type="hidden" name="uid" value="<?= $tu['id'] ?>">
+            <button class="btn btn-sm btn-outline" type="submit">Unlink</button></form>
+          <?php else: ?>
+          <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="tg_gencode"><input type="hidden" name="uid" value="<?= $tu['id'] ?>">
+            <button class="btn btn-sm btn-outline" type="submit">🔑 Code બનાવો</button></form>
+          <?php endif; ?>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
   <?php endif; ?>
 </div>
 <div class="card">
