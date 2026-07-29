@@ -97,54 +97,61 @@ if ($r === 'all_txn') {
     $rows = [];
     if (in_array('sale', $selTypes, true)) {
         foreach (all("SELECT s.sale_date d, s.created_at ct, s.invoice_no no, COALESCE(p.name, NULLIF(s.customer_name,''), 'Walk-in') who, s.total amt, s.paid, s.payment_mode mode, s.is_cancelled FROM sales s LEFT JOIN parties p ON p.id = s.party_id WHERE s.sale_date BETWEEN ? AND ?", [$from, $to]) as $x)
-            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Sale', 'no' => $x['no'], 'who' => $x['who'] . ($x['is_cancelled'] ? ' [CANCELLED]' : ''), 'mode' => $x['mode'], 'in' => $x['is_cancelled'] ? 0 : $x['amt'], 'out' => 0, 'cancel' => $x['is_cancelled']];
+            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Sale', 'no' => $x['no'], 'who' => $x['who'] . ($x['is_cancelled'] ? ' [CANCELLED]' : ''), 'mode' => $x['mode'], 'bill' => $x['is_cancelled'] ? 0 : $x['amt'], 'in' => 0, 'out' => 0, 'cancel' => $x['is_cancelled'], 'adj' => 0];
     }
     if (in_array('purchase', $selTypes, true)) {
         foreach (all("SELECT pu.purchase_date d, pu.created_at ct, pu.bill_no no, COALESCE(p.name,'-') who, pu.total amt, pu.is_cancelled FROM purchases pu LEFT JOIN parties p ON p.id = pu.party_id WHERE pu.purchase_date BETWEEN ? AND ?", [$from, $to]) as $x)
-            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Purchase', 'no' => $x['no'], 'who' => $x['who'] . ($x['is_cancelled'] ? ' [CANCELLED]' : ''), 'mode' => '', 'in' => 0, 'out' => $x['is_cancelled'] ? 0 : $x['amt'], 'cancel' => $x['is_cancelled']];
+            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Purchase', 'no' => $x['no'], 'who' => $x['who'] . ($x['is_cancelled'] ? ' [CANCELLED]' : ''), 'mode' => '', 'bill' => $x['is_cancelled'] ? 0 : $x['amt'], 'in' => 0, 'out' => 0, 'cancel' => $x['is_cancelled'], 'adj' => 0];
     }
     if (in_array('payin', $selTypes, true)) {
         foreach (all("SELECT py.pay_date d, py.created_at ct, py.amount amt, py.mode, py.ref_type, py.ref_id, COALESCE(p.name,'Walk-in') who, py.notes FROM payments py LEFT JOIN parties p ON p.id = py.party_id WHERE py.direction = 'in' AND py.mode <> 'contra' AND py.pay_date BETWEEN ? AND ?", [$from, $to]) as $x)
-            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Payment In', 'no' => $x['notes'] ?: '-', 'who' => $x['who'], 'mode' => $x['mode'], 'in' => $x['amt'], 'out' => 0, 'cancel' => 0];
+            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Payment In', 'no' => $x['notes'] ?: '-', 'who' => $x['who'], 'mode' => $x['mode'], 'bill' => 0, 'in' => $x['amt'], 'out' => 0, 'cancel' => 0, 'adj' => stripos((string)$x['notes'], 'adjusted on edit') !== false ? 1 : 0];
     }
     if (in_array('payout', $selTypes, true)) {
         foreach (all("SELECT py.pay_date d, py.created_at ct, py.amount amt, py.mode, py.ref_type, COALESCE(p.name,'-') who, py.notes FROM payments py LEFT JOIN parties p ON p.id = py.party_id WHERE py.direction = 'out' AND py.mode <> 'contra' AND py.pay_date BETWEEN ? AND ?", [$from, $to]) as $x)
-            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => $x['ref_type'] === 'sales_return' ? 'Refund' : 'Payment Out', 'no' => $x['notes'] ?: '-', 'who' => $x['who'], 'mode' => $x['mode'], 'in' => 0, 'out' => $x['amt'], 'cancel' => 0];
+            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => $x['ref_type'] === 'sales_return' ? 'Refund' : 'Payment Out', 'no' => $x['notes'] ?: '-', 'who' => $x['who'], 'mode' => $x['mode'], 'bill' => 0, 'in' => 0, 'out' => $x['amt'], 'cancel' => 0, 'adj' => stripos((string)$x['notes'], 'adjusted on edit') !== false ? 1 : 0];
     }
     if (in_array('expense', $selTypes, true) && can('expenses.view')) {
         foreach (all("SELECT e.exp_date d, e.created_at ct, e.category, e.amount amt, e.mode, e.notes, u2.name by_name FROM expenses e JOIN users u2 ON u2.id = e.created_by WHERE e.exp_date BETWEEN ? AND ?", [$from, $to]) as $x)
-            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Expense', 'no' => $x['category'], 'who' => trim(($x['notes'] ? $x['notes'] . ' · ' : '') . 'by ' . $x['by_name']), 'mode' => $x['mode'], 'in' => 0, 'out' => $x['amt'], 'cancel' => 0];
+            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Expense', 'no' => $x['category'], 'who' => trim(($x['notes'] ? $x['notes'] . ' · ' : '') . 'by ' . $x['by_name']), 'mode' => $x['mode'], 'bill' => 0, 'in' => 0, 'out' => $x['amt'], 'cancel' => 0, 'adj' => 0];
     }
     if (in_array('sreturn', $selTypes, true)) {
         foreach (all("SELECT sr.return_date d, sr.created_at ct, sr.return_no no, COALESCE(p.name, NULLIF(sr.customer_name,''), 'Walk-in') who, sr.total amt, sr.refund_mode mode FROM sales_returns sr LEFT JOIN parties p ON p.id = sr.party_id WHERE sr.return_date BETWEEN ? AND ?", [$from, $to]) as $x)
-            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Sales Return', 'no' => $x['no'], 'who' => $x['who'], 'mode' => $x['mode'], 'in' => 0, 'out' => $x['amt'], 'cancel' => 0];
+            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Sales Return', 'no' => $x['no'], 'who' => $x['who'], 'mode' => $x['mode'], 'bill' => $x['amt'], 'in' => 0, 'out' => 0, 'cancel' => 0, 'adj' => 0];
     }
     if (in_array('preturn', $selTypes, true)) {
         foreach (all("SELECT pr.return_date d, pr.created_at ct, pr.return_no no, COALESCE(p.name,'-') who, pr.total amt, pr.refund_mode mode FROM purchase_returns pr LEFT JOIN parties p ON p.id = pr.party_id WHERE pr.return_date BETWEEN ? AND ?", [$from, $to]) as $x)
-            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Purchase Return', 'no' => $x['no'], 'who' => $x['who'], 'mode' => $x['mode'], 'in' => $x['amt'], 'out' => 0, 'cancel' => 0];
+            $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Purchase Return', 'no' => $x['no'], 'who' => $x['who'], 'mode' => $x['mode'], 'bill' => $x['amt'], 'in' => 0, 'out' => 0, 'cancel' => 0, 'adj' => 0];
     }
     usort($rows, fn($a, $b) => strcmp($a['d'] . $a['ct'], $b['d'] . $b['ct']));
 
     // one summary card per included type (screen only; the PDF gets the table)
     if (empty($reportPdf)) {
         $sums = [];
-        foreach ($rows as $x) { $sums[$x['type']]['n'] = ($sums[$x['type']]['n'] ?? 0) + 1; $sums[$x['type']]['a'] = ($sums[$x['type']]['a'] ?? 0) + ($x['cancel'] ? 0 : ($x['in'] ?: $x['out'])); }
+        foreach ($rows as $x) { $sums[$x['type']]['n'] = ($sums[$x['type']]['n'] ?? 0) + 1; $sums[$x['type']]['a'] = ($sums[$x['type']]['a'] ?? 0) + ($x['cancel'] ? 0 : ($x['bill'] ?: $x['in'] ?: $x['out'])); }
         echo '<div class="grid-stats">';
         echo '<div class="stat"><div class="stat-label">📚 Transactions</div><div class="stat-value">' . count($rows) . '</div></div>';
         foreach ($sums as $t => $s) echo '<div class="stat"><div class="stat-label">' . e($t) . ' (' . $s['n'] . ')</div><div class="stat-value">₹' . money($s['a']) . '</div></div>';
         echo '</div>';
     }
 
+    // Bill ₹ = the document's value (sale/purchase bill, return note - may be
+    // on credit, no money moved yet). Money In/Out = actual money that moved
+    // (collections, supplier payments, expenses, refunds). Keeping them in
+    // separate columns means a bill and its own collection never double-count
+    // in one total. "(edit adj.)" rows are the automatic reverse+repost pairs
+    // a bill edit creates - real ledger entries that net out, shown faded.
     $tIn = array_sum(array_map(fn($x) => $x['in'], $rows));
     $tOut = array_sum(array_map(fn($x) => $x['out'], $rows));
-    echo '<div class="table-wrap"><table><thead><tr><th data-w="10">Date</th><th data-w="13">Type</th><th data-w="17">Doc / Category</th><th data-w="28">Party / Details</th><th data-w="10">Mode</th><th class="num" data-w="11">In ₹</th><th class="num" data-w="11">Out ₹</th></tr></thead><tbody>';
+    echo '<div class="table-wrap"><table><thead><tr><th data-w="9">Date</th><th data-w="12">Type</th><th data-w="15">Doc / Category</th><th data-w="26">Party / Details</th><th data-w="8">Mode</th><th class="num" data-w="10">Bill ₹</th><th class="num" data-w="10">Money In ₹</th><th class="num" data-w="10">Money Out ₹</th></tr></thead><tbody>';
     foreach ($rows as $x) {
-        echo '<tr' . ($x['cancel'] ? ' style="opacity:.55"' : '') . '><td>' . dmy($x['d']) . '</td><td>' . e($x['type']) . '</td><td>' . e($x['no']) . '</td><td>' . e($x['who']) . '</td><td>' . e($x['mode']) . '</td><td class="num">' . ($x['in'] ? money($x['in']) : '') . '</td><td class="num">' . ($x['out'] ? money($x['out']) : '') . '</td></tr>';
+        $fade = $x['cancel'] || $x['adj'];
+        echo '<tr' . ($fade ? ' style="opacity:.55"' : '') . '><td>' . dmy($x['d']) . '</td><td>' . e($x['type']) . ($x['adj'] ? ' <small class="muted">(edit adj.)</small>' : '') . '</td><td>' . e($x['no']) . '</td><td>' . e($x['who']) . '</td><td>' . e($x['mode']) . '</td><td class="num">' . ($x['bill'] ? money($x['bill']) : '') . '</td><td class="num">' . ($x['in'] ? money($x['in']) : '') . '</td><td class="num">' . ($x['out'] ? money($x['out']) : '') . '</td></tr>';
     }
-    if (!$rows) echo '<tr><td colspan="7" class="muted">No transactions of the selected types in this period.</td></tr>';
-    if ($rows) echo '<tr><td colspan="5"><strong>Total (' . count($rows) . ' transactions)</strong></td><td class="num"><strong>' . money($tIn) . '</strong></td><td class="num"><strong>' . money($tOut) . '</strong></td></tr>';
+    if (!$rows) echo '<tr><td colspan="8" class="muted">No transactions of the selected types in this period.</td></tr>';
+    if ($rows) echo '<tr><td colspan="5"><strong>Total (' . count($rows) . ' transactions)</strong></td><td class="num"></td><td class="num"><strong>' . money($tIn) . '</strong></td><td class="num"><strong>' . money($tOut) . '</strong></td></tr>';
     echo '</tbody></table></div>';
-    echo '<p class="muted">Note: "In" = money/value coming in (sales, collections, purchase returns) · "Out" = going out (purchases, supplier payments, expenses, refunds). Cancelled bills are listed but not counted.</p>';
+    echo '<p class="muted">Note: <strong>Bill ₹</strong> = બિલની રકમ (ઉધાર હોઈ શકે — પૈસા હજી ન પણ આવ્યા હોય) · <strong>Money In/Out</strong> = ખરેખર આવેલા/ગયેલા પૈસા (વસૂલી, ચૂકવણી, ખર્ચ). એટલે બિલ અને એની વસૂલી બે વાર નથી ગણાતા. ઝાંખી "(edit adj.)" લાઇનો = બિલ એડિટ વખતની આપોઆપ સરખાવણી એન્ટ્રી (એકબીજાને કાપી નાખે). Cancelled બિલ લિસ્ટમાં દેખાય પણ ગણાય નહીં.</p>';
 }
 
 // ---------------- daily sales ----------------
