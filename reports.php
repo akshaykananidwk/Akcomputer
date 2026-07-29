@@ -105,7 +105,9 @@ $tabs = [
     'balance_sheet' => '📑 Balance Sheet', 'profit_loss' => '💹 Profit & Loss',
     'custom' => '🧩 Custom Report Builder',
     'activity' => '🔍 Activity Log', 'login_history' => '🔐 Login History',
+    'health' => '🩺 Data Health Check',
 ];
+if (!is_full_admin()) unset($tabs['health']);
 if (!can('reports.gst')) unset($tabs['gst']);
 if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); unset($tabs['dead_stock']); unset($tabs['branch_staff']); }
 if (!can('expenses.view')) unset($tabs['expense']);
@@ -123,6 +125,7 @@ if ($r === 'bank_ledger' && !can('payments.view')) $r = 'daily';
 if (in_array($r, ['bank_ledger', 'cashbook'], true) && !can('cashbank.viewall')) $r = 'daily';
 if (in_array($r, ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'], true) && !can('reports.accounting')) $r = 'daily';
 if ($r === 'custom' && !can('reports.builder')) $r = 'daily';
+if ($r === 'health' && !is_full_admin()) $r = 'daily';
 
 // Grouped the same way Vyapar's own Reports screen groups its report list -
 // a vertical, categorized list (not a horizontal scrolling tab strip) so
@@ -137,7 +140,7 @@ $tabCategories = [
     'Expense Reports' => ['expense'],
     'Staff & Service Reports' => ['staff', 'repair_tat', 'warranty_tat', 'tech_sla'],
     'Custom' => ['custom'],
-    'Activity' => ['activity', 'login_history'],
+    'Activity' => ['activity', 'login_history', 'health'],
 ];
 ?>
 <?php
