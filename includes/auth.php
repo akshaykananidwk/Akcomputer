@@ -25,7 +25,7 @@ function permission_catalog() {
         'warranty' => ['view', 'add', 'edit', 'delete'],
         'payments' => ['view', 'add', 'edit', 'delete'],
         'cashbank' => ['adjust', 'transfer', 'viewall'],
-        'expenses' => ['view', 'add', 'delete'],
+        'expenses' => ['view', 'add', 'edit', 'delete'],
         'challans' => ['view', 'add', 'edit', 'delete'],
         'weborders' => ['view', 'edit', 'delete'],
         'referrals' => ['view', 'edit', 'pay'],

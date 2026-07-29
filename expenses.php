@@ -5,13 +5,26 @@ require_perm('expenses.view');
 $u = current_user();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
-    require_perm('expenses.add');
+    $eid = (int)post('id');
+    require_perm($eid ? 'expenses.edit' : 'expenses.add');
     if (is_period_locked(post('exp_date', today()))) { flash(period_lock_message(), 'error'); redirect('expenses.php'); }
     $amt = (float)post('amount');
-    if ($amt > 0) {
+    // the bank dropdown is hidden for cash-type modes but still posts a
+    // value - resolve_payment_target() keeps a cash expense from carrying
+    // a stray bank id into the bank ledger (same guard as on bills)
+    [$pmId, $bankId] = resolve_payment_target(post('mode', 'cash'), (int)post('bank_account_id'));
+    if ($amt > 0 && $eid) {
+        $old = row('SELECT * FROM expenses WHERE id = ?', [$eid]);
+        if (!$old) { flash('Expense not found.', 'error'); redirect('expenses.php'); }
+        if (is_period_locked($old['exp_date'])) { flash(period_lock_message(), 'error'); redirect('expenses.php'); }
+        q('UPDATE expenses SET exp_date=?, category=?, amount=?, mode=?, bank_account_id=?, payment_method_id=?, notes=? WHERE id=?',
+          [post('exp_date', today()), post('category', 'General'), $amt, post('mode', 'cash'), $bankId, $pmId, post('notes'), $eid]);
+        log_activity('expense_edit', $old['category'] . ' ' . $old['amount'] . ' -> ' . post('category') . ' ' . $amt);
+        flash('Expense updated.');
+    } elseif ($amt > 0) {
         q('INSERT INTO expenses (exp_date, category, amount, mode, bank_account_id, payment_method_id, notes, location_id, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
           [post('exp_date', today()), post('category', 'General'), $amt, post('mode', 'cash'),
-           (int)post('bank_account_id') ?: null, (int)post('payment_method_id') ?: null, post('notes'), $u['location_id'], $u['id']]);
+           $bankId, $pmId, post('notes'), $u['location_id'], $u['id']]);
         log_activity('expense_add', post('category') . ' ' . $amt);
         flash('Expense saved.');
     }
@@ -37,27 +50,36 @@ $rows = all("SELECT e.*, u2.name by_name, l.name loc_name FROM expenses e
              WHERE e.exp_date BETWEEN ? AND ? $staffWhere ORDER BY e.exp_date DESC, e.id DESC", [$from, $to]);
 $staffAll = all('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name');
 $cats = ['General', 'Rent', 'Salary', 'Electricity', 'Internet', 'Transport', 'Tea/Food', 'Stationery', 'Repair/Maintenance', 'Marketing', 'Other'];
+$edit = (int)get('edit') && can('expenses.edit') ? row('SELECT * FROM expenses WHERE id = ?', [(int)get('edit')]) : null;
+if ($edit && $edit['category'] && !in_array($edit['category'], $cats, true)) $cats[] = $edit['category'];
 $pms = active_payment_methods();
 $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
 $page_title = 'Expenses';
 include __DIR__ . '/includes/header.php';
 ?>
-<?php if (can('expenses.add')): ?>
+<?php if (can('expenses.add') || $edit):
+    // when editing, show the bank picker right away if the saved mode is a
+    // bank-type one (the onchange only fires on user interaction)
+    $editModeType = '';
+    if ($edit) foreach ($pms as $pm) if ($pm['code'] === $edit['mode']) $editModeType = $pm['type'];
+?>
 <div class="card">
-  <h2>Add expense</h2>
+  <h2><?= $edit ? '✏️ Edit expense (' . dmy($edit['exp_date']) . ' · ₹' . money($edit['amount']) . ')' : 'Add expense' ?></h2>
   <form method="post" class="filterbar">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save">
-    <div><label>Date</label><input type="date" name="exp_date" value="<?= today() ?>"></div>
-    <div><label>Category</label><select name="category" id="exp_category"><?php foreach ($cats as $c): ?><option><?= $c ?></option><?php endforeach; ?></select></div>
-    <div><label>Amount ₹</label><input type="number" step="any" name="amount" required></div>
+    <input type="hidden" name="id" value="<?= (int)($edit['id'] ?? 0) ?>">
+    <div><label>Date</label><input type="date" name="exp_date" value="<?= e($edit['exp_date'] ?? today()) ?>"></div>
+    <div><label>Category</label><select name="category" id="exp_category"><?php foreach ($cats as $c): ?><option <?= ($edit['category'] ?? '') === $c ? 'selected' : '' ?>><?= $c ?></option><?php endforeach; ?></select></div>
+    <div><label>Amount ₹</label><input type="number" step="any" name="amount" required value="<?= $edit ? 0 + $edit['amount'] : '' ?>"></div>
     <div><label>Mode</label><select name="mode" id="exp_mode" onchange="document.getElementById('exp_bank').style.display=this.selectedOptions[0].dataset.type==='bank'?'':'none'">
-      <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
+      <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>" <?= ($edit['mode'] ?? '') === $pm['code'] ? 'selected' : '' ?>><?= e($pm['name']) ?></option><?php endforeach; ?>
     </select></div>
-    <div id="exp_bank" style="display:none"><label>Bank Account</label>
-      <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?></option><?php endforeach; ?></select></div>
-    <div><label>Notes <span class="muted" style="font-weight:normal">(category auto-suggested as you type)</span></label><input type="text" name="notes" id="exp_notes"></div>
-    <button class="btn btn-sm" type="submit">Save</button>
+    <div id="exp_bank" style="<?= $editModeType === 'bank' ? '' : 'display:none' ?>"><label>Bank Account</label>
+      <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>" <?= (int)($edit['bank_account_id'] ?? 0) === (int)$b['id'] ? 'selected' : '' ?>><?= e($b['account_name']) ?></option><?php endforeach; ?></select></div>
+    <div><label>Notes <span class="muted" style="font-weight:normal">(category auto-suggested as you type)</span></label><input type="text" name="notes" id="exp_notes" value="<?= e($edit['notes'] ?? '') ?>"></div>
+    <button class="btn btn-sm" type="submit"><?= $edit ? 'Update' : 'Save' ?></button>
+    <?php if ($edit): ?><a class="btn btn-sm btn-muted" href="expenses.php">Cancel</a><?php endif; ?>
   </form>
 </div>
 <script>
@@ -107,7 +129,9 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($x['mode']) ?></td>
       <td><?= e($x['notes']) ?></td>
       <td><?= e($x['by_name']) ?></td>
-      <td><?php if (can('expenses.delete')): ?>
+      <td style="white-space:nowrap"><?php if (can('expenses.edit')): ?>
+        <a class="btn btn-sm btn-outline" href="expenses.php?edit=<?= $x['id'] ?>">✏️ Edit</a><?php endif; ?>
+        <?php if (can('expenses.delete')): ?>
         <form method="post" style="display:inline" onsubmit="return confirm('Delete?')"><?= csrf_field() ?>
         <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $x['id'] ?>">
         <button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?></td>
