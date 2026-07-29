@@ -43,37 +43,82 @@ $typeLabels = [
     'import' => 'Opening / Import',
 ];
 
-$ledger = all('SELECT sl.*, l.name loc_name, u2.name user_name FROM stock_ledger sl
-               LEFT JOIN locations l ON l.id = sl.location_id
-               LEFT JOIN users u2 ON u2.id = sl.user_id
-               WHERE sl.item_id = ? ORDER BY sl.id DESC LIMIT 200', [$id]);
-foreach ($ledger as &$le) {
-    $le['type_label'] = $typeLabels[$le['ref_type']] ?? ucfirst(str_replace('_', ' ', $le['ref_type']));
-    $le['ref_no'] = null; $le['party_name'] = null; $le['status'] = null; $le['price'] = null;
-    if (in_array($le['ref_type'], ['sale', 'sale_edit', 'sale_delete'], true) && $le['ref_id']) {
-        $s = row('SELECT invoice_no, customer_name, status, is_cancelled FROM sales WHERE id = ?', [$le['ref_id']]);
-        if ($s) {
-            $le['ref_no'] = $s['invoice_no'];
-            $le['party_name'] = $s['customer_name'] ?: 'Walk-in';
-            $le['status'] = $s['is_cancelled'] ? 'cancelled' : $s['status'];
-        }
-        $si = row('SELECT price FROM sale_items WHERE sale_id = ? AND item_id = ? LIMIT 1', [$le['ref_id'], $id]);
-        if ($si) $le['price'] = (float)$si['price'];
-    } elseif (in_array($le['ref_type'], ['purchase', 'purchase_edit', 'purchase_delete'], true) && $le['ref_id']) {
-        $p = row('SELECT bill_no, status, is_cancelled, party_id FROM purchases WHERE id = ?', [$le['ref_id']]);
-        if ($p) {
-            $le['ref_no'] = $p['bill_no'] ?: ('#' . $le['ref_id']);
-            $le['party_name'] = val('SELECT name FROM parties WHERE id = ?', [$p['party_id']]);
-            $le['status'] = $p['is_cancelled'] ? 'cancelled' : $p['status'];
-        }
-        $pi = row('SELECT price FROM purchase_items WHERE purchase_id = ? AND item_id = ? LIMIT 1', [$le['ref_id'], $id]);
-        if ($pi) $le['price'] = (float)$pi['price'];
-    } else {
-        $le['party_name'] = $le['loc_name'] ?: ($le['user_name'] ? 'Staff: ' . $le['user_name'] : null);
-        $le['ref_no'] = $le['note'];
+// Vyapar-style transaction list: ONE row per bill/document, not one per
+// ledger movement. Every edit writes reverse+repost pairs to stock_ledger;
+// showing them all made the list grow endlessly ("Sale (edited)" spam).
+// Here all movements of one document are netted into a single row - a bill
+// edited ten times still shows once, with its net quantity. Documents whose
+// net effect is zero (deleted/cancelled bills, item edited off the bill)
+// disappear, exactly like Vyapar. Manual adjustments/transfers/handovers
+// stay as individual rows. Each bill row links straight to the bill.
+$raw = all('SELECT sl.*, l.name loc_name, u2.name user_name FROM stock_ledger sl
+            LEFT JOIN locations l ON l.id = sl.location_id
+            LEFT JOIN users u2 ON u2.id = sl.user_id
+            WHERE sl.item_id = ? ORDER BY sl.id DESC LIMIT 1000', [$id]);
+$groups = [];
+foreach ($raw as $le) {
+    $fam = null;
+    if ($le['ref_id']) {
+        if (in_array($le['ref_type'], ['sale', 'sale_edit', 'sale_delete'], true)) $fam = 'sale';
+        elseif (in_array($le['ref_type'], ['purchase', 'purchase_edit', 'purchase_delete'], true)) $fam = 'purchase';
+        elseif (in_array($le['ref_type'], ['sales_return', 'sales_return_delete'], true)) $fam = 'sales_return';
+        elseif (in_array($le['ref_type'], ['purchase_return', 'purchase_return_delete'], true)) $fam = 'purchase_return';
     }
+    $key = $fam ? $fam . ':' . $le['ref_id'] : 'row:' . $le['id'];
+    if (!isset($groups[$key])) {
+        $groups[$key] = ['fam' => $fam, 'ref_id' => (int)$le['ref_id'], 'qty' => 0.0, 'created_at' => $le['created_at'],
+                         'ref_type' => $le['ref_type'], 'loc_name' => $le['loc_name'], 'user_name' => $le['user_name'], 'note' => $le['note']];
+    }
+    $groups[$key]['qty'] += (float)$le['change_qty'];
+    if ($le['created_at'] > $groups[$key]['created_at']) $groups[$key]['created_at'] = $le['created_at'];
 }
-unset($le);
+
+$ledger = [];
+foreach ($groups as $g) {
+    if ($g['fam'] && abs($g['qty']) < 0.001) continue; // bill deleted / item edited off - nothing net happened
+    $le = ['type_label' => null, 'ref_no' => null, 'party_name' => null, 'status' => null, 'price' => null,
+           'link' => null, 'change_qty' => $g['qty'], 'created_at' => $g['created_at'], 'date_only' => false];
+    if ($g['fam'] === 'sale') {
+        $s = row('SELECT invoice_no, customer_name, sale_date, status, is_cancelled FROM sales WHERE id = ?', [$g['ref_id']]);
+        if (!$s) continue; // deleted bill with stray net - nothing to open
+        $le['type_label'] = 'Sale';
+        $le['ref_no'] = $s['invoice_no'];
+        $le['party_name'] = $s['customer_name'] ?: 'Walk-in';
+        $le['status'] = $s['is_cancelled'] ? 'cancelled' : $s['status'];
+        $le['created_at'] = $s['sale_date']; $le['date_only'] = true;
+        $le['link'] = 'sale_view.php?id=' . $g['ref_id'];
+        $si = row('SELECT price FROM sale_items WHERE sale_id = ? AND item_id = ? LIMIT 1', [$g['ref_id'], $id]);
+        if ($si) $le['price'] = (float)$si['price'];
+    } elseif ($g['fam'] === 'purchase') {
+        $p = row('SELECT bill_no, purchase_date, status, is_cancelled, party_id FROM purchases WHERE id = ?', [$g['ref_id']]);
+        if (!$p) continue;
+        $le['type_label'] = 'Purchase';
+        $le['ref_no'] = $p['bill_no'] ?: ('#' . $g['ref_id']);
+        $le['party_name'] = val('SELECT name FROM parties WHERE id = ?', [$p['party_id']]);
+        $le['status'] = $p['is_cancelled'] ? 'cancelled' : $p['status'];
+        $le['created_at'] = $p['purchase_date']; $le['date_only'] = true;
+        $le['link'] = 'purchase_view.php?id=' . $g['ref_id'];
+        $pi = row('SELECT price FROM purchase_items WHERE purchase_id = ? AND item_id = ? LIMIT 1', [$g['ref_id'], $id]);
+        if ($pi) $le['price'] = (float)$pi['price'];
+    } elseif ($g['fam'] === 'sales_return') {
+        $sr = row('SELECT return_no, return_date, customer_name FROM sales_returns WHERE id = ?', [$g['ref_id']]);
+        $le['type_label'] = 'Sales Return';
+        $le['ref_no'] = $sr['return_no'] ?? ('SR#' . $g['ref_id']);
+        $le['party_name'] = $sr['customer_name'] ?? null;
+        if ($sr) { $le['created_at'] = $sr['return_date']; $le['date_only'] = true; }
+    } elseif ($g['fam'] === 'purchase_return') {
+        $pr = row('SELECT return_no, return_date FROM purchase_returns WHERE id = ?', [$g['ref_id']]);
+        $le['type_label'] = 'Purchase Return';
+        $le['ref_no'] = $pr['return_no'] ?? ('PR#' . $g['ref_id']);
+        if ($pr) { $le['created_at'] = $pr['return_date']; $le['date_only'] = true; }
+    } else {
+        $le['type_label'] = $typeLabels[$g['ref_type']] ?? ucfirst(str_replace('_', ' ', $g['ref_type']));
+        $le['party_name'] = $g['loc_name'] ?: ($g['user_name'] ? 'Staff: ' . $g['user_name'] : null);
+        $le['ref_no'] = $g['note'];
+    }
+    $ledger[] = $le;
+}
+usort($ledger, fn($a, $b) => strcmp($b['created_at'], $a['created_at']));
 
 $page_title = $item['name'];
 include __DIR__ . '/includes/header.php';
@@ -155,11 +200,11 @@ include __DIR__ . '/includes/header.php';
     <thead><tr><th>Type</th><th>Invoice/Ref No.</th><th>Name</th><th>Date</th><th class="num">Quantity</th><th class="num">Price/Unit</th><th>Status</th></tr></thead>
     <tbody>
     <?php foreach ($ledger as $le): ?>
-    <tr>
+    <tr<?= $le['link'] ? ' style="cursor:pointer" onclick="location.href=\'' . e($le['link']) . '\'"' : '' ?>>
       <td><?= e($le['type_label']) ?></td>
-      <td><?= e($le['ref_no'] ?: '-') ?></td>
+      <td><?= $le['link'] ? '<a href="' . e($le['link']) . '">' . e($le['ref_no'] ?: '-') . '</a>' : e($le['ref_no'] ?: '-') ?></td>
       <td><?= e($le['party_name'] ?: '-') ?></td>
-      <td><?= dmyt($le['created_at']) ?></td>
+      <td><?= $le['date_only'] ? dmy($le['created_at']) : dmyt($le['created_at']) ?></td>
       <td class="num" style="color:<?= $le['change_qty'] >= 0 ? 'var(--ok)' : 'var(--bad)' ?>"><?= $le['change_qty'] > 0 ? '+' : '' ?><?= (float)$le['change_qty'] ?> <?= e($item['unit']) ?></td>
       <td class="num"><?= $le['price'] !== null ? '₹' . money($le['price']) : '-' ?></td>
       <td><?= $le['status'] ? status_badge($le['status']) : '-' ?></td>
