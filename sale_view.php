@@ -100,10 +100,13 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' &&
     if ($amt > 0) {
         q('UPDATE sales SET paid = paid + ?, status = ? WHERE id = ?',
           [$amt, payment_status($sale['total'], $sale['paid'] + $amt), $id]);
+        // cash-type modes must not carry the hidden bank dropdown's id -
+        // that stray id used to land cash receipts in the Bank Ledger
+        [$pmId, $payBankId] = resolve_payment_target(post('mode', 'cash'), (int)post('bank_account_id'));
         q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
            VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-          [$sale['party_id'] ?: null, 'in', $amt, post('mode', 'cash'), (int)post('bank_account_id') ?: null,
-           (int)post('payment_method_id') ?: null, 'sale', $id, today(), 'Against ' . $sale['invoice_no'], current_user()['id']]);
+          [$sale['party_id'] ?: null, 'in', $amt, post('mode', 'cash'), $payBankId,
+           $pmId, 'sale', $id, today(), 'Against ' . $sale['invoice_no'], current_user()['id']]);
         fire_webhook('payment.recorded', ['sale_id' => $id, 'invoice_no' => $sale['invoice_no'], 'amount' => $amt, 'direction' => 'in', 'mode' => post('mode', 'cash')]);
         flash('Payment of Rs ' . money($amt) . ' recorded.');
     }

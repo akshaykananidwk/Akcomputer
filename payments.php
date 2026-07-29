@@ -54,8 +54,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
 
         $notes = trim(post('notes'));
         if ($allocNotes) $notes = trim($notes . ' [' . implode(', ', $allocNotes) . ']');
+        // resolve_payment_target: only a bank-type mode may carry a bank
+        // account id - the hidden bank dropdown still posts a value on cash
+        // payments, and that stray id used to land cash receipts in the
+        // Bank Ledger
+        [$pmId, $bankAccId] = resolve_payment_target(post('mode', 'cash'), (int)post('bank_account_id'));
         q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, pay_date, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
-          [$party_id, $dir, $amount, post('mode', 'cash'), (int)post('bank_account_id') ?: null, (int)post('payment_method_id') ?: null,
+          [$party_id, $dir, $amount, post('mode', 'cash'), $bankAccId, $pmId,
            post('pay_date', today()), $notes, $u['id']]);
         $pid = insert_id();
         foreach ($allocRows as $a) {
@@ -155,7 +160,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $amount = round((float)post('amount'), 2);
     if ($amount <= 0) { flash('Amount must be more than zero.', 'error'); redirect('payments.php?action=edit&id=' . $pid); }
     $mode = post('mode', $pay['mode']);
-    $bankAccId = (int)post('bank_account_id') ?: null;
+    // same guard as everywhere: a cash-type mode never keeps a bank id
+    [$pmEditId, $bankAccId] = resolve_payment_target($mode, (int)post('bank_account_id'));
     $payDate = post('pay_date', $pay['pay_date']);
     $notes = post('notes', $pay['notes']);
     $dir = $pay['direction'];
@@ -178,8 +184,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         foreach (all('SELECT * FROM payment_allocations WHERE payment_id = ?', [$pid]) as $a) reverse_bill_paid($a['ref_type'], $a['ref_id'], (float)$a['amount']);
         q('DELETE FROM payment_allocations WHERE payment_id = ?', [$pid]);
         // 2) save the new values (link now tracked purely via allocations below)
-        q('UPDATE payments SET amount=?, mode=?, bank_account_id=?, pay_date=?, notes=?, ref_type=NULL, ref_id=NULL WHERE id=?',
-          [$amount, $mode, $bankAccId, $payDate, $notes, $pid]);
+        q('UPDATE payments SET amount=?, mode=?, bank_account_id=?, payment_method_id=?, pay_date=?, notes=?, ref_type=NULL, ref_id=NULL WHERE id=?',
+          [$amount, $mode, $bankAccId, $pmEditId, $payDate, $notes, $pid]);
         // 3) re-apply the new amount to the same bills, capped to each one's due
         $left = $amount;
         foreach ($targets as $t) {

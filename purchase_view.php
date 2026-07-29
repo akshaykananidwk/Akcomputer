@@ -18,9 +18,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' && can('paymen
     if ($amt > 0) {
         q('UPDATE purchases SET paid = paid + ?, status = ? WHERE id = ?',
           [$amt, payment_status($p['total'], $p['paid'] + $amt), $id]);
-        q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, ref_type, ref_id, pay_date, notes, created_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?)',
-          [$p['party_id'], 'out', $amt, post('mode', 'cash'), (int)post('bank_account_id') ?: null, 'purchase', $id, today(), 'Against bill ' . $p['bill_no'], current_user()['id']]);
+        // cash-type modes must not carry the hidden bank dropdown's id -
+        // that stray id used to land cash payments in the Bank Ledger
+        [$pmId, $payBankId] = resolve_payment_target(post('mode', 'cash'), (int)post('bank_account_id'));
+        q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+          [$p['party_id'], 'out', $amt, post('mode', 'cash'), $payBankId, $pmId, 'purchase', $id, today(), 'Against bill ' . $p['bill_no'], current_user()['id']]);
         flash('Payment recorded.');
     }
     redirect('purchase_view.php?id=' . $id);
