@@ -194,12 +194,39 @@ function tableFilter(inputId, tableId) {
 // ================= Billing widget =================
 // Used by sales / purchases / estimates / returns / tasks.
 // Config via initBill({mode:'sale'|'purchase', priceField:'selling_price'|...})
+
+// Barcode-gun feedback: quick high beep = serial accepted, low buzz =
+// duplicate/problem - so a stack of boxes can be scanned eyes-free.
+function scanBeep(ok) {
+  try {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!scanBeep.ctx) scanBeep.ctx = new AC();
+    var c = scanBeep.ctx, o = c.createOscillator(), g = c.createGain();
+    o.frequency.value = ok ? 1500 : 260;
+    g.gain.value = 0.08;
+    o.connect(g); g.connect(c.destination);
+    o.start(); o.stop(c.currentTime + (ok ? 0.07 : 0.28));
+  } catch (e) {}
+}
+
 var Bill = {
   cfg: null, rowN: 0,
 
   init: function (cfg) {
     this.cfg = cfg;
     var self = this;
+    // A barcode gun finishes every scan with an Enter keypress. On a bill
+    // form that Enter must never submit the half-entered bill: single-line
+    // inputs swallow it (the item search and serial boxes already run their
+    // own Enter action), textareas keep it as a newline.
+    var host = document.getElementById('billItems');
+    var form = host ? host.closest('form') : null;
+    if (form && !form.dataset.enterGuard) {
+      form.dataset.enterGuard = '1';
+      form.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') ev.preventDefault();
+      });
+    }
     // Vyapar-style 2-step flow: an "Add Items" button opens a full-screen
     // panel (the "second page") for one item at a time instead of showing
     // every item's fields inline on page 1. Only wired up when the page
@@ -496,10 +523,13 @@ var Bill = {
     extra.innerHTML = '';
     if (it.serial_tracked == 1 && this.cfg.serials) {
       if (this.cfg.mode === 'purchase') {
-        extra.innerHTML = '<label class="mt">Serial numbers (one per line, count = qty)</label>' +
+        extra.innerHTML = '<label class="mt">Serial numbers (one per line, count = qty) — 🔫 barcode gun works: scan, scan, scan</label>' +
           '<textarea name="serials[]" rows="2" placeholder="SN001\nSN002"></textarea>';
         div.dataset.hasSerialBox = '1';
         this.wireSerialQtySync(div);
+        // serial-tracked item picked -> cursor straight into the serial box
+        // so the barcode gun can start scanning units immediately
+        extra.querySelector('textarea').focus();
       } else if (this.cfg.mode === 'sale') {
         // Vyapar-style serial picker: scan/type + Add, checkbox list, counter.
         // When editing a bill (cfg.editSaleId set), the fetch also returns
@@ -546,19 +576,27 @@ var Bill = {
             div.querySelector('.i-qty').addEventListener('input', updCount);
             var spInp = extra.querySelector('.sp-inp');
             spInp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); extra.querySelector('.sp-add').click(); } });
+            // serial-tracked item picked -> next step is scanning serials, so
+            // put the cursor straight where the barcode gun will type
+            spInp.focus();
             extra.querySelector('.sp-add').addEventListener('click', function () {
               var v = spInp.value.trim();
               if (!v) return;
-              var found = false;
+              var found = false, wasDup = false;
               extra.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
-                if (cb.value.toLowerCase() === v.toLowerCase()) { cb.checked = true; found = true; }
+                if (cb.value.toLowerCase() === v.toLowerCase()) {
+                  if (cb.checked) wasDup = true; // same unit scanned twice
+                  cb.checked = true; found = true;
+                }
               });
+              if (wasDup) { scanBeep(false); spInp.value = ''; spInp.focus(); updCount(); return; }
+              if (found) scanBeep(true);
               if (!found) {
                 // Advance billing: the unit is physically here but its purchase
                 // bill hasn't been entered yet. Accept the typed serial as a NEW
                 // one (marked so) - the server records it sold to this bill, and
                 // the later purchase entry reconciles it automatically.
-                if (!confirm('Serial "' + v + '" is not in stock.\n\nSell it anyway (advance billing - purchase bill will come later)?')) { spInp.value = ''; return; }
+                if (!confirm('Serial "' + v + '" is not in stock.\n\nSell it anyway (advance billing - purchase bill will come later)?')) { spInp.value = ''; spInp.focus(); return; }
                 var lbl = document.createElement('label');
                 lbl.className = 'sp-row';
                 lbl.innerHTML = '<input type="checkbox" name="serial_sel[' + n + '][]" checked> ';
@@ -567,8 +605,10 @@ var Bill = {
                 var b = document.createElement('span'); b.className = 'badge badge-warn'; b.textContent = 'new';
                 lbl.appendChild(b);
                 extra.querySelector('.sp-list').appendChild(lbl);
+                scanBeep(true);
               }
               spInp.value = '';
+              spInp.focus();
               updCount();
             });
           });
@@ -595,7 +635,26 @@ var Bill = {
     var self = this;
     var ta = div.querySelector('textarea[name="serials[]"]');
     if (!ta) return;
+    var lastCount = 0;
     var sync = function () {
+      // A barcode gun types the serial then presses Enter, completing a line.
+      // When the same unit gets scanned twice the repeat line is dropped on
+      // the spot (low buzz) so the count stays honest; each new completed
+      // line gets a short ok-beep. Only lines already terminated by Enter
+      // are touched - text still being typed is left alone.
+      if (/[\r\n]$/.test(ta.value)) {
+        var seen = {}, out = [], dropped = false;
+        ta.value.split(/[\r\n,]+/).forEach(function (s) {
+          s = s.trim();
+          if (!s) return;
+          var k = s.toLowerCase();
+          if (seen[k]) { dropped = true; return; }
+          seen[k] = 1; out.push(s);
+        });
+        if (dropped) { ta.value = out.length ? out.join('\n') + '\n' : ''; scanBeep(false); }
+        else if (out.length > lastCount) scanBeep(true);
+        lastCount = out.length;
+      }
       var n = ta.value.split(/[\r\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean).length;
       if (n > 0) {
         var q = div.querySelector('.i-qty');
