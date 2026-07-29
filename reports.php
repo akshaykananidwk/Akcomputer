@@ -91,6 +91,7 @@ $usersAll = all('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name');
 
 $tabs = [
     'business' => '🏢 Business Report',
+    'all_txn' => '📚 All Transactions',
     'daily' => '📅 Daily Sales', 'sales' => '🧾 Sales', 'party_sales' => '👥 Party Sales',
     'aging' => '⏳ Aging / Collection',
     'purchase' => '📦 Purchase', 'vendor_perf' => '🚚 Vendor Performance', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
@@ -127,7 +128,7 @@ if ($r === 'custom' && !can('reports.builder')) $r = 'daily';
 // a vertical, categorized list (not a horizontal scrolling tab strip) so
 // nothing is hidden off-screen to the side.
 $tabCategories = [
-    'Transaction' => ['business', 'daily', 'sales', 'purchase'],
+    'Transaction' => ['business', 'all_txn', 'daily', 'sales', 'purchase'],
     'Party Reports' => ['party_sales', 'aging', 'vendor_perf'],
     'GST' => ['gst'],
     'Item / Stock Reports' => ['stockval', 'low', 'purchase_reco', 'dead_stock', 'forecast'],
@@ -140,7 +141,7 @@ $tabCategories = [
 ];
 ?>
 <?php
-$filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&f_user=' . $fUser . '&bank_id=' . $bankId . '&gl_account=' . $glAccount . '&stock_loc=' . $stockLoc;
+$filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&f_user=' . $fUser . '&bank_id=' . $bankId . '&gl_account=' . $glAccount . '&stock_loc=' . $stockLoc . '&types=' . e(get('types'));
 $filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchase', 'vendor_perf', 'gst', 'profit', 'bill_profit'], true);
 $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
 ?>
