@@ -386,12 +386,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $pdo = db();
     $pdo->beginTransaction();
     try {
+        $advanceRestored = []; // serials born ON this bill (advance billing, no purchase behind them) that the restore put back "in stock"
         foreach ($oldItems as $oi) {
             adjust_stock($oi['item_id'], $sale['location_id'], (float)$oi['qty'] + (float)($oi['free_qty'] ?? 0), 'sale_edit', $sid);
             if ($oi['serials']) {
                 foreach (explode(',', $oi['serials']) as $sn) {
+                    $sn = trim($sn);
+                    $srowOld = row('SELECT purchase_id FROM item_serials WHERE item_id=? AND serial_no=? AND sale_id=?', [$oi['item_id'], $sn, $sid]);
+                    if ($srowOld && $srowOld['purchase_id'] === null) $advanceRestored[] = [$oi['item_id'], $sn];
                     q("UPDATE item_serials SET status='in_stock', sale_id=NULL, location_id=?, warranty_expiry=NULL
-                       WHERE item_id=? AND serial_no=?", [$sale['location_id'], $oi['item_id'], trim($sn)]);
+                       WHERE item_id=? AND serial_no=?", [$sale['location_id'], $oi['item_id'], $sn]);
                 }
             }
         }
@@ -449,6 +453,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
                        VALUES (?,?,'sold',?,NULL,?,?)",
                       [$r['item_id'], $sn, $sid, $expiry, (int)$item['warranty_months']]);
                 }
+            }
+        }
+
+        // Phantom-serial cleanup: an advance-billing serial was CREATED on
+        // this bill (typed/scanned at sale time, no purchase behind it). If
+        // the edit swapped it for a different serial, the restore above left
+        // it lying "in stock" even though no stock quantity backs it - that's
+        // how in-stock serial counts drift above the stock figure. Delete
+        // such a dropped serial, but only while the item's in-stock serial
+        // count actually exceeds its stock quantity (if real stock backs it,
+        // e.g. the qty came back too, it stays).
+        foreach ($advanceRestored as [$aiId, $aSn]) {
+            $stillOnBill = row('SELECT id FROM item_serials WHERE item_id=? AND serial_no=? AND sale_id=?', [$aiId, $aSn, $sid]);
+            if ($stillOnBill) continue;
+            $stockQ = (float)(val('SELECT SUM(qty) FROM stock WHERE item_id=?', [$aiId]) ?? 0);
+            $snCount = (int)val("SELECT COUNT(*) FROM item_serials WHERE item_id=? AND status='in_stock'", [$aiId]);
+            if ($snCount > $stockQ) {
+                q("DELETE FROM item_serials WHERE item_id=? AND serial_no=? AND status='in_stock' AND purchase_id IS NULL", [$aiId, $aSn]);
             }
         }
 
