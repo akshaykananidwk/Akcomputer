@@ -196,7 +196,7 @@ if ($r === 'health' && is_full_admin()) {
         'એક જ સિરિયલ નંબર બે વાર સ્ટોકમાં પડ્યો છે (ડબલ એન્ટ્રી).',
         all("SELECT i2.name who, s2.serial_no no, COUNT(*) amount FROM item_serials s2 JOIN items i2 ON i2.id=s2.item_id WHERE s2.status='in_stock' GROUP BY s2.item_id, s2.serial_no HAVING COUNT(*) > 1 LIMIT 10"));
     $add('Serial count vs stock quantity mismatch',
-        'સિરિયલવાળી આઇટમમાં "in stock" સિરિયલની સંખ્યા અને સ્ટોકનો આંકડો જુદા છે — Stock Adjust કે સિરિયલ સુધારવાની જરૂર. (એડવાન્સ બિલિંગ ચાલુ હોય તો થોડો ફેર સામાન્ય છે)',
+        'સિરિયલવાળી આઇટમમાં "in stock" સિરિયલની સંખ્યા અને સ્ટોકનો આંકડો જુદા છે — 🔧 Serial/Stock Repair ટૂલથી બે મિનિટમાં સુધારો: serial_fix.php ખોલો (નીચે લિંક).',
         all("SELECT i2.id, i2.name who, COALESCE((SELECT SUM(qty) FROM stock st WHERE st.item_id=i2.id),0) amount, (SELECT COUNT(*) FROM item_serials s2 WHERE s2.item_id=i2.id AND s2.status='in_stock') expect FROM items i2 WHERE i2.serial_tracked=1 AND i2.is_active=1 HAVING ABS(amount - expect) > 0 LIMIT 10"), 'warn');
     $add('Cancelled bills still holding payments',
         'કેન્સલ થયેલા બિલ પર હજી પેમેન્ટ ચોંટેલાં છે — એ પૈસા લેજરમાં ખોટા ગણાય છે.',
@@ -218,6 +218,9 @@ if ($r === 'health' && is_full_admin()) {
         echo '<h3>' . ($n ? ($c['sev'] === 'warn' ? '🟡' : '🔴') : '✅') . ' ' . e($c['t']) . ($n ? ' — ' . $n . ($n === 10 ? '+' : '') : '') . '</h3>';
         if ($n) {
             echo '<p class="muted">' . e($c['gu']) . '</p>';
+            if (strpos($c['gu'], 'serial_fix.php') !== false && empty($reportPdf)) {
+                echo '<p><a class="btn btn-sm" href="serial_fix.php">🔧 Serial / Stock Repair ખોલો</a></p>';
+            }
             echo '<div class="table-wrap"><table><thead><tr><th>ID</th><th>Doc / Name</th><th>Date</th><th class="num">Amount</th><th class="num">Expected</th></tr></thead><tbody>';
             foreach ($c['rows'] as $x) {
                 echo '<tr><td>' . (int)($x['id'] ?? 0) . '</td><td>' . e($x['no'] ?? $x['who'] ?? '-') . (isset($x['no'], $x['who']) ? ' · ' . e($x['who']) : '') . '</td><td>' . e(isset($x['d']) ? dmy($x['d']) : '-') . '</td><td class="num">' . (isset($x['amount']) ? money($x['amount']) : (isset($x['total']) ? money($x['total']) : '-')) . '</td><td class="num">' . (isset($x['expect']) ? money($x['expect']) : (isset($x['paid']) ? 'paid ' . money($x['paid']) : '-')) . '</td></tr>';
