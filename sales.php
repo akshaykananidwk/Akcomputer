@@ -545,6 +545,15 @@ if ($action === 'new' || $action === 'edit') {
             $est = ['id' => 0, 'estimate_no' => $chal['challan_no'], 'customer_name' => $chal['customer_name'],
                     'customer_mobile' => $chal['customer_mobile'], 'party_id' => $chal['party_id'], 'discount' => 0];
         }
+    } elseif (!$isEdit && (int)get('copy')) {
+        // Duplicate bill: same party + items prefilled as a FRESH bill
+        // (today's date, serials re-picked) - "same as last time" in one tap
+        $srcCopy = row('SELECT * FROM sales WHERE id = ?', [(int)get('copy')]);
+        if ($srcCopy && (can('sales.all') || $srcCopy['created_by'] == $u['id'])) {
+            $estItems = all('SELECT si.item_id, si.qty, si.price, si.tax_rate, i.name FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ? AND si.qty > 0', [$srcCopy['id']]);
+            $est = ['id' => 0, 'estimate_no' => 'copy of ' . $srcCopy['invoice_no'], 'customer_name' => $srcCopy['customer_name'],
+                    'customer_mobile' => $srcCopy['customer_mobile'], 'party_id' => $srcCopy['party_id'], 'discount' => (float)$srcCopy['discount']];
+        }
     }
     $page_title = $isEdit ? 'Edit Bill ' . $editSale['invoice_no'] : 'New Bill';
     include __DIR__ . '/includes/header.php';

@@ -138,6 +138,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
   <a class="btn btn-outline" href="sales.php">← Back</a>
   <?php if (can('sales.edit') && !$sale['is_cancelled']): ?>
   <a class="btn btn-outline" href="sales.php?action=edit&id=<?= $id ?>">✏️ Edit</a>
+  <?php if (can('sales.add')): ?><a class="btn btn-outline" href="sales.php?action=new&copy=<?= $id ?>" title="આ જ પાર્ટી+આઇટમ સાથે નવું બિલ">🧬 Duplicate</a><?php endif; ?>
   <?php endif; ?>
   <?php if (can('sales.delete')): ?>
   <?php if (!$sale['is_cancelled']): ?>

@@ -33,6 +33,18 @@ if ($a === 'item_search') {
     // items.cost permission never receive it, so it can't show up in the
     // billing UI, profit hints, or the browser's network tab.
     if (!can('items.cost')) foreach ($items as &$_i) { $_i['purchase_price'] = 0; } unset($_i);
+    // Price history for THIS customer: when a party is selected on the bill,
+    // each suggestion also carries the price they were charged last time
+    // ("આ ગ્રાહકને છેલ્લે આ ભાવે આપેલું") so haggling has a reference point.
+    $lpParty = (int)get('party');
+    if ($lpParty > 0) {
+        foreach ($items as &$_i) {
+            $lp = row("SELECT si.price, s.sale_date FROM sale_items si JOIN sales s ON s.id = si.sale_id
+                       WHERE s.party_id = ? AND si.item_id = ? AND s.is_cancelled = 0 ORDER BY s.id DESC LIMIT 1", [$lpParty, $_i['id']]);
+            if ($lp) { $_i['last_price'] = money($lp['price']); $_i['last_date'] = dmy($lp['sale_date']); }
+        }
+        unset($_i);
+    }
     echo json_encode($items);
     exit;
 }

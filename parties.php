@@ -20,6 +20,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
           array_merge($data, [$id]));
         flash('Party updated.');
     } else {
+        // Duplicate-party guard: the same mobile number almost always means
+        // the party already exists (typed under a slightly different name) -
+        // two ledgers for one person splits their balance. Block unless the
+        // "create anyway" box is ticked.
+        $mob10 = substr(preg_replace('/\D/', '', post('mobile')), -10);
+        if (strlen($mob10) === 10 && !post('force_dupe')) {
+            $dupe = row("SELECT id, name FROM parties WHERE is_active = 1 AND RIGHT(REPLACE(REPLACE(mobile,' ',''),'-',''),10) = ? LIMIT 1", [$mob10]);
+            if ($dupe) {
+                flash('⚠️ આ મોબાઇલ નંબરની પાર્ટી પહેલેથી છે: "' . $dupe['name'] . '". એની જ લેજરમાં એન્ટ્રી કરો, અથવા ખરેખર નવી બનાવવી હોય તો ફોર્મમાં "એ જ નંબર છતાં નવી પાર્ટી બનાવવી" ટિક કરીને ફરી Save કરો.', 'error');
+                redirect('parties.php?action=new');
+            }
+        }
         q('INSERT INTO parties (name, type, mobile, email, gstin, address, city, dob, anniversary, credit_days, opening_balance, is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?,1)', $data);
         flash('Party added.');
     }
@@ -63,6 +75,9 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Name *</label><input type="text" name="name" value="<?= e($p['name'] ?? '') ?>" required></div>
           <div><label>Mobile (WhatsApp)</label><input type="tel" name="mobile" value="<?= e($p['mobile'] ?? '') ?>"></div>
         </div>
+        <?php if (empty($p['id'])): ?>
+        <label class="check-inline"><input type="checkbox" name="force_dupe" value="1"> એ જ મોબાઇલ નંબરની પાર્ટી હોવા છતાં નવી બનાવવી (સામાન્ય રીતે જરૂર નથી)</label>
+        <?php endif; ?>
         <div class="form-row cols-2">
           <div><label>Email</label><input type="email" name="email" value="<?= e($p['email'] ?? '') ?>"></div>
           <div><label>GSTIN</label><input type="text" name="gstin" value="<?= e($p['gstin'] ?? '') ?>"></div>

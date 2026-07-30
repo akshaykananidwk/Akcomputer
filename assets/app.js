@@ -411,7 +411,9 @@ var Bill = {
       var qy = inp.value.trim();
       if (qy.length < 1) { res.classList.remove('show'); return; }
       t = setTimeout(function () {
-        fetch('ajax.php?a=item_search&q=' + encodeURIComponent(qy) + '&loc=' + (self.cfg.locSel ? document.getElementById(self.cfg.locSel).value : ''))
+        var partySel = document.getElementById('party_id');
+        fetch('ajax.php?a=item_search&q=' + encodeURIComponent(qy) + '&loc=' + (self.cfg.locSel ? document.getElementById(self.cfg.locSel).value : '') +
+              (partySel && partySel.value > 0 ? '&party=' + partySel.value : ''))
           .then(function (r) { return r.json(); })
           .then(function (items) {
             // barcode scan: exact barcode match -> auto-pick instantly
@@ -426,7 +428,8 @@ var Bill = {
               d.innerHTML = '<strong>' + it.name + '</strong><small>' + (it.item_type === 'service' ? 'Service' : 'Stock: ' + it.stock) +
                 ' | Retail: ' + it.selling_price + ' | B2B: ' + it.b2b_price +
                 (self.cfg.showPurchasePrice ? ' | Purchase: ' + it.purchase_price : '') +
-                (it.serial_tracked == 1 ? ' | Serial-tracked' : '') + '</small>';
+                (it.serial_tracked == 1 ? ' | Serial-tracked' : '') +
+                (it.last_price ? '<br>👤 આ ગ્રાહકને છેલ્લે: ₹' + it.last_price + ' (' + it.last_date + ')' : '') + '</small>';
               d.addEventListener('click', function () { self.pickItem(div, it); });
               res.appendChild(d);
             });
