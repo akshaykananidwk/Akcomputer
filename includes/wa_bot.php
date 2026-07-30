@@ -188,7 +188,7 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
     $matches = []; $photoGuess = ''; $reply = null; $usedAi = 0;
 
     if ($staff && trim($text) !== '' && !$jpeg) {
-        $reply = wa_bot_owner_answer($text, $usedAi);
+        $reply = wa_bot_owner_answer($text, $usedAi, $staff);
     } elseif ($jpeg) {
         $photoGuess = (string)wa_bot_identify_photo($jpeg);
         if ($photoGuess !== '') { $usedAi = 1; $matches = wa_bot_search($photoGuess); }
@@ -302,10 +302,24 @@ function wa_bot_ai_reply($text) {
 
 /** Owner/staff shop-assistant: answers business questions straight from the
  *  database - zero AI for the common ones, one compact AI call otherwise. */
-function wa_bot_owner_answer($text, &$usedAi) {
+function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
     $t = mb_strtolower($text);
     $has = function (...$kws) use ($t) { foreach ($kws as $k) if (mb_strpos($t, $k) !== false) return true; return false; };
     $shop = setting('app_name', 'AK Computer');
+
+    // Quick expense entry by message/voice: "ખર્ચ 50 ચા" / "kharch 120 petrol"
+    // - books a CASH expense to the sender's own account, so a voice note
+    // from the road becomes a real entry with zero typing in the software.
+    if ($staffUser && preg_match('/(?:ખર્ચ|ખર્ચો|kharch|kharcho|expense)\s*(?:₹|rs\.?|rupiya)?\s*([0-9]+(?:\.[0-9]+)?)\s*(.*)/iu', $text, $m)) {
+        $amt = (float)$m[1];
+        $note = trim($m[2]) ?: 'WhatsApp entry';
+        if ($amt > 0) {
+            q('INSERT INTO expenses (exp_date, category, amount, mode, notes, location_id, created_by) VALUES (CURDATE(), ?, ?, \'cash\', ?, ?, ?)',
+              ['General', $amt, $note, (int)($staffUser['location_id'] ?: 1), (int)$staffUser['id']]);
+            log_activity('expense_add_wa', $staffUser['name'] . ' ₹' . $amt . ' ' . $note);
+            return "✅ ખર્ચ નોંધ્યો: *₹" . money($amt) . "* – " . $note . " (Cash, " . $staffUser['name'] . ")";
+        }
+    }
 
     if ($has('help', 'મદદ', 'menu')) {
         return "*$shop bot* 🤖 તમે પૂછી શકો:\n- આજનું વેચાણ / sale\n- ઉધાર / baki\n- કેશ / cash\n- stock <આઇટમ નામ>\n- ઓર્ડર / order\n- રિપેર / repair\n- વિઝિટર / visitors\nબીજું કંઈ પણ લખશો તો AI ટૂંકો જવાબ આપશે.";

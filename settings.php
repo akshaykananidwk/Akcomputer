@@ -515,6 +515,12 @@ exit;
   <?php endif; ?>
 </div>
 <div class="card">
+  <h3>🛍️ WhatsApp / Facebook Catalog Feed</h3>
+  <?php if (setting('catalog_feed_key', '') === '') set_setting('catalog_feed_key', bin2hex(random_bytes(10))); ?>
+  <p class="muted">વેબસાઇટ પર ON કરેલી બધી આઇટમની Meta-ફોર્મેટ CSV ફીડ. <strong>Meta Commerce Manager → Data Sources → Scheduled Feed</strong> માં આ URL નાખો એટલે WhatsApp Business / Facebook / Instagram નો કેટલોગ દુકાનના સ્ટોક-ભાવ સાથે આપોઆપ સિંક રહે (ભાવ બદલો → કેટલોગ પણ બદલાય).</p>
+  <input type="text" readonly value="<?= e(base_url('catalog_feed.php?key=' . setting('catalog_feed_key'))) ?>" onclick="this.select()" style="width:100%">
+</div>
+<div class="card">
   <h3>💬 Message Templates</h3>
   <p class="muted mb">Write each message however you like. Keep the variables as-is — they get replaced with the real value when sending. Leave blank to use the default.</p>
   <form method="post">

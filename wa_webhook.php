@@ -47,6 +47,37 @@ if ($mediaB64 !== '') {
     $jpeg = ai_fetch_image($mediaUrl);
 }
 
+// Voice note -> Gemini transcription (staff only: it costs one AI call and
+// only staff get action-commands like "ખર્ચ 50 ચા" anyway). The transcript
+// then flows through the normal text pipeline, so anything speakable is
+// also doable - Gujarati, Hindi or English.
+$audioB64 = (string)($p['audio_base64'] ?? $p['voice_base64'] ?? '');
+$isAudio = strpos($mtype, 'audio') !== false || strpos($mtype, 'ptt') !== false || strpos($mtype, 'voice') !== false
+        || preg_match('/\.(ogg|opus|mp3|m4a|aac)(\?|$)/i', $mediaUrl);
+if ($text === '' && !$jpeg && $isAudio && $mobile !== '') {
+    $vStaff = row("SELECT id FROM users WHERE is_active = 1 AND mobile <> '' AND ? LIKE CONCAT('%', RIGHT(REPLACE(REPLACE(mobile, '+', ''), ' ', ''), 10)) LIMIT 1", [$mobile]);
+    if ($vStaff && wa_bot_ai_allowed()) {
+        $bytes = null;
+        if ($audioB64 !== '') {
+            $bytes = base64_decode($audioB64, true) ?: null;
+        } elseif ($mediaUrl !== '' && preg_match('#^https?://#i', $mediaUrl)) {
+            $ch = curl_init($mediaUrl);
+            curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_FOLLOWLOCATION => true, CURLOPT_SSL_VERIFYPEER => true]);
+            $bytes = curl_exec($ch) ?: null;
+            curl_close($ch);
+        }
+        if ($bytes && strlen($bytes) < 8 * 1024 * 1024) {
+            $aMime = strpos($mtype, 'mp3') !== false || preg_match('/\.mp3/i', $mediaUrl) ? 'audio/mp3'
+                   : (strpos($mtype, 'aac') !== false || preg_match('/\.(m4a|aac)/i', $mediaUrl) ? 'audio/aac' : 'audio/ogg');
+            [$tr, $aErr] = gemini_generate([
+                ['text' => 'Transcribe this voice message exactly as spoken. It may be Gujarati, Hindi or English. Reply with ONLY the spoken words, no extra commentary.'],
+                ['inline_data' => ['mime_type' => $aMime, 'data' => base64_encode($bytes)]],
+            ], 45);
+            if ($tr !== null && trim($tr) !== '') $text = trim($tr);
+        }
+    }
+}
+
 if ($mobile === '' || ($text === '' && !$jpeg)) die(json_encode(['ok' => true, 'status' => 'nothing-to-do']));
 
 $status = wa_bot_handle($mobile, $text, $jpeg);
