@@ -462,26 +462,32 @@ var Bill = {
   // Android has it built in), no external library needed. Detected code is
   // typed into the item search box, which already auto-picks on an exact
   // barcode match (see attachSearch above) - same path a USB scanner uses.
-  scanBarcode: function (inp) {
+  // Camera scanner. Single-shot by default (fills the input, closes).
+  // With onCode: CONTINUOUS serial mode - every code detected is handed to
+  // onCode (add to bill / textarea), the overlay stays open so a whole
+  // stack of boxes can be scanned one after another; the same code within
+  // 2.5s is ignored (camera seeing the same label across frames).
+  scanBarcode: function (inp, onCode) {
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:#000;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center';
     var video = document.createElement('video');
     video.setAttribute('playsinline', '');
     video.style.cssText = 'max-width:100%;max-height:80vh';
     var closeBtn = document.createElement('button');
-    closeBtn.textContent = '✕ Close';
+    closeBtn.textContent = onCode ? '✅ Done / Close' : '✕ Close';
     closeBtn.type = 'button';
     closeBtn.className = 'btn btn-danger';
     closeBtn.style.cssText = 'margin-top:14px';
     var hint = document.createElement('div');
-    hint.textContent = 'Hold the barcode in front of the camera...';
-    hint.style.cssText = 'color:#fff;margin-bottom:10px;font-size:14px';
+    hint.textContent = onCode ? 'સિરિયલનો બારકોડ/QR કેમેરા સામે ધરો — એક પછી એક બધા સ્કેન કરો' : 'Hold the barcode in front of the camera...';
+    hint.style.cssText = 'color:#fff;margin:0 12px 10px;font-size:14px;text-align:center';
+    var count = 0;
     overlay.appendChild(hint);
     overlay.appendChild(video);
     overlay.appendChild(closeBtn);
     document.body.appendChild(overlay);
 
-    var stream = null, stopped = false;
+    var stream = null, stopped = false, lastVal = '', lastT = 0;
     function stop() {
       stopped = true;
       if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
@@ -499,9 +505,20 @@ var Bill = {
         detector.detect(video).then(function (codes) {
           if (codes.length > 0) {
             var val = codes[0].rawValue;
-            stop();
-            inp.value = val;
-            inp.dispatchEvent(new Event('input'));
+            if (onCode) {
+              var now = Date.now();
+              if (val !== lastVal || now - lastT > 2500) {
+                lastVal = val; lastT = now; count++;
+                onCode(val);
+                hint.textContent = '✔ ' + val + '  (' + count + ' સ્કેન થયા) — બીજો બતાવો, પતે એટલે Done';
+                hint.style.color = '#4ade80';
+              }
+              setTimeout(function () { if (!stopped) requestAnimationFrame(tick); }, 700);
+            } else {
+              stop();
+              inp.value = val;
+              inp.dispatchEvent(new Event('input'));
+            }
           } else if (!stopped) {
             requestAnimationFrame(tick);
           }
@@ -535,9 +552,19 @@ var Bill = {
     if (it.serial_tracked == 1 && this.cfg.serials) {
       if (this.cfg.mode === 'purchase') {
         extra.innerHTML = '<label class="mt">Serial numbers (one per line, count = qty) — 🔫 barcode gun works: scan, scan, scan</label>' +
-          '<textarea name="serials[]" rows="2" placeholder="SN001\nSN002"></textarea>';
+          '<textarea name="serials[]" rows="2" placeholder="SN001\nSN002"></textarea>' +
+          (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline pu-cam" style="margin-top:6px">📷 મોબાઇલ કેમેરાથી સિરિયલ સ્કેન</button>' : '');
         div.dataset.hasSerialBox = '1';
         this.wireSerialQtySync(div);
+        var puCam = extra.querySelector('.pu-cam');
+        if (puCam) puCam.addEventListener('click', function () {
+          var ta2 = extra.querySelector('textarea');
+          self.scanBarcode(ta2, function (val) {
+            // append as a completed line -> qty sync + double-scan dedupe + beep
+            ta2.value = (ta2.value && !/[\r\n]$/.test(ta2.value) ? ta2.value + '\n' : ta2.value) + val + '\n';
+            ta2.dispatchEvent(new Event('input'));
+          });
+        });
         // serial-tracked item picked -> cursor straight into the serial box
         // so the barcode gun can start scanning units immediately
         extra.querySelector('textarea').focus();
@@ -562,7 +589,8 @@ var Bill = {
               '<div class="serial-pick mt">' +
               '<label>Select Serial No. <span class="sp-count badge badge-warn">0 / ' + (parseFloat(div.querySelector('.i-qty').value) || 1) + ' entered</span></label>' +
               '<div class="sp-scan"><input type="text" class="sp-inp" placeholder="Type / scan serial no.">' +
-              '<button type="button" class="btn btn-sm sp-add">Add</button></div>' +
+              '<button type="button" class="btn btn-sm sp-add">Add</button>' +
+              (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline sp-cam" title="મોબાઇલ કેમેરાથી સ્કેન">📷</button>' : '') + '</div>' +
               '<div class="sp-list">' + (boxes || '<span class="muted">No serials in stock (advance billing will proceed)</span>') + '</div>' +
               '</div>';
             function updCount() {
@@ -590,6 +618,15 @@ var Bill = {
             // serial-tracked item picked -> next step is scanning serials, so
             // put the cursor straight where the barcode gun will type
             spInp.focus();
+            var spCam = extra.querySelector('.sp-cam');
+            if (spCam) spCam.addEventListener('click', function () {
+              // continuous mode: each camera detection goes through the same
+              // Add path (tick in-stock serial / advance-billing confirm)
+              self.scanBarcode(spInp, function (val) {
+                spInp.value = val;
+                extra.querySelector('.sp-add').click();
+              });
+            });
             extra.querySelector('.sp-add').addEventListener('click', function () {
               var v = spInp.value.trim();
               if (!v) return;
