@@ -39,6 +39,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     redirect('parties.php');
 }
 
+// One tap: the party's WHOLE ledger as a statement PDF on their WhatsApp
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'statement_wa') {
+    require_perm('parties.view');
+    require_once __DIR__ . '/includes/pdf.php';
+    $spid = (int)post('id');
+    $sp = row('SELECT * FROM parties WHERE id = ?', [$spid]);
+    if (!$sp || !$sp['mobile']) { flash('Party not found or has no mobile number.', 'error'); redirect('parties.php'); }
+    $ent = [];
+    foreach (all('SELECT invoice_no ref, sale_date d, total amt FROM sales WHERE party_id = ? AND is_cancelled = 0', [$spid]) as $r)
+        $ent[] = ['date' => $r['d'], 'desc' => 'Sale ' . $r['ref'], 'dr' => $r['amt'], 'cr' => 0];
+    foreach (all('SELECT id, bill_no ref, purchase_date d, total amt FROM purchases WHERE party_id = ? AND is_cancelled = 0', [$spid]) as $r)
+        $ent[] = ['date' => $r['d'], 'desc' => 'Purchase ' . ($r['ref'] ?: '#' . $r['id']), 'dr' => 0, 'cr' => $r['amt']];
+    foreach (all('SELECT direction, mode, amount, pay_date, notes FROM payments WHERE party_id = ?', [$spid]) as $r)
+        $ent[] = ['date' => $r['pay_date'], 'desc' => ($r['direction'] === 'in' ? 'Payment received' : 'Payment made') . ' (' . $r['mode'] . ')',
+                  'dr' => $r['direction'] === 'out' ? $r['amount'] : 0, 'cr' => $r['direction'] === 'in' ? $r['amount'] : 0];
+    foreach (all('SELECT return_no, return_date d, total amt FROM sales_returns WHERE party_id = ?', [$spid]) as $r)
+        $ent[] = ['date' => $r['d'], 'desc' => 'Sales Return ' . $r['return_no'], 'dr' => 0, 'cr' => $r['amt']];
+    foreach (all('SELECT return_no, return_date d, total amt FROM purchase_returns WHERE party_id = ?', [$spid]) as $r)
+        $ent[] = ['date' => $r['d'], 'desc' => 'Purchase Return ' . $r['return_no'], 'dr' => $r['amt'], 'cr' => 0];
+    usort($ent, fn($a, $b) => strcmp($a['date'], $b['date']));
+    $bytes = party_statement_pdf($sp, $ent, (float)$sp['opening_balance']);
+    $dir = __DIR__ . '/uploads/statements';
+    if (!is_dir($dir)) mkdir($dir, 0755, true);
+    $fn = 'statement_' . $spid . '_' . substr(md5(microtime()), 0, 8) . '.pdf';
+    file_put_contents($dir . '/' . $fn, $bytes);
+    $balNow = (float)$sp['opening_balance'] + array_sum(array_map(fn($e2) => $e2['dr'] - $e2['cr'], $ent));
+    $msg = "🙏 *" . setting('app_name', 'AK Computer') . "*\n\n" . $sp['name'] . ", તમારો હિસાબ (Account Statement) આ PDF માં છે.\n"
+         . ($balNow > 0.009 ? "બાકી રકમ: *₹" . money($balNow) . "*" : ($balNow < -0.009 ? "તમારી જમા: ₹" . money(abs($balNow)) : "હિસાબ ચૂકતે ✔"))
+         . "\n\nThank you! 🙏";
+    if (send_whatsapp($sp['mobile'], $msg, base_url('uploads/statements/' . $fn))) {
+        log_activity('party_statement_wa', $sp['name']);
+        flash('Statement (PDF) WhatsApp પર મોકલ્યું: ' . $sp['mobile']);
+    } else {
+        flash('WhatsApp send failed. ' . whatsapp_last_error(), 'error');
+    }
+    redirect('parties.php?action=ledger&id=' . $spid);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('parties.delete');
     $pid = (int)post('id');
@@ -176,6 +214,12 @@ if ($action === 'ledger' && $id) {
       <div class="page-actions no-print" style="margin:0 0 10px;justify-content:space-between">
         <h2 style="margin:0"><?= e($p['name']) ?></h2>
         <span>
+          <?php if ($p['mobile']): ?>
+          <form method="post" style="display:inline" onsubmit="return confirm('આખો હિસાબ (statement PDF) <?= e($p['mobile']) ?> પર WhatsApp કરવો?')">
+            <?= csrf_field() ?><input type="hidden" name="do" value="statement_wa"><input type="hidden" name="id" value="<?= $p['id'] ?>">
+            <button class="btn btn-sm btn-wa" type="submit">📲 Statement WhatsApp</button>
+          </form>
+          <?php endif; ?>
           <?php if (can('parties.edit')): ?><a class="btn btn-sm btn-outline" href="parties.php?action=edit&id=<?= $p['id'] ?>">✏️ Edit</a><?php endif; ?>
           <?php if (can('parties.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Delete this party? If it has transactions, it will just be made inactive.')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
         </span>

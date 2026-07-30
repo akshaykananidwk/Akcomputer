@@ -1136,3 +1136,52 @@ function pdf_icon_star_p(&$pdf, $cx, $cy, $r, $rgb) {
     }
     $pdf->poly($pts, $rgb);
 }
+
+/** Party ledger statement PDF: date / details / debit / credit / running
+ *  balance with page breaks, opening and closing balance called out.
+ *  Sent to the party on WhatsApp straight from the ledger screen. */
+function party_statement_pdf($party, $entries, $openingBal) {
+    $pdf = new MiniPDF();
+    $pdf->new_page();
+    $M = 36; $W = MiniPDF::W - $M * 2; $y = $M;
+    $pdf->text($M, $y, 15, setting('app_name', 'AK Computer'), 'B');
+    $pdf->text_right($M + $W, $y, 9, 'Generated: ' . date('d-m-Y h:i A'), '', [0.4, 0.4, 0.4]);
+    $y += 18;
+    $pdf->text($M, $y, 11, 'Account Statement - ' . $party['name'], 'B'); $y += 13;
+    if ($party['mobile']) { $pdf->text($M, $y, 8.5, 'Mobile: ' . $party['mobile'], '', [0.4, 0.4, 0.4]); $y += 12; }
+    $y += 4;
+    // columns: date 13% | details 45% | debit 14% | credit 14% | balance 14%
+    $cx = [$M, $M + $W * 0.13, $M + $W * 0.58, $M + $W * 0.72, $M + $W * 0.86];
+    $head = function () use ($pdf, &$y, $M, $W, $cx) {
+        $pdf->rect($M, $y - 10, $W, 14, [0.90, 0.92, 0.96]);
+        $pdf->text($cx[0] + 2, $y, 8.5, 'Date', 'B');
+        $pdf->text($cx[1] + 2, $y, 8.5, 'Details', 'B');
+        $pdf->text_right($cx[3] - 2, $y, 8.5, 'Debit', 'B');
+        $pdf->text_right($cx[4] - 2, $y, 8.5, 'Credit', 'B');
+        $pdf->text_right($M + $W - 2, $y, 8.5, 'Balance', 'B');
+        $pdf->line($M, $y + 4, $M + $W, $y + 4);
+        $y += 16;
+    };
+    $head();
+    $bal = $openingBal;
+    $pdf->text($cx[1] + 2, $y, 8.5, 'Opening balance', '', [0.4, 0.4, 0.4]);
+    $pdf->text_right($M + $W - 2, $y, 8.5, money($bal), '', [0.4, 0.4, 0.4]);
+    $y += 13;
+    foreach ($entries as $en) {
+        if ($y > MiniPDF::H - $M - 40) { $pdf->new_page(); $y = $M; $head(); }
+        $bal += $en['dr'] - $en['cr'];
+        $pdf->text($cx[0] + 2, $y, 8.5, dmy($en['date']));
+        $pdf->text($cx[1] + 2, $y, 8.5, $pdf->fit($en['desc'], $W * 0.44, 8.5));
+        if ($en['dr'] > 0) $pdf->text_right($cx[3] - 2, $y, 8.5, money($en['dr']));
+        if ($en['cr'] > 0) $pdf->text_right($cx[4] - 2, $y, 8.5, money($en['cr']));
+        $pdf->text_right($M + $W - 2, $y, 8.5, money($bal));
+        $y += 13;
+    }
+    $y += 6;
+    if ($y > MiniPDF::H - $M - 30) { $pdf->new_page(); $y = $M; }
+    $pdf->line($M, $y - 8, $M + $W, $y - 8);
+    $lbl = $bal > 0.009 ? 'BALANCE DUE (to receive)' : ($bal < -0.009 ? 'ADVANCE / CREDIT (to pay)' : 'SETTLED');
+    $pdf->text($M, $y + 4, 10, $lbl, 'B');
+    $pdf->text_right($M + $W - 2, $y + 4, 11, 'Rs ' . money(abs($bal)), 'B');
+    return $pdf->output();
+}

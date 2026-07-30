@@ -120,6 +120,18 @@ foreach ($groups as $g) {
 }
 usort($ledger, fn($a, $b) => strcmp($b['created_at'], $a['created_at']));
 
+// Supplier price comparison: what each supplier charged for THIS item -
+// last price (cheapest first), lowest ever, how much bought. Cost data,
+// so only staff holding items.cost see it.
+$suppHist = (!$isService && can('items.cost')) ? all(
+    "SELECT pt.name supplier, COUNT(*) bills, SUM(pi.qty) qty, MIN(pi.price) min_price, MAX(pu.purchase_date) last_date,
+        (SELECT pi2.price FROM purchase_items pi2 JOIN purchases pu2 ON pu2.id = pi2.purchase_id
+          WHERE pi2.item_id = pi.item_id AND pu2.party_id = pu.party_id AND pu2.is_cancelled = 0
+          ORDER BY pu2.purchase_date DESC, pi2.id DESC LIMIT 1) last_price
+     FROM purchase_items pi JOIN purchases pu ON pu.id = pi.purchase_id JOIN parties pt ON pt.id = pu.party_id
+     WHERE pi.item_id = ? AND pu.is_cancelled = 0
+     GROUP BY pu.party_id, pt.name, pi.item_id ORDER BY last_price ASC", [$id]) : [];
+
 $page_title = $item['name'];
 include __DIR__ . '/includes/header.php';
 ?>
@@ -160,6 +172,29 @@ include __DIR__ . '/includes/header.php';
     <div><label>Reason</label><input type="text" name="reason" required placeholder="opening / damage / count fix"></div>
     <button class="btn btn-sm" type="submit">Adjust</button>
   </form>
+</div>
+<?php endif; ?>
+
+<?php if ($suppHist): ?>
+<div class="card">
+  <h3>🏷️ Supplier Price Comparison <span class="muted" style="font-weight:normal;font-size:12px">— આ આઇટમ કોણ કેટલામાં આપે છે</span></h3>
+  <div class="table-wrap" style="box-shadow:none">
+  <table>
+    <thead><tr><th>Supplier</th><th class="num">Last Price</th><th class="num">Lowest Ever</th><th class="num">Bought</th><th>Last Purchase</th><th></th></tr></thead>
+    <tbody>
+    <?php foreach ($suppHist as $i2 => $sh): ?>
+    <tr>
+      <td><strong><?= e($sh['supplier']) ?></strong></td>
+      <td class="num"><strong>₹<?= money($sh['last_price']) ?></strong></td>
+      <td class="num">₹<?= money($sh['min_price']) ?></td>
+      <td class="num"><?= (float)$sh['qty'] ?> (<?= (int)$sh['bills'] ?> bill<?= $sh['bills'] > 1 ? 's' : '' ?>)</td>
+      <td><?= dmy($sh['last_date']) ?></td>
+      <td><?= $i2 === 0 && count($suppHist) > 1 ? '<span class="badge badge-ok">💰 સૌથી સસ્તું</span>' : '' ?></td>
+    </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+  </div>
 </div>
 <?php endif; ?>
 
