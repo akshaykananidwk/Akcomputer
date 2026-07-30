@@ -251,6 +251,12 @@ var Bill = {
       var el = document.getElementById(id);
       if (el) el.addEventListener('input', function () { self.totals(); });
     });
+    // party picked/changed AFTER items were added? refresh every row's
+    // "this customer paid ₹X last time" line
+    var partySel = document.getElementById('party_id');
+    if (partySel) partySel.addEventListener('change', function () {
+      document.querySelectorAll('.bill-row').forEach(function (d) { self.updateLastPrice(d); });
+    });
     var pt = document.getElementById('price_type');
     if (pt) pt.addEventListener('change', function () { self.repriceAll(); });
   },
@@ -375,6 +381,7 @@ var Bill = {
       '</div>' +
       '<div class="i-extra"></div>' +
       '<div class="muted i-stockinfo"></div>' +
+      '<div class="i-lastprice" style="color:var(--ok);font-weight:600;font-size:13px"></div>' +
       (this.cfg.mode === 'sale' ? '<div><label>Description</label><input type="text" class="i-desc" name="description[]" placeholder="Optional note for this item"></div>' : '') +
       (this.cfg.mode === 'sale' && cfFields ? '<div class="cf-section"><h4>Custom Fields</h4>' + cfFields + '</div>' : '');
     wrap.appendChild(div);
@@ -520,6 +527,7 @@ var Bill = {
     div.dataset.unit = it.unit || '';
     div.querySelector('.i-stockinfo').textContent =
       (it.item_type !== 'service' && (this.cfg.mode === 'sale' || this.cfg.mode === 'staff')) ? 'Available: ' + it.stock + ' ' + it.unit : '';
+    this.updateLastPrice(div);
     if (div.classList.contains('panel-mode')) this.updatePanelTotal(div);
 
     var extra = div.querySelector('.i-extra');
@@ -629,6 +637,24 @@ var Bill = {
   repriceAll: function () {
     // price type changed - just recalc totals (prices already typed stay)
     this.totals();
+  },
+
+  // "This customer paid ₹X last time" - shown PERSISTENTLY under the item
+  // once picked (not just in the search dropdown), and refreshed for every
+  // row when the party changes, so it works whichever order party/items
+  // get filled in.
+  updateLastPrice: function (div) {
+    if (this.cfg.mode !== 'sale') return;
+    var lp = div.querySelector('.i-lastprice');
+    if (!lp) return;
+    var partySel = document.getElementById('party_id');
+    var itemId = div.querySelector('.i-id').value;
+    if (!partySel || !(partySel.value > 0) || !itemId) { lp.textContent = ''; return; }
+    fetch('ajax.php?a=last_price&item_id=' + itemId + '&party=' + partySel.value)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        lp.textContent = d.price ? '👤 આ ગ્રાહકને છેલ્લે: ₹' + d.price + ' (' + d.date + ' · ' + d.doc + ')' : '';
+      }).catch(function () {});
   },
 
   // Purchase serials are typed one-per-line in a textarea; the number of

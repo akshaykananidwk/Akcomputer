@@ -49,6 +49,17 @@ if ($a === 'item_search') {
     exit;
 }
 
+if ($a === 'last_price') {
+    // "what did THIS customer pay for THIS item last time" - shown as a
+    // persistent line under the picked item on the bill screen
+    $lpItem = (int)get('item_id');
+    $lpParty = (int)get('party');
+    $lp = ($lpItem && $lpParty) ? row("SELECT si.price, s.sale_date, s.invoice_no FROM sale_items si JOIN sales s ON s.id = si.sale_id
+               WHERE s.party_id = ? AND si.item_id = ? AND s.is_cancelled = 0 ORDER BY s.id DESC LIMIT 1", [$lpParty, $lpItem]) : null;
+    echo json_encode($lp ? ['price' => money($lp['price']), 'date' => dmy($lp['sale_date']), 'doc' => $lp['invoice_no']] : ['price' => null]);
+    exit;
+}
+
 if ($a === 'serials') {
     // available serial numbers of item at a location - when editing a bill
     // (sale_id given), also include this item's serials already sold on
