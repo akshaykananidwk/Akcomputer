@@ -161,3 +161,73 @@ try {
 // everything else in this file, rather than deleting inline on every fire.
 $trimmed = q('DELETE FROM webhook_deliveries WHERE created_at < DATE_SUB(?, INTERVAL 30 DAY)', [$today])->rowCount();
 echo "Webhook delivery log cleanup: removed $trimmed old row(s)\n";
+
+// ---------- Estimate auto follow-up ----------
+// N days (Settings, default 3) after a quotation nothing happened: one
+// gentle WhatsApp nudge to the customer - once per estimate, only while
+// it's still open.
+if (setting('estimate_followup_enabled', '1') === '1') {
+    try {
+        $efDays = max(1, (int)setting('estimate_followup_days', '3'));
+        $efSent = 0;
+        foreach (all("SELECT e.*, COALESCE(NULLIF(e.customer_mobile,''), p.mobile) mob FROM estimates e
+                      LEFT JOIN parties p ON p.id = e.party_id
+                      WHERE e.status = 'open' AND e.followup_sent_at IS NULL
+                        AND e.estimate_date <= DATE_SUB(?, INTERVAL ? DAY)
+                        AND e.estimate_date >= DATE_SUB(?, INTERVAL 60 DAY) LIMIT 25", [$today, $efDays, $today]) as $e2) {
+            if (!$e2['mob']) { q('UPDATE estimates SET followup_sent_at = ? WHERE id = ?', [$today, $e2['id']]); continue; }
+            $name = $e2['customer_name'] ?: 'Sir/Madam';
+            $ok = send_whatsapp($e2['mob'], "🙏 *" . setting('app_name', 'AK Computer') . "*\n\n$name, અમે તમને " . dmy($e2['estimate_date']) . " ના રોજ *₹" . money($e2['total']) . "* નું ક્વોટેશન (" . $e2['estimate_no'] . ") આપ્યું હતું.\nકંઈ વિચાર્યું? કોઈ પ્રશ્ન હોય કે ભાવમાં વાત કરવી હોય તો બેધડક કૉલ/મેસેજ કરો. 😊\n\nThank you!");
+            q('UPDATE estimates SET followup_sent_at = ? WHERE id = ?', [$today, $e2['id']]);
+            if ($ok) $efSent++;
+        }
+        echo "Estimate follow-ups: $efSent sent\n";
+    } catch (Exception $e) { /* estimates.followup_sent_at not migrated yet */ }
+}
+
+// ---------- Daily automatic backup -> admin's Telegram ----------
+// Once a day: full SQL dump, gzipped into uploads/backups (7 kept), and the
+// file itself dropped into every linked full-admin's Telegram chat - an
+// off-server copy with zero extra accounts or keys.
+if (setting('auto_backup_enabled', '1') === '1' && setting('auto_backup_last', '') !== $today) {
+    set_setting('auto_backup_last', $today);
+    $bkDir = __DIR__ . '/uploads/backups';
+    if (!is_dir($bkDir)) mkdir($bkDir, 0755, true);
+    $bkFile = $bkDir . '/backup_' . date('Ymd') . '.sql.gz';
+    file_put_contents($bkFile, gzencode(db_backup_sql(), 6));
+    // rotate: keep the newest 7
+    $old = glob($bkDir . '/backup_*.sql.gz');
+    rsort($old);
+    foreach (array_slice($old, 7) as $f) @unlink($f);
+    $tgSent = 0;
+    if (setting('tg_bot_token', '') !== '') {
+        foreach (tg_admin_chats() as $chat) {
+            $r = tg_call('sendDocument', ['chat_id' => $chat, 'document' => new CURLFile($bkFile, 'application/gzip', basename($bkFile)),
+                                          'caption' => '🗄 ' . setting('app_name', 'AK Computer') . ' daily backup ' . dmy($today)], true);
+            if ($r['ok'] ?? false) $tgSent++;
+        }
+    }
+    echo 'Auto backup: ' . basename($bkFile) . ' (' . round(filesize($bkFile) / 1024) . ' KB), Telegram sent to ' . $tgSent . " admin(s)\n";
+}
+
+// ---------- Weekly data health auto-run ----------
+// Every 7 days the same checks as Reports > Data Health Check run silently;
+// the owner hears about it ONLY when something is actually wrong.
+if ((int)setting('health_autorun_last', 0) <= strtotime($today . ' -7 days')) {
+    set_setting('health_autorun_last', (string)strtotime($today));
+    require_once __DIR__ . '/includes/health.php';
+    try {
+        $issues = health_issue_summary();
+        if ($issues) {
+            $msgH = "🩺 *Data Health Check*\n" . count($issues) . " પ્રકારની ગરબડ મળી:\n";
+            foreach ($issues as $t2 => $n2) $msgH .= "• $t2 — $n2\n";
+            $msgH .= "\nસોફ્ટવેરમાં Reports → Data Health Check ખોલીને સુધારો.";
+            $shopNoH = wa_normalize_number(setting('wa_shop_number'));
+            if ($shopNoH) send_whatsapp($shopNoH, $msgH);
+            tg_notify_admins($msgH);
+            echo 'Health auto-run: ' . count($issues) . " issue type(s) - owner notified\n";
+        } else {
+            echo "Health auto-run: all clean\n";
+        }
+    } catch (Exception $e) { echo "Health auto-run failed: " . $e->getMessage() . "\n"; }
+}

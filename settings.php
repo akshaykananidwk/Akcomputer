@@ -205,22 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_test') {
 if (get('do') === 'backup' || post('do') === 'backup') {
     require_perm('settings.edit');
     $passphrase = post('passphrase');
-    $pdo = db();
-    ob_start();
-    echo "-- AK Computer backup " . date('Y-m-d H:i:s') . "\nSET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n\n";
-    $tables = array_column($pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_NUM), 0);
-    foreach ($tables as $t) {
-        $create = $pdo->query("SHOW CREATE TABLE `$t`")->fetch(PDO::FETCH_NUM);
-        echo "DROP TABLE IF EXISTS `$t`;\n" . $create[1] . ";\n\n";
-        $rs = $pdo->query("SELECT * FROM `$t`");
-        while ($rowD = $rs->fetch(PDO::FETCH_NUM)) {
-            $vals = array_map(fn($v) => $v === null ? 'NULL' : $pdo->quote((string)$v), $rowD);
-            echo "INSERT INTO `$t` VALUES (" . implode(',', $vals) . ");\n";
-        }
-        echo "\n";
-    }
-    echo "SET FOREIGN_KEY_CHECKS=1;\n";
-    $sql = ob_get_clean();
+    $sql = db_backup_sql();
 
     if ($passphrase !== '') {
         $salt = random_bytes(16);

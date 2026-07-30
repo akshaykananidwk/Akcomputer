@@ -537,6 +537,56 @@ function custom_field_printable($label) {
     return !isset($m[$label]) || $m[$label] === 1;
 }
 
+// ---------- Telegram (management bot) outbound ----------
+function tg_call($method, array $params, $isMultipart = false) {
+    $token = setting('tg_bot_token', '');
+    if ($token === '') return null;
+    $ch = curl_init('https://api.telegram.org/bot' . $token . '/' . $method);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_TIMEOUT => 60,
+        CURLOPT_POSTFIELDS => $isMultipart ? $params : http_build_query($params), CURLOPT_SSL_VERIFYPEER => true]);
+    $r = curl_exec($ch);
+    curl_close($ch);
+    return json_decode((string)$r, true);
+}
+/** Telegram chat ids of every ACTIVE full-admin who has linked Telegram.
+ *  Empty array (never an exception) before migrate v38 runs. */
+function tg_admin_chats() {
+    try {
+        return array_column(all("SELECT u.telegram_chat_id FROM users u JOIN roles r ON r.id = u.role_id
+            WHERE u.is_active = 1 AND u.telegram_chat_id IS NOT NULL AND u.telegram_chat_id <> ''
+              AND r.permissions LIKE '%\"*\"%'"), 'telegram_chat_id');
+    } catch (Exception $e) { return []; }
+}
+function tg_notify_admins($text) {
+    $n = 0;
+    foreach (tg_admin_chats() as $chat) {
+        $r = tg_call('sendMessage', ['chat_id' => $chat, 'text' => $text]);
+        if ($r['ok'] ?? false) $n++;
+    }
+    return $n;
+}
+
+// ---------- Full database dump (same bytes the Settings > Backup button
+// downloads; also gzipped + sent to the admin's Telegram by the daily cron) ----------
+function db_backup_sql() {
+    $pdo = db();
+    ob_start();
+    echo "-- AK Computer backup " . date('Y-m-d H:i:s') . "\nSET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n\n";
+    $tables = array_column($pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_NUM), 0);
+    foreach ($tables as $t) {
+        $create = $pdo->query("SHOW CREATE TABLE `$t`")->fetch(PDO::FETCH_NUM);
+        echo "DROP TABLE IF EXISTS `$t`;\n" . $create[1] . ";\n\n";
+        $rs = $pdo->query("SELECT * FROM `$t`");
+        while ($rowD = $rs->fetch(PDO::FETCH_NUM)) {
+            $vals = array_map(fn($v) => $v === null ? 'NULL' : $pdo->quote((string)$v), $rowD);
+            echo "INSERT INTO `$t` VALUES (" . implode(',', $vals) . ");\n";
+        }
+        echo "\n";
+    }
+    echo "SET FOREIGN_KEY_CHECKS=1;\n";
+    return ob_get_clean();
+}
+
 // ---------- Site credential vault (DVR/NVR passwords etc, encrypted at rest) ----------
 function vault_encrypt($plain) {
     if ($plain === '' || $plain === null) return '';
