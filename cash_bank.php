@@ -135,11 +135,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_cancel') {
     redirect('cash_bank.php');
 }
 
-// ---------- delete a transfer / adjustment ----------
+// ---------- delete a transfer / adjustment (ADMIN only) ----------
 // All balances (wallets, cash total, bank) are COMPUTED from the tables, so
 // deleting the row is a clean reversal - nothing else to unwind.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'mt_delete') {
-    if (!can('cashbank.adjust') && !can('cashbank.transfer')) { flash('No permission.', 'error'); redirect('cash_bank.php'); }
+    if (!is_full_admin()) { flash('ફક્ત એડમિન જ આ એન્ટ્રી ડિલીટ કરી શકે.', 'error'); redirect('cash_bank.php'); }
     $t = row('SELECT * FROM money_transfers WHERE id = ?', [(int)post('id')]);
     if ($t && $t['status'] !== 'pending') {
         q('DELETE FROM money_transfers WHERE id = ?', [$t['id']]);
@@ -147,6 +147,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'mt_delete') {
         flash('Entry deleted — balances recalculated.');
     }
     redirect(post('back') === 'ledger' ? 'cash_bank.php?action=cash_ledger' : 'cash_bank.php');
+}
+
+// ---------- edit a transfer / adjustment (ADMIN only) ----------
+// Amount / date / note (and add-vs-reduce on adjustments) can change; the
+// accounts/wallets involved cannot - for that, delete and re-enter. Balances
+// recompute from the row, so an UPDATE is as clean as the delete above.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'mt_update') {
+    if (!is_full_admin()) { flash('ફક્ત એડમિન જ આ એન્ટ્રી એડિટ કરી શકે.', 'error'); redirect('cash_bank.php'); }
+    $t = row('SELECT * FROM money_transfers WHERE id = ?', [(int)post('id')]);
+    $amount = round((float)post('amount'), 2);
+    if (!$t || $t['status'] !== 'done' || $amount <= 0) { flash('Entry not found or not editable.', 'error'); redirect('cash_bank.php'); }
+    $dirAdj = in_array($t['txn_type'], ['cash_adjust', 'bank_adjust'], true)
+        ? (post('adjust_dir') === 'reduce' ? 'reduce' : 'add') : $t['adjust_dir'];
+    q('UPDATE money_transfers SET amount = ?, txn_date = ?, notes = ?, adjust_dir = ? WHERE id = ?',
+      [$amount, post('txn_date') ?: $t['txn_date'], trim(post('notes')), $dirAdj, $t['id']]);
+    log_activity('cashbank_mt_edit', "T-{$t['id']} {$t['txn_type']} ₹" . money($t['amount']) . ' → ₹' . money($amount));
+    flash('Entry updated — balances recalculated.');
+    redirect('cash_bank.php');
 }
 
 // ---------- full CASH ledger (tap on the Cash in Hand card) ----------
@@ -214,7 +232,7 @@ if (get('action') === 'cash_ledger') {
     $rows = array_reverse($rows);
 
     $liveBal = $fStaff ? staff_cash($fStaff) : total_cash_in_hand();
-    $canDelMt = can('cashbank.adjust') || can('cashbank.transfer');
+    $canDelMt = is_full_admin();
     $page_title = 'Cash Ledger';
     include __DIR__ . '/includes/header.php';
     ?>
@@ -395,18 +413,60 @@ include __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 
-<?php if ($recentMoves): ?>
+<?php if ($recentMoves): $isAdminMt = is_full_admin(); ?>
 <div class="card">
   <h2>🔁 Recent transfers & adjustments</h2>
   <table class="table-sm">
-    <thead><tr><th>Date</th><th>What</th><th class="num">Amount</th><th>Notes</th></tr></thead>
+    <thead><tr><th>Date</th><th>What</th><th class="num">Amount</th><th>Notes</th><?= $isAdminMt ? '<th class="no-print"></th>' : '' ?></tr></thead>
     <tbody><?php foreach ($recentMoves as $t): ?>
     <tr <?= $t['status'] === 'cancelled' ? 'style="opacity:.5;text-decoration:line-through"' : '' ?>>
       <td><?= dmy($t['txn_date']) ?></td><td><?= e(mt_label($t)) ?></td>
-      <td class="num">₹<?= money($t['amount']) ?></td><td><?= e($t['notes']) ?></td></tr>
+      <td class="num">₹<?= money($t['amount']) ?></td><td><?= e($t['notes']) ?></td>
+      <?php if ($isAdminMt): ?>
+      <td class="no-print" style="white-space:nowrap">
+        <?php if ($t['status'] === 'done'): ?>
+        <button type="button" class="btn btn-sm btn-outline" onclick='mtEdit(<?= json_encode([
+            'id' => (int)$t['id'], 'label' => mt_label($t), 'amount' => (float)$t['amount'],
+            'date' => $t['txn_date'], 'notes' => (string)$t['notes'],
+            'isAdj' => in_array($t['txn_type'], ['cash_adjust', 'bank_adjust'], true) ? 1 : 0,
+            'dir' => (string)$t['adjust_dir'],
+        ], JSON_UNESCAPED_UNICODE | JSON_HEX_APOS | JSON_HEX_TAG) ?>)'>✏️</button>
+        <?php endif; ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('આ એન્ટ્રી ડિલીટ કરવી છે? બેલેન્સ ફરી ગણાઈ જશે.')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="mt_delete"><input type="hidden" name="id" value="<?= $t['id'] ?>">
+          <button class="btn btn-sm btn-danger" type="submit">✕</button></form>
+      </td>
+      <?php endif; ?>
+    </tr>
     <?php endforeach; ?></tbody>
   </table>
+  <?php if ($isAdminMt): ?><p class="muted mt" style="font-size:12.5px">✏️/✕ ફક્ત એડમિનને દેખાય છે — એન્ટ્રી બદલો/કાઢો એટલે બધા બેલેન્સ આપોઆપ ફરી ગણાય છે.</p><?php endif; ?>
 </div>
+
+<?php if ($isAdminMt): ?>
+<!-- admin edit modal for a transfer/adjustment row -->
+<div class="modal-overlay no-print" id="cbMtEdit">
+  <div class="modal-box">
+    <h3>✏️ Edit entry</h3>
+    <p class="muted" id="mtEditWhat" style="font-size:13px"></p>
+    <form method="post">
+      <?= csrf_field() ?><input type="hidden" name="do" value="mt_update"><input type="hidden" name="id" id="mtEditId">
+      <div class="field" id="mtDirRow" style="display:none"><label>Add or reduce?</label>
+        <select name="adjust_dir" id="mtEditDir"><option value="add">➕ Add to balance</option><option value="reduce">➖ Reduce balance</option></select></div>
+      <div class="form-row cols-2">
+        <div><label>Amount ₹ *</label><input type="number" step="any" min="0.01" name="amount" id="mtEditAmount" required></div>
+        <div><label>Date</label><input type="date" name="txn_date" id="mtEditDate"></div>
+      </div>
+      <div class="field"><label>Note</label><input type="text" name="notes" id="mtEditNotes"></div>
+      <p class="muted" style="font-size:12.5px">બેંક/વોલેટ બદલવું હોય તો આ એન્ટ્રી ✕ થી કાઢીને નવી બનાવો.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="cbHide('cbMtEdit')">Cancel</button>
+        <button class="btn" type="submit">Save changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+<?php endif; ?>
 <?php endif; ?>
 
 <div class="card">
@@ -515,6 +575,16 @@ include __DIR__ . '/includes/header.php';
 
 <script>
 function cbShow(id) { document.getElementById(id).classList.add('show'); }
+function mtEdit(d) {
+  document.getElementById('mtEditId').value = d.id;
+  document.getElementById('mtEditWhat').textContent = d.label;
+  document.getElementById('mtEditAmount').value = d.amount;
+  document.getElementById('mtEditDate').value = d.date;
+  document.getElementById('mtEditNotes').value = d.notes;
+  document.getElementById('mtDirRow').style.display = d.isAdj ? '' : 'none';
+  if (d.isAdj) document.getElementById('mtEditDir').value = d.dir || 'add';
+  cbShow('cbMtEdit');
+}
 function cbHide(id) { document.getElementById(id).classList.remove('show'); }
 document.querySelectorAll('.modal-overlay').forEach(function (m) { m.addEventListener('click', function (e) { if (e.target === m) m.classList.remove('show'); }); });
 var T_TITLES = {cash_to_bank: '💵→🏦 Cash to Bank', bank_to_cash: '🏦→💵 Bank to Cash', bank_to_bank: '🏦→🏦 Bank to Bank'};
