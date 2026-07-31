@@ -51,9 +51,6 @@ $_navMenu = [
         ['my_stock.php', 'My Stock', null, null, null],
         ['stock.php', 'Location Stock', 'stock.view', null, null],
         ['stock_audit.php', 'Stock Audit / Cycle Counting', 'stock_audit.view', 'stock_audit.php?action=new', 'stock_audit.add'],
-        // Bin/Rack Locations and Stock Reservations removed from the menu on
-        // the owner's request (unused for this shop) - the pages themselves
-        // still exist at bins.php / reservations.php if ever wanted back.
     ]],
     ['group', 'service', 'tool', 'Repair & Service', [
         ['my_jobs.php', 'My Jobs (Technician)', null, null, null],

@@ -189,12 +189,9 @@ function stock_layer_value($item_id, $location_id = null) {
     return (float)val($sql, $params);
 }
 
-// ---------- Stock reservations (soft-hold, doesn't touch stock.qty) ----------
-function stock_reserved_qty($item_id, $location_id) {
-    return (float)val("SELECT COALESCE(SUM(qty),0) FROM stock_reservations WHERE item_id = ? AND location_id = ? AND status = 'active'", [$item_id, $location_id]);
-}
+// Stock reservations were removed (unused for this shop) - available = on-hand.
 function stock_available_qty($item_id, $location_id) {
-    return stock_qty($item_id, $location_id) - stock_reserved_qty($item_id, $location_id);
+    return stock_qty($item_id, $location_id);
 }
 
 // ---------- Low stock (shared by the header bell, the Low Stock report and

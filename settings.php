@@ -336,7 +336,7 @@ $categories = [
     'party'     => ['👥', 'Party', 'Credit term options'],
     'accounting' => ['📒', 'Accounting', 'Period lock, Chart of Accounts, Journal Entries'],
     'service'   => ['🔧', 'Service Checklist', 'Repair job checklist items'],
-    'inventory' => ['📦', 'Inventory', 'Costing method, dead-stock threshold, audit/bins/transfers/reservations'],
+    'inventory' => ['📦', 'Inventory', 'Costing method, dead-stock threshold, audit/transfers'],
     'security'  => ['🛡️', 'Security', 'Password policy, auto-logout, IP restriction, login attempts'],
     'backup'    => ['🔄', 'Backup & Updates', 'Backup download, GitHub update'],
     'about'     => ['📱', 'About', 'Install as app'],
@@ -754,9 +754,7 @@ exit;
 <div class="card">
   <h3>Inventory Tools</h3>
   <a class="btn btn-sm btn-outline" href="stock_audit.php">Stock Audit / Cycle Counting</a>
-  <a class="btn btn-sm btn-outline" href="bins.php">Bin / Rack Locations</a>
   <a class="btn btn-sm btn-outline" href="transfers.php">Warehouse Transfers</a>
-  <a class="btn btn-sm btn-outline" href="reservations.php">Stock Reservations</a>
 </div>
 <?php endif; ?>
 
