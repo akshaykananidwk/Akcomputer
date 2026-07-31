@@ -94,7 +94,7 @@ $tabs = [
     'all_txn' => '📚 All Transactions',
     'daily' => '📅 Daily Sales', 'sales' => '🧾 Sales', 'party_sales' => '👥 Party Sales',
     'aging' => '⏳ Aging / Collection',
-    'purchase' => '📦 Purchase', 'vendor_perf' => '🚚 Vendor Performance', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
+    'purchase' => '📦 Purchase', 'payables' => '📆 Purchase Dues Calendar', 'vendor_perf' => '🚚 Vendor Performance', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
     'bank_ledger' => '🏦 Bank Ledger',
     'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Product-wise Profit',
     'bill_profit' => '🧮 Bill Profit', 'branch_staff' => '📊 Branch / Staff Comparison', 'staff' => '🎒 Staff Stock',
@@ -109,6 +109,7 @@ $tabs = [
 ];
 if (!is_full_admin()) unset($tabs['health']);
 if (!can('reports.gst')) unset($tabs['gst']);
+if (!can('purchases.view')) unset($tabs['payables']);
 if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); unset($tabs['dead_stock']); unset($tabs['branch_staff']); }
 if (!can('expenses.view')) unset($tabs['expense']);
 if (!can('users.view')) { unset($tabs['activity']); unset($tabs['login_history']); }
@@ -126,12 +127,13 @@ if (in_array($r, ['bank_ledger', 'cashbook'], true) && !can('cashbank.viewall'))
 if (in_array($r, ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'], true) && !can('reports.accounting')) $r = 'daily';
 if ($r === 'custom' && !can('reports.builder')) $r = 'daily';
 if ($r === 'health' && !is_full_admin()) $r = 'daily';
+if ($r === 'payables' && !can('purchases.view')) $r = 'daily';
 
 // Grouped the same way Vyapar's own Reports screen groups its report list -
 // a vertical, categorized list (not a horizontal scrolling tab strip) so
 // nothing is hidden off-screen to the side.
 $tabCategories = [
-    'Transaction' => ['business', 'all_txn', 'daily', 'sales', 'purchase'],
+    'Transaction' => ['business', 'all_txn', 'daily', 'sales', 'purchase', 'payables'],
     'Party Reports' => ['party_sales', 'aging', 'vendor_perf'],
     'GST' => ['gst'],
     'Item / Stock Reports' => ['stockval', 'low', 'purchase_reco', 'dead_stock', 'forecast'],

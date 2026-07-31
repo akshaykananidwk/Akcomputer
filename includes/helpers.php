@@ -663,8 +663,10 @@ function razorpay_payment_link($amount, $description, $customerName = '', $custo
 function share_token() { return bin2hex(random_bytes(16)); }
 
 function payment_status($total, $paid) {
-    if ($paid <= 0.009) return 'due';
+    // paid-check first so a zero-total bill (e.g. 100% discount) reads
+    // "paid", not "due" - nothing is owed on it
     if ($paid + 0.009 >= $total) return 'paid';
+    if ($paid <= 0.009) return 'due';
     return 'partial';
 }
 

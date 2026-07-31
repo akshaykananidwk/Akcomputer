@@ -376,6 +376,73 @@ if ($r === 'party_sales') {
     echo '</tbody></table></div>';
 }
 
+// ---------------- purchase dues calendar (as of today, ignores from/to) ----------------
+// Every unpaid/partial purchase bill listed by its due date (bill date +
+// credit days), grouped into weeks with a subtotal per week - so the owner
+// knows exactly how much money to gather for each week's supplier payments.
+if ($r === 'payables') {
+    $ewD = ''; $epD = [];
+    if ($fCompany) { $ewD .= ' AND pu.company_id = ?'; $epD[] = $fCompany; }
+    if ($fParty) { $ewD .= ' AND pu.party_id = ?'; $epD[] = $fParty; }
+    $rows = all("SELECT pu.id, pu.bill_no, pu.purchase_date, pu.due_date, pu.total, pu.paid,
+                 COALESCE(pa.name, 'No party') pname, COALESCE(pu.due_date, pu.purchase_date) eff_due
+                 FROM purchases pu LEFT JOIN parties pa ON pa.id = pu.party_id
+                 WHERE pu.is_cancelled = 0 AND pu.total - pu.paid > 0.009 $ewD
+                 ORDER BY eff_due, pu.id", $epD);
+    $today = today();
+    // bucket: overdue first, then one bucket per calendar week (Mon-Sun)
+    $groups = [];
+    $sumOverdue = 0; $sumThisWeek = 0; $sumNextWeek = 0; $sumAll = 0;
+    $thisMon = date('Y-m-d', strtotime('monday this week'));
+    $nextMon = date('Y-m-d', strtotime($thisMon . ' +7 days'));
+    $afterNext = date('Y-m-d', strtotime($thisMon . ' +14 days'));
+    foreach ($rows as $x) {
+        $due = $x['eff_due'];
+        $owe = $x['total'] - $x['paid'];
+        $sumAll += $owe;
+        if ($due < $today) { $key = 'overdue'; $sumOverdue += $owe; }
+        else {
+            $key = date('Y-m-d', strtotime($due . ' monday this week'));
+            if ($key === $thisMon) $sumThisWeek += $owe;
+            elseif ($key === $nextMon) $sumNextWeek += $owe;
+        }
+        $groups[$key][] = $x;
+    }
+    echo '<div class="grid-stats">';
+    echo '<div class="stat ' . ($sumOverdue > 0.009 ? 's-bad' : '') . '"><div class="stat-label">Overdue (તારીખ વીતી ગઈ)</div><div class="stat-value">₹' . money($sumOverdue) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">This Week (આ અઠવાડિયે)</div><div class="stat-value">₹' . money($sumThisWeek) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">Next Week (આવતા અઠવાડિયે)</div><div class="stat-value">₹' . money($sumNextWeek) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">Total Payable (કુલ ચૂકવવાના)</div><div class="stat-value">₹' . money($sumAll) . '</div></div>';
+    echo '</div>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Due Date</th><th>Party</th><th>Bill No</th><th class="num">Bill ₹</th><th class="num">Paid ₹</th><th class="num">ચૂકવવાના ₹</th></tr></thead><tbody>';
+    if (!$groups) echo '<tr><td colspan="6" class="muted">🎉 કોઈ પરચેસ બિલ બાકી નથી - બધું ચૂકતે છે.</td></tr>';
+    foreach ($groups as $key => $list) {
+        if ($key === 'overdue') {
+            $label = '🔴 Overdue - તારીખ વીતી ગઈ';
+        } else {
+            $wEnd = date('Y-m-d', strtotime($key . ' +6 days'));
+            $label = '📅 ' . dmy($key) . ' - ' . dmy($wEnd);
+            if ($key === $thisMon) $label .= ' (આ અઠવાડિયું)';
+            elseif ($key === $nextMon) $label .= ' (આવતું અઠવાડિયું)';
+        }
+        echo '<tr><td colspan="6" style="background:var(--bg);font-weight:700">' . e($label) . '</td></tr>';
+        $sub = 0;
+        foreach ($list as $x) {
+            $owe = $x['total'] - $x['paid'];
+            $sub += $owe;
+            echo '<tr><td>' . dmy($x['eff_due']) . ($key === 'overdue' ? ' <span class="badge badge-bad">overdue</span>' : '') . '</td>'
+               . '<td><a href="purchase_view.php?id=' . (int)$x['id'] . '">' . e($x['pname']) . '</a></td>'
+               . '<td>' . e($x['bill_no'] ?: ('#' . $x['id'])) . '</td>'
+               . '<td class="num">' . money($x['total']) . '</td><td class="num">' . money($x['paid']) . '</td>'
+               . '<td class="num"><strong>' . money($owe) . '</strong></td></tr>';
+        }
+        echo '<tr><td></td><td colspan="4" style="font-weight:700">Total (' . count($list) . ' bills)</td>'
+           . '<td class="num" style="font-weight:800">₹' . money($sub) . '</td></tr>';
+    }
+    echo '</tbody></table></div>';
+    echo '<p class="muted no-print" style="margin-top:8px">દરેક બિલની Due Date = બિલ તારીખ + પાર્ટીના ક્રેડિટ દિવસ. ક્રેડિટ દિવસ ન નાખ્યા હોય તો બિલની તારીખ જ ગણાય છે.</p>';
+}
+
 // ---------------- aging / collection (as of today, ignores from/to) ----------------
 if ($r === 'aging') {
     $isPdf = !empty($reportPdf);

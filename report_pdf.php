@@ -38,6 +38,7 @@ $html = ob_get_clean();
 $tabLabels = [
     'business' => 'Business Report', 'all_txn' => 'All Transactions', 'daily' => 'Daily Sales', 'sales' => 'Item-wise Sales',
     'party_sales' => 'Party-wise Sales', 'aging' => 'Aging / Collection', 'purchase' => 'Purchase',
+    'payables' => 'Purchase Dues Calendar',
     'vendor_perf' => 'Vendor Performance', 'stockval' => 'Stock Report', 'cashbook' => 'Cashbook',
     'bank_ledger' => 'Bank Ledger',
     'expense' => 'Expenses', 'gst' => 'GST', 'profit' => 'Product-wise Profit', 'bill_profit' => 'Bill Profit',
