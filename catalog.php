@@ -237,6 +237,11 @@ body { padding-bottom: 90px; background: var(--bg); }
   <?php else: ?>
     <a class="hbtn" href="catalog.php?dlogin=1">🔑 Dealer</a>
   <?php endif; ?>
+  <?php if (!current_user()): ?>
+    <a class="hbtn" href="<?= e(base_url('login.php')) ?>" title="Staff Login">👤 Staff</a>
+  <?php else: ?>
+    <a class="hbtn" href="<?= e(base_url('index.php')) ?>" title="Dashboard">📊 Dashboard</a>
+  <?php endif; ?>
 </header>
 
 <?php if ($webAcct): ?>

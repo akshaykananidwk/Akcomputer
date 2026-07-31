@@ -15,6 +15,9 @@
   --topbar-h: 52px;
   --bottomnav-h: 60px;
   --card-alt: rgba(0,0,0,.04);
+  --label: #334155;
+  --input-bg: #ffffff;
+  --input-text: #16233b;
 }
 
 /* Dark mode: no explicit choice follows the OS (prefers-color-scheme);
@@ -27,11 +30,13 @@
   :root:not([data-theme="light"]) {
     --bg: #0f1420; --card: #1a2233; --text: #e8edf5; --muted: #93a2ba;
     --border: #2e3a52; --card-alt: rgba(255,255,255,.05);
+    --label: #cbd5e1; --input-bg: #232d42; --input-text: #e8edf5;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0f1420; --card: #1a2233; --text: #e8edf5; --muted: #93a2ba;
   --border: #2e3a52; --card-alt: rgba(255,255,255,.05);
+  --label: #cbd5e1; --input-bg: #232d42; --input-text: #e8edf5;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -182,7 +187,9 @@ a { color: var(--primary); text-decoration: none; }
   padding: calc(var(--topbar-h) + env(safe-area-inset-top) + 12px) 12px calc(var(--bottomnav-h) + 20px);
   max-width: 1100px; margin: 0 auto;
 }
-.content-full { padding: 20px 12px; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+/* Login & other guest pages: the box sits near the TOP (no scrolling to
+   find the form on a phone), not vertically centered. */
+.content-full { padding: 28px 12px 20px; min-height: 100vh; display: flex; flex-direction: column; justify-content: flex-start; }
 
 /* ---------- Bottom nav (mobile app feel) ---------- */
 .bottomnav {
@@ -326,11 +333,11 @@ a.list-row:active { background: var(--bg); margin: 0 -16px; padding-left: 16px; 
 .stat.s-warn .stat-value { color: var(--warn); }
 
 /* ---------- Forms ---------- */
-label { display: block; font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px; }
+label { display: block; font-size: 13px; font-weight: 600; color: var(--label); margin-bottom: 4px; }
 input[type=text], input[type=number], input[type=date], input[type=datetime-local], input[type=password],
 input[type=tel], input[type=email], input[type=file], select, textarea {
   width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
-  font-size: 15px; background: #fff; color: var(--text); -webkit-appearance: none; appearance: none;
+  font-size: 15px; background: var(--input-bg); color: var(--input-text); -webkit-appearance: none; appearance: none;
 }
 select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2364748b' stroke-width='2' fill='none'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,86,219,.12); }
