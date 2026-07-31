@@ -14,6 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
     $locId = (int)post('location_id');
     if (!$locId) { flash('Pick a location.', 'error'); redirect('stock_audit.php?action=new'); }
     $onlyLow = post('only_low') === '1';
+    $includeZero = post('include_zero') === '1';
     $pdo = db();
     $pdo->beginTransaction();
     q('INSERT INTO stock_counts (location_id, notes, created_by) VALUES (?,?,?)', [$locId, post('notes'), $u['id']]);
@@ -22,12 +23,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
     $items = $onlyLow
         ? array_column(low_stock_items($locId), 'id')
         : array_column(all("SELECT id FROM items WHERE is_active = 1 AND item_type <> 'service' ORDER BY name"), 'id');
+    $added = 0;
     foreach ($items as $iid) {
-        q('INSERT INTO stock_count_items (count_id, item_id, system_qty) VALUES (?,?,?)', [$cid, $iid, stock_qty($iid, $locId)]);
+        $sysQ = stock_qty($iid, $locId);
+        // Zero-stock items clutter a physical count sheet ("માનનીય એ આઇટમ
+        // છે જ નહીં") - they're skipped unless the tick asks for them
+        // (needed when hunting for stock the system doesn't know about).
+        if (!$includeZero && abs($sysQ) < 0.001) continue;
+        q('INSERT INTO stock_count_items (count_id, item_id, system_qty) VALUES (?,?,?)', [$cid, $iid, $sysQ]);
+        $added++;
     }
     $pdo->commit();
     log_activity('stock_audit_start', doc_no('AUD', $cid));
-    flash('Count sheet ' . doc_no('AUD', $cid) . ' started with ' . count($items) . ' item(s).');
+    flash('Count sheet ' . doc_no('AUD', $cid) . ' started with ' . $added . ' item(s)' . ($includeZero ? '' : ' (ઝીરો-સ્ટોકવાળી બહાર રાખી)') . '.');
     redirect('stock_audit.php?action=count&id=' . $cid);
 }
 
@@ -98,6 +106,7 @@ if ($action === 'new') {
           <div><label>Notes</label><input type="text" name="notes" placeholder="e.g. Monthly audit - July"></div>
         </div>
         <label class="check-inline mb"><input type="checkbox" name="only_low" value="1"> Only items currently below minimum stock (faster spot-check instead of a full count)</label>
+        <label class="check-inline mb"><input type="checkbox" name="include_zero" value="1"> ઝીરો-સ્ટોકવાળી આઇટમ પણ યાદીમાં લેવી <span class="muted" style="font-weight:normal">(સામાન્ય રીતે જરૂર નથી — જે માલ છે એ જ ગણવાનો હોય; સિસ્ટમમાં 0 હોય પણ શેલ્ફ પર માલ મળે એ શોધવું હોય ત્યારે જ ટિક કરો)</span></label>
         <button class="btn" type="submit">Start Count</button>
         <a class="btn btn-muted" href="stock_audit.php">Back</a>
       </form>
@@ -112,13 +121,24 @@ if ($action === 'count') {
     $count = row('SELECT sc.*, l.name loc_name FROM stock_counts sc JOIN locations l ON l.id = sc.location_id WHERE sc.id = ?', [$cid]);
     if (!$count) { flash('Count sheet not found.', 'error'); redirect('stock_audit.php'); }
     $lines = all('SELECT sci.*, i.name, i.unit FROM stock_count_items sci JOIN items i ON i.id = sci.item_id WHERE sci.count_id = ? ORDER BY i.name', [$cid]);
+    // old count sheets made before the zero-skip existed: same relief via a
+    // view-time toggle (?zeros=1 shows them back)
+    $showZeros = get('zeros') === '1';
+    $zeroCount = count(array_filter($lines, fn($l) => abs((float)$l['system_qty']) < 0.001 && $l['counted_qty'] === null));
+    if (!$showZeros) {
+        $lines = array_values(array_filter($lines, fn($l) => abs((float)$l['system_qty']) >= 0.001 || $l['counted_qty'] !== null));
+    }
     $variances = array_filter($lines, fn($l) => $l['counted_qty'] !== null && abs((float)$l['counted_qty'] - (float)$l['system_qty']) > 0.009);
     $page_title = $count['count_no'];
     include __DIR__ . '/includes/header.php';
     ?>
     <div class="card">
       <h2><?= e($count['count_no']) ?> <?= status_badge($count['status']) ?></h2>
-      <p class="muted"><?= e($count['loc_name']) ?> · started <?= dmyt($count['created_at']) ?><?= $count['notes'] ? ' · ' . e($count['notes']) : '' ?></p>
+      <p class="muted">📍 <?= e($count['loc_name']) ?> · started <?= dmyt($count['created_at']) ?><?= $count['notes'] ? ' · ' . e($count['notes']) : '' ?></p>
+      <?php if ($zeroCount > 0 || $showZeros): ?>
+      <p class="no-print"><a class="btn btn-sm btn-outline" href="stock_audit.php?action=count&id=<?= $cid ?><?= $showZeros ? '' : '&zeros=1' ?>">
+        <?= $showZeros ? '🙈 ઝીરોવાળી પાછી છુપાવો' : '👁 ઝીરો-સ્ટોકવાળી ' . $zeroCount . ' આઇટમ પણ દેખાડો' ?></a></p>
+      <?php endif; ?>
       <?php if ($count['status'] === 'completed'): ?><p class="mt">Posted <?= dmyt($count['completed_at']) ?></p><?php endif; ?>
     </div>
 
