@@ -140,7 +140,7 @@ $_theme = $u ? user_pref($u['id'], 'theme', 'auto') : 'auto';
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon-192.png">
 <title><?= e($page_title) ?> - <?= e($app_name) ?></title>
-<link rel="stylesheet" href="assets/style.css?v=9">
+<link rel="stylesheet" href="assets/style.css?v=<?= asset_v('style.css') ?>">
 </head>
 <body>
 <?php if ($u): ?>
@@ -253,7 +253,7 @@ $_theme = $u ? user_pref($u['id'], 'theme', 'auto') : 'auto';
 </div>
 <?php endif; ?>
 <script>var CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;</script>
-<script src="assets/app.js?v=9"></script>
+<script src="assets/app.js?v=<?= asset_v('app.js') ?>"></script>
 <?php unset($_navMenu, $_navItems, $_navQuick, $_nm, $_ni, $_nq, $_navOpen); ?>
 <main class="content<?= $u ? '' : ' content-full' ?>">
 <?php if ($u && !empty($_SESSION['impersonator_id'])): ?>

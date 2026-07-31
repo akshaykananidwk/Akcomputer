@@ -142,6 +142,16 @@ function adjust_staff_stock($user_id, $item_id, $delta, $ref_type, $ref_id = nul
       [$item_id, $user_id, $delta, $ref_type, $ref_id, $note, $_SESSION['user_id'] ?? null]);
 }
 
+/** Cache-busting version for a file in assets/ - the file's own mtime, so
+ *  every "Settings > Update" automatically forces phones to fetch the new
+ *  CSS/JS instead of serving a stale 7-day-cached copy (that stale cache is
+ *  how a fixed bug kept LOOKING broken on the owner's phone). */
+function asset_v($file) {
+    static $c = [];
+    if (!isset($c[$file])) { $v = @filemtime(__DIR__ . '/../assets/' . $file); $c[$file] = $v ?: 1; }
+    return $c[$file];
+}
+
 /** sale_items.location_id ships in migrate v45 - detect it so billing keeps
  *  working on the live site between "Update" (new code) and "Migrate". */
 function sale_line_loc_ready() {

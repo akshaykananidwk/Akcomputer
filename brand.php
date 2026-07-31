@@ -44,7 +44,7 @@ foreach (array_slice($items, 0, 30) as $pos => $i) {
 <meta property="og:description" content="<?= e(mb_substr($metaDesc, 0, 200)) ?>">
 <meta property="og:url" content="<?= e($curl) ?>">
 <link rel="icon" href="<?= e(base_url('assets/icon.svg')) ?>" type="image/svg+xml">
-<link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=3">
+<link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=<?= asset_v('style.css') ?>">
 <?= seo_public_css() ?>
 <?= seo_jsonld(['@context' => 'https://schema.org', '@type' => 'ItemList', 'name' => $brand . ' — ' . $app_name . ' Dwarka', 'itemListElement' => $listLd]) ?>
 <?= seo_breadcrumbs([[$app_name, base_url('catalog.php')], [$brand]]) ?>

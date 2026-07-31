@@ -142,7 +142,7 @@ $metaDesc = $app_name . ' - દ્વારકા, ગુજરાતનો ભ�
 <meta property="og:description" content="<?= e($metaDesc) ?>">
 <meta property="og:url" content="<?= e(base_url('catalog.php')) ?>">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="assets/style.css?v=3">
+<link rel="stylesheet" href="assets/style.css?v=<?= asset_v('style.css') ?>">
 <?= seo_localbusiness_jsonld() ?>
 <?= seo_jsonld(['@context' => 'https://schema.org', '@type' => 'WebSite',
     'name' => $app_name, 'url' => base_url('catalog.php')]) ?>

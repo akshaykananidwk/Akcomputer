@@ -63,7 +63,7 @@ $metaDesc = $it['name'] . ' price in Dwarka, Gujarat: ₹' . money($dp) . ' (' .
 <?php if ($it['photo']): ?><meta property="og:image" content="<?= e(base_url($it['photo'])) ?>"><?php endif; ?>
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="<?= e(base_url('assets/icon.svg')) ?>" type="image/svg+xml">
-<link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=3">
+<link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=<?= asset_v('style.css') ?>">
 <?= seo_public_css() ?>
 <?= seo_jsonld([
     '@context' => 'https://schema.org', '@type' => 'Product',

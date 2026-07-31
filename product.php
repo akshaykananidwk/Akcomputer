@@ -46,7 +46,7 @@ $purl = seo_product_url($it);
 <?php if ($it['photo']): ?><meta property="og:image" content="<?= e(base_url($it['photo'])) ?>"><?php endif; ?>
 <!-- the page is served under /p/{id}/{slug}, so every URL must be absolute -->
 <link rel="icon" href="<?= e(base_url('assets/icon.svg')) ?>" type="image/svg+xml">
-<link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=3">
+<link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=<?= asset_v('style.css') ?>">
 <script type="application/ld+json">
 <?= json_encode([
     '@context' => 'https://schema.org', '@type' => 'Product',
