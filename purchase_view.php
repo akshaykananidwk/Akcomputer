@@ -32,8 +32,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' && can('paymen
 $items = all("SELECT pi.*, COALESCE(i.name, '(deleted item)') name, i.unit, COALESCE(i.serial_tracked, 0) serial_tracked FROM purchase_items pi LEFT JOIN items i ON i.id = pi.item_id WHERE pi.purchase_id = ? AND pi.qty > 0", [$id]);
 $serials = all('SELECT serial_no, status, item_id FROM item_serials WHERE purchase_id = ?', [$id]);
 $due = $p['is_cancelled'] ? 0 : $p['total'] - $p['paid'];
+$pendEditReq = null;
+try { $pendEditReq = row("SELECT er.*, u2.name requester FROM edit_requests er JOIN users u2 ON u2.id = er.requested_by
+                          WHERE er.doc_type = 'purchase' AND er.doc_id = ? AND er.status = 'pending'", [$id]); } catch (Exception $e) {}
+
 $page_title = 'Purchase #' . $id;
 include __DIR__ . '/includes/header.php';
+if ($pendEditReq) {
+    echo '<div class="flash flash-info no-print">⏳ ' . e($pendEditReq['requester']) . ' નો ફેરફાર એડમિન મંજૂરી માટે બાકી છે (' . dmyt($pendEditReq['created_at']) . ').'
+       . (is_full_admin() ? ' <a href="approvals.php">Review →</a>' : '') . '</div>';
+}
 ?>
 <?php if ($p['is_cancelled']): ?><div class="flash flash-error">🚫 This PURCHASE BILL is CANCELLED.</div><?php endif; ?>
 <div class="page-actions no-print">

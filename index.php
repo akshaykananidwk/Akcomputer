@@ -125,6 +125,12 @@ include __DIR__ . '/includes/header.php';
 <div class="flash flash-info">🤝 You have <?= $myHandovers ?> stock handover(s) pending. <a href="my_stock.php">Accept with OTP →</a></div>
 <?php endif; ?>
 
+<?php if (is_full_admin()):
+    try { $pendEditReq = (int)val("SELECT COUNT(*) FROM edit_requests WHERE status = 'pending'"); } catch (Exception $e) { $pendEditReq = 0; }
+    if ($pendEditReq): ?>
+<div class="flash flash-info">✏️ <?= $pendEditReq ?> બિલ-એડિટ મંજૂરી બાકી છે. <a href="approvals.php">Review &amp; approve →</a></div>
+<?php endif; endif; ?>
+
 <div class="page-actions no-print" style="margin-bottom:10px">
   <?php if ($locsAllDash): ?>
   <form method="get" class="filterbar" style="margin:0">

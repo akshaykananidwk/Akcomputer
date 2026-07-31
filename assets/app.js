@@ -371,6 +371,17 @@ var Bill = {
       '<div><label>Quantity</label><input type="number" step="any" min="0" name="qty[]" class="i-qty" value="1"></div>' +
       (this.cfg.freeQty ? '<div><label>Free Quantity</label><input type="number" step="any" min="0" name="free_qty[]" class="i-freeq" value="0" title="Free quantity (scheme)"></div>' : '') +
       '<div><label>Rate (Price/Unit)</label><input type="number" step="any" min="0" name="price[]" class="i-price" value="0"></div>' +
+      // Per-line stock location (godown vs shop): only on sale bills and only
+      // when the shop has more than one location (cfg.locations is emptied
+      // server-side for location-locked users). Defaults to the bill's own
+      // location so nothing changes unless the staff picks another godown.
+      (this.cfg.mode === 'sale' && (this.cfg.locations || []).length > 1 ?
+      '<div><label>Stock From</label><select name="line_loc[]" class="i-loc">' +
+      this.cfg.locations.map(function (l) {
+        var defLoc = (document.getElementById('location_id') || {value: 0}).value;
+        return '<option value="' + l.id + '"' + (String(l.id) === String(defLoc) ? ' selected' : '') + '>' +
+               String(l.name).replace(/</g, '&lt;') + '</option>';
+      }).join('') + '</select></div>' : '') +
       (this.cfg.lineDisc ?
       '<div><label>Disc</label><div style="display:flex;gap:4px">' +
       '<input type="number" step="any" min="0" name="ldisc[]" class="i-ldisc" value="0" style="flex:1;min-width:56px" title="Discount for this item">' +

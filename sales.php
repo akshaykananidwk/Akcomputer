@@ -39,6 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $rowNs = post('row_n', []);
     $ldiscs = post('ldisc', []);
     $ldiscTs = post('ldisc_t', []);
+    $locSel = post('line_loc', []); // optional per-line stock location (godown vs shop), 0 = bill's location
     $rows = [];
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
@@ -64,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $ld = round(min($gross, $ldType === 'percent' ? $gross * $ldVal / 100 : $ldVal), 2);
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'free' => (float)($freeQtys[$i] ?? 0),
                    'price' => $price, 'tax_rate' => $tr, 'total' => $gross - $ld, 'n' => $n,
-                   'ld_type' => $ldType, 'ld_val' => $ldVal, 'ld' => $ld,
+                   'ld_type' => $ldType, 'ld_val' => $ldVal, 'ld' => $ld, 'loc' => (int)($locSel[$i] ?? 0),
                    'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=new'); }
@@ -161,20 +162,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             // (falling back to today's purchase price, same as before this
             // feature existed) whenever no cost layers have built up yet
             // for this item/location.
+            // this line's stock comes from its own location (godown vs shop) -
+            // a locked manager can never point a line at another location
+            $rloc = locked_location_id() ?: ($r['loc'] ?: $loc_id);
             $costPrice = (float)$item['purchase_price'];
             if ($item['item_type'] !== 'service' && setting('costing_method', 'current') !== 'current') {
-                $layerCost = stock_layer_consume($r['item_id'], $loc_id, $r['qty'] + $r['free']);
+                $layerCost = stock_layer_consume($r['item_id'], $rloc, $r['qty'] + $r['free']);
                 if ($layerCost !== null) $costPrice = $layerCost;
             }
-            q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, line_disc_type, line_disc_val, line_disc, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-              [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], $costPrice, $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
-               $r['description'], $r['custom_data']]);
+            if (sale_line_loc_ready()) {
+                q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, line_disc_type, line_disc_val, line_disc, serials, description, custom_data, location_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                  [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], $costPrice, $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
+                   $r['description'], $r['custom_data'], $rloc]);
+            } else {
+                q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, line_disc_type, line_disc_val, line_disc, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                  [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], $costPrice, $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
+                   $r['description'], $r['custom_data']]);
+            }
 
             if ($item['item_type'] === 'service') { continue; } // service: no stock effect
-            if (!$allowNeg && stock_available_qty($r['item_id'], $loc_id) < $r['qty']) {
-                throw new Exception("Not enough available stock of {$item['name']} at this location (some may be reserved).");
+            if (!$allowNeg && stock_available_qty($r['item_id'], $rloc) < $r['qty']) {
+                throw new Exception("Not enough stock of {$item['name']} at the line's location.");
             }
-            adjust_stock($r['item_id'], $loc_id, -($r['qty'] + $r['free']), 'sale', $sale_id, $invoice_no);
+            adjust_stock($r['item_id'], $rloc, -($r['qty'] + $r['free']), 'sale', $sale_id, $invoice_no);
 
             foreach ($serials as $sn) {
                 $expiry = $item['warranty_months'] > 0
@@ -245,11 +255,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         $pdo = db();
         $pdo->beginTransaction();
         foreach ($sale['is_cancelled'] ? [] : all('SELECT * FROM sale_items WHERE sale_id = ?', [$sid]) as $si) {
-            adjust_stock($si['item_id'], $sale['location_id'], (float)$si['qty'] + (float)($si['free_qty'] ?? 0), 'sale_delete', $sid);
+            $siLoc = (int)($si['location_id'] ?? 0) ?: (int)$sale['location_id'];
+            adjust_stock($si['item_id'], $siLoc, (float)$si['qty'] + (float)($si['free_qty'] ?? 0), 'sale_delete', $sid);
             if ($si['serials']) {
                 foreach (explode(',', $si['serials']) as $sn) {
                     q("UPDATE item_serials SET status='in_stock', sale_id=NULL, location_id=?, warranty_expiry=NULL
-                       WHERE item_id=? AND serial_no=?", [$sale['location_id'], $si['item_id'], trim($sn)]);
+                       WHERE item_id=? AND serial_no=?", [$siLoc, $si['item_id'], trim($sn)]);
                 }
             }
         }
@@ -283,6 +294,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     if (is_period_locked($sale['sale_date']) || is_period_locked(post('sale_date', $sale['sale_date']))) {
         flash(period_lock_message(), 'error'); redirect('sale_view.php?id=' . $sid);
     }
+    // 24-hour rule: staff edit a bill freely for 24h after it was created;
+    // after that the submitted edit is parked for the admin, who approves it
+    // on approvals.php (the exact form data is replayed there). The admin
+    // (is_full_admin) always edits directly - including that replay.
+    if (!is_full_admin() && strtotime($sale['created_at']) < time() - 86400) {
+        try {
+            q('INSERT INTO edit_requests (doc_type, doc_id, payload, requested_by) VALUES (?,?,?,?)',
+              ['sale', $sid, json_encode($_POST, JSON_UNESCAPED_UNICODE), $u['id']]);
+            log_activity('edit_request', 'sale ' . $sale['invoice_no']);
+            try { tg_notify_admins('✏️ Bill edit approval\n' . $u['name'] . ' wants to change ' . $sale['invoice_no'] . "\n" . base_url('approvals.php')); } catch (Exception $e) { /* optional */ }
+            flash('બિલ 24 કલાકથી જૂનું છે, એટલે તમારો ફેરફાર એડમિનની મંજૂરી માટે મોકલાયો છે. મંજૂર થાય એટલે આપોઆપ લાગુ થઈ જશે.', 'info');
+        } catch (Exception $e) {
+            flash('Edit request could not be saved - run Settings → Migrate first.', 'error');
+        }
+        redirect('sale_view.php?id=' . $sid);
+    }
 
     $oldItems = all('SELECT * FROM sale_items WHERE sale_id = ?', [$sid]);
     foreach ($oldItems as $oi) {
@@ -311,6 +338,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $rowNs = post('row_n', []);
     $ldiscs = post('ldisc', []);
     $ldiscTs = post('ldisc_t', []);
+    $locSel = post('line_loc', []); // optional per-line stock location (godown vs shop), 0 = bill's location
     $rows = [];
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
@@ -336,7 +364,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         $ld = round(min($gross, $ldType === 'percent' ? $gross * $ldVal / 100 : $ldVal), 2);
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'free' => (float)($freeQtys[$i] ?? 0),
                    'price' => $price, 'tax_rate' => $tr, 'total' => $gross - $ld, 'n' => $n,
-                   'ld_type' => $ldType, 'ld_val' => $ldVal, 'ld' => $ld,
+                   'ld_type' => $ldType, 'ld_val' => $ldVal, 'ld' => $ld, 'loc' => (int)($locSel[$i] ?? 0),
                    'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=edit&id=' . $sid); }
@@ -390,14 +418,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     try {
         $advanceRestored = []; // serials born ON this bill (advance billing, no purchase behind them) that the restore put back "in stock"
         foreach ($oldItems as $oi) {
-            adjust_stock($oi['item_id'], $sale['location_id'], (float)$oi['qty'] + (float)($oi['free_qty'] ?? 0), 'sale_edit', $sid);
+            // restore to the location the line actually came from (per-line
+            // godown/shop), falling back to the bill's location for old rows
+            $oiLoc = (int)($oi['location_id'] ?? 0) ?: (int)$sale['location_id'];
+            adjust_stock($oi['item_id'], $oiLoc, (float)$oi['qty'] + (float)($oi['free_qty'] ?? 0), 'sale_edit', $sid);
             if ($oi['serials']) {
                 foreach (explode(',', $oi['serials']) as $sn) {
                     $sn = trim($sn);
                     $srowOld = row('SELECT purchase_id FROM item_serials WHERE item_id=? AND serial_no=? AND sale_id=?', [$oi['item_id'], $sn, $sid]);
                     if ($srowOld && $srowOld['purchase_id'] === null) $advanceRestored[] = [$oi['item_id'], $sn];
                     q("UPDATE item_serials SET status='in_stock', sale_id=NULL, location_id=?, warranty_expiry=NULL
-                       WHERE item_id=? AND serial_no=?", [$sale['location_id'], $oi['item_id'], $sn]);
+                       WHERE item_id=? AND serial_no=?", [$oiLoc, $oi['item_id'], $sn]);
                 }
             }
         }
@@ -413,15 +444,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
             if ($item['serial_tracked'] && !$serials && !$allowNeg) {
                 throw new Exception("Select serial number(s) for {$item['name']}.");
             }
-            q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, line_disc_type, line_disc_val, line_disc, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-              [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
-               $r['description'], $r['custom_data']]);
+            $rloc = locked_location_id() ?: ($r['loc'] ?: $loc_id);
+            if (sale_line_loc_ready()) {
+                q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, line_disc_type, line_disc_val, line_disc, serials, description, custom_data, location_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                  [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
+                   $r['description'], $r['custom_data'], $rloc]);
+            } else {
+                q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, line_disc_type, line_disc_val, line_disc, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                  [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
+                   $r['description'], $r['custom_data']]);
+            }
 
             if ($item['item_type'] === 'service') { continue; }
-            if (!$allowNeg && stock_available_qty($r['item_id'], $loc_id) < $r['qty']) {
-                throw new Exception("Not enough available stock of {$item['name']} at this location (some may be reserved).");
+            if (!$allowNeg && stock_available_qty($r['item_id'], $rloc) < $r['qty']) {
+                throw new Exception("Not enough stock of {$item['name']} at the line's location.");
             }
-            adjust_stock($r['item_id'], $loc_id, -($r['qty'] + $r['free']), 'sale_edit', $sid, $sale['invoice_no']);
+            adjust_stock($r['item_id'], $rloc, -($r['qty'] + $r['free']), 'sale_edit', $sid, $sale['invoice_no']);
 
             foreach ($serials as $sn) {
                 $expiry = $item['warranty_months'] > 0
@@ -562,6 +600,7 @@ if ($action === 'new' || $action === 'edit') {
     ?>
     <?php if ($est): ?><div class="flash flash-info">Converting <?= e($est['estimate_no']) ?> — serial-tracked items will need their serial re-selected.</div><?php endif; ?>
     <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serials'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers will need to be re-selected.</div><?php endif; ?>
+    <?php if ($isEdit && !is_full_admin() && strtotime($editSale['created_at']) < time() - 86400): ?><div class="flash flash-info">⏳ આ બિલ 24 કલાકથી જૂનું છે — સેવ કરશો એટલે ફેરફાર સીધો લાગુ નહીં થાય, એડમિનની મંજૂરી માટે જશે.</div><?php endif; ?>
     <form method="post" id="billForm">
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">
@@ -737,6 +776,7 @@ if ($action === 'new' || $action === 'edit') {
     </form>
     <script>
       Bill.init({mode: 'sale', serials: true, freeQty: true, lineDisc: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1,
+        locations: <?= json_encode(locked_location_id() || count($locations) < 2 ? [] : array_map(fn($l) => ['id' => (int)$l['id'], 'name' => $l['name']], $locations)) ?>,
         showPurchasePrice: <?= json_encode(setting('show_purchase_price_billing') === '1' && can('items.cost')) ?>,
         customFields: <?= json_encode(array_map(fn($f) => ['id' => $f['id'], 'label' => $f['label']], $customFields)) ?><?= $isEdit ? ', editSaleId: ' . (int)$editSale['id'] : '' ?>});
       // barcode scan shortcut next to "+ Add Items" - opens a fresh item
@@ -796,6 +836,7 @@ if ($action === 'new' || $action === 'edit') {
             'serialTracked' => (int)$x['serial_tracked'],
             'serials' => $x['serials'] ? array_values(array_filter(array_map('trim', explode(',', $x['serials'])))) : [],
             'description' => $x['description'] ?? '',
+            'loc' => (int)($x['location_id'] ?? 0),
             'customData' => $x['custom_data'] ? json_decode($x['custom_data'], true) : [],
         ], $editItems)) ?>;
         document.getElementById('company_id').value = '<?= (int)$editSale['company_id'] ?>';
@@ -829,6 +870,7 @@ if ($action === 'new' || $action === 'edit') {
             div.querySelector('.i-price').value = it.price;
           }
           var descInp = div.querySelector('.i-desc'); if (descInp) descInp.value = it.description;
+          var lsel = div.querySelector('.i-loc'); if (lsel && it.loc) lsel.value = it.loc;
           var ldi = div.querySelector('.i-ldisc'); if (ldi) ldi.value = it.ldiscVal || 0;
           var ldts = div.querySelector('.i-ldisct'); if (ldts) ldts.value = it.ldiscType || 'amount';
           div.querySelectorAll('.i-cf').forEach(function (cf) {

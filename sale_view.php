@@ -113,8 +113,21 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' &&
     redirect('sale_view.php?id=' . $id);
 }
 
+// per-line stock locations (godown vs shop) + any pending edit approval
+$locNames = [];
+try { foreach (all('SELECT id, name FROM locations') as $l) $locNames[(int)$l['id']] = $l['name']; } catch (Exception $e) {}
+$pendEditReq = null;
+if (!$public) {
+    try { $pendEditReq = row("SELECT er.*, u2.name requester FROM edit_requests er JOIN users u2 ON u2.id = er.requested_by
+                              WHERE er.doc_type = 'sale' AND er.doc_id = ? AND er.status = 'pending'", [$id]); } catch (Exception $e) {}
+}
+
 $page_title = 'Invoice ' . $sale['invoice_no'];
 include __DIR__ . '/includes/header.php';
+if ($pendEditReq) {
+    echo '<div class="flash flash-info no-print">⏳ ' . e($pendEditReq['requester']) . ' નો ફેરફાર એડમિન મંજૂરી માટે બાકી છે (' . dmyt($pendEditReq['created_at']) . ').'
+       . (is_full_admin() ? ' <a href="approvals.php">Review →</a>' : '') . '</div>';
+}
 $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
 ?>
 <?php if ($sale['is_cancelled']): ?><div class="flash flash-error">🚫 This INVOICE is CANCELLED.</div><?php endif; ?>
@@ -213,6 +226,9 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
         <tr>
           <td><?= $n + 1 ?></td>
           <td><?= e($it['name']) ?><?= $it['serials'] ? '<br><small>SN: ' . e($it['serials']) . '</small>' : '' ?>
+            <?php $liLoc = (int)($it['location_id'] ?? 0);
+                  if ($liLoc && $liLoc !== (int)$sale['location_id'] && isset($locNames[$liLoc])): // line came from the other godown - staff-screen note, never printed ?>
+            <br><small class="muted no-print">📍 Stock: <?= e($locNames[$liLoc]) ?></small><?php endif; ?>
             <?php if (!empty($it['description'])): ?><br><small class="muted"><?= e($it['description']) ?></small><?php endif; ?>
             <?php if (!empty($it['custom_data'])): $cd = json_decode($it['custom_data'], true) ?: [];
                   foreach ($cd as $cfLabel => $cfVal): if (trim((string)$cfVal) === '') continue;

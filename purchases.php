@@ -166,6 +166,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     if (is_period_locked($purchase['purchase_date']) || is_period_locked(post('purchase_date', $purchase['purchase_date']))) {
         flash(period_lock_message(), 'error'); redirect('purchase_view.php?id=' . $pid);
     }
+    // 24-hour rule (same as sales): staff edit freely for 24h, after that the
+    // edit is parked for the admin to approve on approvals.php.
+    if (!is_full_admin() && strtotime($purchase['created_at']) < time() - 86400) {
+        try {
+            q('INSERT INTO edit_requests (doc_type, doc_id, payload, requested_by) VALUES (?,?,?,?)',
+              ['purchase', $pid, json_encode($_POST, JSON_UNESCAPED_UNICODE), $u['id']]);
+            log_activity('edit_request', 'purchase ' . ($purchase['bill_no'] ?: ('#' . $pid)));
+            try { tg_notify_admins('✏️ Purchase edit approval\n' . $u['name'] . ' wants to change bill ' . ($purchase['bill_no'] ?: ('#' . $pid)) . "\n" . base_url('approvals.php')); } catch (Exception $e) { /* optional */ }
+            flash('બિલ 24 કલાકથી જૂનું છે, એટલે તમારો ફેરફાર એડમિનની મંજૂરી માટે મોકલાયો છે. મંજૂર થાય એટલે આપોઆપ લાગુ થઈ જશે.', 'info');
+        } catch (Exception $e) {
+            flash('Edit request could not be saved - run Settings → Migrate first.', 'error');
+        }
+        redirect('purchase_view.php?id=' . $pid);
+    }
 
     // Editing stays allowed even after some serials have moved on
     // (sold/issued/returned) - the shop owner often needs to fix a price or a
@@ -331,6 +345,7 @@ if ($action === 'new' || $action === 'edit') {
     include __DIR__ . '/includes/header.php';
     ?>
     <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serial_tracked'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers are pre-filled - you can change them if needed.</div><?php endif; ?>
+    <?php if ($isEdit && !is_full_admin() && strtotime($editPurchase['created_at']) < time() - 86400): ?><div class="flash flash-info">⏳ આ બિલ 24 કલાકથી જૂનું છે — સેવ કરશો એટલે ફેરફાર સીધો લાગુ નહીં થાય, એડમિનની મંજૂરી માટે જશે.</div><?php endif; ?>
     <form method="post">
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">

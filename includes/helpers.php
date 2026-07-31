@@ -142,6 +142,14 @@ function adjust_staff_stock($user_id, $item_id, $delta, $ref_type, $ref_id = nul
       [$item_id, $user_id, $delta, $ref_type, $ref_id, $note, $_SESSION['user_id'] ?? null]);
 }
 
+/** sale_items.location_id ships in migrate v45 - detect it so billing keeps
+ *  working on the live site between "Update" (new code) and "Migrate". */
+function sale_line_loc_ready() {
+    static $ok = null;
+    if ($ok === null) { try { q('SELECT location_id FROM sale_items LIMIT 1'); $ok = true; } catch (Exception $e) { $ok = false; } }
+    return $ok;
+}
+
 function stock_qty($item_id, $location_id) {
     return (float) (val('SELECT qty FROM stock WHERE item_id = ? AND location_id = ?', [$item_id, $location_id]) ?? 0);
 }
