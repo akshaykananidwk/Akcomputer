@@ -60,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         }
         q('UPDATE users SET name=?, username=?, mobile=?, role_id=?, location_id=?, permissions=?, is_active=? WHERE id=?',
           array_merge($data, [$id]));
+        try { q('UPDATE users SET location_locked = ? WHERE id = ?', [post('location_locked') ? 1 : 0, $id]); } catch (Exception $e) {}
         if (post('password') !== '') {
             q('UPDATE users SET password=?, password_changed_at=NOW() WHERE id=?', [password_hash(post('password'), PASSWORD_DEFAULT), $id]);
         }
@@ -70,6 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if ($pwdErr) { flash($pwdErr, 'error'); redirect('users.php?action=new'); }
         q('INSERT INTO users (name, username, mobile, role_id, location_id, permissions, is_active, password, password_changed_at) VALUES (?,?,?,?,?,?,?,?,NOW())',
           array_merge($data, [password_hash(post('password'), PASSWORD_DEFAULT)]));
+        try { q('UPDATE users SET location_locked = ? WHERE id = ?', [post('location_locked') ? 1 : 0, insert_id()]); } catch (Exception $e) {}
         flash('User created.');
     }
     log_activity('user_save', post('username'));
@@ -165,7 +167,8 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Location</label>
             <select name="location_id">
               <?php foreach ($locations as $l): ?><option value="<?= $l['id'] ?>" <?= ($usr['location_id'] ?? '') == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?> (<?= e($l['city']) ?>)</option><?php endforeach; ?>
-            </select></div>
+            </select>
+            <label class="check-inline mt"><input type="checkbox" name="location_locked" value="1" <?= !empty($usr['location_locked']) ? 'checked' : '' ?>> 📍 ફક્ત પોતાની Location પૂરતું જ કામ <span class="muted" style="font-weight:normal">(ગોડાઉન-મેનેજર/શોપ-મેનેજર અલગ: સ્ટોક, ઓડિટ અને બિલ ફક્ત ઉપર પસંદ કરેલી જગ્યાના જ)</span></label></div>
         </div>
         <div class="form-row cols-2">
           <div><label>Password <?= $usr ? '(blank = keep same)' : '*' ?></label><input type="password" name="password"></div>

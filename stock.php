@@ -41,7 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'adjust') {
     redirect('stock.php');
 }
 
-$locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
+// a location-locked user (godown/shop manager) sees only their own column
+$locations = all('SELECT * FROM locations WHERE is_active = 1' . (locked_location_id() ? ' AND id = ' . locked_location_id() : '') . ' ORDER BY name');
 
 if ($action === 'ledger') {
     $item_id = (int)get('item_id');

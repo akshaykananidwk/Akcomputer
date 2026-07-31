@@ -26,6 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     if (is_period_locked(post('sale_date', today()))) { flash(period_lock_message(), 'error'); redirect('sales.php?action=new'); }
     $company = row('SELECT * FROM companies WHERE id = ?', [(int)post('company_id')]);
     $loc_id = (int)post('location_id') ?: $u['location_id'];
+    if (locked_location_id()) $loc_id = locked_location_id(); // godown/shop manager bills only from their own place
     $item_ids = post('item_id', []);
     $qtys = post('qty', []);
     $prices = post('price', []);
@@ -297,6 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
 
     $company = row('SELECT * FROM companies WHERE id = ?', [(int)post('company_id')]);
     $loc_id = (int)post('location_id') ?: $u['location_id'];
+    if (locked_location_id()) $loc_id = locked_location_id(); // godown/shop manager bills only from their own place
     $item_ids = post('item_id', []);
     $qtys = post('qty', []);
     $prices = post('price', []);

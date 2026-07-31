@@ -129,6 +129,15 @@ function require_perm($perm) {
     }
 }
 
+/** Location lock: a godown manager and a shop manager work apart. Returns
+ *  the user's location id when they are locked to it (and not a full
+ *  admin), else 0 = free to see every location. Safe before migrate v43. */
+function locked_location_id() {
+    $u = current_user();
+    if (!$u || is_full_admin() || empty($u['location_locked'])) return 0;
+    return (int)$u['location_id'];
+}
+
 /**
  * Scope filter: if user lacks "<module>.all", restrict to own records.
  * Returns [extra_sql, extra_params].

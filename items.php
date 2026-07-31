@@ -163,7 +163,8 @@ $fCat = (int)get('f_cat');
 $fStock = get('f_stock');   // '', 'in', 'zero', 'neg', 'low'
 $fWeb = get('f_web');       // '', 'on', 'off'
 $fLoc = (int)get('f_loc');  // 0 = all locations, else stock AT that godown/shop
-$locsAll = all('SELECT id, name FROM locations WHERE is_active = 1 ORDER BY name');
+if (locked_location_id()) $fLoc = locked_location_id(); // godown/shop manager: own place only
+$locsAll = all('SELECT id, name FROM locations WHERE is_active = 1' . (locked_location_id() ? ' AND id = ' . locked_location_id() : '') . ' ORDER BY name');
 $w = [];
 if (!$showAll) $w[] = 'i.is_active = 1';
 if ($fCat) $w[] = 'i.category_id = ' . $fCat;

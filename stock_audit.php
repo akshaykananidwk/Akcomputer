@@ -12,6 +12,7 @@ $action = get('action', 'list');
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
     require_perm('stock_audit.add');
     $locId = (int)post('location_id');
+    if (locked_location_id()) $locId = locked_location_id(); // godown/shop manager counts only their own place
     if (!$locId) { flash('Pick a location.', 'error'); redirect('stock_audit.php?action=new'); }
     $onlyLow = post('only_low') === '1';
     $includeZero = post('include_zero') === '1';
@@ -37,6 +38,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
     log_activity('stock_audit_start', doc_no('AUD', $cid));
     flash('Count sheet ' . doc_no('AUD', $cid) . ' started with ' . $added . ' item(s)' . ($includeZero ? '' : ' (ઝીરો-સ્ટોકવાળી બહાર રાખી)') . '.');
     redirect('stock_audit.php?action=count&id=' . $cid);
+}
+
+// Delete a count sheet - ADMIN ONLY (cleaning up test sheets etc.). If the
+// sheet was already posted, its cycle_count stock adjustments are reversed
+// first, so deleting a test audit leaves stock exactly as before it.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete_count') {
+    if (!is_full_admin()) { flash('ઓડિટ ડિલીટ ફક્ત એડમિન જ કરી શકે.', 'error'); redirect('stock_audit.php'); }
+    $cid = (int)post('id');
+    $count = row('SELECT * FROM stock_counts WHERE id = ?', [$cid]);
+    if ($count) {
+        $pdo = db();
+        $pdo->beginTransaction();
+        foreach (all("SELECT * FROM stock_ledger WHERE ref_type = 'cycle_count' AND ref_id = ?", [$cid]) as $adj) {
+            adjust_stock($adj['item_id'], $adj['location_id'], -(float)$adj['change_qty'], 'cycle_count_undo', $cid, 'Audit ' . $count['count_no'] . ' deleted');
+        }
+        q('DELETE FROM stock_count_items WHERE count_id = ?', [$cid]);
+        q('DELETE FROM stock_counts WHERE id = ?', [$cid]);
+        $pdo->commit();
+        log_activity('stock_audit_delete', $count['count_no']);
+        flash('ઓડિટ ' . $count['count_no'] . ' ડિલીટ થયું' . ($count['status'] === 'posted' ? ' — એના સ્ટોક-ફેરફાર પણ પાછા વાળ્યા' : '') . '.');
+    }
+    redirect('stock_audit.php');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_counts') {
@@ -87,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'cancel') {
 
 if ($action === 'new') {
     require_perm('stock_audit.add');
-    $locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
+    $locations = all('SELECT * FROM locations WHERE is_active = 1' . (locked_location_id() ? ' AND id = ' . locked_location_id() : '') . ' ORDER BY name');
     $page_title = 'New Stock Count';
     include __DIR__ . '/includes/header.php';
     ?>
@@ -120,6 +143,7 @@ if ($action === 'count') {
     $cid = (int)get('id');
     $count = row('SELECT sc.*, l.name loc_name FROM stock_counts sc JOIN locations l ON l.id = sc.location_id WHERE sc.id = ?', [$cid]);
     if (!$count) { flash('Count sheet not found.', 'error'); redirect('stock_audit.php'); }
+    if (locked_location_id() && (int)$count['location_id'] !== locked_location_id()) { flash('આ ઓડિટ તમારી Location નું નથી.', 'error'); redirect('stock_audit.php'); }
     $lines = all('SELECT sci.*, i.name, i.unit FROM stock_count_items sci JOIN items i ON i.id = sci.item_id WHERE sci.count_id = ? ORDER BY i.name', [$cid]);
     // old count sheets made before the zero-skip existed: same relief via a
     // view-time toggle (?zeros=1 shows them back)
@@ -205,9 +229,10 @@ if ($action === 'count') {
 }
 
 // ---------- list ----------
+$llFilter = locked_location_id() ? ' WHERE sc.location_id = ' . locked_location_id() : '';
 $counts = all('SELECT sc.*, l.name loc_name, s.name staff_name FROM stock_counts sc
                JOIN locations l ON l.id = sc.location_id JOIN users s ON s.id = sc.created_by
-               ORDER BY sc.id DESC LIMIT 100');
+               ' . $llFilter . ' ORDER BY sc.id DESC LIMIT 100');
 $page_title = 'Stock Audit / Cycle Counting';
 include __DIR__ . '/includes/header.php';
 ?>
@@ -224,7 +249,13 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($c['loc_name']) ?></td>
       <td><?= e($c['staff_name']) ?></td>
       <td><?= status_badge($c['status']) ?></td>
-      <td><a class="btn btn-sm btn-outline" href="stock_audit.php?action=count&id=<?= $c['id'] ?>">Open</a></td>
+      <td style="white-space:nowrap"><a class="btn btn-sm btn-outline" href="stock_audit.php?action=count&id=<?= $c['id'] ?>">Open</a>
+        <?php if (is_full_admin()): ?>
+        <form method="post" style="display:inline" onsubmit="return confirm('ઓડિટ <?= e($c['count_no']) ?> ડિલીટ કરવું? Posted હોય તો એના સ્ટોક-ફેરફાર પણ પાછા વળી જશે.')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="delete_count"><input type="hidden" name="id" value="<?= $c['id'] ?>">
+          <button class="btn btn-sm btn-danger" type="submit">✕</button>
+        </form>
+        <?php endif; ?></td>
     </tr>
   <?php endforeach; ?>
   <?php if (!$counts): ?><tr><td colspan="5" class="muted">No stock counts yet.</td></tr><?php endif; ?>
