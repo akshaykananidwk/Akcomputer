@@ -112,7 +112,8 @@ if ($r === 'all_txn') {
             $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => $x['ref_type'] === 'sales_return' ? 'Refund' : 'Payment Out', 'no' => $x['notes'] ?: '-', 'who' => $x['who'], 'mode' => $x['mode'], 'bill' => 0, 'in' => 0, 'out' => $x['amt'], 'cancel' => 0, 'adj' => stripos((string)$x['notes'], 'adjusted on edit') !== false ? 1 : 0];
     }
     if (in_array('expense', $selTypes, true) && can('expenses.view')) {
-        foreach (all("SELECT e.exp_date d, e.created_at ct, e.category, e.amount amt, e.mode, e.notes, u2.name by_name FROM expenses e JOIN users u2 ON u2.id = e.created_by WHERE e.exp_date BETWEEN ? AND ?", [$from, $to]) as $x)
+        $expScope2 = is_full_admin() ? '' : ' AND e.created_by = ' . (int)current_user()['id'];
+        foreach (all("SELECT e.exp_date d, e.created_at ct, e.category, e.amount amt, e.mode, e.notes, u2.name by_name FROM expenses e JOIN users u2 ON u2.id = e.created_by WHERE e.exp_date BETWEEN ? AND ? $expScope2", [$from, $to]) as $x)
             $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Expense', 'no' => $x['category'], 'who' => trim(($x['notes'] ? $x['notes'] . ' · ' : '') . 'by ' . $x['by_name']), 'mode' => $x['mode'], 'bill' => 0, 'in' => 0, 'out' => $x['amt'], 'cancel' => 0, 'adj' => 0];
     }
     if (in_array('sreturn', $selTypes, true)) {
@@ -675,7 +676,9 @@ if ($r === 'bank_ledger' && can('payments.view')) {
 
 // ---------------- expense report ----------------
 if ($r === 'expense' && can('expenses.view')) {
-    $rows = all('SELECT category, COUNT(*) cnt, SUM(amount) total FROM expenses WHERE exp_date BETWEEN ? AND ? GROUP BY category ORDER BY total DESC', [$from, $to]);
+    // staff privacy: only the full admin sees the whole shop's expenses
+    $expScope = is_full_admin() ? '' : ' AND created_by = ' . (int)current_user()['id'];
+    $rows = all("SELECT category, COUNT(*) cnt, SUM(amount) total FROM expenses WHERE exp_date BETWEEN ? AND ? $expScope GROUP BY category ORDER BY total DESC", [$from, $to]);
     echo '<div class="table-wrap"><table><thead><tr><th>Category</th><th class="num">Entries</th><th class="num">Total ₹</th></tr></thead><tbody>';
     foreach ($rows as $x) echo '<tr><td>' . e($x['category']) . '</td><td class="num">' . $x['cnt'] . '</td><td class="num">' . money($x['total']) . '</td></tr>';
     echo '<tr><td><strong>Total</strong></td><td></td><td class="num"><strong>' . money(array_sum(array_column($rows, 'total'))) . '</strong></td></tr>';

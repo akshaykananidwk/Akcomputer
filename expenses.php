@@ -16,6 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     if ($amt > 0 && $eid) {
         $old = row('SELECT * FROM expenses WHERE id = ?', [$eid]);
         if (!$old) { flash('Expense not found.', 'error'); redirect('expenses.php'); }
+        if (!is_full_admin() && (int)$old['created_by'] !== (int)$u['id']) { flash('તમે ફક્ત તમારા પોતાના ખર્ચ જ એડિટ કરી શકો.', 'error'); redirect('expenses.php'); }
         if (is_period_locked($old['exp_date'])) { flash(period_lock_message(), 'error'); redirect('expenses.php'); }
         q('UPDATE expenses SET exp_date=?, category=?, amount=?, mode=?, bank_account_id=?, payment_method_id=?, notes=? WHERE id=?',
           [post('exp_date', today()), post('category', 'General'), $amt, post('mode', 'cash'), $bankId, $pmId, post('notes'), $eid]);
@@ -33,6 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('expenses.delete');
     $exp = row('SELECT * FROM expenses WHERE id = ?', [(int)post('id')]);
+    if ($exp && !is_full_admin() && (int)$exp['created_by'] !== (int)$u['id']) { flash('તમે ફક્ત તમારા પોતાના ખર્ચ જ ડિલીટ કરી શકો.', 'error'); redirect('expenses.php'); }
     if ($exp && is_period_locked($exp['exp_date'])) { flash(period_lock_message(), 'error'); redirect('expenses.php'); }
     q('DELETE FROM expenses WHERE id = ?', [(int)post('id')]);
     flash('Expense deleted.');
@@ -41,9 +43,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
 
 $from = get('from', date('Y-m-01'));
 $to = get('to', today());
+// Privacy: only the full admin sees the whole shop's expenses. Everyone
+// else - manager included - is locked to their OWN entries: the list, the
+// totals, the staff dropdown, and edit/delete all stay within self.
+$seeAllExp = is_full_admin();
 // staff-wise view: filter to one staff member's expenses (whose pocket/wallet
 // the money left), so the owner's own spend and each staff's spend stay apart
-$fStaff = (int)get('staff');
+$fStaff = $seeAllExp ? (int)get('staff') : (int)$u['id'];
 $staffWhere = $fStaff ? ' AND e.created_by = ' . $fStaff : '';
 $rows = all("SELECT e.*, u2.name by_name, l.name loc_name FROM expenses e
              JOIN users u2 ON u2.id = e.created_by JOIN locations l ON l.id = e.location_id
@@ -51,6 +57,7 @@ $rows = all("SELECT e.*, u2.name by_name, l.name loc_name FROM expenses e
 $staffAll = all('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name');
 $cats = ['General', 'Rent', 'Salary', 'Electricity', 'Internet', 'Transport', 'Tea/Food', 'Stationery', 'Repair/Maintenance', 'Marketing', 'Other'];
 $edit = (int)get('edit') && can('expenses.edit') ? row('SELECT * FROM expenses WHERE id = ?', [(int)get('edit')]) : null;
+if ($edit && !$seeAllExp && (int)$edit['created_by'] !== (int)$u['id']) $edit = null; // never open someone else's expense
 if ($edit && $edit['category'] && !in_array($edit['category'], $cats, true)) $cats[] = $edit['category'];
 $pms = active_payment_methods();
 $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
@@ -107,11 +114,13 @@ include __DIR__ . '/includes/header.php';
 <form method="get" class="filterbar">
   <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>
   <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>
+  <?php if ($seeAllExp): ?>
   <div><label>Staff</label>
     <select name="staff">
       <option value="0">All staff</option>
       <?php foreach ($staffAll as $s): ?><option value="<?= $s['id'] ?>" <?= $fStaff == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option><?php endforeach; ?>
     </select></div>
+  <?php endif; ?>
   <button class="btn btn-sm" type="submit">Filter</button>
 </form>
 <?php if ($fStaff): $sn = array_values(array_filter($staffAll, fn($s) => $s['id'] == $fStaff))[0]['name'] ?? ''; ?>
