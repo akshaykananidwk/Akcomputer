@@ -453,18 +453,42 @@ if ($r === 'aging') {
                  p.mobile party_mobile, TRIM(CONCAT_WS(', ', NULLIF(p.address, ''), NULLIF(p.city, ''))) addr,
                  s.due_date, s.sale_date, (s.total - s.paid) due
                  FROM sales s LEFT JOIN parties p ON p.id = s.party_id
-                 WHERE s.is_cancelled = 0 AND s.status <> 'paid' $ewA", $epA);
+                 WHERE s.is_cancelled = 0 AND s.status <> 'paid' AND s.total - s.paid > 0.009 $ewA
+                 ORDER BY COALESCE(s.due_date, s.sale_date), s.id", $epA);
+    // A payment saved in the party LEDGER (Payment In) without being linked
+    // to its bill leaves sales.paid untouched - the customer HAS paid and the
+    // ledger says so, but the bill alone still reads "due". So each party is
+    // capped at their REAL ledger balance, knocking the already-received
+    // difference off the oldest bills first (FIFO), the way Vyapar/Tally do.
+    // A fully settled party disappears from this report entirely.
+    $byParty = [];
+    foreach ($rows as $x) $byParty[($x['party_id'] ?: 'w') . '|' . $x['pname']][] = $x;
     $agg = [];
-    foreach ($rows as $x) {
-        $base = $x['due_date'] ?: $x['sale_date'];
-        $days = days_between($base);
-        $bucket = $days <= 30 ? 'b1' : ($days <= 60 ? 'b2' : ($days <= 90 ? 'b3' : 'b4'));
-        $key = ($x['party_id'] ?: 'w') . '|' . $x['pname'];
-        if (!isset($agg[$key])) $agg[$key] = ['pname' => $x['pname'], 'party_id' => $x['party_id'],
-            'mobile' => $x['party_mobile'] ?: $x['customer_mobile'], 'addr' => $x['addr'],
-            'b1' => 0, 'b2' => 0, 'b3' => 0, 'b4' => 0, 'total' => 0];
-        $agg[$key][$bucket] += $x['due'];
-        $agg[$key]['total'] += $x['due'];
+    foreach ($byParty as $key => $bills) {
+        $pid = (int)$bills[0]['party_id'];
+        if ($pid) {
+            $sumDue = 0;
+            foreach ($bills as $b) $sumDue += (float)$b['due'];
+            try { $ledger = party_balance($pid); } catch (Exception $e) { $ledger = $sumDue; }
+            $knock = $sumDue - max(0, $ledger); // money already received but not linked to bills
+            foreach ($bills as $i => $b) {
+                if ($knock <= 0.009) break;
+                $cut = min((float)$b['due'], $knock);
+                $bills[$i]['due'] = (float)$b['due'] - $cut;
+                $knock -= $cut;
+            }
+        }
+        foreach ($bills as $x) {
+            if ((float)$x['due'] <= 0.009) continue;
+            $base = $x['due_date'] ?: $x['sale_date'];
+            $days = days_between($base);
+            $bucket = $days <= 30 ? 'b1' : ($days <= 60 ? 'b2' : ($days <= 90 ? 'b3' : 'b4'));
+            if (!isset($agg[$key])) $agg[$key] = ['pname' => $x['pname'], 'party_id' => $x['party_id'],
+                'mobile' => $x['party_mobile'] ?: $x['customer_mobile'], 'addr' => $x['addr'],
+                'b1' => 0, 'b2' => 0, 'b3' => 0, 'b4' => 0, 'total' => 0];
+            $agg[$key][$bucket] += $x['due'];
+            $agg[$key]['total'] += $x['due'];
+        }
     }
     usort($agg, fn($a, $b) => $b['total'] <=> $a['total']);
 
