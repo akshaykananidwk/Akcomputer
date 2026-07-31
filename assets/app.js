@@ -420,6 +420,7 @@ var Bill = {
       t = setTimeout(function () {
         var partySel = document.getElementById('party_id');
         fetch('ajax.php?a=item_search&q=' + encodeURIComponent(qy) + '&loc=' + (self.cfg.locSel ? document.getElementById(self.cfg.locSel).value : '') +
+              '&mode=' + (self.cfg.mode || '') +
               (partySel && partySel.value > 0 ? '&party=' + partySel.value : ''))
           .then(function (r) { return r.json(); })
           .then(function (items) {

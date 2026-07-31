@@ -30,9 +30,12 @@ if ($a === 'item_search') {
                   WHERE i.is_active = 1 AND ($where)
                   ORDER BY (i.name LIKE ?) DESC, i.name LIMIT 15", $params);
     // The purchase (cost) price is a guarded number: staff without the
-    // items.cost permission never receive it, so it can't show up in the
-    // billing UI, profit hints, or the browser's network tab.
-    if (!can('items.cost')) foreach ($items as &$_i) { $_i['purchase_price'] = 0; } unset($_i);
+    // items.cost permission never receive it in SALE screens (no profit
+    // leaks in the billing UI or the browser's network tab). EXCEPT on the
+    // purchase-entry form: whoever is allowed to enter purchases must see
+    // the purchase rate, otherwise every line they save lands as ₹0.
+    $costOk = can('items.cost') || (get('mode') === 'purchase' && can('purchases.add'));
+    if (!$costOk) foreach ($items as &$_i) { $_i['purchase_price'] = 0; } unset($_i);
     // Price history for THIS customer: when a party is selected on the bill,
     // each suggestion also carries the price they were charged last time
     // ("આ ગ્રાહકને છેલ્લે આ ભાવે આપેલું") so haggling has a reference point.
