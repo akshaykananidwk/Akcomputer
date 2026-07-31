@@ -8,6 +8,7 @@
 // - daily unique-visitor tracking for the admin dashboard
 // Orders land in web_orders (admin: web_orders.php) + WhatsApp alert to shop.
 require_once __DIR__ . '/includes/init.php';
+require_once __DIR__ . '/includes/seo.php';
 
 $app_name = setting('app_name', 'AK Computer');
 $waShop = wa_normalize_number(setting('wa_shop_number'));
@@ -142,15 +143,10 @@ $metaDesc = $app_name . ' - દ્વારકા, ગુજરાતનો ભ�
 <meta property="og:url" content="<?= e(base_url('catalog.php')) ?>">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/style.css?v=3">
-<script type="application/ld+json">
-<?= json_encode([
-    '@context' => 'https://schema.org', '@type' => 'ElectronicsStore',
-    'name' => $app_name, 'url' => base_url('catalog.php'),
-    'address' => ['@type' => 'PostalAddress', 'addressLocality' => 'Dwarka', 'addressRegion' => 'Gujarat', 'addressCountry' => 'IN'],
-    'telephone' => $waShop ? '+' . $waShop : '',
-    'priceRange' => '₹₹',
-], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
-</script>
+<?= seo_localbusiness_jsonld() ?>
+<?= seo_jsonld(['@context' => 'https://schema.org', '@type' => 'WebSite',
+    'name' => $app_name, 'url' => base_url('catalog.php')]) ?>
+<?= seo_public_css() ?>
 <style>
 :root { --acc1: #4f46e5; --acc2: #06b6d4; --acc3: #f59e0b; }
 body { padding-bottom: 90px; background: var(--bg); }
@@ -317,7 +313,7 @@ body { padding-bottom: 90px; background: var(--bg); }
     <div class="cat-grid" id="cGrid">
     <?php foreach ($items as $it): ?>
       <?php $dp = dealer_price($it['selling_price'], $waPct);
-            $purl = 'product.php?id=' . $it['id']; ?>
+            $purl = seo_product_url($it); ?>
       <div class="cat-card" data-cat="<?= e($it['cat_name'] ?? '') ?>" data-price="<?= $dp ?>" data-name="<?= e(mb_strtolower($it['name'])) ?>" data-newid="<?= (int)$it['id'] ?>">
         <a class="imglink" href="<?= e($purl) ?>">
         <?php if ($it['photo']): ?><img src="<?= e($it['photo']) ?>" alt="<?= e($it['name']) ?>" loading="lazy">
@@ -486,5 +482,6 @@ document.querySelectorAll('.cat-link').forEach(function (ch) {
   });
 });
 </script>
+<?= seo_footer() ?>
 </body>
 </html>

@@ -8,6 +8,20 @@ Options -Indexes
   RewriteEngine On
   RewriteCond %{HTTP:Authorization} ^(.*)
   RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
+
+  # SEO pretty URLs (the plain ?id= URLs still work and canonical-tag here)
+  RewriteRule ^sitemap\.xml$ sitemap.php [L]
+  RewriteRule ^p/([0-9]+)(/.*)?$ product.php?id=$1 [L,QSA]
+  RewriteRule ^price/([0-9]+)(/.*)?$ price.php?id=$1 [L,QSA]
+  RewriteRule ^c/([A-Za-z0-9-]+)/?$ category.php?s=$1 [L,QSA]
+  RewriteRule ^b/([A-Za-z0-9-]+)/?$ brand.php?s=$1 [L,QSA]
+  RewriteRule ^s/([A-Za-z0-9-]+)/?$ services.php?s=$1 [L,QSA]
+  RewriteRule ^s/?$ services.php [L]
+</IfModule>
+
+# compress text responses (page speed = ranking factor)
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json application/xml image/svg+xml
 </IfModule>
 
 <FilesMatch "^(config\.php|config\.sample\.php)$">

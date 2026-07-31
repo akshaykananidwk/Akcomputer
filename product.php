@@ -4,6 +4,7 @@
 // (a logged-in dealer sees their own price directly, never the %), related
 // products, and Add-to-Cart that hands over to the catalog's cart.
 require_once __DIR__ . '/includes/init.php';
+require_once __DIR__ . '/includes/seo.php';
 
 $app_name = setting('app_name', 'AK Computer');
 $waShop = wa_normalize_number(setting('wa_shop_number'));
@@ -26,7 +27,7 @@ $desc = $it['description'] ?: ($label . ' available at ' . $app_name . ', Dwarka
 $inStock = $it['item_type'] === 'service' || (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$it['id']]) > 0;
 $related = all('SELECT i.* FROM items i WHERE i.is_active = 1 AND i.show_on_website = 1 AND i.id <> ? AND i.category_id <=> ? ORDER BY RAND() LIMIT 4',
                [$it['id'], $it['category_id']]);
-$purl = base_url('product.php?id=' . $it['id']);
+$purl = seo_product_url($it);
 ?><!DOCTYPE html>
 <html lang="gu">
 <head>
@@ -37,12 +38,15 @@ $purl = base_url('product.php?id=' . $it['id']);
 <meta name="keywords" content="<?= e($it['name']) ?>, <?= e($it['brand']) ?>, <?= e($it['cat_name']) ?>, dwarka, gujarat, price, <?= e($app_name) ?>">
 <link rel="canonical" href="<?= e($purl) ?>">
 <meta property="og:type" content="product">
+<meta property="og:site_name" content="<?= e($app_name) ?>">
+<meta name="twitter:card" content="summary_large_image">
 <meta property="og:title" content="<?= e($label) ?> — ₹<?= money($dp) ?>">
 <meta property="og:description" content="<?= e(mb_substr($desc, 0, 200)) ?>">
 <meta property="og:url" content="<?= e($purl) ?>">
 <?php if ($it['photo']): ?><meta property="og:image" content="<?= e(base_url($it['photo'])) ?>"><?php endif; ?>
-<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="assets/style.css?v=3">
+<!-- the page is served under /p/{id}/{slug}, so every URL must be absolute -->
+<link rel="icon" href="<?= e(base_url('assets/icon.svg')) ?>" type="image/svg+xml">
+<link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=3">
 <script type="application/ld+json">
 <?= json_encode([
     '@context' => 'https://schema.org', '@type' => 'Product',
@@ -59,6 +63,10 @@ $purl = base_url('product.php?id=' . $it['id']);
     ],
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
 </script>
+<?= seo_breadcrumbs([[$app_name, base_url('catalog.php')],
+                     $it['cat_name'] ? [$it['cat_name'], seo_cat_url($it['cat_name'])] : [$app_name . ' Store', base_url('catalog.php')],
+                     [$it['name']]]) ?>
+<?= seo_public_css() ?>
 <style>
 :root { --acc1: #4f46e5; --acc2: #06b6d4; }
 body { background: var(--bg); }
@@ -96,13 +104,13 @@ body { background: var(--bg); }
 </head>
 <body>
 <header class="shead">
-  <a class="logo" href="catalog.php">🖥️ <?= e($app_name) ?></a>
-  <a class="back" href="catalog.php">← Store</a>
+  <a class="logo" href="<?= e(base_url('catalog.php')) ?>">🖥️ <?= e($app_name) ?></a>
+  <a class="back" href="<?= e(base_url('catalog.php')) ?>">← Store</a>
 </header>
 
 <div class="pwrap">
   <div class="pimg">
-    <?php if ($it['photo']): ?><img src="<?= e($it['photo']) ?>" alt="<?= e($label) ?>">
+    <?php if ($it['photo']): ?><img src="<?= e(base_url($it['photo'])) ?>" alt="<?= e($label) ?>">
     <?php else: ?><div class="ph"><?= e(cat_icon($it['cat_name'] ?? '')) ?></div><?php endif; ?>
   </div>
   <div class="pinfo">
@@ -118,8 +126,13 @@ body { background: var(--bg); }
       <div>🛠️ Installation &amp; service available</div>
       <div>✅ Genuine product</div>
     </div>
+    <div class="chips" style="margin-top:12px">
+      <a href="<?= e(seo_price_url($it)) ?>">💰 <?= e($it['name']) ?> Price</a>
+      <?php if ($it['cat_name'] && seo_slug($it['cat_name']) !== ''): ?><a href="<?= e(seo_cat_url($it['cat_name'])) ?>"><?= e(cat_icon($it['cat_name'])) ?> બધા <?= e($it['cat_name']) ?></a><?php endif; ?>
+      <?php if ($it['brand'] && seo_slug($it['brand']) !== ''): ?><a href="<?= e(seo_brand_url($it['brand'])) ?>">🏷️ <?= e($it['brand']) ?> Products</a><?php endif; ?>
+    </div>
     <div class="pbtns">
-      <a class="btn btn-block" href="catalog.php?add=<?= $it['id'] ?>" style="background:linear-gradient(100deg,#4f46e5,#2563eb);border:0">🛒 Add to Cart</a>
+      <a class="btn btn-block" href="<?= e(base_url('catalog.php?add=' . $it['id'])) ?>" style="background:linear-gradient(100deg,#4f46e5,#2563eb);border:0">🛒 Add to Cart</a>
       <?php if ($waShop): ?>
       <a class="btn btn-success btn-block" href="https://wa.me/<?= e($waShop) ?>?text=<?= rawurlencode("નમસ્તે! મને આ પ્રોડક્ટ જોઈએ છે:\n" . $label . " - ₹" . money($dp) . "\n" . $purl) ?>" target="_blank" rel="noopener">📲 WhatsApp પર ઓર્ડર કરો</a>
       <?php endif; ?>
@@ -132,8 +145,8 @@ body { background: var(--bg); }
   <h2>આવી બીજી પ્રોડક્ટ</h2>
   <div class="grid">
     <?php foreach ($related as $r): $rp = dealer_price($r['selling_price'], $waPct); ?>
-    <a class="rcard" href="product.php?id=<?= $r['id'] ?>">
-      <?php if ($r['photo']): ?><img src="<?= e($r['photo']) ?>" alt="<?= e($r['name']) ?>" loading="lazy">
+    <a class="rcard" href="<?= e(seo_product_url($r)) ?>">
+      <?php if ($r['photo']): ?><img src="<?= e(base_url($r['photo'])) ?>" alt="<?= e($r['name']) ?>" loading="lazy">
       <?php else: ?><div class="ph"><?= e(cat_icon($it['cat_name'] ?? '')) ?></div><?php endif; ?>
       <div class="rb"><div class="rn"><?= e($r['name']) ?></div><div class="rp">₹<?= money($rp) ?></div></div>
     </a>
@@ -141,5 +154,6 @@ body { background: var(--bg); }
   </div>
 </div>
 <?php endif; ?>
+<?= seo_footer() ?>
 </body>
 </html>

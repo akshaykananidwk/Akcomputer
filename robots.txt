@@ -1,9 +1,20 @@
 User-agent: *
+Allow: /$
 Allow: /catalog.php
 Allow: /product.php
+Allow: /price.php
+Allow: /category.php
+Allow: /brand.php
+Allow: /services.php
 Allow: /referral.php
+Allow: /p/
+Allow: /price/
+Allow: /c/
+Allow: /b/
+Allow: /s/
+Allow: /sitemap.xml
 Allow: /uploads/
 Allow: /assets/
 Disallow: /
 
-Sitemap: https://shop.akdwk.in/sitemap.php
+Sitemap: https://shop.akdwk.in/sitemap.xml
