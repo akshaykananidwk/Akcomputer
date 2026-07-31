@@ -90,11 +90,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                 }
             }
         }
-        // update item purchase price to latest
+        // update item purchase price to latest, then lift selling to keep
+        // the minimum profit margin (item's own margin, else the default %)
         foreach ($rows as $r) {
             q('UPDATE items SET purchase_price = ? WHERE id = ?', [$r['price'], $r['item_id']]);
-            q('UPDATE items SET selling_price = ROUND(purchase_price * (1 + margin_pct / 100), 2)
-               WHERE id = ? AND margin_pct > 0', [$r['item_id']]);
+            enforce_min_margin($r['item_id']);
         }
 
         if ($paid > 0) {
@@ -267,8 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         }
         foreach ($rows as $r) {
             q('UPDATE items SET purchase_price = ? WHERE id = ?', [$r['price'], $r['item_id']]);
-            q('UPDATE items SET selling_price = ROUND(purchase_price * (1 + margin_pct / 100), 2)
-               WHERE id = ? AND margin_pct > 0', [$r['item_id']]);
+            enforce_min_margin($r['item_id']);
         }
 
         q('UPDATE purchases SET company_id=?, bill_no=?, party_id=?, location_id=?, purchase_date=?, credit_days=?, due_date=?,

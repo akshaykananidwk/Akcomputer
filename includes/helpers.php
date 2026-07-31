@@ -587,6 +587,30 @@ function db_backup_sql() {
     return ob_get_clean();
 }
 
+// ---------- Default profit margin ----------
+// Every product must earn at least this % over its purchase price. An item's
+// own margin_pct (> 0) overrides it - that's the deliberate escape hatch for
+// items priced differently. 0 in Settings switches the rule off.
+function default_margin_pct() {
+    return (float)setting('default_margin_pct', '30');
+}
+/** Lift an item's selling price to at least purchase price + margin.
+ *  Explicit per-item margin recalculates exactly (old behaviour); the
+ *  default margin only ever RAISES a price, never lowers one the owner
+ *  set higher. Services and zero-cost items are left alone. */
+function enforce_min_margin($itemId) {
+    $it = row("SELECT purchase_price, selling_price, margin_pct, item_type FROM items WHERE id = ?", [$itemId]);
+    if (!$it || $it['item_type'] === 'service' || (float)$it['purchase_price'] <= 0) return;
+    if ((float)$it['margin_pct'] > 0) {
+        q('UPDATE items SET selling_price = ROUND(purchase_price * (1 + margin_pct / 100), 2) WHERE id = ?', [$itemId]);
+    } elseif (default_margin_pct() > 0) {
+        $minSell = round((float)$it['purchase_price'] * (1 + default_margin_pct() / 100), 2);
+        if ((float)$it['selling_price'] < $minSell) {
+            q('UPDATE items SET selling_price = ? WHERE id = ?', [$minSell, $itemId]);
+        }
+    }
+}
+
 // ---------- Site credential vault (DVR/NVR passwords etc, encrypted at rest) ----------
 function vault_encrypt($plain) {
     if ($plain === '' || $plain === null) return '';

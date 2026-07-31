@@ -35,7 +35,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             q('INSERT INTO items (name, category_id, brand, model, unit, hsn, tax_rate, purchase_price, selling_price,
                b2b_price, serial_tracked, margin_pct, item_type, warranty_months, min_stock, show_on_website, photo, barcode, is_active, description)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', $data);
+            $id = insert_id();
             flash('Item added.');
+        }
+        // minimum-profit rule: selling never sits below purchase + margin
+        // (item's own margin %, else the default % from Settings)
+        $sellBefore = (float)val('SELECT selling_price FROM items WHERE id = ?', [$id]);
+        enforce_min_margin($id);
+        $sellAfter = (float)val('SELECT selling_price FROM items WHERE id = ?', [$id]);
+        if ($sellAfter > $sellBefore + 0.005) {
+            flash('વેચાણ-ભાવ ₹' . money($sellBefore) . ' થી વધારીને ₹' . money($sellAfter) . ' કર્યો — ખરીદ + ' . (0 + ((float)post('margin_pct') > 0 ? (float)post('margin_pct') : default_margin_pct())) . '% નો મિનિમમ નફો જળવાય એ માટે.', 'success');
         }
         log_activity('item_save', post('name'));
         redirect('items.php');

@@ -130,8 +130,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_transaction') 
     set_setting('show_profit_billing', post('show_profit_billing') ? '1' : '0');
     set_setting('show_purchase_price_billing', post('show_purchase_price_billing') ? '1' : '0');
     set_setting('add_time_transactions', post('add_time_transactions') ? '1' : '0');
+    set_setting('default_margin_pct', (string)max(0, (float)post('default_margin_pct')));
     log_activity('settings_save');
     flash('Transaction settings saved.');
+    redirect('settings.php?cat=transaction');
+}
+
+// One-time sweep: lift EVERY existing product's selling price to at least
+// purchase + margin (item's own margin %, else the default) - so the
+// minimum-profit rule covers old items too, not just future purchases.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'apply_margin_all') {
+    require_perm('settings.edit');
+    $fixed = 0;
+    foreach (all("SELECT id, selling_price FROM items WHERE is_active = 1 AND item_type <> 'service' AND purchase_price > 0") as $mi) {
+        enforce_min_margin($mi['id']);
+        if ((float)val('SELECT selling_price FROM items WHERE id = ?', [$mi['id']]) > (float)$mi['selling_price'] + 0.005) $fixed++;
+    }
+    log_activity('margin_apply_all', "raised=$fixed");
+    flash($fixed ? "$fixed આઇટમના વેચાણ-ભાવ વધારીને મિનિમમ નફા સુધી લાવ્યા. (કોઈનો ભાવ ઘટાડ્યો નથી)" : 'બધી આઇટમ પહેલેથી મિનિમમ નફા ઉપર જ છે ✔');
     redirect('settings.php?cat=transaction');
 }
 
@@ -370,10 +386,17 @@ exit;
     <input type="hidden" name="do" value="save_transaction">
     <label class="check-inline mb"><input type="checkbox" name="cash_sale_default" value="1" <?= setting('cash_sale_default', '1') === '1' ? 'checked' : '' ?>> Cash Sale by default <span class="muted" style="font-weight:normal">(new bill's Cash/Credit toggle stays on Cash)</span></label>
     <label class="check-inline mb"><input type="checkbox" name="round_off_default" value="1" <?= setting('round_off_default', '1') === '1' ? 'checked' : '' ?>> Round Off Total <span class="muted" style="font-weight:normal">(bill total auto-rounds to the nearest rupee - the checkbox can still be changed per bill)</span></label>
+    <div class="mb"><label>Default Minimum Profit % <span class="muted" style="font-weight:normal">— દરેક પ્રોડક્ટમાં ઓછામાં ઓછો આટલો નફો: પરચેસ થાય એટલે વેચાણ-ભાવ આપોઆપ ખરીદ + આટલા % થાય, અને ક્યારેય એનાથી નીચે ન રહે. (આઇટમનું પોતાનું Margin % ભરેલું હોય તો એ જ ચાલે; 0 = નિયમ બંધ)</span></label>
+      <input type="number" step="any" min="0" name="default_margin_pct" value="<?= 0 + (float)setting('default_margin_pct', '30') ?>" style="max-width:120px"></div>
     <label class="check-inline mb"><input type="checkbox" name="show_profit_billing" value="1" <?= setting('show_profit_billing') === '1' ? 'checked' : '' ?>> Show Profit while making Sale Invoice</label>
     <label class="check-inline mb"><input type="checkbox" name="show_purchase_price_billing" value="1" <?= setting('show_purchase_price_billing') === '1' ? 'checked' : '' ?>> Display Purchase Price of Items <span class="muted" style="font-weight:normal">(in the item search list while billing)</span></label>
     <label class="check-inline mb"><input type="checkbox" name="add_time_transactions" value="1" <?= setting('add_time_transactions', '1') === '1' ? 'checked' : '' ?>> Add Time on Transactions <span class="muted" style="font-weight:normal">(shows Time next to the bill's Date - view, PDF, WhatsApp image)</span></label>
     <button class="btn" type="submit">Save</button>
+  </form>
+  <form method="post" class="mt" onsubmit="return confirm('બધી જૂની આઇટમના વેચાણ-ભાવ ચેક કરીને, જ્યાં મિનિમમ નફા કરતાં ઓછો હોય ત્યાં વધારી દેવો? (કોઈનો ભાવ ઘટશે નહીં)')">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="apply_margin_all">
+    <button class="btn btn-sm btn-outline" type="submit">⚡ બધી હાલની આઇટમ પર મિનિમમ નફો લગાડો</button>
   </form>
 </div>
 
