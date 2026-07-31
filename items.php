@@ -157,27 +157,40 @@ if ($action === 'new' || $action === 'edit') {
     exit;
 }
 
-// ---- list (with proper filters: category / stock status / website) ----
+// ---- list (with proper filters: category / stock status / website / location) ----
 $showAll = get('show') === 'all';
 $fCat = (int)get('f_cat');
 $fStock = get('f_stock');   // '', 'in', 'zero', 'neg', 'low'
 $fWeb = get('f_web');       // '', 'on', 'off'
+$fLoc = (int)get('f_loc');  // 0 = all locations, else stock AT that godown/shop
+$locsAll = all('SELECT id, name FROM locations WHERE is_active = 1 ORDER BY name');
 $w = [];
 if (!$showAll) $w[] = 'i.is_active = 1';
 if ($fCat) $w[] = 'i.category_id = ' . $fCat;
 if ($fWeb === 'on') $w[] = 'i.show_on_website = 1';
 if ($fWeb === 'off') $w[] = 'i.show_on_website = 0';
+// with a location picked, the Stock column and the stock filters both work
+// on THAT location's quantity - "ગોડાઉનમાં શું પડ્યું છે" in one tap
+$stockExpr = $fLoc ? 'COALESCE(SUM(CASE WHEN s.location_id = ' . $fLoc . ' THEN s.qty END),0)' : 'COALESCE(SUM(s.qty),0)';
 $having = '';
 if ($fStock === 'in') $having = 'HAVING total_stock > 0';
 if ($fStock === 'zero') $having = 'HAVING total_stock = 0';
 if ($fStock === 'neg') $having = 'HAVING total_stock < 0';
 if ($fStock === 'low') $having = 'HAVING i.min_stock > 0 AND total_stock < i.min_stock';
-$items = all('SELECT i.*, c.name AS cat_name, COALESCE(SUM(s.qty),0) AS total_stock
+$items = all('SELECT i.*, c.name AS cat_name, ' . $stockExpr . ' AS total_stock
               FROM items i
               LEFT JOIN categories c ON c.id = i.category_id
               LEFT JOIN stock s ON s.item_id = i.id
               ' . ($w ? 'WHERE ' . implode(' AND ', $w) : '') . '
               GROUP BY i.id ' . $having . ' ORDER BY i.name');
+// per-location split shown under every stock figure (all-locations view)
+$locSplit = [];
+if (count($locsAll) > 1) {
+    foreach (all('SELECT s.item_id, l.name loc, s.qty FROM stock s JOIN locations l ON l.id = s.location_id WHERE s.qty <> 0') as $ls) {
+        $locSplit[$ls['item_id']][] = $ls['loc'] . ': ' . (float)$ls['qty'];
+    }
+}
+$fLocName = $fLoc ? (string)val('SELECT name FROM locations WHERE id = ?', [$fLoc]) : '';
 $page_title = 'Items';
 include __DIR__ . '/includes/header.php';
 ?>
@@ -199,13 +212,17 @@ include __DIR__ . '/includes/header.php';
     <option value="neg" <?= $fStock === 'neg' ? 'selected' : '' ?>>Negative (minus)</option>
     <option value="low" <?= $fStock === 'low' ? 'selected' : '' ?>>Low stock</option>
   </select></div>
+  <div><select name="f_loc" onchange="this.form.submit()">
+    <option value="">📍 All locations</option>
+    <?php foreach ($locsAll as $l): ?><option value="<?= $l['id'] ?>" <?= $fLoc == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option><?php endforeach; ?>
+  </select></div>
   <div><select name="f_web" onchange="this.form.submit()">
     <option value="">Website: all</option>
     <option value="on" <?= $fWeb === 'on' ? 'selected' : '' ?>>Website ON</option>
     <option value="off" <?= $fWeb === 'off' ? 'selected' : '' ?>>Website OFF</option>
   </select></div>
 </form>
-<div class="list-count"><?= count($items) ?> items</div>
+<div class="list-count"><?= count($items) ?> items<?= $fLocName ? ' · 📍 Stock @ <strong>' . e($fLocName) . '</strong>' : '' ?></div>
 <div class="table-wrap">
 <table id="itemTable">
   <thead><tr><th>Item</th><th>Category</th><?php if (can('items.cost')): ?><th class="num">Purchase</th><?php endif; ?><th class="num">Retail</th><th class="num">B2B</th><th class="num">Stock</th><th>Flags</th><th></th></tr></thead>
@@ -222,7 +239,12 @@ include __DIR__ . '/includes/header.php';
       <?php if (can('items.cost')): ?><td class="num"><?= money($it['purchase_price']) ?></td><?php endif; ?>
       <td class="num"><?= money($it['selling_price']) ?></td>
       <td class="num"><?= money($it['b2b_price']) ?></td>
-      <td class="num"><?= $it['item_type'] === 'service' ? '<span class="muted">-</span>' : (float)$it['total_stock'] . ' ' . e($it['unit']) ?></td>
+      <td class="num"><?php if ($it['item_type'] === 'service'): ?><span class="muted">-</span><?php else: ?>
+        <?= (float)$it['total_stock'] ?> <?= e($it['unit']) ?>
+        <?php if (!$fLoc && !empty($locSplit[$it['id']]) && count($locSplit[$it['id']]) > 0): ?>
+        <br><small class="muted"><?= e(implode(' · ', $locSplit[$it['id']])) ?></small>
+        <?php endif; ?>
+      <?php endif; ?></td>
       <td>
         <?php if ($it['serial_tracked']): ?><span class="badge badge-info">SN</span><?php endif; ?>
         <?php if ($it['item_type'] !== 'service' && $it['min_stock'] > 0 && $it['total_stock'] < $it['min_stock']): ?><span class="badge badge-bad">LOW</span><?php endif; ?>
