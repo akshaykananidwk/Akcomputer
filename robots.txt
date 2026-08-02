@@ -1,20 +1,21 @@
 User-agent: *
-Allow: /$
-Allow: /catalog.php
-Allow: /product.php
-Allow: /price.php
-Allow: /category.php
-Allow: /brand.php
-Allow: /services.php
-Allow: /referral.php
-Allow: /p/
-Allow: /price/
-Allow: /c/
-Allow: /b/
-Allow: /s/
-Allow: /sitemap.xml
-Allow: /uploads/
-Allow: /assets/
-Disallow: /
+# The store, product/price pages, categories, brands and services are all
+# open. Staff/admin pages simply redirect guests to the login screen, so
+# only the genuinely private/utility endpoints are kept out of the index.
+# (An earlier blanket "Disallow: /" with an Allow-list made Google's
+# sitemap fetcher choke - never use that pattern again.)
+Disallow: /login.php
+Disallow: /forgot_password.php
+Disallow: /api.php
+Disallow: /ajax.php
+Disallow: /cron.php
+Disallow: /report_pdf.php
+Disallow: /install/
+Disallow: /uploads/backups/
+Disallow: /uploads/statements/
+Disallow: /uploads/reminders/
+Disallow: /uploads/invoices/
+Disallow: /uploads/repair_photos/
+Disallow: /uploads/purchase_scans/
 
 Sitemap: https://shop.akdwk.in/sitemap.xml
