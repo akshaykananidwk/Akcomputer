@@ -222,14 +222,35 @@ if (get('action') === 'cash_ledger') {
                    'staff' => $t['from_name'] ?: $t['to_name'], 'in' => $in, 'out' => $out,
                    'open' => null, 'del' => (int)$t['id']];
     }
+    // ---- opening balance: everything BEFORE the period start, so last
+    // month's closing cash carries into this month automatically (staff had
+    // ₹845 on the 31st -> this month opens showing those ₹845) ----
+    $opening = 0.0;
+    $opening += (float)val("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0)
+                            FROM payments WHERE mode='cash' AND pay_date < ?" . ($fStaff ? ' AND created_by = ' . $fStaff : ''), [$from]);
+    $opening -= (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE mode='cash' AND exp_date < ?" . ($fStaff ? ' AND created_by = ' . $fStaff : ''), [$from]);
+    foreach (all("SELECT * FROM money_transfers WHERE status='done' AND txn_type IN ('cash_to_bank','bank_to_cash','cash_adjust','staff_transfer')
+                  AND txn_date < ?", [$from]) as $t) {
+        if ($fStaff && (int)$t['from_user_id'] !== $fStaff && (int)$t['to_user_id'] !== $fStaff) continue;
+        switch ($t['txn_type']) {
+            case 'cash_to_bank': $opening -= (float)$t['amount']; break;
+            case 'bank_to_cash': $opening += (float)$t['amount']; break;
+            case 'cash_adjust': $opening += ($t['adjust_dir'] === 'add' ? 1 : -1) * (float)$t['amount']; break;
+            default: if ($fStaff) $opening += ((int)$t['to_user_id'] === $fStaff ? 1 : -1) * (float)$t['amount']; // whole-shop: internal move, net zero
+        }
+    }
+
     usort($rows, fn($a, $b) => strcmp($a['sort'], $b['sort']));
     // Running balance is computed in date order, but the list is SHOWN newest
     // first - today's entries sit on top, oldest fall to the bottom, so the
     // fresh stuff never needs scrolling for.
-    $bal = 0;
+    $bal = $opening;
     foreach ($rows as &$x) { $bal += $x['in'] - $x['out']; $x['bal'] = $bal; }
     unset($x);
     $rows = array_reverse($rows);
+    // the opening row sits at the (oldest) bottom of the newest-first list
+    $rows[] = ['date' => $from, 'desc' => '🏦 Opening Balance (' . dmy($from) . ' પહેલાંનું — આગલા મહિનેથી આવેલું)', 'staff' => '',
+               'in' => 0, 'out' => 0, 'bal' => $opening, 'open' => null, 'del' => null, 'opening' => true];
 
     $liveBal = $fStaff ? staff_cash($fStaff) : total_cash_in_hand();
     $canDelMt = is_full_admin();
@@ -261,7 +282,7 @@ if (get('action') === 'cash_ledger') {
       <thead><tr><th>Entry</th><th class="num">In ₹</th><th class="num">Out ₹</th><th class="num">Running</th><th class="no-print"></th></tr></thead>
       <tbody>
       <?php foreach ($rows as $x): ?>
-      <tr>
+      <tr<?= !empty($x['opening']) ? ' style="background:var(--card-alt);font-weight:700"' : '' ?>>
         <td><strong><?= $x['open'] ? '<a href="' . e($x['open']) . '">' . e($x['desc']) . '</a>' : e($x['desc']) ?></strong>
           <span class="list-row-sub muted"><?= dmy($x['date']) ?> · <?= e($x['staff']) ?></span></td>
         <td class="num" style="color:var(--ok)"><?= $x['in'] ? money($x['in']) : '' ?></td>
@@ -280,7 +301,7 @@ if (get('action') === 'cash_ledger') {
       </tbody>
     </table>
     </div>
-    <p class="muted mt" style="font-size:12.5px">"Running" adds up this period's entries only (period start = 0). "Open" on a receipt/payment goes to its page, where it can be edited or deleted; handovers/adjustments/deposits delete here with ✕.</p>
+    <p class="muted mt" style="font-size:12.5px">"Running" starts from the Opening Balance (everything before the From date — last month's cash carries over automatically). "Open" on a receipt/payment goes to its page, where it can be edited or deleted; handovers/adjustments/deposits delete here with ✕.</p>
     <?php
     include __DIR__ . '/includes/footer.php';
     exit;

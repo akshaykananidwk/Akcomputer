@@ -651,8 +651,13 @@ if ($r === 'cashbook') {
             $in[] = ['d' => $x['d'], 'desc' => 'Expenses', 'in' => 0, 'out' => $x['a']];
     }
     usort($in, fn($a, $b) => strcmp($a['d'], $b['d']));
+    // opening balance = everything before the From date, so last month's
+    // closing money carries into this month's Running automatically
+    $openingCb = (float)val("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0)
+                             FROM payments WHERE mode <> 'contra' AND pay_date < ?", [$from]);
+    if (can('expenses.view')) $openingCb -= (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE exp_date < ?", [$from]);
     // running total in date order, shown newest-first (today's rows on top)
-    $bal = 0;
+    $bal = $openingCb;
     foreach ($in as &$x) { $bal += $x['in'] - $x['out']; $x['bal'] = $bal; }
     unset($x);
     $in = array_reverse($in);
@@ -660,7 +665,7 @@ if ($r === 'cashbook') {
     foreach ($in as $x) {
         echo '<tr><td>' . dmy($x['d']) . '</td><td>' . e($x['desc']) . '</td><td class="num">' . ($x['in'] ? money($x['in']) : '') . '</td><td class="num">' . ($x['out'] ? money($x['out']) : '') . '</td><td class="num">' . money($x['bal']) . '</td></tr>';
     }
-    if (!$in) echo '<tr><td colspan="5" class="muted">No entries in this period.</td></tr>';
+    echo '<tr style="background:var(--card-alt);font-weight:700"><td>' . dmy($from) . '</td><td>🏦 Opening Balance (before ' . dmy($from) . ')</td><td class="num"></td><td class="num"></td><td class="num">' . money($openingCb) . '</td></tr>';
     echo '</tbody></table></div>';
     echo '<p class="muted">Note: collection on sales bills with a party is counted under "Party receipt"; walk-in is separate.</p>';
 }
