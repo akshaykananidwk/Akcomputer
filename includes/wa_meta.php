@@ -101,13 +101,19 @@ function meta_wa_send($mobile, $message, $media_url = '') {
     if ($ok) return true;
 
     // 131047 / 131026: outside the 24h window -> an approved template is the
-    // only way in. Deliver the same content through akc_update.
+    // only way in. Deliver the same content through whichever of our
+    // templates Meta has APPROVED so far (they share the same {{1}} body).
     $code = (int)($data['error']['code'] ?? 0);
     if (in_array($code, [131047, 131026, 470], true)) {
+        $tplName = 'akc_update';
+        $st = json_decode(setting('meta_wa_tpl_status', ''), true) ?: [];
+        foreach (['akc_update', 'akc_reminder'] as $cand) {
+            if (($st[$cand]['status'] ?? '') === 'APPROVED') { $tplName = $cand; break; }
+        }
         $body = meta_wa_flatten($message . ($media_url ? ' | Download: ' . $media_url : ''));
         [$ok2, $d2, $err2] = meta_wa_call('POST', "$phoneId/messages", [
             'messaging_product' => 'whatsapp', 'to' => $number, 'type' => 'template',
-            'template' => ['name' => 'akc_update', 'language' => ['code' => 'en'],
+            'template' => ['name' => $tplName, 'language' => ['code' => 'en'],
                            'components' => [['type' => 'body', 'parameters' => [['type' => 'text', 'text' => $body]]]]],
         ]);
         if ($ok2) return true;
