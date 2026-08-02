@@ -247,6 +247,12 @@ if (get('action') === 'cash_ledger') {
     $bal = $opening;
     foreach ($rows as &$x) { $bal += $x['in'] - $x['out']; $x['bal'] = $bal; }
     unset($x);
+    // period totals for the "opening + in - out = total" strip up top, so
+    // it's obvious the opening IS already counted inside the final number
+    $periodIn = 0.0; $periodOut = 0.0;
+    foreach ($rows as $x) { $periodIn += $x['in']; $periodOut += $x['out']; }
+    $periodClose = $opening + $periodIn - $periodOut;
+
     $rows = array_reverse($rows);
     // the opening row sits at the (oldest) bottom of the newest-first list;
     // tapping it re-opens the ledger from day one, so the full break-up of
@@ -267,6 +273,13 @@ if (get('action') === 'cash_ledger') {
     <div class="duo-cards">
       <div class="duo-card duo-get"><div class="duo-label">💵 <?= $fStaff ? e(array_values(array_filter($staffAll, fn($s) => $s['id'] == $fStaff))[0]['name'] ?? '') . "'s cash now" : 'Cash in Hand now (total)' ?></div>
         <div class="duo-value">₹ <?= money($liveBal) ?></div></div>
+    </div>
+    <div class="card" style="padding:12px 14px;margin-bottom:12px">
+      <strong>🏦 ઓપનિંગ ₹<?= money($opening) ?></strong>
+      <span style="color:var(--ok);font-weight:700"> + જમા ₹<?= money($periodIn) ?></span>
+      <span style="color:var(--bad);font-weight:700"> − ઉધાર ₹<?= money($periodOut) ?></span>
+      = <strong style="font-size:17px">₹<?= money($periodClose) ?></strong>
+      <div class="muted" style="font-size:12.5px;margin-top:3px">ઓપનિંગ બેલેન્સ ટોટલમાં ગણાયેલું જ છે — આ પિરિયડના અંતે આટલી કેશ હોવી જોઈએ.</div>
     </div>
     <form method="get" class="filterbar no-print">
       <input type="hidden" name="action" value="cash_ledger">
