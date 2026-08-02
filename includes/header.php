@@ -75,6 +75,7 @@ $_navMenu = [
     ]],
     ['group', 'store', 'globe', 'My Online Store', [
         ['catalog.php', 'View Website', null, null, null],
+        ['wa_inbox.php', 'WhatsApp Inbox', '*', null, null],
         ['web_orders.php', 'Website Orders', 'weborders.view', null, null],
         ['items.php', 'Website Items (ON/OFF)', 'items.view', null, null],
         ['referrals.php', 'Referral Partners (Refer & Earn)', 'referrals.view', null, null],

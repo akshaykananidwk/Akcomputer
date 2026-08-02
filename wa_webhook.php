@@ -23,7 +23,9 @@ if (get('hub_mode') !== '' || get('hub_challenge') !== '') {
     exit('bad verify token');
 }
 
-if (setting('wa_bot_enabled', '0') !== '1') die(json_encode(['ok' => true, 'status' => 'bot-disabled']));
+// The bot flag only gates AUTO-REPLIES - incoming messages are always
+// recorded into the WhatsApp Inbox (wa_inbox.php) so the owner sees them.
+$botEnabled = setting('wa_bot_enabled', '0') === '1';
 
 $raw = file_get_contents('php://input');
 $p = json_decode($raw, true);
@@ -50,9 +52,11 @@ $jid = (string)($p['from'] ?? $p['sender'] ?? $p['remoteJid'] ?? $p['chatId'] ??
 if (strpos($jid, '@g.us') !== false || strpos($jid, '-') !== false && strpos($jid, '@') !== false) die(json_encode(['ok' => true, 'status' => 'group-skip']));
 $mobile = preg_replace('/\D/', '', explode('@', $jid)[0]);
 
-$text = trim((string)($p['text'] ?? $p['body'] ?? $p['message'] ?? $p['msg'] ?? $p['caption'] ?? $p['content'] ?? ''));
-// text field itself sometimes arrives as a nested object {body:...}
-if ($text === '' && isset($p['text']['body'])) $text = trim((string)$p['text']['body']);
+$text = $p['text'] ?? $p['body'] ?? $p['message'] ?? $p['msg'] ?? $p['caption'] ?? $p['content'] ?? '';
+// text sometimes arrives as a nested object {body:...} (Meta Cloud API does
+// this always) - casting an array to string would log the literal "Array"
+if (is_array($text)) $text = $text['body'] ?? '';
+$text = trim((string)$text);
 
 // image: either a fetchable URL or inline base64
 $jpeg = null;
@@ -98,7 +102,20 @@ if ($text === '' && !$jpeg && $isAudio && $mobile !== '') {
     }
 }
 
-if ($mobile === '' || ($text === '' && !$jpeg)) die(json_encode(['ok' => true, 'status' => 'nothing-to-do']));
+if ($mobile === '' || ($text === '' && !$jpeg && !$isAudio)) die(json_encode(['ok' => true, 'status' => 'nothing-to-do']));
 
+// record into the Inbox + ping the admins on Telegram (customers only -
+// staff already chat with the shop assistant all day)
+wa_chat_log($mobile, 'in', $text !== '' ? $text : ($jpeg ? '📷 [photo]' : '🎙 [voice message]'), 'whatsapp', preg_match('#^https?://#i', $mediaUrl) ? $mediaUrl : '');
+$isStaffSender = (bool)row("SELECT id FROM users WHERE is_active = 1 AND mobile <> ''
+                            AND ? LIKE CONCAT('%', RIGHT(REPLACE(REPLACE(mobile, '+', ''), ' ', ''), 10))", [$mobile]);
+if (!$isStaffSender) {
+    try {
+        tg_notify_admins("💬 નવો WhatsApp મેસેજ\nFrom: +$mobile\n" . mb_substr($text !== '' ? $text : '📷 media', 0, 300)
+            . "\n\nજવાબ આપવા: " . base_url('wa_inbox.php?m=' . $mobile));
+    } catch (Exception $e) { /* telegram optional */ }
+}
+
+if (!$botEnabled) die(json_encode(['ok' => true, 'status' => 'logged-bot-off']));
 $status = wa_bot_handle($mobile, $text, $jpeg);
 echo json_encode(['ok' => true, 'status' => $status]);

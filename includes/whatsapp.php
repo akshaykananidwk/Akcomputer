@@ -119,10 +119,26 @@ function send_whatsapp($mobile, $message, $media_url = '') {
             $errs[] = 'Gateway: ' . whatsapp_last_error();
         }
     }
+    $ctxKind = is_array($GLOBALS['_wa_ctx'] ?? null) ? ($GLOBALS['_wa_ctx']['kind'] ?? '') : '';
     $GLOBALS['_wa_ctx'] = []; // the context only ever applies to one send
-    if ($sent) return true;
+    if ($sent) {
+        wa_chat_log($mobile, 'out', $ctxKind === 'otp' ? '🔐 [OTP message]' : $message, $p, $media_url);
+        return true;
+    }
     $GLOBALS['_wa_last_error'] = $errs ? implode(' | ', $errs) : 'No WhatsApp provider is configured (Settings > WhatsApp).';
     return false;
+}
+
+/** Chat-history log (WhatsApp Inbox). Tolerant of the table not existing
+ *  yet (pre-migrate v46). OTP bodies are masked - codes don't belong in a
+ *  page other eyes might see. Incoming rows start unread. */
+function wa_chat_log($mobile, $dir, $body, $via = '', $media = '') {
+    try {
+        $n = wa_normalize_number($mobile);
+        if (strlen($n) < 12) return;
+        q('INSERT INTO wa_chats (mobile, direction, body, media_url, via, is_read) VALUES (?,?,?,?,?,?)',
+          [$n, $dir === 'in' ? 'in' : 'out', mb_substr((string)$body, 0, 4000), $media ?: null, mb_substr($via, 0, 12), $dir === 'in' ? 0 : 1]);
+    } catch (Exception $e) { /* table ships in v46 - never break a send over history */ }
 }
 
 /** Tell the NEXT send_whatsapp() what kind of message it carries, so the

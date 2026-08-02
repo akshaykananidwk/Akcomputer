@@ -129,6 +129,10 @@ include __DIR__ . '/includes/header.php';
     try { $pendEditReq = (int)val("SELECT COUNT(*) FROM edit_requests WHERE status = 'pending'"); } catch (Exception $e) { $pendEditReq = 0; }
     if ($pendEditReq): ?>
 <div class="flash flash-info">✏️ <?= $pendEditReq ?> બિલ-એડિટ મંજૂરી બાકી છે. <a href="approvals.php">Review &amp; approve →</a></div>
+<?php endif;
+    try { $waUnread = (int)val("SELECT COUNT(*) FROM wa_chats WHERE direction = 'in' AND is_read = 0"); } catch (Exception $e) { $waUnread = 0; }
+    if ($waUnread): ?>
+<div class="flash flash-info">💬 WhatsApp માં <?= $waUnread ?> નવા મેસેજ છે. <a href="wa_inbox.php">Inbox ખોલો →</a></div>
 <?php endif; endif; ?>
 
 <div class="page-actions no-print" style="margin-bottom:10px">
