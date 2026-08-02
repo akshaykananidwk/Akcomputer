@@ -16,9 +16,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($user && $user['mobile']) {
                 login_throttle_hit($throttleKey);
                 $code = create_otp('forgot', 'user:' . $user['id']);
-                send_otp_whatsapp($user['mobile'], $code, 'password reset');
-                $_SESSION['forgot_user'] = $user['id'];
-                $step = 'reset';
+                // If the send FAILS, say so - this used to show the OTP box
+                // anyway, leaving the user staring at a code that never came.
+                if (send_otp_whatsapp($user['mobile'], $code, 'password reset')) {
+                    $_SESSION['forgot_user'] = $user['id'];
+                    $step = 'reset';
+                } else {
+                    $err = 'OTP WhatsApp પર મોકલી શકાયો નથી. (' . whatsapp_last_error() . ') થોડી વારે ફરી પ્રયત્ન કરો અથવા એડમિનનો સંપર્ક કરો.';
+                }
             } else {
                 $err = 'User not found or no WhatsApp mobile registered. Contact admin.';
             }

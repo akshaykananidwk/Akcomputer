@@ -60,10 +60,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $need_totp = true;
                     } elseif (setting('login_otp', '0') === '1' && $user['mobile']) {
                         $code = create_otp('login', 'user:' . $user['id']);
-                        send_otp_whatsapp($user['mobile'], $code, 'login');
-                        $_SESSION['pending_login'] = $user['id'];
-                        $_SESSION['pending_login_method'] = 'whatsapp';
-                        $need_otp = true;
+                        if (send_otp_whatsapp($user['mobile'], $code, 'login')) {
+                            $_SESSION['pending_login'] = $user['id'];
+                            $_SESSION['pending_login_method'] = 'whatsapp';
+                            $need_otp = true;
+                        } else {
+                            // surfacing the real reason beats a silent OTP box
+                            $err = 'OTP WhatsApp પર મોકલી શકાયો નથી. (' . whatsapp_last_error() . ')';
+                        }
                     } else {
                         establish_session($user['id']);
                         record_login_history($user['id'], $username, true, 'password');
