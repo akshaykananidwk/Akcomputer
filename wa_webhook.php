@@ -12,11 +12,31 @@ if (setting('wa_webhook_key', '') === '' || !hash_equals(setting('wa_webhook_key
     http_response_code(403);
     die(json_encode(['ok' => false, 'error' => 'bad key']));
 }
+
+// Official Meta Cloud API webhook VERIFICATION handshake: Meta sends a GET
+// with hub.mode/hub.verify_token/hub.challenge and expects the raw challenge
+// back. Use the same secret as the ?key= for the verify token.
+if (get('hub_mode') !== '' || get('hub_challenge') !== '') {
+    header('Content-Type: text/plain');
+    if (hash_equals(setting('wa_webhook_key'), (string)get('hub_verify_token'))) { echo get('hub_challenge'); exit; }
+    http_response_code(403);
+    exit('bad verify token');
+}
+
 if (setting('wa_bot_enabled', '0') !== '1') die(json_encode(['ok' => true, 'status' => 'bot-disabled']));
 
 $raw = file_get_contents('php://input');
 $p = json_decode($raw, true);
 if (!is_array($p)) $p = $_POST;
+
+// Official Meta Cloud API payload: unwrap entry[0].changes[0].value so the
+// generic parsing below sees the same shape the gateways send. Delivery/read
+// receipts (statuses-only events) are ACKed and ignored.
+if (isset($p['object'], $p['entry'][0]['changes'][0]['value']) && is_array($p['entry'][0]['changes'][0]['value'])) {
+    $v = $p['entry'][0]['changes'][0]['value'];
+    if (empty($v['messages'][0])) die(json_encode(['ok' => true, 'status' => 'status-event']));
+    $p = $v;
+}
 // some gateways nest the message: {data:{...}} / {message:{...}} / {messages:[{...}]}
 foreach (['data', 'message', 'payload'] as $k) {
     if (isset($p[$k]) && is_array($p[$k]) && !isset($p[$k][0])) $p = array_merge($p, $p[$k]);
