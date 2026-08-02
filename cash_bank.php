@@ -248,9 +248,12 @@ if (get('action') === 'cash_ledger') {
     foreach ($rows as &$x) { $bal += $x['in'] - $x['out']; $x['bal'] = $bal; }
     unset($x);
     $rows = array_reverse($rows);
-    // the opening row sits at the (oldest) bottom of the newest-first list
-    $rows[] = ['date' => $from, 'desc' => '🏦 Opening Balance (' . dmy($from) . ' પહેલાંનું — આગલા મહિનેથી આવેલું)', 'staff' => '',
-               'in' => 0, 'out' => 0, 'bal' => $opening, 'open' => null, 'del' => null, 'opening' => true];
+    // the opening row sits at the (oldest) bottom of the newest-first list;
+    // tapping it re-opens the ledger from day one, so the full break-up of
+    // that carried-over amount is one tap away
+    $fullUrl = 'cash_bank.php?action=cash_ledger&from=2020-01-01&to=' . e(today()) . '&staff=' . $fStaff;
+    $rows[] = ['date' => $from, 'desc' => '🏦 Opening Balance (' . dmy($from) . ' પહેલાંનું — આગલા મહિનેથી આવેલું) · ટૅપ કરો: આખી વિગત', 'staff' => '',
+               'in' => 0, 'out' => 0, 'bal' => $opening, 'open' => $fullUrl, 'del' => null, 'opening' => true];
 
     $liveBal = $fStaff ? staff_cash($fStaff) : total_cash_in_hand();
     $canDelMt = is_full_admin();
@@ -276,6 +279,7 @@ if (get('action') === 'cash_ledger') {
         </select></div>
       <?php endif; ?>
       <button class="btn btn-sm" type="submit">Show</button>
+      <a class="btn btn-sm btn-outline" href="<?= e($fullUrl) ?>">📜 આખો હિસાબ</a>
     </form>
     <div class="table-wrap list-style-table">
     <table>
