@@ -74,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         if ($dir === 'in' && post('send_wa') && $party['mobile']) {
             $bal = party_balance($party_id);
             $balTxt = $bal > 0.009 ? '₹' . money($bal) . ' (due)' : ($bal < -0.009 ? '₹' . money(-$bal) . ' (advance)' : '₹0.00 (clear)');
+            wa_context(['kind' => 'receipt', 'amount' => money($amount), 'date' => dmy(post('pay_date', today())), 'balance' => $balTxt]);
             send_whatsapp($party['mobile'], wa_template('payment_receipt', [
                 'amount' => money($amount), 'mode' => post('mode', 'cash'), 'date' => dmy(post('pay_date', today())),
                 'alloc' => $allocNotes ? 'Against: ' . implode(', ', $allocNotes) . "\n" : '',
@@ -93,6 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remind') {
     $s = row('SELECT s.*, c.name company_name FROM sales s JOIN companies c ON c.id = s.company_id WHERE s.id = ?', [(int)post('sale_id')]);
     if ($s && $s['customer_mobile']) {
+        wa_context(['kind' => 'reminder']);
         send_whatsapp($s['customer_mobile'], wa_template('reminder', [
             'firm' => $s['company_name'], 'invoice_no' => $s['invoice_no'], 'date' => dmy($s['sale_date']),
             'due' => money($s['total'] - $s['paid']),

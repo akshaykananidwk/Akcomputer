@@ -34,6 +34,7 @@ $bills = all("SELECT s.*, c.name company_name FROM sales s
 
 $sent = 0;
 foreach ($bills as $s) {
+    wa_context(['kind' => 'reminder']);
     $ok = send_whatsapp($s['customer_mobile'], wa_template('reminder', [
         'firm' => $s['company_name'], 'invoice_no' => $s['invoice_no'], 'date' => dmy($s['sale_date']),
         'due' => money($s['total'] - $s['paid']),

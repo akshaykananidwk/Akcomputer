@@ -50,6 +50,8 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
         'link' => $link, 'customer' => $sale['customer_name'],
     ]);
     // bill goes as a PDF document with the message as caption
+    wa_context(['kind' => 'bill', 'invoice' => $sale['invoice_no'], 'total' => money($sale['total']),
+                'firm' => $sale['company_name'], 'link' => $link]);
     if ($mobile && send_whatsapp($mobile, $msg, $imgUrl)) {
         log_activity('sale_whatsapp', $sale['invoice_no'] . ' to ' . $mobile);
         flash('Bill (PDF) sent on WhatsApp to ' . $mobile);

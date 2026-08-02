@@ -59,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'send_aging_bulk' &&
         $imgName = 'reminder_' . preg_replace('/\D/', '', $mobile) . '_' . substr(md5(microtime() . $i), 0, 6) . '.jpg';
         file_put_contents($imgDir . '/' . $imgName, reminder_image_jpg($shopName, $amount));
         $imgUrl = base_url('uploads/reminders/' . $imgName);
+        wa_context(['kind' => 'reminder']);
         $msg = wa_template('aging_reminder', ['amount' => money($amount), 'shop' => $shopName, 'customer' => $pname]);
         if (send_whatsapp($mobile, $msg, $imgUrl)) $sent++; else $failed++;
     }

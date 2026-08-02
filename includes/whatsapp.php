@@ -106,20 +106,33 @@ function send_whatsapp($mobile, $message, $media_url = '') {
     $order = setting('wa_provider_order', 'thirdparty_first') === 'meta_first'
         ? ['meta', 'thirdparty'] : ['thirdparty', 'meta'];
     $errs = [];
+    $sent = false;
     foreach ($order as $p) {
         if ($p === 'meta') {
             if (!meta_wa_configured()) { $errs[] = 'Meta: not configured'; continue; }
-            if (meta_wa_send($mobile, $message, $media_url)) return true;
+            if (meta_wa_send($mobile, $message, $media_url)) { $sent = true; break; }
             $errs[] = 'Meta: ' . whatsapp_last_error();
             log_activity('whatsapp_send_fail', mb_substr('meta ' . wa_normalize_number($mobile) . ': ' . whatsapp_last_error(), 0, 400));
         } else {
             if (!wa_thirdparty_configured()) { $errs[] = 'Gateway: not configured'; continue; }
-            if (wa_send_thirdparty($mobile, $message, $media_url)) return true;
+            if (wa_send_thirdparty($mobile, $message, $media_url)) { $sent = true; break; }
             $errs[] = 'Gateway: ' . whatsapp_last_error();
         }
     }
+    $GLOBALS['_wa_ctx'] = []; // the context only ever applies to one send
+    if ($sent) return true;
     $GLOBALS['_wa_last_error'] = $errs ? implode(' | ', $errs) : 'No WhatsApp provider is configured (Settings > WhatsApp).';
     return false;
+}
+
+/** Tell the NEXT send_whatsapp() what kind of message it carries, so the
+ *  Meta provider can use the matching approved template outside the 24h
+ *  window: ['kind'=>'otp','code'=>..] / ['kind'=>'bill','invoice'=>..,
+ *  'total'=>..,'firm'=>..,'link'=>..] / ['kind'=>'receipt','amount'=>..,
+ *  'date'=>..,'balance'=>..] / ['kind'=>'reminder']. Optional everywhere -
+ *  without it the generic akc_update template carries the flattened text. */
+function wa_context($ctx) {
+    $GLOBALS['_wa_ctx'] = is_array($ctx) ? $ctx : [];
 }
 
 // ---------- Customizable message templates ----------
@@ -177,5 +190,6 @@ function wa_template($key, $vars) {
 }
 
 function send_otp_whatsapp($mobile, $code, $reason = 'verification') {
+    wa_context(['kind' => 'otp', 'code' => $code]);
     return send_whatsapp($mobile, wa_template('otp', ['otp' => $code, 'reason' => $reason]));
 }

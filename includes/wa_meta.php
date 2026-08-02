@@ -69,6 +69,32 @@ function meta_wa_template_catalog() {
                 'example' => ['body_text' => [['Balance due Rs.2,500 against invoice INV-26-00040']]],
             ]],
         ],
+        'akc_bill' => [
+            'category' => 'UTILITY', 'language' => 'en',
+            'components' => [[
+                'type' => 'BODY',
+                'text' => "Dear customer, your invoice {{1}} of Rs. {{2}} from {{3}} is ready.\n\nView or download your bill here: {{4}}\n\nThank you for your business.",
+                'example' => ['body_text' => [['INV-26-00042', '5,500.00', $shop, 'https://shop.akdwk.in/sale_view.php?share=abc123']]],
+            ]],
+        ],
+        'akc_receipt' => [
+            'category' => 'UTILITY', 'language' => 'en',
+            'components' => [[
+                'type' => 'BODY',
+                'text' => "Dear customer, we have received your payment of Rs. {{1}} on {{2}}. Your balance is now {{3}}.\n\nThank you - {{4}}",
+                'example' => ['body_text' => [['2,500.00', '02-08-2026', 'Rs. 0.00 (clear)', $shop]]],
+            ]],
+        ],
+        // OTP: Meta only allows the AUTHENTICATION category for codes - the
+        // body text is fixed by Meta, we just declare the copy-code button.
+        'akc_otp' => [
+            'category' => 'AUTHENTICATION', 'language' => 'en',
+            'components' => [
+                ['type' => 'BODY', 'add_security_recommendation' => true],
+                ['type' => 'FOOTER', 'code_expiration_minutes' => 10],
+                ['type' => 'BUTTONS', 'buttons' => [['type' => 'OTP', 'otp_type' => 'COPY_CODE']]],
+            ],
+        ],
     ];
 }
 
@@ -101,20 +127,45 @@ function meta_wa_send($mobile, $message, $media_url = '') {
     if ($ok) return true;
 
     // 131047 / 131026: outside the 24h window -> an approved template is the
-    // only way in. Deliver the same content through whichever of our
-    // templates Meta has APPROVED so far (they share the same {{1}} body).
+    // only way in. wa_context() tells us WHAT is being sent (otp / bill /
+    // receipt / reminder) so the matching approved template carries it;
+    // anything else rides the generic akc_update.
     $code = (int)($data['error']['code'] ?? 0);
     if (in_array($code, [131047, 131026, 470], true)) {
-        $tplName = 'akc_update';
+        $ctx = is_array($GLOBALS['_wa_ctx'] ?? null) ? $GLOBALS['_wa_ctx'] : [];
         $st = json_decode(setting('meta_wa_tpl_status', ''), true) ?: [];
-        foreach (['akc_update', 'akc_reminder'] as $cand) {
-            if (($st[$cand]['status'] ?? '') === 'APPROVED') { $tplName = $cand; break; }
+        $approved = fn($n) => ($st[$n]['status'] ?? '') === 'APPROVED';
+        $kind = $ctx['kind'] ?? '';
+        $tpl = null;
+
+        if ($kind === 'otp' && $approved('akc_otp') && ($ctx['code'] ?? '') !== '') {
+            $tpl = ['name' => 'akc_otp', 'language' => ['code' => 'en'], 'components' => [
+                ['type' => 'body', 'parameters' => [['type' => 'text', 'text' => $ctx['code']]]],
+                ['type' => 'button', 'sub_type' => 'url', 'index' => '0',
+                 'parameters' => [['type' => 'text', 'text' => $ctx['code']]]],
+            ]];
+        } elseif ($kind === 'bill' && $approved('akc_bill') && ($ctx['invoice'] ?? '') !== '') {
+            $tpl = ['name' => 'akc_bill', 'language' => ['code' => 'en'], 'components' => [[
+                'type' => 'body', 'parameters' => array_map(fn($v) => ['type' => 'text', 'text' => meta_wa_flatten($v, 300)],
+                    [$ctx['invoice'], $ctx['total'] ?? '', $ctx['firm'] ?? setting('app_name', 'AK Computer'), $ctx['link'] ?? ($media_url ?: '')]),
+            ]]];
+        } elseif ($kind === 'receipt' && $approved('akc_receipt') && ($ctx['amount'] ?? '') !== '') {
+            $tpl = ['name' => 'akc_receipt', 'language' => ['code' => 'en'], 'components' => [[
+                'type' => 'body', 'parameters' => array_map(fn($v) => ['type' => 'text', 'text' => meta_wa_flatten($v, 300)],
+                    [$ctx['amount'], $ctx['date'] ?? dmy(today()), $ctx['balance'] ?? '-', $ctx['shop'] ?? setting('app_name', 'AK Computer')]),
+            ]]];
         }
-        $body = meta_wa_flatten($message . ($media_url ? ' | Download: ' . $media_url : ''));
+        if ($tpl === null) {
+            // generic carrier - a reminder prefers the reminder wording
+            $prefs = $kind === 'reminder' ? ['akc_reminder', 'akc_update'] : ['akc_update', 'akc_reminder'];
+            $tplName = $prefs[0];
+            foreach ($prefs as $cand) if ($approved($cand)) { $tplName = $cand; break; }
+            $body = meta_wa_flatten($message . ($media_url ? ' | Download: ' . $media_url : ''));
+            $tpl = ['name' => $tplName, 'language' => ['code' => 'en'],
+                    'components' => [['type' => 'body', 'parameters' => [['type' => 'text', 'text' => $body]]]]];
+        }
         [$ok2, $d2, $err2] = meta_wa_call('POST', "$phoneId/messages", [
-            'messaging_product' => 'whatsapp', 'to' => $number, 'type' => 'template',
-            'template' => ['name' => $tplName, 'language' => ['code' => 'en'],
-                           'components' => [['type' => 'body', 'parameters' => [['type' => 'text', 'text' => $body]]]]],
+            'messaging_product' => 'whatsapp', 'to' => $number, 'type' => 'template', 'template' => $tpl,
         ]);
         if ($ok2) return true;
         $GLOBALS['_wa_last_error'] = 'Meta template send failed: ' . $err2;
