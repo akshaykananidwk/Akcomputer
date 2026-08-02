@@ -58,6 +58,17 @@ $text = $p['text'] ?? $p['body'] ?? $p['message'] ?? $p['msg'] ?? $p['caption'] 
 if (is_array($text)) $text = $text['body'] ?? '';
 $text = trim((string)$text);
 
+// Interactive catalog reply (Meta list/button tap): the row id (cat:5:0 /
+// item:12 / ...) drives the bot; the human-readable title goes in the Inbox.
+$waTapTitle = '';
+if (isset($p['interactive']) && is_array($p['interactive'])) {
+    $ir = $p['interactive']['list_reply'] ?? $p['interactive']['button_reply'] ?? null;
+    if (is_array($ir) && trim((string)($ir['id'] ?? '')) !== '') {
+        $text = trim((string)$ir['id']);
+        $waTapTitle = trim((string)($ir['title'] ?? ''));
+    }
+}
+
 // image: either a fetchable URL or inline base64
 $jpeg = null;
 $mediaUrl = (string)($p['media_url'] ?? $p['mediaUrl'] ?? $p['image'] ?? $p['imageUrl'] ?? $p['url'] ?? '');
@@ -106,10 +117,11 @@ if ($mobile === '' || ($text === '' && !$jpeg && !$isAudio)) die(json_encode(['o
 
 // record into the Inbox + ping the admins on Telegram (customers only -
 // staff already chat with the shop assistant all day)
-wa_chat_log($mobile, 'in', $text !== '' ? $text : ($jpeg ? '📷 [photo]' : '🎙 [voice message]'), 'whatsapp', preg_match('#^https?://#i', $mediaUrl) ? $mediaUrl : '');
+wa_chat_log($mobile, 'in', $waTapTitle !== '' ? '👆 ' . $waTapTitle : ($text !== '' ? $text : ($jpeg ? '📷 [photo]' : '🎙 [voice message]')), 'whatsapp', preg_match('#^https?://#i', $mediaUrl) ? $mediaUrl : '');
 $isStaffSender = (bool)row("SELECT id FROM users WHERE is_active = 1 AND mobile <> ''
                             AND ? LIKE CONCAT('%', RIGHT(REPLACE(REPLACE(mobile, '+', ''), ' ', ''), 10))", [$mobile]);
-if (!$isStaffSender) {
+// menu taps are the bot's own conversation - no Telegram ping per tap
+if (!$isStaffSender && $waTapTitle === '') {
     try {
         tg_notify_admins("💬 નવો WhatsApp મેસેજ\nFrom: +$mobile\n" . mb_substr($text !== '' ? $text : '📷 media', 0, 300)
             . "\n\nજવાબ આપવા: " . base_url('wa_inbox.php?m=' . $mobile));

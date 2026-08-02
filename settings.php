@@ -42,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_whatsapp') {
     require_perm('settings.edit');
     foreach (['wa_api_url', 'wa_session_id', 'wa_api_key', 'wa_shop_number'] as $k) set_setting($k, post($k));
     set_setting('wa_bot_enabled', post('wa_bot_enabled') ? '1' : '0');
+    set_setting('wa_catalog_enabled', post('wa_catalog_enabled') ? '1' : '0');
     if (post('wa_bot_ai_monthly_cap') !== '') set_setting('wa_bot_ai_monthly_cap', (string)max(0, (int)post('wa_bot_ai_monthly_cap')));
     log_activity('settings_save');
     flash('WhatsApp settings saved.');
@@ -539,6 +540,8 @@ exit;
     <input type="hidden" name="wa_api_key" value="<?= e(setting('wa_api_key')) ?>">
     <input type="hidden" name="wa_shop_number" value="<?= e(setting('wa_shop_number')) ?>">
     <label class="check-inline"><input type="checkbox" name="wa_bot_enabled" value="1" <?= setting('wa_bot_enabled', '0') === '1' ? 'checked' : '' ?>> Bot ON — auto-reply to product questions</label>
+    <label class="check-inline" style="display:block;margin-top:6px"><input type="checkbox" name="wa_catalog_enabled" value="1" <?= setting('wa_catalog_enabled', '1') === '1' ? 'checked' : '' ?>> 📚 WhatsApp Catalog menu — "catalog" લખે (કે welcome બટન દબાવે) એટલે આખો કેટલોગ WhatsApp માં જ ખૂલે: કેટેગરી લિસ્ટ → પ્રોડક્ટ + ભાવ → 🛒 ઓર્ડર બટન (ઓર્ડર વેબસાઇટના Web Orders માં આવે)</label>
+    <p class="muted" style="font-size:12.5px;margin:4px 0 0 24px">Official Meta API કનેક્ટ હોય તો સાચા બટન/લિસ્ટ મેનુ જાય છે; નહીંતર એ જ મેનુ નંબરવાળા ટેક્સ્ટ તરીકે જાય છે (ગ્રાહક "1" લખીને જવાબ આપે).</p>
     <div class="form-row cols-2 mt">
       <div><label>AI calls / month limit <span class="muted" style="font-weight:normal">(cost brake — most replies use 0 AI; 1500 stays inside Gemini's FREE tier = ₹0)</span></label>
         <input type="number" min="0" name="wa_bot_ai_monthly_cap" value="<?= (int)setting('wa_bot_ai_monthly_cap', '1500') ?>"></div>

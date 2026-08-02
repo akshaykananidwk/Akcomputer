@@ -175,6 +175,19 @@ function meta_wa_send($mobile, $message, $media_url = '') {
     return false;
 }
 
+/** Send an interactive message (list / reply-buttons / cta_url) - powers the
+ *  in-WhatsApp catalog menu. Free-form interactive messages only work inside
+ *  the 24h customer window, which is always open here because the customer
+ *  just messaged us. Returns [ok(bool), err(string)]. */
+function meta_wa_send_interactive($mobile, array $interactive) {
+    $number = wa_normalize_number($mobile);
+    if (!meta_wa_configured() || strlen($number) < 12) return [false, 'Meta Cloud API not configured'];
+    [$ok, , $err] = meta_wa_call('POST', setting('meta_wa_phone_id') . '/messages', [
+        'messaging_product' => 'whatsapp', 'to' => $number, 'type' => 'interactive', 'interactive' => $interactive,
+    ]);
+    return [$ok, $err];
+}
+
 /** Auto-submit any catalog template Meta doesn't have yet and pull the live
  *  status of all of them. Returns name => [status, category, reason]; also
  *  cached in settings for the Settings page and the cron refresher.

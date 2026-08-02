@@ -87,6 +87,145 @@ function wa_bot_reply_text(array $matches, $photoGuess = '') {
     return $out;
 }
 
+// ---------- WhatsApp catalog: the whole store as a list/button menu ----------
+// Customer types "catalog" (or taps the greeting button) -> category list ->
+// item list with prices -> product card with a 🛒 button that opens the
+// website order page (catalog.php?add=ID -> web_orders). Interactive
+// list/button messages need the official Meta Cloud API; without it the same
+// menu goes out as a numbered TEXT list (reply "2") over any gateway.
+
+function wa_catalog_on() { return setting('wa_catalog_enabled', '1') === '1'; }
+
+/** Trim + cut to Meta's per-field character limits (Gujarati-safe). */
+function wa_cat_cut($s, $n) {
+    $s = trim(preg_replace('/\s+/u', ' ', (string)$s));
+    return mb_strlen($s) > $n ? mb_substr($s, 0, $n - 1) . '…' : $s;
+}
+
+/** Decide whether an incoming text belongs to the catalog menu: an
+ *  interactive reply id, a remembered number from a text menu, or a
+ *  "catalog"/"menu" keyword. Returns the route id or null. */
+function wa_catalog_want($t, $st, $mobile) {
+    if (!wa_catalog_on()) return null;
+    if (preg_match('/^(cats:\d+|cat:\d+:\d+|item:\d+|act:[a-z]+)$/', $t)) return $t;
+    if ($st && $st['state'] === 'catalog_pick' && preg_match('/^\d{1,2}$/', $t)) {
+        $d = json_decode($st['data'], true) ?: [];
+        if (isset($d[$t])) { wa_bot_clear_state($mobile); return $d[$t]; }
+        return null;
+    }
+    return wa_catalog_kw($t) ? 'cats:0' : null;
+}
+
+/** "catalog" / "menu" / "ભાવ" as the WHOLE message = open the menu. */
+function wa_catalog_kw($t) {
+    return (bool)preg_match('/^(catalog|catalogue|catlog|કેટલોગ|કૅટલોગ|menu|મેનુ|મેન્યુ|list|લિસ્ટ|price\s?list|rate\s?list|પ્રાઇસ\s?લિસ્ટ|ભાવ|બધા\s?ભાવ)[\s?.!)]*$/iu', $t);
+}
+
+/** Try the interactive message first (Meta); otherwise send the numbered
+ *  text version and remember the number->route map for the reply. */
+function wa_catalog_deliver($mobile, array $interactive, $text, array $map = []) {
+    require_once __DIR__ . '/wa_meta.php';
+    if (meta_wa_configured()) {
+        [$ok, ] = meta_wa_send_interactive($mobile, $interactive);
+        if ($ok) { wa_chat_log($mobile, 'out', $text, 'meta'); return 'interactive'; }
+    }
+    if ($map) wa_bot_set_state($mobile, 'catalog_pick', $map);
+    return send_whatsapp($mobile, $text) ? 'text-menu' : 'send-failed';
+}
+
+/** Route one menu tap / number reply to the right screen. */
+function wa_catalog_route($mobile, $id) {
+    if (preg_match('/^cats:(\d+)$/', $id, $m)) return wa_catalog_root($mobile, (int)$m[1]);
+    if (preg_match('/^cat:(\d+):(\d+)$/', $id, $m)) return wa_catalog_items($mobile, (int)$m[1], (int)$m[2]);
+    if (preg_match('/^item:(\d+)$/', $id, $m)) return wa_catalog_item($mobile, (int)$m[1]);
+    return 'unknown';
+}
+
+/** Screen 1: categories (max 9 + "more" row - Meta allows 10 list rows). */
+function wa_catalog_root($mobile, $offset = 0) {
+    $shop = setting('app_name', 'AK Computer');
+    $cats = all('SELECT c.id, c.name, COUNT(i.id) n FROM categories c
+                 JOIN items i ON i.category_id = c.id AND i.is_active = 1 AND i.show_on_website = 1
+                 GROUP BY c.id, c.name ORDER BY n DESC, c.name');
+    if (!$cats) { send_whatsapp($mobile, "🙏 *$shop*\nહમણાં ઓનલાઇન કેટલોગ ખાલી છે.\n🌐 " . base_url('catalog.php')); return 'empty'; }
+    $rows = []; $map = []; $n = 1;
+    $txt = "🙏 *$shop — કેટલોગ* 📚\nકેટેગરી પસંદ કરો:\n";
+    foreach (array_slice($cats, $offset, 9) as $c) {
+        $rows[] = ['id' => 'cat:' . $c['id'] . ':0', 'title' => wa_cat_cut($c['name'], 24), 'description' => $c['n'] . ' પ્રોડક્ટ'];
+        $map[(string)$n] = 'cat:' . $c['id'] . ':0';
+        $txt .= "\n*$n)* {$c['name']} ({$c['n']})";
+        $n++;
+    }
+    if (count($cats) > $offset + 9) {
+        $rows[] = ['id' => 'cats:' . ($offset + 9), 'title' => '➡️ વધુ કેટેગરી...', 'description' => (count($cats) - $offset - 9) . ' બાકી'];
+        $map['0'] = 'cats:' . ($offset + 9);
+        $txt .= "\n*0)* ➡️ વધુ કેટેગરી...";
+    }
+    $txt .= "\n\n👉 નંબર લખીને જવાબ આપો (દા.ત. 1)\n🌐 આખો સ્ટોર: " . base_url('catalog.php');
+    return wa_catalog_deliver($mobile, [
+        'type' => 'list',
+        'header' => ['type' => 'text', 'text' => wa_cat_cut('📚 ' . $shop, 60)],
+        'body' => ['text' => "આખો કેટલોગ ભાવ સાથે અહીં જ 👇\nકેટેગરી પસંદ કરો — પ્રોડક્ટ, ભાવ અને ઓર્ડર બટન તરત મળશે."],
+        'footer' => ['text' => wa_cat_cut(base_url('catalog.php'), 60)],
+        'action' => ['button' => 'કેટેગરી જુઓ', 'sections' => [['title' => 'કેટેગરી', 'rows' => $rows]]],
+    ], $txt, $map);
+}
+
+/** Screen 2: items of one category, price in every row. */
+function wa_catalog_items($mobile, $catId, $offset = 0) {
+    $cat = val('SELECT name FROM categories WHERE id = ?', [$catId]) ?: 'પ્રોડક્ટ';
+    $items = all('SELECT id, name, brand, model, selling_price FROM items
+                  WHERE is_active = 1 AND show_on_website = 1 AND category_id = ?
+                  ORDER BY selling_price, name', [$catId]);
+    if (!$items) { send_whatsapp($mobile, "🙏 *$cat* માં હમણાં કોઈ પ્રોડક્ટ ઓનલાઇન નથી.\n🌐 " . base_url('catalog.php')); return 'empty'; }
+    $rows = []; $map = []; $n = 1;
+    $txt = "📚 *$cat* (" . count($items) . " પ્રોડક્ટ)\n";
+    foreach (array_slice($items, $offset, 9) as $it) {
+        $bm = trim($it['brand'] . ' ' . $it['model']);
+        $rows[] = ['id' => 'item:' . $it['id'], 'title' => wa_cat_cut($it['name'], 24),
+                   'description' => wa_cat_cut('₹' . money($it['selling_price']) . ($bm !== '' ? ' · ' . $bm : ''), 72)];
+        $map[(string)$n] = 'item:' . $it['id'];
+        $txt .= "\n*$n)* {$it['name']}" . ($bm !== '' ? " ($bm)" : '') . " — *₹" . money($it['selling_price']) . "*";
+        $n++;
+    }
+    if (count($items) > $offset + 9) {
+        $rows[] = ['id' => "cat:$catId:" . ($offset + 9), 'title' => '➡️ વધુ પ્રોડક્ટ...', 'description' => (count($items) - $offset - 9) . ' બાકી'];
+        $map['0'] = "cat:$catId:" . ($offset + 9);
+        $txt .= "\n*0)* ➡️ વધુ પ્રોડક્ટ...";
+    }
+    $txt .= "\n\n👉 નંબર લખીને જવાબ આપો — વિગત અને ઓર્ડર લિંક મળશે.";
+    return wa_catalog_deliver($mobile, [
+        'type' => 'list',
+        'header' => ['type' => 'text', 'text' => wa_cat_cut('📚 ' . $cat, 60)],
+        'body' => ['text' => wa_cat_cut($cat, 900) . " — " . count($items) . " પ્રોડક્ટ ભાવ સાથે 👇\nપ્રોડક્ટ પસંદ કરો, ઓર્ડર બટન તરત મળશે."],
+        'footer' => ['text' => wa_cat_cut(setting('app_name', 'AK Computer'), 60)],
+        'action' => ['button' => 'પ્રોડક્ટ જુઓ', 'sections' => [['title' => wa_cat_cut($cat, 24), 'rows' => $rows]]],
+    ], $txt, $map);
+}
+
+/** Screen 3: one product - photo + price + 🛒 button that opens the website
+ *  with this item already in the cart (order lands in web_orders). */
+function wa_catalog_item($mobile, $id) {
+    $it = row('SELECT * FROM items WHERE id = ? AND is_active = 1 AND show_on_website = 1', [$id]);
+    if (!$it) { send_whatsapp($mobile, "🙏 આ પ્રોડક્ટ હમણાં ઉપલબ્ધ નથી.\n🌐 " . base_url('catalog.php')); return 'gone'; }
+    $stk = (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$id]);
+    $link = base_url('catalog.php?add=' . (int)$id);
+    $bm = trim($it['brand'] . ' ' . $it['model']);
+    $body = '*' . $it['name'] . '*' . ($bm !== '' ? "\n$bm" : '')
+          . "\n\n💰 ભાવ: *₹" . money($it['selling_price']) . '*'
+          . "\n" . ($stk > 0 ? '✅ સ્ટોકમાં છે' : '📦 ઓર્ડરથી મળી જશે');
+    $photo = trim((string)$it['photo']);
+    if ($photo !== '' && !preg_match('#^https?://#i', $photo)) $photo = base_url($photo);
+    $interactive = [
+        'type' => 'cta_url',
+        'body' => ['text' => mb_substr($body . "\n\n🛒 નીચેનું બટન દબાવો — વેબસાઇટ પર ઓર્ડર થઈ જશે.", 0, 1024)],
+        'footer' => ['text' => wa_cat_cut(setting('app_name', 'AK Computer'), 60)],
+        'action' => ['name' => 'cta_url', 'parameters' => ['display_text' => '🛒 ઓર્ડર કરો', 'url' => $link]],
+    ];
+    if ($photo !== '') $interactive['header'] = ['type' => 'image', 'image' => ['link' => $photo]];
+    return wa_catalog_deliver($mobile, $interactive, $body . "\n\n🛒 ઓર્ડર કરવા આ લિંક ખોલો:\n$link");
+}
+
 // ---------- tiny per-number conversation memory (for follow-up questions) ----------
 function wa_bot_get_state($mobile) {
     $s = row('SELECT * FROM wa_bot_state WHERE mobile = ?', [$mobile]);
@@ -177,7 +316,12 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
     // anti-loop / anti-spam: never answer the same person more than once per
     // 15 seconds, and never react to text identical to our own last reply
     $recent = row('SELECT reply, created_at FROM wa_bot_log WHERE mobile = ? ORDER BY id DESC LIMIT 1', [$mobile]);
-    if ($recent && strtotime($recent['created_at']) > time() - 15) return 'rate-limited';
+    // (catalog menu taps skip the 15s brake - tapping through the list is fast;
+    // same for a "2" reply while a numbered text menu is waiting)
+    $isMenuTap = (bool)preg_match('/^(cats:|cat:|item:|act:)/', trim($text))
+        || wa_catalog_kw(mb_strtolower(trim($text)))
+        || (preg_match('/^\d{1,2}$/', trim($text)) && val('SELECT state FROM wa_bot_state WHERE mobile = ?', [$mobile]) === 'catalog_pick');
+    if ($recent && strtotime($recent['created_at']) > time() - 15 && !$isMenuTap) return 'rate-limited';
     if ($recent && $text !== '' && trim($recent['reply'] ?? '') === trim($text)) return 'own-echo';
 
     // staff/owner? their WhatsApp number matches an active user -> the bot
@@ -201,10 +345,39 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
         // welcome at most once a day per person
         $lastHello = val("SELECT created_at FROM wa_bot_log WHERE mobile = ? AND matched = 0 AND in_text IS NOT NULL AND created_at > DATE_SUB(NOW(), INTERVAL 1 DAY) ORDER BY id DESC LIMIT 1", [$mobile]);
         if ($lastHello) return 'greeted-recently';
-        $reply = "🙏 નમસ્તે! *" . setting('app_name', 'AK Computer') . "* માં આપનું સ્વાગત છે.\n\nકોઈપણ પ્રોડક્ટનું નામ લખો (કે ફોટો મોકલો) — ભાવ અને લિંક તરત મળશે!\n\n🌐 આખો સ્ટોર: " . base_url('catalog.php');
+        $hello = "🙏 નમસ્તે! *" . setting('app_name', 'AK Computer') . "* માં આપનું સ્વાગત છે.\n\nકોઈપણ પ્રોડક્ટનું નામ લખો (કે ફોટો મોકલો) — ભાવ અને લિંક તરત મળશે!";
+        // with the Meta API the welcome carries tap-buttons (catalog / my account)
+        if (wa_catalog_on()) {
+            require_once __DIR__ . '/wa_meta.php';
+            [$bok, ] = meta_wa_configured() ? meta_wa_send_interactive($mobile, [
+                'type' => 'button',
+                'body' => ['text' => $hello],
+                'action' => ['buttons' => [
+                    ['type' => 'reply', 'reply' => ['id' => 'cats:0', 'title' => '📚 કેટલોગ જુઓ']],
+                    ['type' => 'reply', 'reply' => ['id' => 'act:baki', 'title' => '💰 મારો હિસાબ']],
+                ]],
+            ]) : [false, ''];
+            if ($bok) {
+                wa_chat_log($mobile, 'out', $hello . "\n\n[📚 કેટલોગ જુઓ]  [💰 મારો હિસાબ]", 'meta');
+                q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
+                  [$mobile, mb_substr((string)$text, 0, 500), 0, mb_substr($hello, 0, 1500), 0, 0, $role]);
+                return 'replied:greeting-buttons';
+            }
+        }
+        $reply = $hello . (wa_catalog_on() ? "\n📚 આખો કેટલોગ ભાવ સાથે જોવા *catalog* લખો." : '') . "\n\n🌐 આખો સ્ટોર: " . base_url('catalog.php');
     } elseif (trim($text) !== '') {
-        $t = mb_strtolower($text);
+        $t = mb_strtolower(trim($text));
         $st = wa_bot_get_state($mobile);
+
+        // 0) કેટલોગ menu: list/button taps, remembered numbers, "catalog" keywords
+        $croute = wa_catalog_want($t, $st, $mobile);
+        if ($croute === 'act:baki') { $croute = null; $t = 'બાકી'; } // greeting button -> ledger below
+        if ($croute !== null) {
+            $cst = wa_catalog_route($mobile, $croute);
+            q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
+              [$mobile, mb_substr((string)$text, 0, 500), 0, '📚 catalog (' . $cst . ')', 0, 0, $role]);
+            return 'catalog:' . $cst;
+        }
 
         // 1) pending follow-up: we asked "IP કે HD?" - understand the answer
         if ($st && $st['state'] === 'camera_type') {
