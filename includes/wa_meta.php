@@ -135,9 +135,11 @@ function meta_wa_sync_templates() {
     $out = [];
     foreach (meta_wa_template_catalog() as $name => $def) {
         if (isset($existing[$name])) {
+            $reason = (string)($existing[$name]['rejected_reason'] ?? '');
+            if (strtoupper($reason) === 'NONE') $reason = ''; // Meta sends the literal word "NONE" when there is no reason
             $out[$name] = ['status' => strtoupper($existing[$name]['status'] ?? 'PENDING'),
                            'category' => $existing[$name]['category'] ?? $def['category'],
-                           'reason' => $existing[$name]['rejected_reason'] ?? ''];
+                           'reason' => $reason];
             continue;
         }
         // not on Meta yet -> submit it now (this IS the approval request)
