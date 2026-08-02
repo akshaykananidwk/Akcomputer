@@ -48,6 +48,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_whatsapp') {
     redirect('settings.php?cat=whatsapp');
 }
 
+// ---- official Meta (Facebook) Cloud API: save + connect & auto-sync templates ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_meta_wa') {
+    require_perm('settings.edit');
+    foreach (['meta_wa_token', 'meta_wa_phone_id', 'meta_wa_waba_id'] as $k) set_setting($k, trim(post($k)));
+    set_setting('wa_provider_order', post('wa_provider_order') === 'meta_first' ? 'meta_first' : 'thirdparty_first');
+    log_activity('settings_save', 'meta whatsapp');
+    flash('Meta WhatsApp settings saved.');
+    redirect('settings.php?cat=whatsapp');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'meta_wa_sync') {
+    require_perm('settings.edit');
+    require_once __DIR__ . '/includes/wa_meta.php';
+    $res = meta_wa_sync_templates();
+    if (isset($res['_error'])) flash('Meta connect failed: ' . $res['_error'], 'error');
+    else {
+        $n = count($res);
+        $appr = count(array_filter($res, fn($t) => $t['status'] === 'APPROVED'));
+        flash("Meta સાથે કનેક્ટ થયું ✔ $n ટેમ્પ્લેટ સિંક થયા ($appr Approved). સ્ટેટસ નીચે કાર્ડમાં દેખાય છે.");
+        log_activity('meta_wa_sync', json_encode(array_map(fn($t) => $t['status'], $res)));
+    }
+    redirect('settings.php?cat=whatsapp');
+}
+
 // ---- WhatsApp message templates ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'templates') {
     require_perm('settings.edit');
@@ -450,6 +473,50 @@ exit;
     <button class="btn" type="submit">Save</button>
   </form>
 </div>
+
+<div class="card">
+  <h2>☁️ Official Meta (Facebook) WhatsApp Cloud API</h2>
+  <p class="muted" style="font-size:13px">બે API સાથે ચાલે છે — નીચે પ્રાયોરિટી પસંદ કરો: પહેલી નિષ્ફળ જાય તો બીજી આપોઆપ બેકઅપ તરીકે વપરાય છે.</p>
+  <form method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_meta_wa">
+    <div class="field"><label>કઈ API પહેલા વાપરવી? (Priority)</label>
+      <select name="wa_provider_order">
+        <option value="thirdparty_first" <?= setting('wa_provider_order', 'thirdparty_first') !== 'meta_first' ? 'selected' : '' ?>>1️⃣ થર્ડ-પાર્ટી પહેલા → Meta બેકઅપ</option>
+        <option value="meta_first" <?= setting('wa_provider_order') === 'meta_first' ? 'selected' : '' ?>>1️⃣ Meta (Official) પહેલા → થર્ડ-પાર્ટી બેકઅપ</option>
+      </select></div>
+    <div class="field"><label>Permanent Access Token</label>
+      <input type="text" name="meta_wa_token" value="<?= e(setting('meta_wa_token')) ?>" placeholder="EAAG... (Meta Business > System User token)" autocomplete="off"></div>
+    <div class="form-row cols-2">
+      <div><label>Phone Number ID</label><input type="text" name="meta_wa_phone_id" value="<?= e(setting('meta_wa_phone_id')) ?>" placeholder="1234567890"></div>
+      <div><label>WhatsApp Business Account (WABA) ID</label><input type="text" name="meta_wa_waba_id" value="<?= e(setting('meta_wa_waba_id')) ?>" placeholder="1234567890"></div>
+    </div>
+    <button class="btn" type="submit">Save</button>
+  </form>
+  <form method="post" style="margin-top:10px">
+    <?= csrf_field() ?><input type="hidden" name="do" value="meta_wa_sync">
+    <button class="btn btn-outline" type="submit">🔗 Connect &amp; Sync Templates</button>
+    <span class="muted" style="font-size:12.5px"> — ટેમ્પ્લેટ આપોઆપ મંજૂરી માટે Meta ને મોકલાય છે, કંઈ મેન્યુઅલ કરવાનું નથી.</span>
+  </form>
+  <?php $tplStatus = json_decode(setting('meta_wa_tpl_status', ''), true) ?: [];
+        if ($tplStatus): ?>
+  <table class="table-sm mt">
+    <thead><tr><th>Template</th><th>Category</th><th>Status</th></tr></thead>
+    <tbody>
+    <?php foreach ($tplStatus as $tn => $ts): if (!is_array($ts)) continue;
+        $badge = ['APPROVED' => '<span class="badge badge-ok">✅ Approved</span>',
+                  'PENDING' => '<span class="badge badge-info">⏳ Pending</span>',
+                  'REJECTED' => '<span class="badge badge-bad">❌ Rejected</span>',
+                  'DRAFT' => '<span class="badge">📝 Draft</span>'][$ts['status']] ?? '<span class="badge">' . e($ts['status']) . '</span>'; ?>
+    <tr><td><code><?= e($tn) ?></code></td><td><?= e($ts['category'] ?? '') ?></td>
+        <td><?= $badge ?><?= !empty($ts['reason']) ? ' <span class="muted" style="font-size:12px">' . e(mb_substr($ts['reason'], 0, 120)) . '</span>' : '' ?></td></tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+  <p class="muted" style="font-size:12px">Last sync: <?= e(setting('meta_wa_tpl_synced_at', '-')) ?> · સ્ટેટસ દર 6 કલાકે આપોઆપ પણ રિફ્રેશ થાય છે (Pending → Approved થાય એટલે અહીં દેખાશે).</p>
+  <?php endif; ?>
+</div>
+
 <div class="card">
   <h3>Test WhatsApp API</h3>
   <form method="post" class="filterbar">

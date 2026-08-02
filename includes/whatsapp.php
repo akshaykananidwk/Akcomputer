@@ -40,11 +40,16 @@ function wa_interpret_response($resp, $httpCode) {
 /** Human-readable reason for the last send_whatsapp() failure, or ''. */
 function whatsapp_last_error() { return $GLOBALS['_wa_last_error'] ?? ''; }
 
+/** Is the third-party gateway (bulk.akdwk.in style) configured? */
+function wa_thirdparty_configured() {
+    return setting('wa_api_url', 'https://bulk.akdwk.in/api.php') !== '' && setting('wa_session_id') !== '' && setting('wa_api_key') !== '';
+}
+
 /**
- * Send a WhatsApp message. Returns true on success.
+ * Send through the THIRD-PARTY gateway. Returns true on success.
  * $media_url (optional) sends an image/document with $message as caption.
  */
-function send_whatsapp($mobile, $message, $media_url = '') {
+function wa_send_thirdparty($mobile, $message, $media_url = '') {
     $GLOBALS['_wa_last_error'] = '';
     $api_url    = rtrim(setting('wa_api_url', 'https://bulk.akdwk.in/api.php'), '/');
     $session_id = setting('wa_session_id', '');
@@ -87,6 +92,34 @@ function send_whatsapp($mobile, $message, $media_url = '') {
     $ok = wa_interpret_response($resp, $httpCode);
     if (!$ok) log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
     return $ok;
+}
+
+/**
+ * Send a WhatsApp message - the single entry point the whole app uses.
+ * Two providers are available: the third-party gateway and the official
+ * Meta (Facebook) Cloud API (includes/wa_meta.php). The wa_provider_order
+ * setting decides which goes FIRST; if the primary fails or isn't
+ * configured, the other automatically takes over as backup.
+ */
+function send_whatsapp($mobile, $message, $media_url = '') {
+    require_once __DIR__ . '/wa_meta.php';
+    $order = setting('wa_provider_order', 'thirdparty_first') === 'meta_first'
+        ? ['meta', 'thirdparty'] : ['thirdparty', 'meta'];
+    $errs = [];
+    foreach ($order as $p) {
+        if ($p === 'meta') {
+            if (!meta_wa_configured()) { $errs[] = 'Meta: not configured'; continue; }
+            if (meta_wa_send($mobile, $message, $media_url)) return true;
+            $errs[] = 'Meta: ' . whatsapp_last_error();
+            log_activity('whatsapp_send_fail', mb_substr('meta ' . wa_normalize_number($mobile) . ': ' . whatsapp_last_error(), 0, 400));
+        } else {
+            if (!wa_thirdparty_configured()) { $errs[] = 'Gateway: not configured'; continue; }
+            if (wa_send_thirdparty($mobile, $message, $media_url)) return true;
+            $errs[] = 'Gateway: ' . whatsapp_last_error();
+        }
+    }
+    $GLOBALS['_wa_last_error'] = $errs ? implode(' | ', $errs) : 'No WhatsApp provider is configured (Settings > WhatsApp).';
+    return false;
 }
 
 // ---------- Customizable message templates ----------

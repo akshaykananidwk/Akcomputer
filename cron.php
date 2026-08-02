@@ -231,3 +231,18 @@ if ((int)setting('health_autorun_last', 0) <= strtotime($today . ' -7 days')) {
         }
     } catch (Exception $e) { echo "Health auto-run failed: " . $e->getMessage() . "\n"; }
 }
+// ---------- Meta WhatsApp template status auto-refresh (every ~6h) ----------
+// A Pending template turns Approved on Meta's side without telling us - this
+// keeps the Settings status table fresh so the owner never checks manually.
+try {
+    require_once __DIR__ . '/includes/wa_meta.php';
+    if (meta_wa_configured() && setting('meta_wa_waba_id') !== '') {
+        $last = setting('meta_wa_tpl_synced_at', '');
+        $cur = json_decode(setting('meta_wa_tpl_status', ''), true) ?: [];
+        $hasPending = (bool)array_filter($cur, fn($t) => is_array($t) && in_array($t['status'], ['PENDING', 'DRAFT'], true));
+        if (($hasPending || !$cur) && ($last === '' || strtotime($last) < time() - 6 * 3600)) {
+            $res = meta_wa_sync_templates();
+            echo 'Meta WA template sync: ' . (isset($res['_error']) ? $res['_error'] : count($res) . " template(s) refreshed\n");
+        }
+    }
+} catch (Exception $e) { echo 'Meta WA template sync skipped: ' . $e->getMessage() . "\n"; }
