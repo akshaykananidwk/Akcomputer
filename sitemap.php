@@ -27,5 +27,7 @@ foreach ($items as $it) {
     sm_url(seo_product_url($it), 'weekly', '0.8');
     sm_url(seo_price_url($it), 'weekly', '0.7');
 }
+sm_url(base_url('privacy.php'), 'monthly', '0.3');
+sm_url(base_url('terms.php'), 'monthly', '0.3');
 sm_url(base_url('referral.php'), 'monthly', '0.3');
 echo '</urlset>';

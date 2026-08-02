@@ -172,7 +172,7 @@ function seo_footer() {
     if ($wa && strlen($wa) >= 12) $h .= '<p>💬 <a href="https://wa.me/' . e($wa) . '" style="display:inline" rel="noopener">WhatsApp Order</a></p>';
     $h .= '<p style="margin-top:8px">Computer, Laptop, CCTV Camera, Printer — sales, repair &amp; installation in Dwarka (દ્વારકા), Gujarat. Genuine products with warranty &amp; doorstep service.</p>';
     $h .= '</div></div>';
-    $h .= '<div class="cop">© ' . date('Y') . ' ' . e($app) . ', Dwarka · <a style="display:inline" href="' . e(base_url('catalog.php')) . '">Online Store</a> · <a style="display:inline" href="' . e(seo_service_url('cctv-installation')) . '">CCTV Installation</a> · <a style="display:inline" href="' . e(seo_service_url('computer-repair')) . '">Computer Repair</a></div>';
+    $h .= '<div class="cop">© ' . date('Y') . ' ' . e($app) . ', Dwarka · <a style="display:inline" href="' . e(base_url('catalog.php')) . '">Online Store</a> · <a style="display:inline" href="' . e(seo_service_url('cctv-installation')) . '">CCTV Installation</a> · <a style="display:inline" href="' . e(seo_service_url('computer-repair')) . '">Computer Repair</a> · <a style="display:inline" href="' . e(base_url('privacy.php')) . '">Privacy Policy</a> · <a style="display:inline" href="' . e(base_url('terms.php')) . '">Terms</a></div>';
     return $h . '</footer>';
 }
 

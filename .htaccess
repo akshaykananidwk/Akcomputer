@@ -17,6 +17,8 @@ Options -Indexes
   RewriteRule ^b/([A-Za-z0-9-]+)/?$ brand.php?s=$1 [L,QSA]
   RewriteRule ^s/([A-Za-z0-9-]+)/?$ services.php?s=$1 [L,QSA]
   RewriteRule ^s/?$ services.php [L]
+  RewriteRule ^privacy/?$ privacy.php [L]
+  RewriteRule ^terms/?$ terms.php [L]
 </IfModule>
 
 # compress text responses (page speed = ranking factor)
