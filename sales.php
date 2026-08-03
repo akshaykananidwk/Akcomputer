@@ -138,7 +138,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
           [$company['id'], $party_id, post('customer_name'), post('customer_mobile'), $loc_id,
            post('sale_date', today()), post('price_type', 'retail'), $credit_days,
-           $credit_days ? date('Y-m-d', strtotime(post('sale_date', today()) . " +$credit_days days")) : null,
+           // custom promised date wins; otherwise sale date + credit days
+           preg_match('/^\d{4}-\d{2}-\d{2}$/', post('due_date')) ? post('due_date')
+               : ($credit_days ? date('Y-m-d', strtotime(post('sale_date', today()) . " +$credit_days days")) : null),
            $subtotal, $discount, $loyaltyPointsUsed, $loyaltyDiscount, $discType, $discPct, $tax, $shipping, $adjustment, $roundOff, $total, $paid, post('payment_mode', 'cash'),
            $bankAccId, $pmId, payment_status($total, $paid), post('notes'), $u['id'], share_token()]);
         $sale_id = insert_id();
@@ -519,7 +521,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
            payment_mode=?, payment_method_id=?, bank_account_id=?, status=?, notes=? WHERE id=?',
           [$company['id'], $party_id, post('customer_name'), post('customer_mobile'), $loc_id,
            $sale_date, post('price_type', 'retail'), $credit_days,
-           $credit_days ? date('Y-m-d', strtotime("$sale_date +$credit_days days")) : null,
+           preg_match('/^\d{4}-\d{2}-\d{2}$/', post('due_date')) ? post('due_date')
+               : ($credit_days ? date('Y-m-d', strtotime("$sale_date +$credit_days days")) : null),
            $subtotal, $discount, $discType, $discPct, $tax, $shipping, $adjustment, $roundOff, $total, $paid,
            $modeCode, $pmId, $bankAccId, payment_status($total, $paid), post('notes'), $sid]);
 
@@ -640,7 +643,8 @@ if ($action === 'new' || $action === 'edit') {
             <select name="credit_days" id="credit_days">
               <?php foreach ($terms as $t): ?><option value="<?= $t['days'] ?>"><?= e($t['label']) ?></option><?php endforeach; ?>
             </select></div>
-          <div><label>Due On</label><input type="text" id="dueOnDisplay" disabled></div>
+          <div><label>Due On <span class="muted" style="font-weight:normal">(તારીખ જાતે પણ નાખી શકો)</span></label>
+            <input type="date" name="due_date" id="due_date"></div>
         </div>
         <div class="field"><label>Price type</label>
           <select name="price_type" id="price_type"><option value="retail">Retail</option><option value="b2b">B2B</option></select></div>
@@ -789,20 +793,22 @@ if ($action === 'new' || $action === 'edit') {
           Bill.scanBarcode(div.querySelector('.i-search'));
         });
       }
-      // "Due On" is a read-only preview computed from Date + Pmt. Terms;
-      // the server independently recomputes the real due_date at save time.
+      // "Due On" auto-fills from Date + Pmt. Terms, but it's a real date
+      // field: if the customer promises a specific day ("15 તારીખે આપીશ"),
+      // type that date and it becomes the bill's due date for the auto
+      // overdue reminders. Changing the terms recomputes it again.
       function updateDueOn() {
         var days = parseInt(document.getElementById('credit_days').value, 10) || 0;
         var dateInp = document.querySelector('input[name=sale_date]');
-        var due = document.getElementById('dueOnDisplay');
-        if (!dateInp.value || !days) { due.value = days ? '' : 'N/A'; return; }
+        var due = document.getElementById('due_date');
+        if (!dateInp.value || !days) { due.value = ''; return; }
         var d = new Date(dateInp.value + 'T00:00:00');
         d.setDate(d.getDate() + days);
-        due.value = ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + d.getFullYear();
+        due.value = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
       }
       document.getElementById('credit_days').addEventListener('change', updateDueOn);
       document.querySelector('input[name=sale_date]').addEventListener('change', updateDueOn);
-      updateDueOn();
+      <?php if (!$editSale): ?>updateDueOn();<?php endif; ?>
       <?php if ($est && $estItems): ?>
       // prefill rows from estimate
       (function () {
@@ -843,6 +849,7 @@ if ($action === 'new' || $action === 'edit') {
         document.getElementById('location_id').value = '<?= (int)$editSale['location_id'] ?>';
         document.getElementById('price_type').value = <?= json_encode($editSale['price_type']) ?>;
         document.getElementById('credit_days').value = '<?= (int)$editSale['credit_days'] ?>';
+        document.getElementById('due_date').value = <?= json_encode($editSale['due_date'] ?: '') ?>;
         document.getElementById('party_id').value = '<?= (int)$editSale['party_id'] ?>';
         document.getElementById('customer_name').value = <?= json_encode($editSale['customer_name']) ?>;
         document.getElementById('customer_mobile').value = <?= json_encode($editSale['customer_mobile']) ?>;
