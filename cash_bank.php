@@ -84,6 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_transfer') {
     $tid = insert_id();
     $sent = false;
     if ($receiver['mobile']) {
+        wa_context(['kind' => 'otp', 'code' => $otp]); // Meta fallback -> approved akc_otp template
         $sent = send_whatsapp($receiver['mobile'],
             "🔐 *Cash handover OTP*\n\n" . $u['name'] . ' is handing you ₹' . money($amount) . " cash.\nIf you HAVE received the cash, give them this OTP: *$otp*\n\nDo not share the OTP before the cash is in your hand. Valid 15 minutes.");
     }
@@ -95,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_transfer') {
         // OTP to the SENDER once, so the handover can still be completed by
         // reading it to the receiver in person.
         log_activity('staff_transfer_start', "T-$tid ₹$amount to {$receiver['name']} (WA failed, OTP shown on screen)");
-        flash('WhatsApp could not be sent (' . ($receiver['mobile'] ? 'gateway problem' : 'no mobile on this staff') . '). OTP for this handover: ' . $otp . ' — tell it to ' . $receiver['name'] . ' and enter it below to complete.', 'error');
+        flash('WhatsApp could not be sent (' . ($receiver['mobile'] ? whatsapp_last_error() : 'no mobile on this staff') . '). OTP for this handover: ' . $otp . ' — tell it to ' . $receiver['name'] . ' and enter it below to complete.', 'error');
     }
     redirect('cash_bank.php');
 }

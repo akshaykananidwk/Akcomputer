@@ -61,10 +61,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $pdo->commit();
 
         if ($type === 'issue' && $staff && $staff['mobile']) {
-            send_whatsapp($staff['mobile'], wa_template('handover', ['handover_no' => doc_no('HO', $hid), 'otp' => $otp]));
+            wa_context(['kind' => 'otp', 'code' => $otp]); // Meta fallback -> approved akc_otp template
+            $waOk = send_whatsapp($staff['mobile'], wa_template('handover', ['handover_no' => doc_no('HO', $hid), 'otp' => $otp]));
         }
         log_activity('handover_add', doc_no('HO', $hid) . " type=$type");
-        flash('Handover created' . ($type === 'issue' ? ' - OTP sent on staff WhatsApp.' : '.'));
+        if ($type === 'issue' && (!$staff || !$staff['mobile'] || empty($waOk))) {
+            // WhatsApp missing/failed: show the OTP once so the handover can
+            // still be completed by telling it to the staff member in person
+            flash('Handover created, પણ OTP WhatsApp પર ગયો નથી ('
+                . ($staff && $staff['mobile'] ? whatsapp_last_error() : 'સ્ટાફના ખાતામાં મોબાઈલ નંબર નથી')
+                . '). OTP: ' . $otp . ' — સ્ટાફને રૂબરૂ કહી દો.', 'error');
+        } else {
+            flash('Handover created' . ($type === 'issue' ? ' - OTP sent on staff WhatsApp.' : '.'));
+        }
         redirect('handover.php?action=view&id=' . $hid);
     } catch (Exception $ex) {
         $pdo->rollBack();
