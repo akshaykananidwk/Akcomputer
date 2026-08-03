@@ -3,7 +3,11 @@
 require_once __DIR__ . '/includes/init.php';
 // A visitor (not logged in) landing on the site sees the STORE with all the
 // products, not a login wall - staff reach the dashboard via Staff Login.
-if (!current_user()) redirect('catalog.php');
+// The domain root IS the public store for visitors (Google included):
+// serving the catalog right here - instead of 302-redirecting to
+// /catalog.php - gives the site a real homepage with content, which is
+// what search engines rank. Logged-in staff still get the dashboard.
+if (!current_user()) { require __DIR__ . '/catalog.php'; exit; }
 require_perm('dashboard.view');
 $u = current_user();
 

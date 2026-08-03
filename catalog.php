@@ -136,7 +136,7 @@ $metaDesc = $app_name . ' - દ્વારકા, ગુજરાતનો ભ�
 <title><?= e($app_name) ?> — Computer &amp; CCTV Store, Dwarka Gujarat | કમ્પ્યુટર · CCTV કેમેરા · લેપટોપ</title>
 <meta name="description" content="<?= e($metaDesc) ?>">
 <meta name="keywords" content="computer shop dwarka, cctv camera dwarka, laptop dwarka gujarat, કમ્પ્યુટર દ્વારકા, સીસીટીવી કેમેરા, લેપટોપ, printer, computer repair dwarka, <?= e(implode(', ', array_keys($cats))) ?>">
-<link rel="canonical" href="<?= e(base_url('catalog.php')) ?>">
+<link rel="canonical" href="<?= e(base_url('') . '/') ?>">
 <meta property="og:type" content="website">
 <meta property="og:title" content="<?= e($app_name) ?> — Online Store, Dwarka">
 <meta property="og:description" content="<?= e($metaDesc) ?>">
@@ -442,7 +442,7 @@ document.getElementById('cartBar') && document.getElementById('cartBar').addEven
 // "Add to cart" arriving from a product page (product.php?...&add=ID)
 (function () {
   var addId = new URLSearchParams(location.search).get('add');
-  if (addId) { addToCart(addId); history.replaceState(null, '', 'catalog.php'); }
+  if (addId) { addToCart(addId); history.replaceState(null, '', location.pathname); }
 })();
 // search + category filter
 var filterInp = document.getElementById('cFilter');

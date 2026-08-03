@@ -16,7 +16,7 @@ function sm_url($loc, $freq, $prio, $lastmod = '') {
 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
 
-sm_url(base_url('catalog.php'), 'daily', '1.0', date('Y-m-d'));
+sm_url(base_url('') . '/', 'daily', '1.0', date('Y-m-d'));
 sm_url(base_url('services.php'), 'weekly', '0.8');
 foreach (seo_services() as $slug => $sv) sm_url(seo_service_url($slug), 'monthly', '0.8');
 foreach (seo_cats() as $c) if (seo_slug($c['name']) !== '') sm_url(seo_cat_url($c['name']), 'daily', '0.9', date('Y-m-d'));
