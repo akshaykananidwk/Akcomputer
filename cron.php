@@ -23,22 +23,38 @@ if (!hash_equals($cronKey, (string)$key)) {
 // hosting, which would run these ~5.5 hours behind IST and delay
 // reminders/renewals by up to a day right around midnight.
 $today = today();
-$gap = max(1, (int)setting('reminder_gap_days', '3'));
-$bills = all("SELECT s.*, c.name company_name FROM sales s
+$gap = max(1, (int)setting('reminder_gap_days', '1'));
+
+// Reminders go out at a civilised hour (default 10:00 AM IST), not whenever
+// the hosting cron happens to hit this URL. Run the cron hourly - the block
+// simply waits until the set hour, and the per-bill last_reminder date stops
+// the same bill getting two messages in one day.
+$remHour = min(23, max(0, (int)setting('reminder_hour', '10')));
+if ((int)date('G') < $remHour) {
+    echo "Overdue reminders: waiting until $remHour:00 (now " . date('H:i') . ")\n";
+    $bills = [];
+} else {
+    $bills = all("SELECT s.*, c.name company_name FROM sales s
               JOIN companies c ON c.id = s.company_id
               WHERE s.status <> 'paid' AND s.is_cancelled = 0
                 AND s.customer_mobile <> ''
-                AND s.due_date IS NOT NULL AND s.due_date < ?
+                AND s.due_date IS NOT NULL AND s.due_date <= ?
                 AND (s.last_reminder IS NULL OR s.last_reminder <= DATE_SUB(?, INTERVAL ? DAY))
               ORDER BY s.due_date LIMIT 30", [$today, $today, $gap]);
+}
 
 $sent = 0;
 foreach ($bills as $s) {
+    // "your payment is due TODAY" on the due date itself, then "N days
+    // overdue" every day after, until the bill is paid
+    $lateDays = (int)floor((strtotime($today) - strtotime($s['due_date'])) / 86400);
+    $dueLine = $lateDays <= 0 ? "📅 આજે પેમેન્ટની છેલ્લી તારીખ છે!\n"
+             : '📅 Due date: ' . dmy($s['due_date']) . " — ⏰ *$lateDays દિવસ* થઈ ગયા\n";
     wa_context(['kind' => 'reminder']);
     $ok = send_whatsapp($s['customer_mobile'], wa_template('reminder', [
         'firm' => $s['company_name'], 'invoice_no' => $s['invoice_no'], 'date' => dmy($s['sale_date']),
         'due' => money($s['total'] - $s['paid']),
-        'due_date_line' => 'Due date: ' . dmy($s['due_date']) . " (OVERDUE)\n",
+        'due_date_line' => $dueLine,
     ]));
     if ($ok) {
         q('UPDATE sales SET last_reminder = ? WHERE id = ?', [$today, $s['id']]);

@@ -195,7 +195,8 @@ if (setting('cron_key', '') === '') set_setting('cron_key', bin2hex(random_bytes
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reminder_gap') {
     require_perm('settings.edit');
     set_setting('reminder_gap_days', max(1, (int)post('gap')));
-    flash('Reminder gap saved.');
+    set_setting('reminder_hour', min(23, max(0, (int)post('hour'))));
+    flash('Reminder settings saved.');
     redirect('settings.php?cat=reminders');
 }
 
@@ -698,13 +699,14 @@ exit;
 <div class="card">
   <h3>⏰ Auto Overdue Reminders (cron)</h3>
   <?php $cronUrl = base_url('cron.php?key=' . setting('cron_key')); ?>
-  <p class="muted mb">Unpaid bills past their due date automatically get a WhatsApp reminder. In your hosting's cPanel → Cron Jobs, set this URL to run once a day:</p>
+  <p class="muted mb">બિલની due-date આવે એ દિવસે "આજે પેમેન્ટની તારીખ છે" અને પછી બિલ ચૂકતે ન થાય ત્યાં સુધી રોજ "X દિવસ થઈ ગયા" નો WhatsApp મેસેજ કસ્ટમરને આપોઆપ જાય છે — નીચે સેટ કરેલા સમયે. Hosting ના cPanel → Cron Jobs માં આ URL <strong>દર કલાકે</strong> ચાલે એમ મૂકો (મેસેજ તો સેટ કરેલા સમયે જ જશે, અને એક બિલને દિવસમાં એક જ વાર):</p>
   <p class="mb"><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block"><?= e($cronUrl) ?></code></p>
-  <p class="muted mb">cPanel command: <code>wget -qO- "<?= e($cronUrl) ?>"</code> (e.g. every day at 10:00 AM)</p>
+  <p class="muted mb">cPanel command: <code>wget -qO- "<?= e($cronUrl) ?>"</code> (hourly)</p>
   <form method="post" class="filterbar">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="reminder_gap">
-    <div><label>Days before re-reminding the same bill?</label><input type="number" name="gap" min="1" value="<?= (int)setting('reminder_gap_days', '3') ?>"></div>
+    <div><label>રોજ કેટલા વાગ્યે મોકલવો? (કલાક, 0-23)</label><input type="number" name="hour" min="0" max="23" value="<?= (int)setting('reminder_hour', '10') ?>"></div>
+    <div><label>એક જ બિલ માટે કેટલા દિવસે ફરી મેસેજ? (1 = રોજ)</label><input type="number" name="gap" min="1" value="<?= (int)setting('reminder_gap_days', '1') ?>"></div>
     <button class="btn btn-sm" type="submit">Save</button>
     <a class="btn btn-sm btn-outline" href="<?= e($cronUrl) ?>" target="_blank">▶ Test Run Now</a>
   </form>

@@ -161,7 +161,7 @@ function wa_template_defaults() {
                    '{firm} {invoice_no} {date} {total} {due_line} {pay_link} {link} {customer}', 'Bill / Invoice send'],
         'estimate' => ["*{firm}*\nEstimate: *{estimate_no}*\n{items}\n*Total: ₹{total}*\nValid for 7 days. Reply to confirm order. 🙏",
                        '{firm} {estimate_no} {items} {total}', 'Estimate send'],
-        'reminder' => ["*{firm}*\nPayment reminder 🙏\nInvoice: {invoice_no} ({date})\nBalance due: *₹{due}*\n{due_date_line}Kindly arrange the payment. Thank you!",
+        'reminder' => ["*{firm}*\n🙏 પેમેન્ટ રિમાઇન્ડર\nબિલ: {invoice_no} ({date})\nબાકી રકમ: *₹{due}*\n{due_date_line}આજે જ પેમેન્ટ કરાવી દેશો. આભાર! 🙏",
                        '{firm} {invoice_no} {date} {due} {due_date_line}', 'Payment reminder'],
         'aging_reminder' => ["Hi,\nIt's a friendly reminder to you for paying *₹{amount}* to me.\n\nThank you,\n{shop}",
                              '{amount} {shop} {customer}', 'Payment reminder (Aging / Collection report)'],
