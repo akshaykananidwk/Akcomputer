@@ -142,10 +142,15 @@ if (menuBtn) {
   });
 }
 
-// ----- sidebar accordion groups (remember open state) -----
+// ----- sidebar accordion groups: only ONE stays open -----
+// Opening a group slides every other group shut, so the menu never ends up
+// with all sections expanded at once. The single open group is remembered.
 document.querySelectorAll('.nav-group-head').forEach(function (head) {
   head.addEventListener('click', function () {
     var g = head.parentElement;
+    if (!g.classList.contains('open')) {
+      document.querySelectorAll('.nav-group.open').forEach(function (x) { if (x !== g) x.classList.remove('open'); });
+    }
     g.classList.toggle('open');
     try {
       var open = [];
@@ -155,10 +160,14 @@ document.querySelectorAll('.nav-group-head').forEach(function (head) {
   });
 });
 try {
-  (JSON.parse(localStorage.getItem('navOpen') || '[]')).forEach(function (id) {
-    var g = document.querySelector('.nav-group[data-group="' + id + '"]');
-    if (g) g.classList.add('open');
-  });
+  // restore at most one group, and only when the server didn't already open
+  // the current page's own group
+  if (!document.querySelector('.nav-group.open')) {
+    (JSON.parse(localStorage.getItem('navOpen') || '[]')).slice(0, 1).forEach(function (id) {
+      var g = document.querySelector('.nav-group[data-group="' + id + '"]');
+      if (g) g.classList.add('open');
+    });
+  }
 } catch (e) {}
 
 // ----- quick action sheet (center + button lives in the footer,
