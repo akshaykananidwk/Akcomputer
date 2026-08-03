@@ -382,6 +382,12 @@ var Bill = {
         return '<option value="' + l.id + '"' + (String(l.id) === String(defLoc) ? ' selected' : '') + '>' +
                String(l.name).replace(/</g, '&lt;') + '</option>';
       }).join('') + '</select></div>' : '') +
+      // Outside-job cost, SERVICE items only (shown by pickItem): e.g. an
+      // outsourced printer repair's ₹850 goes here, so profit reports charge
+      // that cost to THIS bill only - other bills of the service stay at 0.
+      (this.cfg.mode === 'sale' ?
+      '<div class="i-cost-wrap" style="display:none"><label>Cost <small class="muted">(બહારનો ખર્ચ)</small></label>' +
+      '<input type="number" step="any" min="0" name="line_cost[]" class="i-cost" value="0" title="આ કામ પાછળ તમારો ખરેખરો ખર્ચ (હોય તો જ)"></div>' : '') +
       (this.cfg.lineDisc ?
       '<div><label>Disc</label><div style="display:flex;gap:4px">' +
       '<input type="number" step="any" min="0" name="ldisc[]" class="i-ldisc" value="0" style="flex:1;min-width:56px" title="Discount for this item">' +
@@ -556,6 +562,8 @@ var Bill = {
     div.dataset.unit = it.unit || '';
     div.querySelector('.i-stockinfo').textContent =
       (it.item_type !== 'service' && (this.cfg.mode === 'sale' || this.cfg.mode === 'staff')) ? 'Available: ' + it.stock + ' ' + it.unit : '';
+    var costWrap = div.querySelector('.i-cost-wrap');
+    if (costWrap) costWrap.style.display = it.item_type === 'service' ? '' : 'none';
     this.updateLastPrice(div);
     if (div.classList.contains('panel-mode')) this.updatePanelTotal(div);
 

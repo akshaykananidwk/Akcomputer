@@ -40,6 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $ldiscs = post('ldisc', []);
     $ldiscTs = post('ldisc_t', []);
     $locSel = post('line_loc', []); // optional per-line stock location (godown vs shop), 0 = bill's location
+    $costSel = post('line_cost', []); // service lines only: actual outside expense for THIS job
     $rows = [];
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
@@ -66,6 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'free' => (float)($freeQtys[$i] ?? 0),
                    'price' => $price, 'tax_rate' => $tr, 'total' => $gross - $ld, 'n' => $n,
                    'ld_type' => $ldType, 'ld_val' => $ldVal, 'ld' => $ld, 'loc' => (int)($locSel[$i] ?? 0),
+                   'cost' => max(0, (float)($costSel[$i] ?? 0)),
                    'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=new'); }
@@ -167,10 +169,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             // this line's stock comes from its own location (godown vs shop) -
             // a locked manager can never point a line at another location
             $rloc = locked_location_id() ?: ($r['loc'] ?: $loc_id);
-            $costPrice = (float)$item['purchase_price'];
-            if ($item['item_type'] !== 'service' && setting('costing_method', 'current') !== 'current') {
-                $layerCost = stock_layer_consume($r['item_id'], $rloc, $r['qty'] + $r['free']);
-                if ($layerCost !== null) $costPrice = $layerCost;
+            if ($item['item_type'] === 'service') {
+                // service: cost = ONLY the outside expense typed on this line
+                // (a one-off outsourced repair must not become a standing
+                // per-bill cost of this service item)
+                $costPrice = $r['cost'] ?? 0;
+            } else {
+                $costPrice = (float)$item['purchase_price'];
+                if (setting('costing_method', 'current') !== 'current') {
+                    $layerCost = stock_layer_consume($r['item_id'], $rloc, $r['qty'] + $r['free']);
+                    if ($layerCost !== null) $costPrice = $layerCost;
+                }
             }
             if (sale_line_loc_ready()) {
                 q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, line_disc_type, line_disc_val, line_disc, serials, description, custom_data, location_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
@@ -341,6 +350,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $ldiscs = post('ldisc', []);
     $ldiscTs = post('ldisc_t', []);
     $locSel = post('line_loc', []); // optional per-line stock location (godown vs shop), 0 = bill's location
+    $costSel = post('line_cost', []); // service lines only: actual outside expense for THIS job
     $rows = [];
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid;
@@ -367,6 +377,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'free' => (float)($freeQtys[$i] ?? 0),
                    'price' => $price, 'tax_rate' => $tr, 'total' => $gross - $ld, 'n' => $n,
                    'ld_type' => $ldType, 'ld_val' => $ldVal, 'ld' => $ld, 'loc' => (int)($locSel[$i] ?? 0),
+                   'cost' => max(0, (float)($costSel[$i] ?? 0)),
                    'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=edit&id=' . $sid); }
@@ -447,13 +458,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
                 throw new Exception("Select serial number(s) for {$item['name']}.");
             }
             $rloc = locked_location_id() ?: ($r['loc'] ?: $loc_id);
+            // service: cost = only this line's typed outside expense
+            $costPrice = $item['item_type'] === 'service' ? ($r['cost'] ?? 0) : (float)$item['purchase_price'];
             if (sale_line_loc_ready()) {
                 q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, line_disc_type, line_disc_val, line_disc, serials, description, custom_data, location_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                  [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
+                  [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], $costPrice, $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
                    $r['description'], $r['custom_data'], $rloc]);
             } else {
                 q('INSERT INTO sale_items (sale_id, item_id, qty, free_qty, price, cost_price, tax_rate, total, line_disc_type, line_disc_val, line_disc, serials, description, custom_data) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                  [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], (float)$item['purchase_price'], $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
+                  [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], $costPrice, $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
                    $r['description'], $r['custom_data']]);
             }
 
@@ -571,7 +584,7 @@ if ($action === 'new' || $action === 'edit') {
         if (!$editSale) die('Bill not found.');
         if (!can('sales.all') && $editSale['created_by'] != $u['id']) die('Access denied.');
         if ($editSale['is_cancelled']) { flash('A cancelled bill cannot be edited.', 'error'); redirect('sale_view.php?id=' . $editSale['id']); }
-        $editItems = all('SELECT si.*, i.name, i.serial_tracked FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$editSale['id']]);
+        $editItems = all('SELECT si.*, i.name, i.serial_tracked, i.item_type FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$editSale['id']]);
     }
     $parties = all("SELECT id, name, mobile, credit_days, loyalty_points FROM parties WHERE is_active = 1 ORDER BY name");
     $customFields = all('SELECT id, label FROM item_custom_fields WHERE is_active = 1 ORDER BY sort_order, id');
@@ -843,6 +856,8 @@ if ($action === 'new' || $action === 'edit') {
             'serials' => $x['serials'] ? array_values(array_filter(array_map('trim', explode(',', $x['serials'])))) : [],
             'description' => $x['description'] ?? '',
             'loc' => (int)($x['location_id'] ?? 0),
+            'isService' => ($x['item_type'] ?? '') === 'service' ? 1 : 0,
+            'cost' => (float)($x['cost_price'] ?? 0),
             'customData' => $x['custom_data'] ? json_decode($x['custom_data'], true) : [],
         ], $editItems)) ?>;
         document.getElementById('company_id').value = '<?= (int)$editSale['company_id'] ?>';
@@ -878,6 +893,8 @@ if ($action === 'new' || $action === 'edit') {
           }
           var descInp = div.querySelector('.i-desc'); if (descInp) descInp.value = it.description;
           var lsel = div.querySelector('.i-loc'); if (lsel && it.loc) lsel.value = it.loc;
+          var cw = div.querySelector('.i-cost-wrap');
+          if (cw && it.isService) { cw.style.display = ''; div.querySelector('.i-cost').value = it.cost || 0; }
           var ldi = div.querySelector('.i-ldisc'); if (ldi) ldi.value = it.ldiscVal || 0;
           var ldts = div.querySelector('.i-ldisct'); if (ldts) ldts.value = it.ldiscType || 'amount';
           div.querySelectorAll('.i-cf').forEach(function (cf) {

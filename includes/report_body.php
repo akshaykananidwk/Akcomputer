@@ -4,11 +4,20 @@
 // of reports.php so report_pdf.php can reuse the exact same rendering code
 // (captured via output buffering) instead of a second, drift-prone copy.
 
+// Line cost for profit reports (needs sale_items si + items i in the query):
+// a product falls back to its current purchase price when no cost was
+// captured at sale time, but a SERVICE line's cost is ONLY what was entered
+// on that bill - a one-off outside-repair purchase must never become the
+// standing "cost" of every future bill of that service item.
+function profit_cost_sql() {
+    return "si.qty * IF(i.item_type = 'service', si.cost_price, IF(si.cost_price > 0, si.cost_price, i.purchase_price))";
+}
+
 // ---------------- business report (P&L) ----------------
 if ($r === 'business' && can('reports.profit')) {
     $sales = (float)val('SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?', [$from, $to]);
     $salesRet = (float)val('SELECT COALESCE(SUM(total),0) FROM sales_returns WHERE return_date BETWEEN ? AND ?', [$from, $to]);
-    $cogs = (float)val('SELECT COALESCE(SUM(si.qty * IF(si.cost_price > 0, si.cost_price, i.purchase_price)),0)
+    $cogs = (float)val('SELECT COALESCE(SUM(' . profit_cost_sql() . '),0)
                         FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
                         WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?', [$from, $to]);
     $purch = (float)val('SELECT COALESCE(SUM(total),0) FROM purchases WHERE purchase_date BETWEEN ? AND ?', [$from, $to]);
@@ -296,9 +305,9 @@ if ($r === 'gst' && can('reports.gst')) {
 // ---------------- profit ----------------
 if ($r === 'profit' && can('reports.profit')) {
     list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus, $fUser);
-    $rows = all("SELECT i.name, SUM(si.qty) qty, SUM(si.total) revenue, SUM(si.qty * i.purchase_price) cost
+    $rows = all("SELECT i.name, SUM(si.qty) qty, SUM(si.total) revenue, SUM(" . profit_cost_sql() . ") cost
                  FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
-                 WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $ew GROUP BY si.item_id ORDER BY (SUM(si.total) - SUM(si.qty * i.purchase_price)) DESC", array_merge([$from, $to], $ep));
+                 WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $ew GROUP BY si.item_id ORDER BY (SUM(si.total) - SUM(" . profit_cost_sql() . ")) DESC", array_merge([$from, $to], $ep));
     $rev = array_sum(array_column($rows, 'revenue'));
     $cost = array_sum(array_column($rows, 'cost'));
     $svc = (float)val('SELECT COALESCE(SUM(service_charge),0) FROM tasks WHERE status = "completed" AND DATE(end_time) BETWEEN ? AND ?', [$from, $to]);
@@ -327,12 +336,12 @@ if ($r === 'profit' && can('reports.profit')) {
 // ---------------- branch / staff comparison ----------------
 if ($r === 'branch_staff' && can('reports.profit')) {
     $branchRows = all("SELECT l.name, COUNT(s.id) bills, COALESCE(SUM(s.total),0) revenue,
-                        COALESCE((SELECT SUM(si.qty * i.purchase_price) FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id IN
+                        COALESCE((SELECT SUM(" . profit_cost_sql() . ") FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id IN
                                   (SELECT id FROM sales s2 WHERE s2.location_id = l.id AND s2.is_cancelled = 0 AND s2.sale_date BETWEEN ? AND ?)),0) cost
                         FROM locations l LEFT JOIN sales s ON s.location_id = l.id AND s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?
                         WHERE l.is_active = 1 GROUP BY l.id ORDER BY revenue DESC", [$from, $to, $from, $to]);
     $staffRows = all("SELECT u2.name, COUNT(s.id) bills, COALESCE(SUM(s.total),0) revenue,
-                       COALESCE((SELECT SUM(si.qty * i.purchase_price) FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id IN
+                       COALESCE((SELECT SUM(" . profit_cost_sql() . ") FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id IN
                                  (SELECT id FROM sales s2 WHERE s2.created_by = u2.id AND s2.is_cancelled = 0 AND s2.sale_date BETWEEN ? AND ?)),0) cost,
                        COALESCE((SELECT SUM(amount) FROM payments WHERE created_by = u2.id AND direction = 'in' AND pay_date BETWEEN ? AND ?),0) collected
                        FROM users u2 LEFT JOIN sales s ON s.created_by = u2.id AND s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?
@@ -787,7 +796,7 @@ if ($r === 'bill_profit' && can('reports.profit')) {
     $rows = all("SELECT s.id, s.invoice_no, s.sale_date, s.customer_name, s.total,
                  s.discount, s.loyalty_discount, s.adjustment, s.round_off,
                  SUM(si.total) rev, COALESCE(SUM(si.line_disc),0) ldisc,
-                 SUM(si.qty * IF(si.cost_price > 0, si.cost_price, i.purchase_price)) cost
+                 SUM(" . profit_cost_sql() . ") cost
                  FROM sales s JOIN sale_items si ON si.sale_id = s.id JOIN items i ON i.id = si.item_id
                  WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $ew GROUP BY s.id ORDER BY s.id DESC", array_merge([$from, $to], $ep));
     // Profit is what actually stays in the pocket: item margin MINUS the
