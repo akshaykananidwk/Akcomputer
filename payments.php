@@ -13,8 +13,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
     $party_id = (int)post('party_id');
     $dir = post('direction') === 'out' ? 'out' : 'in';
     $amount = (float)post('amount');
+    // settlement discount ("₹7,040 ના ₹7,000 લઈ ₹40 જતા કર્યા") - settles the
+    // ledger/bills WITHOUT touching cash or bank (its own 'discount' row)
+    $discount = max(0, round((float)post('discount'), 2));
     $party = row('SELECT * FROM parties WHERE id = ?', [$party_id]);
-    if (!$party || $amount <= 0) { flash('Party and amount required.', 'error'); redirect('payments.php?action=new&dir=' . $dir); }
+    if (!$party || $amount + $discount <= 0) { flash('Party and amount required.', 'error'); redirect('payments.php?action=new&dir=' . $dir); }
     if (is_period_locked(post('pay_date', today()))) { flash(period_lock_message(), 'error'); redirect('payments.php?action=new&dir=' . $dir); }
 
     $allocIds = post('alloc_id', []);
@@ -50,7 +53,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
             }
             $allocated += $amt;
         }
-        if ($allocated > $amount + 0.009) throw new Exception('Linked amount is more than payment amount.');
+        if ($allocated > $amount + $discount + 0.009) throw new Exception('Linked amount is more than payment + discount.');
+
+        // bills settle from the CASH part first; whatever remains rides the
+        // separate discount row so a later delete reverses each correctly
+        $mainAlloc = []; $discAlloc = []; $left = $amount;
+        foreach ($allocRows as $a) {
+            $take = round(min($a['amount'], $left), 2);
+            if ($take > 0.009) { $mainAlloc[] = ['ref_type' => $a['ref_type'], 'ref_id' => $a['ref_id'], 'amount' => $take]; $left -= $take; }
+            if ($a['amount'] - $take > 0.009) $discAlloc[] = ['ref_type' => $a['ref_type'], 'ref_id' => $a['ref_id'], 'amount' => round($a['amount'] - $take, 2)];
+        }
 
         $notes = trim(post('notes'));
         if ($allocNotes) $notes = trim($notes . ' [' . implode(', ', $allocNotes) . ']');
@@ -59,12 +71,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         // payments, and that stray id used to land cash receipts in the
         // Bank Ledger
         [$pmId, $bankAccId] = resolve_payment_target(post('mode', 'cash'), (int)post('bank_account_id'));
-        q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, pay_date, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
-          [$party_id, $dir, $amount, post('mode', 'cash'), $bankAccId, $pmId,
-           post('pay_date', today()), $notes, $u['id']]);
-        $pid = insert_id();
-        foreach ($allocRows as $a) {
-            q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $a['ref_type'], $a['ref_id'], $a['amount']]);
+        $pid = null;
+        if ($amount > 0.009) {
+            q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, pay_date, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
+              [$party_id, $dir, $amount, post('mode', 'cash'), $bankAccId, $pmId,
+               post('pay_date', today()), $notes, $u['id']]);
+            $pid = insert_id();
+            foreach ($mainAlloc as $a) {
+                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $a['ref_type'], $a['ref_id'], $a['amount']]);
+            }
+        }
+        if ($discount > 0.009) {
+            q("INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, pay_date, notes, created_by) VALUES (?,?,?,'discount',NULL,NULL,?,?,?)",
+              [$party_id, $dir, $discount, post('pay_date', today()), trim('છૂટ / Settlement discount' . ($notes !== '' ? ' — ' . $notes : '')), $u['id']]);
+            $dpid = insert_id();
+            $pid = $pid ?: $dpid;
+            foreach ($discAlloc as $a) {
+                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$dpid, $a['ref_type'], $a['ref_id'], $a['amount']]);
+            }
         }
         $pdo->commit();
         log_activity('payment_add', "P-$pid party={$party['name']} $dir $amount");
@@ -74,14 +98,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         if ($dir === 'in' && post('send_wa') && $party['mobile']) {
             $bal = party_balance($party_id);
             $balTxt = $bal > 0.009 ? '₹' . money($bal) . ' (due)' : ($bal < -0.009 ? '₹' . money(-$bal) . ' (advance)' : '₹0.00 (clear)');
+            $discLine = $discount > 0.009 ? 'છૂટ / Discount: ₹' . money($discount) . "\n" : '';
             wa_context(['kind' => 'receipt', 'amount' => money($amount), 'date' => dmy(post('pay_date', today())), 'balance' => $balTxt]);
             send_whatsapp($party['mobile'], wa_template('payment_receipt', [
                 'amount' => money($amount), 'mode' => post('mode', 'cash'), 'date' => dmy(post('pay_date', today())),
-                'alloc' => $allocNotes ? 'Against: ' . implode(', ', $allocNotes) . "\n" : '',
+                'alloc' => ($allocNotes ? 'Against: ' . implode(', ', $allocNotes) . "\n" : '') . $discLine,
                 'balance' => $balTxt, 'party' => $party['name'],
             ]));
         }
-        flash(($dir === 'in' ? 'Payment-In' : 'Payment-Out') . ' of ₹' . money($amount) . ' saved' . ($allocNotes ? ' & linked to ' . count($allocNotes) . ' bill(s).' : '.'));
+        flash(($dir === 'in' ? 'Payment-In' : 'Payment-Out') . ' of ₹' . money($amount) . ' saved'
+            . ($discount > 0.009 ? ' + છૂટ ₹' . money($discount) : '')
+            . ($allocNotes ? ' & linked to ' . count($allocNotes) . ' bill(s).' : '.'));
         redirect('payments.php');
     } catch (Exception $ex) {
         $pdo->rollBack();
@@ -157,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $pid = (int)post('id');
     $pay = row('SELECT * FROM payments WHERE id = ?', [$pid]);
     if (!$pay) { flash('Payment not found.', 'error'); redirect('payments.php'); }
-    if ($pay['mode'] === 'contra') { flash("A contra settlement can't be edited - delete it and record a fresh one.", 'error'); redirect('payments.php?action=view&id=' . $pid); }
+    if ($pay['mode'] === 'contra' || $pay['mode'] === 'discount') { flash("A " . ($pay['mode'] === 'contra' ? 'contra settlement' : 'settlement discount') . " can't be edited - delete it and record a fresh one.", 'error'); redirect('payments.php?action=view&id=' . $pid); }
     if (is_period_locked($pay['pay_date']) || is_period_locked(post('pay_date', $pay['pay_date']))) { flash(period_lock_message(), 'error'); redirect('payments.php?action=view&id=' . $pid); }
     $amount = round((float)post('amount'), 2);
     if ($amount <= 0) { flash('Amount must be more than zero.', 'error'); redirect('payments.php?action=edit&id=' . $pid); }
@@ -347,7 +374,10 @@ if ($action === 'new') {
         </div>
         <div class="form-row cols-3">
           <div><label><?= $dir === 'in' ? 'Received amount (₹) *' : 'Paid amount (₹) *' ?></label>
-            <input type="number" step="any" min="0.01" name="amount" id="pay_amount" required></div>
+            <input type="number" step="any" min="0" name="amount" id="pay_amount" required></div>
+          <div><label>છૂટ / Discount (₹)</label>
+            <input type="number" step="any" min="0" name="discount" id="pay_discount" value="0">
+            <p class="muted mt" style="font-size:.8em">બાકી માંડી વાળવા — કેશ/બેંકમાં નહીં ગણાય. દા.ત. બિલ ₹7,040, મળ્યા ₹7,000 → છૂટ ₹40</p></div>
           <div id="bankAccBox" style="display:none"><label>Bank Account</label>
             <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?></select></div>
           <div><label>Notes</label><input type="text" name="notes"></div>
@@ -398,7 +428,8 @@ if ($action === 'new') {
     }
     document.getElementById('party_id').addEventListener('change', loadBills);
     document.getElementById('autoAlloc').addEventListener('click', function () {
-      var left = parseFloat(document.getElementById('pay_amount').value) || 0;
+      var left = (parseFloat(document.getElementById('pay_amount').value) || 0) +
+                 (parseFloat(document.getElementById('pay_discount').value) || 0);
       document.querySelectorAll('.alloc-inp').forEach(function (inp) {
         var due = parseFloat(inp.dataset.due) || 0;
         var use = Math.min(left, due);
@@ -560,7 +591,7 @@ if ($action === 'view' && $id) {
     ?>
     <div class="page-actions no-print">
       <a class="btn btn-outline" href="<?= $pay['party_ref'] ? 'parties.php?action=ledger&id=' . $pay['party_ref'] : 'payments.php' ?>">← Back</a>
-      <?php if ($pay['mode'] !== 'contra' && can('payments.edit')): ?>
+      <?php if ($pay['mode'] !== 'contra' && $pay['mode'] !== 'discount' && can('payments.edit')): ?>
       <a class="btn" href="payments.php?action=edit&id=<?= $id ?>">✏️ Edit</a>
       <?php endif; ?>
       <?php if (can('payments.delete')): ?>
@@ -580,6 +611,7 @@ if ($action === 'view' && $id) {
         <tr><td class="muted">Recorded by</td><td><?= e($pay['by_name']) ?></td></tr>
       </table>
       <?php if ($pay['mode'] === 'contra'): ?><p class="muted mt">🔄 This is a contra settlement (no cash moved). To change it, delete it and record a fresh one.</p><?php endif; ?>
+      <?php if ($pay['mode'] === 'discount'): ?><p class="muted mt">🏷️ છૂટ / Settlement discount (no cash moved) — it only clears the party's balance. To change it, delete it and record a fresh one.</p><?php endif; ?>
     </div>
     <?php if ($links): ?>
     <div class="card list-card">

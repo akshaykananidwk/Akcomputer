@@ -47,7 +47,7 @@ function custom_report_sources() {
             'label' => 'Payments',
             'from' => 'payments pay LEFT JOIN parties p ON p.id = pay.party_id LEFT JOIN users u2 ON u2.id = pay.created_by',
             'date_col' => 'pay.pay_date',
-            'where' => "pay.mode <> 'contra'",
+            'where' => "pay.mode NOT IN ('contra','discount')",
             'columns' => [
                 'pay_date' => ['label' => 'Date', 'expr' => 'pay.pay_date', 'type' => 'date'],
                 'party' => ['label' => 'Party', 'expr' => "COALESCE(p.name, 'Walk-in')", 'type' => 'text'],

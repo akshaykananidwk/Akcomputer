@@ -98,7 +98,7 @@ if ($type === 'payments') {
     $vouchers = all("SELECT p.*, pt.name party_name, b.account_name FROM payments p
                      LEFT JOIN parties pt ON pt.id = p.party_id
                      LEFT JOIN bank_accounts b ON b.id = p.bank_account_id
-                     WHERE p.pay_date BETWEEN ? AND ? ORDER BY p.pay_date, p.id", [$from, $to]);
+                     WHERE p.mode <> 'discount' AND p.pay_date BETWEEN ? AND ? ORDER BY p.pay_date, p.id", [$from, $to]);
     foreach ($vouchers as $v) {
         $party = $v['party_name'] ?: 'Cash';
         $cashBank = $v['account_name'] ?: 'Cash';

@@ -113,11 +113,11 @@ if ($r === 'all_txn') {
             $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Purchase', 'no' => $x['no'], 'who' => $x['who'] . ($x['is_cancelled'] ? ' [CANCELLED]' : ''), 'mode' => '', 'bill' => $x['is_cancelled'] ? 0 : $x['amt'], 'in' => 0, 'out' => 0, 'cancel' => $x['is_cancelled'], 'adj' => 0];
     }
     if (in_array('payin', $selTypes, true)) {
-        foreach (all("SELECT py.pay_date d, py.created_at ct, py.amount amt, py.mode, py.ref_type, py.ref_id, COALESCE(p.name,'Walk-in') who, py.notes FROM payments py LEFT JOIN parties p ON p.id = py.party_id WHERE py.direction = 'in' AND py.mode <> 'contra' AND py.pay_date BETWEEN ? AND ?", [$from, $to]) as $x)
+        foreach (all("SELECT py.pay_date d, py.created_at ct, py.amount amt, py.mode, py.ref_type, py.ref_id, COALESCE(p.name,'Walk-in') who, py.notes FROM payments py LEFT JOIN parties p ON p.id = py.party_id WHERE py.direction = 'in' AND py.mode NOT IN ('contra','discount') AND py.pay_date BETWEEN ? AND ?", [$from, $to]) as $x)
             $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => 'Payment In', 'no' => $x['notes'] ?: '-', 'who' => $x['who'], 'mode' => $x['mode'], 'bill' => 0, 'in' => $x['amt'], 'out' => 0, 'cancel' => 0, 'adj' => stripos((string)$x['notes'], 'adjusted on edit') !== false ? 1 : 0];
     }
     if (in_array('payout', $selTypes, true)) {
-        foreach (all("SELECT py.pay_date d, py.created_at ct, py.amount amt, py.mode, py.ref_type, COALESCE(p.name,'-') who, py.notes FROM payments py LEFT JOIN parties p ON p.id = py.party_id WHERE py.direction = 'out' AND py.mode <> 'contra' AND py.pay_date BETWEEN ? AND ?", [$from, $to]) as $x)
+        foreach (all("SELECT py.pay_date d, py.created_at ct, py.amount amt, py.mode, py.ref_type, COALESCE(p.name,'-') who, py.notes FROM payments py LEFT JOIN parties p ON p.id = py.party_id WHERE py.direction = 'out' AND py.mode NOT IN ('contra','discount') AND py.pay_date BETWEEN ? AND ?", [$from, $to]) as $x)
             $rows[] = ['d' => $x['d'], 'ct' => $x['ct'], 'type' => $x['ref_type'] === 'sales_return' ? 'Refund' : 'Payment Out', 'no' => $x['notes'] ?: '-', 'who' => $x['who'], 'mode' => $x['mode'], 'bill' => 0, 'in' => 0, 'out' => $x['amt'], 'cancel' => 0, 'adj' => stripos((string)$x['notes'], 'adjusted on edit') !== false ? 1 : 0];
     }
     if (in_array('expense', $selTypes, true) && can('expenses.view')) {
@@ -343,7 +343,7 @@ if ($r === 'branch_staff' && can('reports.profit')) {
     $staffRows = all("SELECT u2.name, COUNT(s.id) bills, COALESCE(SUM(s.total),0) revenue,
                        COALESCE((SELECT SUM(" . profit_cost_sql() . ") FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id IN
                                  (SELECT id FROM sales s2 WHERE s2.created_by = u2.id AND s2.is_cancelled = 0 AND s2.sale_date BETWEEN ? AND ?)),0) cost,
-                       COALESCE((SELECT SUM(amount) FROM payments WHERE created_by = u2.id AND direction = 'in' AND pay_date BETWEEN ? AND ?),0) collected
+                       COALESCE((SELECT SUM(amount) FROM payments WHERE created_by = u2.id AND direction = 'in' AND mode NOT IN ('contra','discount') AND pay_date BETWEEN ? AND ?),0) collected
                        FROM users u2 LEFT JOIN sales s ON s.created_by = u2.id AND s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?
                        WHERE u2.is_active = 1 GROUP BY u2.id HAVING bills > 0 OR collected > 0 ORDER BY revenue DESC", [$from, $to, $from, $to, $from, $to]);
 
@@ -644,16 +644,17 @@ if ($r === 'stockval' && can('reports.profit')) {
 // ---------------- cashbook (day-wise in/out) ----------------
 if ($r === 'cashbook') {
     $in = [];
-    // mode <> 'contra' - a Contra/Settle entry (payments.php?action=contra)
-    // nets a party's sales due against their purchase due with no real cash
-    // or bank movement, so it must never show up as actual cash flow here.
+    // Contra/Settle entries net a party's sales due against their purchase
+    // due, and 'discount' rows waive a balance as settlement discount - in
+    // both cases no real cash or bank movement happens, so neither may ever
+    // show up as actual cash flow here.
     // Every collection - party bills, walk-in bills, quick-pay, Razorpay -
     // posts a payments row, so this ONE source covers all money-in. (The old
     // extra "Walk-in sales collection" line summed sales.paid on top of the
     // walk-in payments rows and double-counted every walk-in collection.)
-    foreach (all("SELECT pay_date d, SUM(amount) a, mode, (party_id IS NULL) walkin FROM payments WHERE direction='in' AND mode <> 'contra' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode, (party_id IS NULL)", [$from, $to]) as $x)
+    foreach (all("SELECT pay_date d, SUM(amount) a, mode, (party_id IS NULL) walkin FROM payments WHERE direction='in' AND mode NOT IN ('contra','discount') AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode, (party_id IS NULL)", [$from, $to]) as $x)
         $in[] = ['d' => $x['d'], 'desc' => ($x['walkin'] ? 'Walk-in collection (' : 'Party receipt (') . $x['mode'] . ')', 'in' => $x['a'], 'out' => 0];
-    foreach (all("SELECT pay_date d, SUM(amount) a, mode, (ref_type = 'sales_return') refund FROM payments WHERE direction='out' AND mode <> 'contra' AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode, (ref_type = 'sales_return')", [$from, $to]) as $x)
+    foreach (all("SELECT pay_date d, SUM(amount) a, mode, (ref_type = 'sales_return') refund FROM payments WHERE direction='out' AND mode NOT IN ('contra','discount') AND pay_date BETWEEN ? AND ? GROUP BY pay_date, mode, (ref_type = 'sales_return')", [$from, $to]) as $x)
         $in[] = ['d' => $x['d'], 'desc' => ($x['refund'] ? 'Customer refund (' : 'Supplier payment (') . $x['mode'] . ')', 'in' => 0, 'out' => $x['a']];
     if (can('expenses.view')) {
         foreach (all("SELECT exp_date d, SUM(amount) a FROM expenses WHERE exp_date BETWEEN ? AND ? GROUP BY exp_date", [$from, $to]) as $x)
@@ -663,7 +664,7 @@ if ($r === 'cashbook') {
     // opening balance = everything before the From date, so last month's
     // closing money carries into this month's Running automatically
     $openingCb = (float)val("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0)
-                             FROM payments WHERE mode <> 'contra' AND pay_date < ?", [$from]);
+                             FROM payments WHERE mode NOT IN ('contra','discount') AND pay_date < ?", [$from]);
     if (can('expenses.view')) $openingCb -= (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE exp_date < ?", [$from]);
     // running total in date order, shown newest-first (today's rows on top)
     $bal = $openingCb;
