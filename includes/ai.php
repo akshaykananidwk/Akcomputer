@@ -49,7 +49,10 @@ function gemini_generate_with_key($key, array $parts, $timeout = 45, $forceJson 
     // against maxOutputTokens — a small cap truncates the real answer into
     // broken JSON, so the cap is generous. responseMimeType makes the API
     // itself guarantee parseable JSON instead of prompt-begging for it.
-    $genCfg = ['temperature' => 0.2, 'maxOutputTokens' => 4096];
+    // JSON answers (40-item batches) need far more room than 4096 - the
+    // model's hidden "thinking" also counts against this cap, and a hit cap
+    // means a truncated, unparseable reply
+    $genCfg = ['temperature' => 0.2, 'maxOutputTokens' => $forceJson ? 16384 : 4096];
     if ($forceJson) $genCfg['responseMimeType'] = 'application/json';
     $body = json_encode([
         'contents' => [['parts' => $parts]],
@@ -408,7 +411,16 @@ function ai_categorize_apply(array $items) {
     list($out, $err) = gemini_generate([['text' => $prompt]], 90, true);
     if ($out === null) return [null, $err];
     $map = json_decode($out, true);
-    if (!is_array($map)) return [null, 'AI reply was not valid JSON - try again.'];
+    if (!is_array($map)) {
+        // truncated/dirty reply salvage: parse each {...} object on its own,
+        // so a cut-off answer still files most of the batch (the rest simply
+        // rides the next batch instead of failing the whole call)
+        $map = [];
+        if (preg_match_all('/\{[^{}]*\}/', (string)$out, $mm)) {
+            foreach ($mm[0] as $frag) { $o = json_decode($frag, true); if (is_array($o)) $map[] = $o; }
+        }
+        if (!$map) return [null, 'AI reply was not valid JSON - try again.'];
+    }
     $names = [];
     foreach ($items as $it) $names[(int)$it['id']] = $it['name'];
     $rows = [];

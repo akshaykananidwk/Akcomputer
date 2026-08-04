@@ -7,7 +7,9 @@
 require_once __DIR__ . '/includes/init.php';
 require_perm('items.edit');
 
-// ---- one batch (AJAX): classify up to 40 items, create/reuse categories ----
+// ---- one batch (AJAX): classify up to 25 items, create/reuse categories ----
+// (25, not more: long product names make the JSON answer big, and a reply
+// that outgrows the model's output window comes back truncated)
 // Default mode 'new' touches ONLY uncategorized items (already-filed products
 // are never re-processed - saves time and AI calls); the 'all' checkbox
 // re-sorts everything. In 'new' mode assigned items drop out of the filter by
@@ -20,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'batch') {
     $w = $mode === 'new' ? ' AND (category_id IS NULL OR category_id = 0)' : '';
     try {
         $remaining = (int)val("SELECT COUNT(*) FROM items WHERE is_active = 1$w");
-        $items = all("SELECT id, name, brand, model FROM items WHERE is_active = 1$w ORDER BY id LIMIT 40 OFFSET $skip");
+        $items = all("SELECT id, name, brand, model FROM items WHERE is_active = 1$w ORDER BY id LIMIT 25 OFFSET $skip");
         if (!$items) die(json_encode(['ok' => true, 'skip' => $skip, 'remaining' => $remaining, 'done' => true, 'rows' => []]));
         list($rows, $err) = ai_categorize_apply(array_map(fn($it) => ['id' => $it['id'], 'name' => trim($it['name'] . ' ' . $it['brand'] . ' ' . $it['model'])], $items));
         if ($rows === null) die(json_encode(['ok' => false, 'error' => $err]));
