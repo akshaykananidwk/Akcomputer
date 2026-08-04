@@ -124,7 +124,7 @@ function meta_wa_send($mobile, $message, $media_url = '') {
                     'type' => 'text', 'text' => ['preview_url' => true, 'body' => mb_substr($message, 0, 4096)]];
     }
     [$ok, $data, $err] = meta_wa_call('POST', "$phoneId/messages", $payload);
-    if ($ok) return true;
+    if ($ok) { api_usage_log('whatsapp', 'meta:freeform', 0, 1); return true; } // service window = free
 
     // 131047 / 131026: outside the 24h window -> an approved template is the
     // only way in. wa_context() tells us WHAT is being sent (otp / bill /
@@ -167,7 +167,7 @@ function meta_wa_send($mobile, $message, $media_url = '') {
         [$ok2, $d2, $err2] = meta_wa_call('POST', "$phoneId/messages", [
             'messaging_product' => 'whatsapp', 'to' => $number, 'type' => 'template', 'template' => $tpl,
         ]);
-        if ($ok2) return true;
+        if ($ok2) { api_usage_log('whatsapp', 'meta:tpl:' . $tpl['name'], 0, 1); return true; }
         $GLOBALS['_wa_last_error'] = 'Meta template send failed: ' . $err2;
         return false;
     }
@@ -185,6 +185,7 @@ function meta_wa_send_interactive($mobile, array $interactive) {
     [$ok, , $err] = meta_wa_call('POST', setting('meta_wa_phone_id') . '/messages', [
         'messaging_product' => 'whatsapp', 'to' => $number, 'type' => 'interactive', 'interactive' => $interactive,
     ]);
+    if ($ok) api_usage_log('whatsapp', 'meta:freeform', 0, 1); // interactive = inside 24h window = free
     return [$ok, $err];
 }
 

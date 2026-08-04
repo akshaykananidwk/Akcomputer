@@ -50,7 +50,6 @@ $_navMenu = [
         ['handover.php', 'Handover / Transfer', 'handover.view', 'handover.php?action=new', 'handover.add'],
         ['transfers.php', 'Warehouse Transfers', 'handover.view', 'handover.php?action=new&type=transfer', 'handover.add'],
         ['my_stock.php', 'My Stock', null, null, null],
-        ['stock.php', 'Location Stock', 'stock.view', null, null],
         ['stock_audit.php', 'Stock Audit / Cycle Counting', 'stock_audit.view', 'stock_audit.php?action=new', 'stock_audit.add'],
     ]],
     ['group', 'service', 'tool', 'Repair & Service', [
@@ -73,6 +72,7 @@ $_navMenu = [
         ['reports.php', 'All Reports', 'reports.view', null, null],
         ['reports.php?r=custom', 'Custom Report Builder', 'reports.builder', null, null],
         ['report_schedules.php', 'Scheduled Reports', 'report_schedules.view', 'report_schedules.php?action=new', 'report_schedules.add'],
+        ['cost_analytics.php', 'Cost Analytics (AI + WhatsApp)', '*', null, null],
     ]],
     ['group', 'store', 'globe', 'My Online Store', [
         ['catalog.php', 'View Website', null, null, null],
@@ -88,6 +88,7 @@ $_navMenu = [
     ]],
     ['group', 'admin', 'briefcase', 'Staff & Company', [
         ['users.php', 'Staff Users', 'users.view', 'users.php?action=new', 'users.add'],
+        ['approvals.php', 'Bill Edit Approvals', '*', null, null],
         ['roles.php', 'Roles / Permissions', 'roles.view', 'roles.php?action=new', 'roles.add'],
         ['locations.php', 'Locations', 'locations.view', null, null],
         ['companies.php', 'Companies / Firms', 'companies.view', null, null],

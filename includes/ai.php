@@ -33,6 +33,8 @@ function gemini_generate(array $parts, $timeout = 45, $forceJson = false) {
             // free key's failure reason - so "which API ran" stays trackable
             $GLOBALS['_gemini_last_src'] = $isPaid ? 'paid' : 'free';
             if ($isPaid) { try { log_activity('ai_paid_call', $freeErr !== null ? mb_substr('free failed: ' . $freeErr, 0, 180) : 'paid key only'); } catch (Exception $e) {} }
+            $u = $GLOBALS['_gemini_last_usage'] ?? [];
+            api_usage_log('gemini', ($isPaid ? 'paid:' : 'free:') . ($u['model'] ?? '?'), (int)($u['in'] ?? 0), (int)($u['out'] ?? 0));
             return [$out, null];
         }
         if (!$isPaid) $freeErr = $err;
@@ -79,6 +81,10 @@ function gemini_generate_with_key($key, array $parts, $timeout = 45, $forceJson 
         $j = json_decode($resp, true);
         if ($code === 200) {
             if ($model !== setting('gemini_model')) set_setting('gemini_model', $model);
+            // token counts for Cost Analytics ("out" includes hidden thinking)
+            $um = $j['usageMetadata'] ?? [];
+            $GLOBALS['_gemini_last_usage'] = ['model' => $model, 'in' => (int)($um['promptTokenCount'] ?? 0),
+                'out' => max(0, (int)($um['totalTokenCount'] ?? 0) - (int)($um['promptTokenCount'] ?? 0))];
             // thinking models can return several parts (thoughts first) —
             // keep only the real answer parts
             $text = null;

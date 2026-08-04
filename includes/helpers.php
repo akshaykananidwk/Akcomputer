@@ -829,3 +829,14 @@ function svg_bar_chart($data, $color = '#1a56db') {
     $out .= '</svg></div>';
     return $out;
 }
+
+/** Usage meter for Cost Analytics: one row per API call/message. Tolerant of
+ *  the table not existing yet (pre-migrate v49) - never breaks the caller.
+ *  gemini: units = tokens (in/out) · whatsapp: units_out = 1 message ·
+ *  future services (sms/email/ocr/maps/...) just pass a new $service. */
+function api_usage_log($service, $provider = '', $in = 0, $out = 0) {
+    try {
+        q('INSERT INTO api_usage (service, provider, units_in, units_out) VALUES (?,?,?,?)',
+          [mb_substr($service, 0, 20), mb_substr($provider, 0, 60), (int)$in, (int)$out]);
+    } catch (Exception $e) { /* metering must never block work */ }
+}

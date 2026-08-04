@@ -82,7 +82,8 @@ function wa_send_thirdparty($mobile, $message, $media_url = '') {
         $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
         $ok = wa_interpret_response($resp, $httpCode);
-        if (!$ok) log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
+        if ($ok) api_usage_log('whatsapp', 'gateway', 0, 1); // own recharge - counted, not costed
+        else log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
         return $ok;
     }
     $ctx = stream_context_create(['http' => ['timeout' => 20, 'ignore_errors' => true]]);
