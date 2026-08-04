@@ -17,6 +17,7 @@ $_navMenu = [
         ['stock.php', 'Stock Levels', 'stock.view', null, null],
         ['barcode_labels.php', 'Barcode Label Printing', 'items.view', null, null],
         ['ai_enrich.php', 'AI Auto-Fill (Photo/Desc)', 'items.edit', null, null],
+        ['ai_categorize.php', 'AI Categories (Auto-sort)', 'items.edit', null, null],
         ['batches.php', 'Batch / Expiry Tracking', 'batches.view', 'batches.php?action=new', 'batches.add'],
     ]],
     ['group', 'sale', 'receipt', 'Sale', [
