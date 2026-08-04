@@ -3,6 +3,7 @@
 // Cost design (per the owner): TEXT questions are answered entirely from OUR
 // items database (zero API cost); only a PHOTO question spends one Gemini
 // free-tier call to name the product, then the database does the rest.
+require_once __DIR__ . '/wa_portal.php'; // customer self-service portal (portal:* routes)
 
 /** Words that carry no product meaning in a typical Gujarati/Hindi/English
  *  shop chat ("aa product che? bhav su che?") - stripped before searching. */
@@ -106,6 +107,7 @@ function wa_cat_cut($s, $n) {
  *  interactive reply id, a remembered number from a text menu, or a
  *  "catalog"/"menu" keyword. Returns the route id or null. */
 function wa_catalog_want($t, $st, $mobile) {
+    if (preg_match('/^portal:[a-z]+(:\d+)?$/', $t)) return $t; // portal taps work even with catalog off
     if (!wa_catalog_on()) return null;
     if (preg_match('/^(cats:\d+|cat:\d+:\d+|item:\d+|act:[a-z]+)$/', $t)) return $t;
     if ($st && $st['state'] === 'catalog_pick' && preg_match('/^\d{1,2}$/', $t)) {
@@ -318,7 +320,7 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
     $recent = row('SELECT reply, created_at FROM wa_bot_log WHERE mobile = ? ORDER BY id DESC LIMIT 1', [$mobile]);
     // (catalog menu taps skip the 15s brake - tapping through the list is fast;
     // same for a "2" reply while a numbered text menu is waiting)
-    $isMenuTap = (bool)preg_match('/^(cats:|cat:|item:|act:)/', trim($text))
+    $isMenuTap = (bool)preg_match('/^(cats:|cat:|item:|act:|portal:)/', trim($text))
         || wa_catalog_kw(mb_strtolower(trim($text)))
         || (preg_match('/^\d{1,2}$/', trim($text)) && val('SELECT state FROM wa_bot_state WHERE mobile = ?', [$mobile]) === 'catalog_pick');
     if ($recent && strtotime($recent['created_at']) > time() - 15 && !$isMenuTap) return 'rate-limited';
@@ -354,7 +356,8 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
                 'body' => ['text' => $hello],
                 'action' => ['buttons' => [
                     ['type' => 'reply', 'reply' => ['id' => 'cats:0', 'title' => '📚 કેટલોગ જુઓ']],
-                    ['type' => 'reply', 'reply' => ['id' => 'act:baki', 'title' => '💰 મારો હિસાબ']],
+                    ['type' => 'reply', 'reply' => ['id' => 'portal:menu', 'title' => '🧾 મારું એકાઉન્ટ']],
+                    ['type' => 'reply', 'reply' => ['id' => 'portal:stmt', 'title' => '💰 મારો હિસાબ']],
                 ]],
             ]) : [false, ''];
             if ($bok) {
@@ -364,23 +367,48 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
                 return 'replied:greeting-buttons';
             }
         }
-        $reply = $hello . (wa_catalog_on() ? "\n📚 આખો કેટલોગ ભાવ સાથે જોવા *catalog* લખો." : '') . "\n\n🌐 આખો સ્ટોર: " . base_url('catalog.php');
+        $reply = $hello . (wa_catalog_on() ? "\n📚 આખો કેટલોગ ભાવ સાથે જોવા *catalog* લખો." : '') . "\n🧾 તમારું ખાતું (બિલ/હિસાબ/રિપેર/વોરંટી) જોવા *account* લખો." . "\n\n🌐 આખો સ્ટોર: " . base_url('catalog.php');
     } elseif (trim($text) !== '') {
         $t = mb_strtolower(trim($text));
         $st = wa_bot_get_state($mobile);
 
-        // 0) કેટલોગ menu: list/button taps, remembered numbers, "catalog" keywords
+        // 0) menu taps + keywords: catalog (cats:/cat:/item:) and the customer
+        // portal (portal:*) share one pipe - list/button reply ids, remembered
+        // numbers from text menus, and typed keywords all land here
         $croute = wa_catalog_want($t, $st, $mobile);
-        if ($croute === 'act:baki') { $croute = null; $t = 'બાકી'; } // greeting button -> ledger below
+        if ($croute === null) $croute = wa_portal_want($t);
+        if ($croute === 'act:baki') $croute = 'portal:stmt'; // old greeting button
         if ($croute !== null) {
+            if (strpos($croute, 'portal:') === 0) {
+                $pst = wa_portal_route($mobile, $croute);
+                q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
+                  [$mobile, mb_substr((string)$text, 0, 500), 0, '🧾 portal (' . $pst . ')', 0, 0, $role]);
+                return 'portal:' . $pst;
+            }
             $cst = wa_catalog_route($mobile, $croute);
             q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
               [$mobile, mb_substr((string)$text, 0, 500), 0, '📚 catalog (' . $cst . ')', 0, 0, $role]);
             return 'catalog:' . $cst;
         }
 
+        // 0.5) waiting for the customer's complaint text -> open a ticket
+        if ($st && $st['state'] === 'ticket_wait') {
+            wa_bot_clear_state($mobile);
+            $reply = wa_portal_ticket_create($mobile, $text);
+        }
+        // 0.6) quotation ok/no typed as text (non-Meta fallback): "ok EST-26-001"
+        elseif (preg_match('/^(ok|yes|no|na)\s+([A-Za-z]{2,5}-\d{2}-\d{2,6})$/i', trim($text), $qm)) {
+            $qt = row('SELECT id FROM estimates WHERE estimate_no = ?', [$qm[2]]);
+            $pst = $qt ? wa_portal_route($mobile, 'portal:q' . (in_array(strtolower($qm[1]), ['ok', 'yes'], true) ? 'acc' : 'rej') . ':' . $qt['id']) : null;
+            if ($pst === null) $reply = '🙏 આ કોટેશન નંબર મળ્યો નહીં.';
+            else return 'portal:' . $pst;
+        }
+        // 0.7) an invoice number or serial number typed straight in the chat
+        elseif (($plk = wa_portal_lookup($mobile, trim($text))) !== null) {
+            $reply = $plk;
+        }
         // 1) pending follow-up: we asked "IP કે HD?" - understand the answer
-        if ($st && $st['state'] === 'camera_type') {
+        elseif ($st && $st['state'] === 'camera_type') {
             $d = json_decode($st['data'], true) ?: [];
             if (preg_match('/ip|આઈપી|આઇપી/iu', $t)) {
                 $reply = wa_bot_camera_quote($d['qty'] ?? 4, 'ip'); wa_bot_clear_state($mobile);
