@@ -234,9 +234,9 @@ function pcard($it, $waPct) {
     'name' => $app_name, 'url' => base_url('catalog.php')]) ?>
 <?= seo_public_css() ?>
 <style>
-:root { --acc1: #4f46e5; --acc2: #06b6d4; --acc3: #f59e0b; }
+:root { --acc1: #6D28D9; --acc2: #8b5cf6; --acc3: #f59e0b; }
 body { padding-bottom: 90px; background: var(--bg); }
-.shead { position: sticky; top: 0; z-index: 50; background: linear-gradient(100deg, var(--acc1), #2563eb 60%, var(--acc2)); color: #fff;
+.shead { position: sticky; top: 0; z-index: 50; background: linear-gradient(100deg, #4c1d95, var(--acc1) 55%, #7c3aed); color: #fff;
   padding: 10px 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; box-shadow: 0 2px 12px rgba(37,99,235,.35); }
 .shead .logo { font-size: 18px; font-weight: 800; white-space: nowrap; display: flex; align-items: center; gap: 7px; }
 .shead .search { flex: 1; min-width: 160px; display: flex; }
@@ -375,6 +375,45 @@ body { padding-bottom: 90px; background: var(--bg); }
 .bnav button, .bnav a { display: flex; flex-direction: column; align-items: center; gap: 2px; border: 0; background: none; color: var(--text); font-size: 18px; cursor: pointer; text-decoration: none; min-width: 56px; }
 .bnav span { font-size: 10.5px; font-weight: 600; color: var(--muted); }
 @media (min-width: 900px) { .bnav { display: none; } body { padding-bottom: 40px; } .cartbar { left: auto; right: 24px; min-width: 320px; } }
+
+/* ---------- premium full-screen mobile menu (megajaipur-style) ---------- */
+.mdrawer { position: fixed; inset: 0; z-index: 95; background: var(--bg); display: none; flex-direction: column; overflow-y: auto; }
+.mdrawer.open { display: flex; }
+@media (min-width: 900px) { .mdrawer.open { display: none; } }
+.md-head { background: linear-gradient(115deg, #4c1d95, #6D28D9); color: #fff; padding: 16px 14px; display: flex; align-items: center; gap: 10px; }
+.md-head .mlogo { width: 42px; height: 42px; border-radius: 12px; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.md-head strong { font-size: 17px; flex: 1; }
+.md-close { background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.4); color: #fff; width: 38px; height: 38px; border-radius: 10px; font-size: 17px; cursor: pointer; }
+.md-login { display: flex; align-items: center; gap: 12px; margin: 0 14px; transform: translateY(-2px); background: rgba(255,255,255,.14); backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,.3); color: #fff; border-radius: 14px; padding: 13px 14px; text-decoration: none; font-weight: 700; font-size: 14.5px; }
+.md-loginwrap { background: linear-gradient(115deg, #4c1d95, #6D28D9); padding: 0 0 16px; border-radius: 0 0 18px 18px; }
+.md-login small { display: block; font-weight: 400; opacity: .85; font-size: 12px; margin-top: 2px; }
+.md-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px; }
+.md-tile { background: #f3e8ff; color: #4c1d95; border: 0; border-radius: 14px; padding: 14px 8px; text-align: center; font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: none; }
+[data-theme="dark"] .md-tile { background: #312e81; color: #e9d5ff; }
+.md-tile div { font-size: 22px; margin-bottom: 4px; }
+.md-label { color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: 1.5px; padding: 4px 18px 8px; }
+.md-parent { display: flex; align-items: center; gap: 12px; width: calc(100% - 28px); margin: 0 14px 8px; background: var(--card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 14px; padding: 13px 14px; font-size: 14.5px; font-weight: 700; cursor: pointer; }
+.md-parent .mic { width: 34px; height: 34px; border-radius: 10px; background: #f3e8ff; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+[data-theme="dark"] .md-parent .mic { background: #312e81; }
+.md-parent .arr { margin-left: auto; color: var(--muted); transition: transform .2s; }
+.md-parent.open .arr { transform: rotate(180deg); }
+.md-kids { display: none; padding: 0 22px 8px; }
+.md-kids.open { display: block; }
+.md-kid { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--text); padding: 10px 12px; font-size: 14px; cursor: pointer; border-left: 2px solid var(--border); }
+.md-kid:active { color: var(--acc1); }
+.md-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 12px 14px; border-top: 1px solid var(--border); margin-top: 10px; }
+.md-quick a, .md-quick button { background: none; border: 0; color: var(--text); text-align: center; font-size: 20px; cursor: pointer; text-decoration: none; }
+.md-quick span { display: block; font-size: 11px; color: var(--muted); font-weight: 600; margin-top: 2px; }
+.md-call { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 14px 24px; }
+.md-call a { text-align: center; border-radius: 12px; padding: 12px; font-weight: 800; font-size: 14px; text-decoration: none; }
+.md-call .c1 { background: #ede9fe; color: #6D28D9; }
+.md-call .c2 { background: #dcfce7; color: #059669; }
+
+/* skeleton shimmer while product images load */
+.cat-card img { background: linear-gradient(100deg, var(--bg) 40%, var(--card) 50%, var(--bg) 60%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
 </style>
 </head>
 <body>
@@ -511,6 +550,60 @@ body { padding-bottom: 90px; background: var(--bg); }
   </div>
 </div>
 <?php else: ?>
+<!-- premium full-screen mobile menu -->
+<?php
+$coM = row('SELECT phone, name FROM companies ORDER BY id LIMIT 1') ?: [];
+$mdGroups = [];
+if (!isset($catGroups)) {
+    $catParent = [];
+    try { foreach (all('SELECT c.name child, p.name parent FROM categories c JOIN categories p ON p.id = c.parent_id') as $cp) $catParent[$cp['child']] = $cp['parent']; } catch (Exception $e) {}
+    foreach ($cats as $cn => $cnt) $mdGroups[$catParent[$cn] ?? ''][$cn] = $cnt;
+} ?>
+<div class="mdrawer" id="mDrawer">
+  <div class="md-loginwrap">
+    <div class="md-head">
+      <div class="mlogo">🖥️</div><strong><?= e($app_name) ?></strong>
+      <button type="button" class="md-close" id="mdClose">✕</button>
+    </div>
+    <?php if ($webAcct): ?>
+    <a class="md-login" href="catalog.php?wlogout=1">👷 <?= e($webAcct['name']) ?><small>સ્પેશિયલ ભાવ ચાલુ · Logout કરવા ટચ કરો</small></a>
+    <?php else: ?>
+    <a class="md-login" href="catalog.php?dlogin=1">👤 Login / Register<small>Dealer ભાવ, ઓર્ડર અને વધુ માટે</small></a>
+    <?php endif; ?>
+  </div>
+  <div class="md-tiles">
+    <button type="button" class="md-tile" data-md="home"><div>🏠</div>Home</button>
+    <button type="button" class="md-tile" data-md="brands"><div>🏷️</div>Brands</button>
+  </div>
+  <div class="md-label">— SHOP BY CATEGORY</div>
+  <?php $gi = 0;
+  $mdSrc = $mdGroups ?: ($catGroups ?? []);
+  ksort($mdSrc);
+  foreach ($mdSrc as $parent => $kids): ksort($kids); $gi++;
+      if ($parent === ''):
+          foreach ($kids as $cn => $cnt): ?>
+  <button type="button" class="md-parent md-kidbtn" data-mdcat="<?= e($cn) ?>"><span class="mic"><?= e(cat_icon($cn)) ?></span><?= e($cn) ?><span class="arr">›</span></button>
+  <?php endforeach; else: ?>
+  <button type="button" class="md-parent" data-mdg="<?= $gi ?>"><span class="mic"><?= e(cat_icon($parent)) ?></span><?= e($parent) ?><span class="arr">▾</span></button>
+  <div class="md-kids" data-mdk="<?= $gi ?>">
+    <button type="button" class="md-kid md-kidbtn" data-mdcats="<?= e(json_encode(array_keys($kids), JSON_UNESCAPED_UNICODE)) ?>">🗂️ બધું (<?= array_sum($kids) ?>)</button>
+    <?php foreach ($kids as $cn => $cnt): ?>
+    <button type="button" class="md-kid md-kidbtn" data-mdcat="<?= e($cn) ?>"><?= e(cat_icon($cn)) ?> <?= e($cn) ?> (<?= $cnt ?>)</button>
+    <?php endforeach; ?>
+  </div>
+  <?php endif; endforeach; ?>
+  <div class="md-quick">
+    <?php if ($waShop): ?><a href="https://wa.me/<?= e($waShop) ?>?text=account" target="_blank" rel="noopener">📦<span>Orders</span></a><?php endif; ?>
+    <button type="button" data-md="wish">❤️<span>Wishlist</span></button>
+    <button type="button" data-md="faq">🎧<span>Help</span></button>
+    <button type="button" data-md="store">📍<span>Store</span></button>
+  </div>
+  <div class="md-call">
+    <?php if (!empty($coM['phone'])): ?><a class="c1" href="tel:<?= e(preg_replace('/\s/', '', $coM['phone'])) ?>">📞 Call Us</a><?php endif; ?>
+    <?php if ($waShop): ?><a class="c2" href="https://wa.me/<?= e($waShop) ?>" target="_blank" rel="noopener">💬 WhatsApp</a><?php endif; ?>
+  </div>
+</div>
+
 <div class="side-ovl" id="sideOvl"></div>
 <div class="shop-layout">
   <aside class="side" id="sideBar">
@@ -784,12 +877,52 @@ document.querySelectorAll('.chip').forEach(function (ch) {
   });
 })();
 
+// ----- premium mobile menu (megajaipur-style full-screen drawer) -----
+var mD = document.getElementById('mDrawer');
+function mdOpen() { if (mD) { mD.classList.add('open'); document.body.style.overflow = 'hidden'; } }
+function mdClose() { if (mD) { mD.classList.remove('open'); document.body.style.overflow = ''; } }
+document.getElementById('mdClose') && document.getElementById('mdClose').addEventListener('click', mdClose);
+mD && mD.addEventListener('click', function (ev) {
+  var p = ev.target.closest('.md-parent[data-mdg]');
+  if (p) {
+    var k = document.querySelector('.md-kids[data-mdk="' + p.dataset.mdg + '"]');
+    p.classList.toggle('open');
+    if (k) k.classList.toggle('open');
+    return;
+  }
+  var kid = ev.target.closest('.md-kidbtn');
+  if (kid) {
+    var t = kid.dataset.mdcat
+      ? document.querySelector('.cat-link[data-cat="' + kid.dataset.mdcat.replace(/"/g, '\\"') + '"]')
+      : document.querySelector('.cat-link[data-cats="' + (kid.dataset.mdcats || '').replace(/"/g, '&quot;') + '"]');
+    if (!t && kid.dataset.mdcats) { // match parent button by first child name
+      try { var first = JSON.parse(kid.dataset.mdcats)[0]; } catch (e) {}
+      document.querySelectorAll('.cat-link[data-cats]').forEach(function (x) { if (!t && x.dataset.cats.indexOf(first) > -1) t = x; });
+    }
+    if (t) t.click();
+    mdClose();
+    document.getElementById('allProducts') && document.getElementById('allProducts').scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+  var act = ev.target.closest('[data-md]');
+  if (act) {
+    var a = act.dataset.md;
+    mdClose();
+    if (a === 'home') window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (a === 'brands') { var bs = document.querySelector('.brandStrip'); bs && bs.scrollIntoView({ behavior: 'smooth' }); }
+    if (a === 'wish') gotoWishlist();
+    if (a === 'faq') { var f = document.querySelector('.faqWrap'); f && f.scrollIntoView({ behavior: 'smooth' }); }
+    if (a === 'store') { var s2 = document.querySelector('.sfoot'); s2 && s2.scrollIntoView({ behavior: 'smooth' }); }
+  }
+});
+var isMobile = function () { return window.innerWidth < 900; };
+
 // ----- mobile bottom navigation -----
 document.querySelectorAll('#bNav [data-bn]').forEach(function (b) {
   b.addEventListener('click', function () {
     var a = b.dataset.bn;
     if (a === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
-    if (a === 'cats') { document.getElementById('sideBar').classList.add('open'); document.getElementById('sideOvl').classList.add('show'); }
+    if (a === 'cats') mdOpen();
     if (a === 'wish') gotoWishlist();
     if (a === 'cart') openOrder();
   });
@@ -831,7 +964,7 @@ if (sortSel) sortSel.addEventListener('change', function () {
 // category sidebar (drawer on mobile)
 var sideBar = document.getElementById('sideBar'), sideOvl = document.getElementById('sideOvl');
 var catsBtn = document.getElementById('catsBtn');
-if (catsBtn) catsBtn.addEventListener('click', function () { sideBar.classList.add('open'); sideOvl.classList.add('show'); });
+if (catsBtn) catsBtn.addEventListener('click', mdOpen); // mobile: premium full-screen menu
 if (sideOvl) sideOvl.addEventListener('click', function () { sideBar.classList.remove('open'); sideOvl.classList.remove('show'); });
 document.querySelectorAll('.cat-link').forEach(function (ch) {
   ch.addEventListener('click', function () {
