@@ -866,9 +866,9 @@ exit;
 <div class="card">
   <h3>⏰ Auto Overdue Reminders (cron)</h3>
   <?php $cronUrl = base_url('cron.php?key=' . setting('cron_key')); ?>
-  <p class="muted mb">બિલની due-date આવે એ દિવસે "આજે પેમેન્ટની તારીખ છે" અને પછી બિલ ચૂકતે ન થાય ત્યાં સુધી રોજ "X દિવસ થઈ ગયા" નો WhatsApp મેસેજ કસ્ટમરને આપોઆપ જાય છે — નીચે સેટ કરેલા સમયે. Hosting ના cPanel → Cron Jobs માં આ URL <strong>દર કલાકે</strong> ચાલે એમ મૂકો (મેસેજ તો સેટ કરેલા સમયે જ જશે, અને એક બિલને દિવસમાં એક જ વાર):</p>
-  <p class="mb"><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block"><?= e($cronUrl) ?></code></p>
-  <p class="muted mb">cPanel command: <code>wget -qO- "<?= e($cronUrl) ?>"</code> (hourly)</p>
+  <p class="muted mb">બિલની due-date આવે એ દિવસે "આજે પેમેન્ટની તારીખ છે" અને પછી બિલ ચૂકતે ન થાય ત્યાં સુધી રોજ "X દિવસ થઈ ગયા" નો WhatsApp મેસેજ કસ્ટમરને આપોઆપ જાય છે — નીચે સેટ કરેલા સમયે. Hosting ના cPanel → Cron Jobs માં આ URL <strong>દર 1 મિનિટે</strong> (<code>* * * * *</code>) ચાલે એમ મૂકો — આ એક જ cron થી આખી સિસ્ટમના બધા auto કામ (રિમાઇન્ડર, બેકઅપ, રિપોર્ટ, AMC...) ચાલે છે; મેસેજ તો સેટ કરેલા સમયે જ જશે, અને એક બિલને દિવસમાં એક જ વાર:</p>
+  <p class="mb"><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block">wget -qO- "<?= e($cronUrl) ?>"</code></p>
+  <p class="muted mb">🕹 બધા auto job નું સ્ટેટસ/હિસ્ટ્રી/મેન્યુઅલ રન: <a href="cron_manager.php"><strong>Cron Manager</strong></a></p>
   <form method="post" class="filterbar">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="reminder_gap">

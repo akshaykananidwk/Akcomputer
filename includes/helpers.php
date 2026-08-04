@@ -46,7 +46,7 @@ function csrf_field() {
     return '<input type="hidden" name="csrf" value="' . csrf_token() . '">';
 }
 function csrf_check() {
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         // api.php (Bearer-token REST/mobile API) and razorpay_webhook.php
         // (HMAC-signature-verified inbound webhook) authenticate every
         // request their own way and have no browser session/CSRF token to

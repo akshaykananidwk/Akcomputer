@@ -89,6 +89,7 @@ $_navMenu = [
     ['group', 'admin', 'briefcase', 'Staff & Company', [
         ['users.php', 'Staff Users', 'users.view', 'users.php?action=new', 'users.add'],
         ['approvals.php', 'Bill Edit Approvals', '*', null, null],
+        ['cron_manager.php', 'Cron Manager (Auto Tasks)', '*', null, null],
         ['roles.php', 'Roles / Permissions', 'roles.view', 'roles.php?action=new', 'roles.add'],
         ['locations.php', 'Locations', 'locations.view', null, null],
         ['companies.php', 'Companies / Firms', 'companies.view', null, null],
