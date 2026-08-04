@@ -356,6 +356,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_loyalty') {
     redirect('settings.php?cat=party');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_store') {
+    require_perm('settings.edit');
+    foreach (['store_announce', 'store_banners', 'store_faqs', 'store_testimonials', 'store_deal_ends'] as $k) set_setting($k, trim(post($k)));
+    set_setting('store_deal_item', (string)(int)post('store_deal_item'));
+    log_activity('settings_save', 'store design');
+    flash('Store design saved — વેબસાઇટ પર તરત લાગુ.');
+    redirect('settings.php?cat=store');
+}
+
 $terms = all('SELECT * FROM credit_terms ORDER BY days');
 $customFields = all('SELECT * FROM item_custom_fields ORDER BY sort_order, id');
 $page_title = 'Settings';
@@ -367,6 +376,7 @@ $categories = [
     'general'   => ['⚙️', 'General', 'App name, GST %, login security'],
     'transaction' => ['🧾', 'Transaction', 'Cash sale default, round off, profit, purchase price, time'],
     'whatsapp'  => ['💬', 'WhatsApp', 'API connection, templates, test send'],
+    'store'     => ['🛍️', 'Online Store Design', 'Banners, Deal of the Day, FAQ, testimonials'],
     'invoice'   => ['🎨', 'Invoice / Bill', 'Design, Google review, online payment'],
     'reminders' => ['⏰', 'Reminders', 'Auto overdue payment reminders'],
     'party'     => ['👥', 'Party', 'Credit term options'],
@@ -677,6 +687,34 @@ exit;
     <?php endforeach; ?>
     <button class="btn" type="submit">Save Templates</button>
   </form>
+</div>
+<?php endif; ?>
+
+<?php if ($cat === 'store'): ?>
+<div class="card">
+  <h3>🛍️ Online Store Design</h3>
+  <p class="muted">વેબસાઇટનું હોમપેજ અહીંથી કંટ્રોલ થાય છે — Save કરો એટલે તરત લાઈવ. કંઈ ખાલી છોડશો તો સરસ ડિફોલ્ટ ડિઝાઈન વપરાય છે.</p>
+  <form method="post" class="mt">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_store">
+    <div class="field"><label>📣 Announcement Bar (હેડરની નીચેની લાઈન)</label>
+      <input type="text" name="store_announce" value="<?= e(setting('store_announce')) ?>" placeholder="🚚 Dwarka-માં ઝડપી ડિલિવરી · ✅ Genuine Products..."></div>
+    <div class="field"><label>🖼️ Hero Banners <span class="muted" style="font-weight:normal">(એક લાઈન = એક બેનર · ફોર્મેટ: ટાઈટલ|સબટાઈટલ|ઇમોજી|કલર1|કલર2|લિંક)</span></label>
+      <textarea name="store_banners" rows="4" placeholder="દિવાળી ઓફર - 10% OFF|બધા CCTV કેમેરા પર|🪔|#7c3aed|#db2777|"><?= e(setting('store_banners')) ?></textarea></div>
+    <div class="form-row cols-2">
+      <div><label>⚡ Deal of the Day — Item ID <span class="muted" style="font-weight:normal">(Items પેજ પર ID દેખાય છે; 0 = બંધ)</span></label>
+        <input type="number" name="store_deal_item" value="<?= (int)setting('store_deal_item') ?>"></div>
+      <div><label>Deal ક્યાં સુધી? <span class="muted" style="font-weight:normal">(કાઉન્ટડાઉન ટાઈમર)</span></label>
+        <input type="datetime-local" name="store_deal_ends" value="<?= e(setting('store_deal_ends')) ?>"></div>
+    </div>
+    <div class="field"><label>💬 Testimonials <span class="muted" style="font-weight:normal">(એક લાઈન = એક · ફોર્મેટ: નામ|વાત)</span></label>
+      <textarea name="store_testimonials" rows="3"><?= e(setting('store_testimonials')) ?></textarea></div>
+    <div class="field"><label>❓ FAQ <span class="muted" style="font-weight:normal">(એક લાઈન = એક · ફોર્મેટ: સવાલ|જવાબ)</span></label>
+      <textarea name="store_faqs" rows="4"><?= e(setting('store_faqs')) ?></textarea></div>
+    <button class="btn" type="submit">Save</button>
+    <a class="btn btn-outline" href="<?= e(base_url('catalog.php')) ?>" target="_blank">🌐 વેબસાઇટ જુઓ</a>
+  </form>
+  <p class="muted mt" style="font-size:12.5px">Best Sellers / New Arrivals / Brands આપોઆપ બને છે (વેચાણ અને નવી પ્રોડક્ટ પરથી) — એ મેનેજ કરવાના નથી.</p>
 </div>
 <?php endif; ?>
 

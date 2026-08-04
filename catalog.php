@@ -128,6 +128,92 @@ $cats = [];
 foreach ($items as $it) { $cn = $it['cat_name'] ?: ''; if ($cn !== '') $cats[$cn] = ($cats[$cn] ?? 0) + 1; }
 ksort($cats);
 $metaDesc = $app_name . ' - દ્વારકા, ગુજરાતનો ભરોસાપાત્ર કમ્પ્યુટર અને CCTV સ્ટોર. Computers, Laptops, CCTV Cameras, Printers, Accessories & Repairs in Dwarka, Gujarat. ' . count($items) . '+ products online - order on WhatsApp.';
+
+// ---------- premium homepage sections ----------
+// All computed from data the shop already has - nothing extra to maintain.
+// The owner-editable bits (announcement, banners, deal of the day, FAQs,
+// testimonials) live in Settings > Online Store as simple one-line-per-entry
+// text, so the storefront is managed without touching code.
+$homeView = !$webAcct && get('dlogin') !== '1' && get('dregister') !== '1' && !$wregDone && empty($wloginError) && empty($wregError) && !$orderOk;
+$byId = [];
+foreach ($items as $x) $byId[(int)$x['id']] = $x;
+$tmpN = $items;
+usort($tmpN, fn($a, $b) => $b['id'] <=> $a['id']);
+$newList = array_slice($tmpN, 0, 10);
+$bestList = [];
+try {
+    foreach (all("SELECT si.item_id, SUM(si.qty) q FROM sale_items si JOIN sales s ON s.id = si.sale_id
+                  WHERE s.is_cancelled = 0 AND s.sale_date >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
+                  GROUP BY si.item_id ORDER BY q DESC LIMIT 14") as $bs) {
+        if (isset($byId[(int)$bs['item_id']])) $bestList[] = $byId[(int)$bs['item_id']];
+        if (count($bestList) >= 10) break;
+    }
+} catch (Exception $e) {}
+$deal = null;
+$dealEnds = trim(setting('store_deal_ends', ''));
+$dId = (int)setting('store_deal_item');
+if ($dId && isset($byId[$dId]) && ($dealEnds === '' || strtotime($dealEnds) > time())) $deal = $byId[$dId];
+$bannerLines = trim(setting('store_banners', ''));
+if ($bannerLines === '') {
+    $bannerLines = "દ્વારકાની પોતાની Computer & CCTV દુકાન 🛍️|Genuine products · Warranty · ઓર્ડર સીધો WhatsApp પર|🖥️|#4f46e5|#06b6d4|\n"
+        . "CCTV કેમેરા ઇન્સ્ટોલેશન|HD & IP કેમેરા · ફ્રી સાઇટ વિઝિટ — આજે જ પૂછો!|📹|#059669|#10b981|" . seo_service_url('cctv-installation') . "\n"
+        . "Laptop & Printer રિપેર|Same-day સર્વિસ · ઓરિજિનલ પાર્ટ્સ|🛠️|#d97706|#f59e0b|" . seo_service_url('laptop-repair');
+}
+$banners = [];
+foreach (explode("\n", $bannerLines) as $ln) {
+    $pp = array_map('trim', explode('|', $ln));
+    if (($pp[0] ?? '') === '') continue;
+    $banners[] = ['t' => $pp[0], 's' => $pp[1] ?? '', 'e' => $pp[2] ?? '🛍️', 'c1' => $pp[3] ?? '#4f46e5', 'c2' => $pp[4] ?? '#06b6d4', 'l' => $pp[5] ?? ''];
+}
+$announce = setting('store_announce', '🚚 Dwarka-માં ઝડપી ડિલિવરી · ✅ Genuine Products · 🛡️ Warranty સાથે · 📞 ઓર્ડર સીધો WhatsApp પર');
+$faqLines = trim(setting('store_faqs', ''));
+if ($faqLines === '') {
+    $faqLines = "ઓર્ડર કેવી રીતે થાય?|પ્રોડક્ટ પર Add દબાવી, નીચે Place Order કરો — નામ/મોબાઈલ નાખો એટલે અમને WhatsApp પર ઓર્ડર મળી જાય, અમે તરત કન્ફર્મ કરીએ.\n"
+        . "ડિલિવરી ક્યાં થાય છે?|દ્વારકા અને આજુબાજુના વિસ્તારમાં. મોટા ઓર્ડરમાં ઇન્સ્ટોલેશન સાથે.\n"
+        . "વોરંટી મળે છે?|હા — બધી પ્રોડક્ટ genuine, કંપની વોરંટી સાથે. બિલ અને વોરંટી WhatsApp પર જ મળે છે.\n"
+        . "CCTV ઇન્સ્ટોલેશન કરો છો?|હા, HD અને IP બન્ને. ફ્રી સાઇટ વિઝિટ માટે WhatsApp કરો.";
+}
+$faqs = [];
+foreach (explode("\n", $faqLines) as $ln) { $pp = explode('|', $ln, 2); if (trim($pp[0] ?? '') !== '' && trim($pp[1] ?? '') !== '') $faqs[] = [trim($pp[0]), trim($pp[1])]; }
+$testiLines = trim(setting('store_testimonials', ''));
+if ($testiLines === '') {
+    $testiLines = "રમેશભાઈ, દ્વારકા|CCTV કેમેરા ફિટિંગ એક જ દિવસમાં, કામ એકદમ ચોખ્ખું. મોબાઈલમાં લાઈવ જોવા મળે છે!\n"
+        . "હિરેનભાઈ (હોટેલ)|હોટેલ માટે આખું networking + કેમેરા સેટઅપ કરાવ્યું. ભાવ પણ વ્યાજબી, સર્વિસ ફાસ્ટ.\n"
+        . "કિરણબેન|લેપટોપ રિપેર same-day થઈ ગયું. WhatsApp પર બિલ અને વોરંટી પણ મળી ગઈ.";
+}
+$testis = [];
+foreach (explode("\n", $testiLines) as $ln) { $pp = explode('|', $ln, 2); if (trim($pp[0] ?? '') !== '') $testis[] = [trim($pp[0]), trim($pp[1] ?? '')]; }
+$brandCnt = [];
+foreach ($items as $x) { $b = trim((string)$x['brand']); if ($b !== '') $brandCnt[$b] = ($brandCnt[$b] ?? 0) + 1; }
+arsort($brandCnt);
+$brandTop = array_slice(array_keys($brandCnt), 0, 12);
+
+/** One product card (used by the main grid AND the horizontal section rows,
+ *  so every card everywhere has the same buttons and behaviour). */
+function pcard($it, $waPct) {
+    $dp = dealer_price($it['selling_price'], $waPct);
+    $purl = seo_product_url($it); ?>
+      <div class="cat-card" data-cat="<?= e($it['cat_name'] ?? '') ?>" data-price="<?= $dp ?>" data-name="<?= e(mb_strtolower($it['name'])) ?>" data-newid="<?= (int)$it['id'] ?>">
+        <button type="button" class="wishbtn" data-wid="<?= (int)$it['id'] ?>" aria-label="Wishlist">♡</button>
+        <a class="imglink" href="<?= e($purl) ?>">
+        <?php if ($it['photo']): ?><img src="<?= e($it['photo']) ?>" alt="<?= e($it['name']) ?>" loading="lazy">
+        <?php else: ?><div class="ph"><?= e(cat_icon($it['cat_name'] ?? '')) ?></div><?php endif; ?>
+        </a>
+        <div class="cbody">
+          <?php if ($it['cat_name']): ?><div class="ctag"><?= e($it['cat_name']) ?></div><?php endif; ?>
+          <div class="cname"><a href="<?= e($purl) ?>"><?= e($it['name']) ?></a></div>
+          <?php if ($it['brand']): ?><div class="muted" style="font-size:12px"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></div><?php endif; ?>
+          <div class="cprice">₹<?= money($dp) ?> <span class="instk">✔ In stock</span></div>
+          <div class="btnrow">
+            <button type="button" class="btn btn-sm addbtn" data-id="<?= $it['id'] ?>" data-name="<?= e($it['name']) ?>" data-price="<?= $dp ?>">🛒 Add</button>
+            <button type="button" class="btn btn-sm buybtn" data-id="<?= $it['id'] ?>">⚡ Buy Now</button>
+          </div>
+          <div class="qtyrow" style="display:none" data-qid="<?= $it['id'] ?>">
+            <button type="button" class="q-minus">−</button><span class="q-num">1</span><button type="button" class="q-plus">＋</button>
+          </div>
+        </div>
+      </div>
+<?php }
 ?><!DOCTYPE html>
 <html lang="gu">
 <head>
@@ -218,6 +304,77 @@ body { padding-bottom: 90px; background: var(--bg); }
 .ok-box .big { font-size: 54px; }
 .sfoot { background: var(--card); color: var(--text); margin-top: 26px; padding: 24px 14px 90px; text-align: center; font-size: 13.5px; }
 .sfoot .muted { font-size: 12.5px; }
+
+/* ---------- premium storefront additions ---------- */
+.announce { background: #16233b; color: #fff; text-align: center; font-size: 12.5px; padding: 7px 12px; letter-spacing: .2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.heroSlider { position: relative; max-width: 1240px; margin: 12px auto 0; padding: 0 12px; }
+.heroSlider .slides { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 12px; scrollbar-width: none; border-radius: 20px; scroll-behavior: smooth; }
+.heroSlider .slides::-webkit-scrollbar { display: none; }
+.heroSlider .slide { position: relative; min-width: 100%; scroll-snap-align: start; border-radius: 20px; color: #fff; text-decoration: none;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 26px 22px; min-height: 170px; overflow: hidden; }
+.heroSlider .slide::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 85% 15%, rgba(255,255,255,.25), transparent 45%); }
+.heroSlider h1, .heroSlider h2 { font-size: 22px; font-weight: 800; line-height: 1.25; text-shadow: 0 2px 8px rgba(0,0,0,.18); }
+.heroSlider p { margin-top: 6px; font-size: 13.5px; opacity: .95; max-width: 520px; }
+.s-cta { display: inline-block; margin-top: 12px; background: rgba(255,255,255,.92); color: #16233b; font-weight: 800; font-size: 13px; border-radius: 999px; padding: 8px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+.s-emoji { font-size: 64px; filter: drop-shadow(0 6px 12px rgba(0,0,0,.25)); z-index: 1; }
+@media (min-width: 900px) { .heroSlider .slide { min-height: 230px; padding: 38px 40px; } .heroSlider h1, .heroSlider h2 { font-size: 32px; } .heroSlider p { font-size: 15.5px; } .s-emoji { font-size: 96px; } }
+.dots { display: flex; justify-content: center; gap: 6px; margin-top: 8px; }
+.dots button { width: 8px; height: 8px; border-radius: 999px; border: 0; background: var(--border); cursor: pointer; padding: 0; transition: all .25s; }
+.dots button.on { width: 22px; background: var(--acc1); }
+.chipStrip { display: flex; gap: 8px; overflow-x: auto; padding: 12px; max-width: 1240px; margin: 0 auto; scrollbar-width: none; }
+.chipStrip::-webkit-scrollbar { display: none; }
+.chip { display: flex; align-items: center; gap: 6px; white-space: nowrap; background: var(--card); color: var(--text); border: 1px solid var(--border);
+  border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.chip:hover, .chip.on { background: var(--acc1); color: #fff; border-color: var(--acc1); transform: translateY(-1px); }
+.chip span { font-size: 16px; }
+.dealBand { max-width: 1240px; margin: 6px auto; padding: 0 12px; }
+.dealIn { border-radius: 20px; background: linear-gradient(115deg, #7c3aed, #db2777); color: #fff; padding: 20px 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; box-shadow: 0 10px 30px rgba(124,58,237,.35); }
+.dealIn img { width: 130px; height: 130px; object-fit: contain; background: #fff; border-radius: 16px; padding: 8px; }
+.dealEmoji { font-size: 80px; }
+.dealTag { display: inline-block; background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.5); border-radius: 999px; padding: 4px 12px; font-size: 11.5px; font-weight: 800; letter-spacing: 1px; }
+.dealIn h2 { font-size: 19px; margin-top: 8px; }
+.dealPrice { font-size: 26px; font-weight: 900; margin-top: 4px; }
+.countdown { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 15px; margin-top: 6px; background: rgba(0,0,0,.25); display: inline-block; border-radius: 10px; padding: 5px 12px; }
+.dealBtn { background: #fff !important; color: #7c3aed !important; font-weight: 800; margin-top: 10px; border: 0; }
+.secWrap { max-width: 1240px; margin: 10px auto 0; padding: 0 12px; }
+.sec-h { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 800; color: var(--text); margin: 14px 0 10px; }
+.sec-h span { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(120deg, var(--acc1), var(--acc2)); font-size: 16px; box-shadow: 0 3px 10px rgba(79,70,229,.35); }
+@media (min-width: 900px) { .sec-h { font-size: 21px; } }
+.hrow { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 12px; scrollbar-width: thin; scroll-snap-type: x proximity; }
+.hrow .cat-card { min-width: 175px; max-width: 175px; scroll-snap-align: start; }
+@media (min-width: 900px) { .hrow .cat-card { min-width: 210px; max-width: 210px; } }
+.cat-card { position: relative; border: 1px solid transparent; }
+.cat-card:hover { border-color: var(--acc1); }
+.wishbtn { position: absolute; top: 8px; right: 8px; z-index: 2; width: 32px; height: 32px; border-radius: 999px; border: 0; background: rgba(255,255,255,.92); color: #e11d48; font-size: 16px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.18); transition: transform .15s; }
+.wishbtn:hover { transform: scale(1.12); }
+.wishbtn.on { background: #e11d48; color: #fff; }
+.instk { font-size: 11px; color: #059669; font-weight: 700; margin-left: 6px; }
+.btnrow { display: flex; gap: 6px; margin-top: 8px; }
+.btnrow .addbtn { flex: 1; margin-top: 0; }
+.btnrow .buybtn { flex: 1; background: linear-gradient(100deg, #059669, #10b981); border: 0; color: #fff; }
+.brandStrip { max-width: 1240px; margin: 14px auto 4px; padding: 0 12px; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.brandStrip::-webkit-scrollbar { display: none; }
+.brandPill { white-space: nowrap; background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700; text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.brandPill:hover { border-color: var(--acc1); color: var(--acc1); }
+.testiGrid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 800px) { .testiGrid { grid-template-columns: repeat(3, 1fr); } }
+.testi { background: var(--card); border-radius: 16px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.07); font-size: 13.5px; color: var(--text); }
+.testi .stars { color: #f59e0b; letter-spacing: 2px; margin-bottom: 6px; }
+.testi .tname { margin-top: 8px; font-weight: 700; color: var(--muted); font-size: 12.5px; }
+.faqWrap { display: flex; flex-direction: column; gap: 8px; }
+.faq { background: var(--card); border-radius: 12px; padding: 12px 14px; color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.faq summary { font-weight: 700; font-size: 14px; cursor: pointer; }
+.faq p { margin-top: 8px; font-size: 13.5px; color: var(--muted); }
+.ctaBand { max-width: 1240px; margin: 18px auto 0; padding: 26px 16px; border-radius: 20px; text-align: center; color: #fff;
+  background: linear-gradient(115deg, #059669, #0d9488); box-shadow: 0 10px 30px rgba(5,150,105,.3); }
+.ctaBand h2 { font-size: 19px; }
+.ctaBand p { margin-top: 6px; font-size: 13.5px; opacity: .95; }
+.ctaBtn { background: #fff !important; color: #059669 !important; font-weight: 800; margin-top: 12px; border: 0; }
+.bnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 65; background: var(--card); border-top: 1px solid var(--border);
+  display: flex; justify-content: space-around; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+.bnav button, .bnav a { display: flex; flex-direction: column; align-items: center; gap: 2px; border: 0; background: none; color: var(--text); font-size: 18px; cursor: pointer; text-decoration: none; min-width: 56px; }
+.bnav span { font-size: 10.5px; font-weight: 600; color: var(--muted); }
+@media (min-width: 900px) { .bnav { display: none; } body { padding-bottom: 40px; } .cartbar { left: auto; right: 24px; min-width: 320px; } }
 </style>
 </head>
 <body>
@@ -237,12 +394,16 @@ body { padding-bottom: 90px; background: var(--bg); }
   <?php else: ?>
     <a class="hbtn" href="catalog.php?dlogin=1">🔑 Dealer</a>
   <?php endif; ?>
+  <button type="button" class="hbtn" id="wishBtnH" title="Wishlist">♡ <span id="wishCount">0</span></button>
+  <button type="button" class="hbtn" id="cartBtnH" title="Cart">🛒 <span id="cartCount">0</span></button>
+  <button type="button" class="hbtn" id="themeBtn" title="Dark / Light">🌓</button>
   <?php if (!current_user()): ?>
     <a class="hbtn" href="<?= e(base_url('login.php')) ?>" title="Staff Login">👤 Staff</a>
   <?php else: ?>
     <a class="hbtn" href="<?= e(base_url('index.php')) ?>" title="Dashboard">📊 Dashboard</a>
   <?php endif; ?>
 </header>
+<div class="announce"><?= e($announce) ?></div>
 
 <?php if ($webAcct): ?>
 <div class="dealer-bar">
@@ -285,12 +446,59 @@ body { padding-bottom: 90px; background: var(--bg); }
 </div>
 <?php endif; ?>
 
-<?php if (!$webAcct && get('dlogin') !== '1' && get('dregister') !== '1' && !$wregDone && empty($wloginError) && empty($wregError) && !$orderOk): ?>
-<div class="hero">
-  <h1>દ્વારકાની પોતાની Computer &amp; CCTV દુકાન 🛍️</h1>
-  <p>Computers · Laptops · CCTV Cameras · Printers · Accessories · Repairs — બધું એક જ જગ્યાએ, ઓર્ડર WhatsApp પર</p>
-  <div class="badges"><span>✅ Genuine products</span><span>🛠️ Warranty &amp; Service</span><span>🚚 Dwarka delivery</span><span>📞 Direct WhatsApp</span></div>
+<?php if ($homeView): ?>
+<!-- rotating hero banners (owner-editable in Settings > Online Store) -->
+<div class="heroSlider" id="heroSlider">
+  <div class="slides" id="heroSlides">
+    <?php foreach ($banners as $i => $bn): ?>
+    <a class="slide" href="<?= e($bn['l'] ?: '#allProducts') ?>" style="background:linear-gradient(115deg, <?= e($bn['c1']) ?>, <?= e($bn['c2']) ?>)">
+      <div class="s-txt"><h<?= $i === 0 ? '1' : '2' ?>><?= e($bn['t']) ?></h<?= $i === 0 ? '1' : '2' ?>><p><?= e($bn['s']) ?></p>
+        <span class="s-cta">Shop Now →</span></div>
+      <div class="s-emoji"><?= e($bn['e']) ?></div>
+    </a>
+    <?php endforeach; ?>
+  </div>
+  <?php if (count($banners) > 1): ?><div class="dots" id="heroDots"><?php foreach ($banners as $i => $bn): ?><button class="<?= $i ? '' : 'on' ?>" data-slide="<?= $i ?>"></button><?php endforeach; ?></div><?php endif; ?>
 </div>
+
+<!-- category quick chips -->
+<div class="chipStrip" id="chipStrip">
+  <?php foreach (array_slice(array_keys($cats), 0, 14) as $cn): ?>
+  <button type="button" class="chip" data-chipcat="<?= e($cn) ?>"><span><?= e(cat_icon($cn)) ?></span><?= e($cn) ?></button>
+  <?php endforeach; ?>
+</div>
+
+<?php if ($deal): $ddp = dealer_price($deal['selling_price'], $waPct); ?>
+<!-- deal of the day -->
+<section class="dealBand">
+  <div class="dealIn">
+    <div class="dealL">
+      <div class="dealTag">⚡ DEAL OF THE DAY</div>
+      <h2><?= e($deal['name']) ?></h2>
+      <div class="dealPrice">₹<?= money($ddp) ?></div>
+      <?php if ($dealEnds !== ''): ?><div class="countdown" data-ends="<?= e(date('c', strtotime($dealEnds))) ?>" id="dealCd"></div><?php endif; ?>
+      <button type="button" class="btn dealBtn buybtn" data-id="<?= (int)$deal['id'] ?>">⚡ અત્યારે જ લો</button>
+    </div>
+    <?php if ($deal['photo']): ?><img src="<?= e($deal['photo']) ?>" alt="<?= e($deal['name']) ?>" loading="lazy"><?php else: ?><div class="dealEmoji"><?= e(cat_icon($deal['cat_name'] ?? '')) ?></div><?php endif; ?>
+  </div>
+</section>
+<?php endif; ?>
+
+<?php if ($bestList): ?>
+<section class="secWrap"><h2 class="sec-h"><span>🔥</span> Best Sellers</h2>
+  <div class="hrow"><?php foreach ($bestList as $it) pcard($it, $waPct); ?></div>
+</section>
+<?php endif; ?>
+
+<section class="secWrap"><h2 class="sec-h"><span>🆕</span> New Arrivals</h2>
+  <div class="hrow"><?php foreach ($newList as $it) pcard($it, $waPct); ?></div>
+</section>
+
+<?php if ($brandTop): ?>
+<div class="brandStrip">
+  <?php foreach ($brandTop as $bn): ?><a class="brandPill" href="<?= e(seo_brand_url($bn)) ?>"><?= e($bn) ?></a><?php endforeach; ?>
+</div>
+<?php endif; ?>
 <?php endif; ?>
 
 <?php if ($orderOk): ?>
@@ -328,34 +536,53 @@ body { padding-bottom: 90px; background: var(--bg); }
 
   <main>
     <button type="button" class="btn btn-sm btn-outline catsBtn" id="catsBtn">☰ Categories</button>
+    <h2 class="sec-h" id="allProducts"><span>🏪</span> All Products</h2>
     <div class="cat-grid" id="cGrid">
-    <?php foreach ($items as $it): ?>
-      <?php $dp = dealer_price($it['selling_price'], $waPct);
-            $purl = seo_product_url($it); ?>
-      <div class="cat-card" data-cat="<?= e($it['cat_name'] ?? '') ?>" data-price="<?= $dp ?>" data-name="<?= e(mb_strtolower($it['name'])) ?>" data-newid="<?= (int)$it['id'] ?>">
-        <a class="imglink" href="<?= e($purl) ?>">
-        <?php if ($it['photo']): ?><img src="<?= e($it['photo']) ?>" alt="<?= e($it['name']) ?>" loading="lazy">
-        <?php else: ?><div class="ph"><?= e(cat_icon($it['cat_name'] ?? '')) ?></div><?php endif; ?>
-        </a>
-        <div class="cbody">
-          <?php if ($it['cat_name']): ?><div class="ctag"><?= e($it['cat_name']) ?></div><?php endif; ?>
-          <div class="cname"><a href="<?= e($purl) ?>"><?= e($it['name']) ?></a></div>
-          <?php if ($it['brand']): ?><div class="muted"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></div><?php endif; ?>
-          <?php if (!empty($it['description'])): ?><div class="cdesc"><?= e($it['description']) ?></div><?php endif; ?>
-          <div class="cprice">₹<?= money($dp) ?></div>
-          <button type="button" class="btn btn-sm addbtn" data-id="<?= $it['id'] ?>" data-name="<?= e($it['name']) ?>" data-price="<?= $dp ?>">🛒 Add to Cart</button>
-          <div class="qtyrow" style="display:none" data-qid="<?= $it['id'] ?>">
-            <button type="button" class="q-minus">−</button><span class="q-num">1</span><button type="button" class="q-plus">＋</button>
-          </div>
-        </div>
-      </div>
-    <?php endforeach; ?>
+    <?php foreach ($items as $it) pcard($it, $waPct); ?>
     <?php if (!$items): ?><p class="muted">No products listed yet.</p><?php endif; ?>
     </div>
   </main>
 </div>
 
+  <?php if ($homeView): ?>
+  <?php if ($testis): ?>
+  <section class="secWrap"><h2 class="sec-h"><span>💬</span> ગ્રાહકો શું કહે છે</h2>
+    <div class="testiGrid">
+      <?php foreach ($testis as $ts): ?>
+      <div class="testi"><div class="stars">★★★★★</div><p>"<?= e($ts[1]) ?>"</p><div class="tname">— <?= e($ts[0]) ?></div></div>
+      <?php endforeach; ?>
+    </div>
+  </section>
+  <?php endif; ?>
+  <?php if ($faqs): ?>
+  <section class="secWrap"><h2 class="sec-h"><span>❓</span> FAQ — વારંવાર પુછાતા સવાલ</h2>
+    <div class="faqWrap">
+      <?php foreach ($faqs as $fq): ?>
+      <details class="faq"><summary><?= e($fq[0]) ?></summary><p><?= e($fq[1]) ?></p></details>
+      <?php endforeach; ?>
+    </div>
+  </section>
+  <?= seo_faq_jsonld(array_combine(array_column($faqs, 0), array_column($faqs, 1))) ?>
+  <?php endif; ?>
+  <?php if ($waShop): ?>
+  <section class="ctaBand">
+    <h2>📲 ભાવ પૂછવો છે? WhatsApp પર "catalog" લખો!</h2>
+    <p>આખો કેટલોગ, ભાવ, ઓર્ડર અને તમારું એકાઉન્ટ — બધું WhatsApp માં જ.</p>
+    <a class="btn ctaBtn" href="https://wa.me/<?= e($waShop) ?>?text=catalog" target="_blank" rel="noopener">💬 WhatsApp ખોલો</a>
+  </section>
+  <?php endif; ?>
+  <?php endif; ?>
+
   <div class="cartbar" id="cartBar"><span id="cartInfo"></span><span>Place Order →</span></div>
+
+  <!-- mobile bottom navigation -->
+  <nav class="bnav no-print" id="bNav">
+    <button type="button" data-bn="top">🏠<span>Home</span></button>
+    <button type="button" data-bn="cats">🗂️<span>Categories</span></button>
+    <button type="button" data-bn="wish">❤️<span id="bnWish">Wishlist</span></button>
+    <?php if ($waShop): ?><a href="https://wa.me/<?= e($waShop) ?>" target="_blank" rel="noopener">💬<span>WhatsApp</span></a><?php endif; ?>
+    <button type="button" data-bn="cart">🛒<span id="bnCart">Cart</span></button>
+  </nav>
 
   <div class="order-modal" id="orderModal">
     <div class="order-box">
@@ -394,6 +621,17 @@ body { padding-bottom: 90px; background: var(--bg); }
 var cart = {};   // id -> qty
 var meta = {};   // id -> {name, price}
 
+// The same product renders in several places (grid + Best Sellers + New
+// Arrivals rows), so every cart action updates ALL copies of that card.
+function cardsOf(id, sel) { return document.querySelectorAll(sel + '[data-' + (sel === '.qtyrow' ? 'qid' : 'id') + '="' + id + '"]'); }
+function syncCard(id) {
+  var q = cart[id] || 0;
+  cardsOf(id, '.addbtn').forEach(function (b) { b.style.display = q ? 'none' : ''; });
+  document.querySelectorAll('.qtyrow[data-qid="' + id + '"]').forEach(function (r) {
+    r.style.display = q ? 'flex' : 'none';
+    r.querySelector('.q-num').textContent = q;
+  });
+}
 function refreshCart() {
   var count = 0, total = 0;
   Object.keys(cart).forEach(function (id) {
@@ -401,6 +639,8 @@ function refreshCart() {
     total += cart[id] * meta[id].price;
   });
   var bar = document.getElementById('cartBar');
+  var cc = document.getElementById('cartCount'); if (cc) cc.textContent = count;
+  var bc = document.getElementById('bnCart'); if (bc) bc.textContent = count ? 'Cart (' + count + ')' : 'Cart';
   if (!bar) return;
   if (count > 0) {
     bar.classList.add('show');
@@ -413,35 +653,12 @@ function addToCart(id) {
   var b = document.querySelector('.addbtn[data-id="' + id + '"]');
   if (!b) return;
   meta[id] = { name: b.dataset.name, price: parseFloat(b.dataset.price) };
-  cart[id] = (cart[id] || 0) + 0 || 1;
-  cart[id] = 1;
-  b.style.display = 'none';
-  document.querySelector('.qtyrow[data-qid="' + id + '"]').style.display = 'flex';
-  refreshCart();
+  cart[id] = (cart[id] || 0) + 1;
+  syncCard(id); refreshCart();
 }
-document.querySelectorAll('.addbtn').forEach(function (b) {
-  b.addEventListener('click', function () { addToCart(b.dataset.id); });
-});
-document.querySelectorAll('.qtyrow').forEach(function (row) {
-  var id = row.dataset.qid;
-  row.querySelector('.q-plus').addEventListener('click', function () {
-    cart[id]++; row.querySelector('.q-num').textContent = cart[id]; refreshCart();
-  });
-  row.querySelector('.q-minus').addEventListener('click', function () {
-    cart[id]--;
-    if (cart[id] <= 0) {
-      delete cart[id];
-      row.style.display = 'none';
-      row.parentElement.querySelector('.addbtn').style.display = '';
-    } else {
-      row.querySelector('.q-num').textContent = cart[id];
-    }
-    refreshCart();
-  });
-});
-document.getElementById('cartBar') && document.getElementById('cartBar').addEventListener('click', function () {
-  var lines = '';
-  var total = 0;
+function openOrder() {
+  if (!Object.keys(cart).length) return;
+  var lines = '', total = 0;
   Object.keys(cart).forEach(function (id) {
     var line = cart[id] * meta[id].price;
     total += line;
@@ -451,12 +668,132 @@ document.getElementById('cartBar') && document.getElementById('cartBar').addEven
   document.getElementById('orderLines').innerHTML = lines;
   document.getElementById('cartJson').value = JSON.stringify(cart);
   document.getElementById('orderModal').classList.add('show');
+}
+document.addEventListener('click', function (ev) {
+  var add = ev.target.closest('.addbtn');
+  if (add) { addToCart(add.dataset.id); return; }
+  var buy = ev.target.closest('.buybtn');
+  if (buy) { if (!cart[buy.dataset.id]) addToCart(buy.dataset.id); openOrder(); return; }
+  var plus = ev.target.closest('.q-plus'), minus = ev.target.closest('.q-minus');
+  if (plus || minus) {
+    var id = (plus || minus).closest('.qtyrow').dataset.qid;
+    cart[id] = (cart[id] || 0) + (plus ? 1 : -1);
+    if (cart[id] <= 0) delete cart[id];
+    syncCard(id); refreshCart();
+    return;
+  }
+  var w = ev.target.closest('.wishbtn');
+  if (w) { toggleWish(w.dataset.wid); }
 });
+document.getElementById('cartBar') && document.getElementById('cartBar').addEventListener('click', openOrder);
+document.getElementById('cartBtnH') && document.getElementById('cartBtnH').addEventListener('click', openOrder);
 // "Add to cart" arriving from a product page (product.php?...&add=ID)
 (function () {
   var addId = new URLSearchParams(location.search).get('add');
   if (addId) { addToCart(addId); history.replaceState(null, '', location.pathname); }
 })();
+
+// ----- wishlist (localStorage; header ♥ filters the grid to loved items) -----
+var wish = [];
+try { wish = JSON.parse(localStorage.getItem('akcWish') || '[]'); } catch (e) {}
+function paintWish() {
+  document.querySelectorAll('.wishbtn').forEach(function (b) {
+    var on = wish.indexOf(String(b.dataset.wid)) > -1;
+    b.classList.toggle('on', on);
+    b.textContent = on ? '♥' : '♡';
+  });
+  var c = document.getElementById('wishCount'); if (c) c.textContent = wish.length;
+}
+function toggleWish(id) {
+  id = String(id);
+  var i = wish.indexOf(id);
+  if (i > -1) wish.splice(i, 1); else wish.push(id);
+  try { localStorage.setItem('akcWish', JSON.stringify(wish)); } catch (e) {}
+  paintWish();
+}
+var wishOnly = false;
+function applyWishFilter() {
+  document.querySelectorAll('#cGrid .cat-card').forEach(function (c) {
+    if (!wishOnly) return;
+    var id = c.querySelector('.wishbtn') ? c.querySelector('.wishbtn').dataset.wid : '';
+    if (wish.indexOf(String(id)) === -1) c.style.display = 'none';
+  });
+}
+function gotoWishlist() {
+  wishOnly = !wishOnly;
+  applyFilter(); applyWishFilter();
+  document.getElementById('allProducts') && document.getElementById('allProducts').scrollIntoView({ behavior: 'smooth' });
+}
+document.getElementById('wishBtnH') && document.getElementById('wishBtnH').addEventListener('click', gotoWishlist);
+paintWish();
+
+// ----- hero slider: auto-rotate + dots -----
+(function () {
+  var s = document.getElementById('heroSlides');
+  if (!s) return;
+  var dots = document.querySelectorAll('#heroDots button');
+  var n = s.children.length, cur = 0, timer;
+  function go(i) {
+    cur = (i + n) % n;
+    s.scrollTo({ left: s.children[cur].offsetLeft - s.children[0].offsetLeft, behavior: 'smooth' });
+    dots.forEach(function (d, j) { d.classList.toggle('on', j === cur); });
+  }
+  dots.forEach(function (d) { d.addEventListener('click', function () { go(parseInt(d.dataset.slide)); restart(); }); });
+  function restart() { clearInterval(timer); if (n > 1) timer = setInterval(function () { go(cur + 1); }, 4500); }
+  s.addEventListener('touchstart', function () { clearInterval(timer); }, { passive: true });
+  s.addEventListener('touchend', restart, { passive: true });
+  restart();
+})();
+
+// ----- deal countdown -----
+(function () {
+  var cd = document.getElementById('dealCd');
+  if (!cd) return;
+  var ends = new Date(cd.dataset.ends).getTime();
+  function tick() {
+    var left = Math.max(0, Math.floor((ends - Date.now()) / 1000));
+    var h = Math.floor(left / 3600), m = Math.floor(left % 3600 / 60), sec = left % 60;
+    cd.textContent = '⏰ ' + h + 'h ' + ('0' + m).slice(-2) + 'm ' + ('0' + sec).slice(-2) + 's બાકી';
+    if (left <= 0) cd.textContent = '⏰ Deal પૂરી!';
+  }
+  tick(); setInterval(tick, 1000);
+})();
+
+// ----- category chips: click = filter the grid via the matching sidebar entry -----
+document.querySelectorAll('.chip').forEach(function (ch) {
+  ch.addEventListener('click', function () {
+    document.querySelectorAll('.chip').forEach(function (x) { x.classList.remove('on'); });
+    ch.classList.add('on');
+    var target = document.querySelector('.cat-link[data-cat="' + ch.dataset.chipcat.replace(/"/g, '\\"') + '"]');
+    if (target) target.click();
+    document.getElementById('allProducts') && document.getElementById('allProducts').scrollIntoView({ behavior: 'smooth' });
+  });
+});
+
+// ----- dark / light toggle (remembered on this device) -----
+(function () {
+  var saved = null;
+  try { saved = localStorage.getItem('akcTheme'); } catch (e) {}
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+  var b = document.getElementById('themeBtn');
+  if (b) b.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var nx = cur === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', nx);
+    try { localStorage.setItem('akcTheme', nx); } catch (e) {}
+  });
+})();
+
+// ----- mobile bottom navigation -----
+document.querySelectorAll('#bNav [data-bn]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var a = b.dataset.bn;
+    if (a === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (a === 'cats') { document.getElementById('sideBar').classList.add('open'); document.getElementById('sideOvl').classList.add('show'); }
+    if (a === 'wish') gotoWishlist();
+    if (a === 'cart') openOrder();
+  });
+});
 // search + category filter
 var filterInp = document.getElementById('cFilter');
 function applyFilter() {
@@ -472,6 +809,7 @@ function applyFilter() {
     var okC = cats ? cats.indexOf(c.dataset.cat) > -1 : (!cat || c.dataset.cat === cat);
     c.style.display = okQ && okC ? '' : 'none';
   });
+  applyWishFilter(); // ♥ filter stacks on top of search + category
 }
 if (filterInp) filterInp.addEventListener('input', applyFilter);
 // sort: reorder the cards inside the grid (works together with search + category)
