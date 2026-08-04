@@ -37,6 +37,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', $data);
             $id = insert_id();
             flash('Item added.');
+            // no category picked -> AI files the new product right away (one
+            // tiny call); any failure just leaves it uncategorized as before
+            if (!$data[1]) {
+                try {
+                    list($aiRows, ) = ai_categorize_apply([['id' => $id, 'name' => trim(post('name') . ' ' . post('brand') . ' ' . post('model'))]]);
+                    if ($aiRows) flash('🤖 AI કેટેગરી લાગી: ' . $aiRows[0]['cat'] . ($aiRows[0]['sub'] !== '' ? ' › ' . $aiRows[0]['sub'] : ''));
+                } catch (Exception $e) { /* pre-migrate DB / AI down - item is saved fine */ }
+            }
         }
         // minimum-profit rule: selling never sits below purchase + margin
         // (item's own margin %, else the default % from Settings)

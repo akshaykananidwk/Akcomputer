@@ -8,49 +8,30 @@ require_once __DIR__ . '/includes/init.php';
 require_perm('items.edit');
 
 // ---- one batch (AJAX): classify up to 40 items, create/reuse categories ----
+// Default mode 'new' touches ONLY uncategorized items (already-filed products
+// are never re-processed - saves time and AI calls); the 'all' checkbox
+// re-sorts everything. In 'new' mode assigned items drop out of the filter by
+// themselves, so 'skip' only counts items the AI could not name (they are
+// leapt over instead of looping forever).
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'batch') {
     header('Content-Type: application/json');
-    $offset = max(0, (int)post('offset'));
-    $total = (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1');
-    $items = all('SELECT id, name, brand, model FROM items WHERE is_active = 1 ORDER BY id LIMIT 40 OFFSET ' . $offset);
-    if (!$items) die(json_encode(['ok' => true, 'next' => $offset, 'total' => $total, 'done' => true, 'rows' => []]));
-
-    $parents = array_column(all('SELECT name FROM categories WHERE parent_id IS NULL ORDER BY name'), 'name');
-    $list = '';
-    foreach ($items as $it) $list .= $it['id'] . '|' . trim($it['name'] . ' ' . $it['brand'] . ' ' . $it['model']) . "\n";
-    $prompt = "You are organizing the product catalog of a computer & CCTV shop in India.\n"
-        . "For EVERY product below, assign a short category and sub-category in English (2-3 words each, Title Case).\n"
-        . ($parents ? "PREFER these existing categories when they fit: " . implode(', ', $parents) . ".\n" : '')
-        . "Good examples: CCTV & Security > IP Camera / HD Camera / DVR & NVR / CCTV Accessories; Computers & Laptops > Laptop / Desktop & CPU / Monitor; Printers & Ink > Ink Tank Printer / Cartridge & Ink; Networking > WiFi Router / Switch & LAN; Accessories > Keyboard & Mouse / Cables & Adapters; Power > UPS & Battery.\n"
-        . "Products (id|name):\n$list\n"
-        . 'Reply ONLY a JSON array like [{"id":12,"cat":"CCTV & Security","sub":"IP Camera"}] with one object per product, every id present.';
-    list($out, $err) = gemini_generate([['text' => $prompt]], 90, true);
-    if ($out === null) die(json_encode(['ok' => false, 'error' => $err]));
-    $map = json_decode($out, true);
-    if (!is_array($map)) die(json_encode(['ok' => false, 'error' => 'AI reply was not valid JSON - run this batch again.']));
-
-    $names = [];
-    foreach ($items as $it) $names[(int)$it['id']] = $it['name'];
-    $rows = []; $doneN = 0;
-    foreach ($map as $m) {
-        $iid = (int)($m['id'] ?? 0);
-        $cat = trim((string)($m['cat'] ?? ''));
-        $sub = trim((string)($m['sub'] ?? ''));
-        if (!$iid || $cat === '' || !isset($names[$iid])) continue;
-        $pid = (int)val('SELECT id FROM categories WHERE parent_id IS NULL AND LOWER(name) = LOWER(?)', [$cat]);
-        if (!$pid) { q('INSERT INTO categories (name, parent_id) VALUES (?, NULL)', [$cat]); $pid = insert_id(); }
-        $cid = $pid;
-        if ($sub !== '' && mb_strtolower($sub) !== mb_strtolower($cat)) {
-            $cid = (int)val('SELECT id FROM categories WHERE parent_id = ? AND LOWER(name) = LOWER(?)', [$pid, $sub]);
-            if (!$cid) { q('INSERT INTO categories (name, parent_id) VALUES (?, ?)', [$sub, $pid]); $cid = insert_id(); }
-        }
-        q('UPDATE items SET category_id = ? WHERE id = ?', [$cid, $iid]);
-        $rows[] = ['name' => $names[$iid], 'cat' => $cat, 'sub' => $sub];
-        $doneN++;
+    $mode = post('mode') === 'all' ? 'all' : 'new';
+    $skip = max(0, (int)post('skip'));
+    $w = $mode === 'new' ? ' AND (category_id IS NULL OR category_id = 0)' : '';
+    try {
+        $remaining = (int)val("SELECT COUNT(*) FROM items WHERE is_active = 1$w");
+        $items = all("SELECT id, name, brand, model FROM items WHERE is_active = 1$w ORDER BY id LIMIT 40 OFFSET $skip");
+        if (!$items) die(json_encode(['ok' => true, 'skip' => $skip, 'remaining' => $remaining, 'done' => true, 'rows' => []]));
+        list($rows, $err) = ai_categorize_apply(array_map(fn($it) => ['id' => $it['id'], 'name' => trim($it['name'] . ' ' . $it['brand'] . ' ' . $it['model'])], $items));
+        if ($rows === null) die(json_encode(['ok' => false, 'error' => $err]));
+        log_activity('ai_categorize', "mode=$mode skip=$skip assigned=" . count($rows));
+        $nextSkip = $mode === 'all' ? $skip + count($items) : $skip + (count($items) - count($rows));
+        $remaining = (int)val("SELECT COUNT(*) FROM items WHERE is_active = 1$w");
+        die(json_encode(['ok' => true, 'skip' => $nextSkip, 'remaining' => $remaining,
+                         'done' => $remaining <= $nextSkip, 'rows' => $rows], JSON_UNESCAPED_UNICODE));
+    } catch (Exception $e) {
+        die(json_encode(['ok' => false, 'error' => $e->getMessage()]));
     }
-    log_activity('ai_categorize', "batch offset=$offset assigned=$doneN");
-    $next = $offset + count($items);
-    die(json_encode(['ok' => true, 'next' => $next, 'total' => $total, 'done' => $next >= $total, 'rows' => $rows], JSON_UNESCAPED_UNICODE));
 }
 
 // ---- optional cleanup: drop categories that no longer hold any item ----
@@ -86,10 +67,12 @@ include __DIR__ . '/includes/header.php';
   <?php elseif (!$haveAi): ?>
   <p class="flash flash-error">Gemini API key સેટ નથી (Settings → Invoice &amp; Payment) - એ વગર AI ગોઠવણ ન ચાલે.</p>
   <?php else: ?>
-  <div class="no-print" style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0">
-    <button class="btn" id="startBtn">▶ Start — બધી <?= $total ?> પ્રોડક્ટ ગોઠવો</button>
+  <div class="no-print" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0">
+    <button class="btn" id="startBtn">▶ Start — <?= $uncat ?> નવી/બાકી પ્રોડક્ટ ગોઠવો</button>
+    <label class="check-inline" style="margin:0"><input type="checkbox" id="modeAll"> બધી <?= $total ?> પ્રોડક્ટ ફરી ગોઠવવી (સામાન્ય રીતે જરૂર નથી)</label>
     <form method="post" onsubmit="return confirm('ખાલી કેટેગરી કાઢી નાખવી?')"><?= csrf_field() ?><input type="hidden" name="do" value="cleanup"><button class="btn btn-outline" type="submit">🧹 ખાલી કેટેગરી સાફ કરો</button></form>
   </div>
+  <?php if (!$uncat): ?><p class="muted">✅ બધી પ્રોડક્ટને કેટેગરી લાગેલી છે — નવી પ્રોડક્ટ ઉમેરશો એટલે એની કેટેગરી સેવ થતાં જ આપોઆપ લાગી જશે.</p><?php endif; ?>
   <div id="progWrap" style="display:none">
     <div style="background:var(--bg);border-radius:999px;overflow:hidden;height:14px"><div id="progBar" style="height:14px;width:0;background:var(--acc1,#2563eb);transition:width .3s"></div></div>
     <p id="progTxt" class="muted" style="margin-top:6px"></p>
@@ -100,12 +83,14 @@ include __DIR__ . '/includes/header.php';
     var btn = this; btn.disabled = true; btn.textContent = '⏳ ચાલે છે...';
     document.getElementById('progWrap').style.display = '';
     var log = document.getElementById('logBox');
-    function step(offset) {
+    var mode = document.getElementById('modeAll').checked ? 'all' : 'new';
+    var assigned = 0;
+    function step(skip) {
       var fd = new FormData();
-      fd.append('csrf', CSRF_TOKEN); fd.append('do', 'batch'); fd.append('offset', offset);
+      fd.append('csrf', CSRF_TOKEN); fd.append('do', 'batch'); fd.append('mode', mode); fd.append('skip', skip);
       fetch('ai_categorize.php', { method: 'POST', body: fd }).then(function (r) { return r.json(); }).then(function (d) {
         if (!d.ok) {
-          document.getElementById('progTxt').textContent = '❌ ' + (d.error || 'error') + ' — ફરી Start દબાવો, જ્યાં અટક્યું ત્યાંથી આગળ વધશે.';
+          document.getElementById('progTxt').textContent = '❌ ' + (d.error || 'error') + ' — ફરી Start દબાવો, જ્યાં અટક્યું ત્યાંથી આગળ વધશે (થયેલી પ્રોડક્ટ ફરી નહીં થાય).';
           btn.disabled = false; btn.textContent = '▶ Start (ફરી)';
           return;
         }
@@ -114,15 +99,20 @@ include __DIR__ . '/includes/header.php';
           div.textContent = x.name + '  →  ' + x.cat + (x.sub ? ' › ' + x.sub : '');
           log.prepend(div);
         });
-        var pct = d.total ? Math.round(d.next / d.total * 100) : 100;
+        assigned += (d.rows || []).length;
+        // 'new' mode: remaining = still-uncategorized (incl. skipped); done share = assigned + skipped
+        var doneCount = mode === 'all' ? d.skip : assigned + d.skip;
+        var tot = mode === 'all' ? d.remaining : assigned + d.remaining;
+        var pct = tot ? Math.min(100, Math.round(doneCount / tot * 100)) : 100;
         document.getElementById('progBar').style.width = pct + '%';
-        document.getElementById('progTxt').textContent = d.next + ' / ' + d.total + ' પ્રોડક્ટ થઈ (' + pct + '%)';
+        document.getElementById('progTxt').textContent = assigned + ' પ્રોડક્ટ ગોઠવાઈ' + (d.skip && mode === 'new' ? ' · ' + d.skip + ' ઓળખાઈ નહીં (skip)' : '') + ' (' + pct + '%)';
         if (d.done) {
-          document.getElementById('progTxt').textContent = '✅ પૂરું! ' + d.total + ' પ્રોડક્ટ કેટેગરી-સબકેટેગરીમાં ગોઠવાઈ ગઈ.';
+          document.getElementById('progBar').style.width = '100%';
+          document.getElementById('progTxt').textContent = '✅ પૂરું! ' + assigned + ' પ્રોડક્ટ ગોઠવાઈ' + (mode === 'new' && d.skip ? '; ' + d.skip + ' ને AI ઓળખી ન શક્યું — એ Items માં જાતે ગોઠવી દો.' : '.');
           btn.textContent = '✅ Done';
-        } else { step(d.next); }
+        } else { step(d.skip); }
       }).catch(function () {
-        document.getElementById('progTxt').textContent = '❌ નેટવર્ક ભૂલ — ફરી Start દબાવો.';
+        document.getElementById('progTxt').textContent = '❌ નેટવર્ક ભૂલ — ફરી Start દબાવો (થયેલી ફરી નહીં થાય).';
         btn.disabled = false; btn.textContent = '▶ Start (ફરી)';
       });
     }
