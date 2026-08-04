@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'cleanup') {
 $total = (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1');
 $uncat = (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1 AND (category_id IS NULL OR category_id = 0)');
 $nCats = (int)val('SELECT COUNT(*) FROM categories');
-$haveAi = setting('gemini_api_key') !== '';
+$haveAi = setting('gemini_api_key') !== '' || setting('gemini_api_key_paid') !== '';
 try { $haveTree = true; val('SELECT parent_id FROM categories LIMIT 1'); } catch (Exception $e) { $haveTree = false; }
 $page_title = 'AI Categories';
 include __DIR__ . '/includes/header.php';
