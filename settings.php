@@ -52,10 +52,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_whatsapp') {
 // ---- official Meta (Facebook) Cloud API: save + connect & auto-sync templates ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_meta_wa') {
     require_perm('settings.edit');
-    foreach (['meta_wa_token', 'meta_wa_phone_id', 'meta_wa_waba_id'] as $k) set_setting($k, trim(post($k)));
+    foreach (['meta_wa_token', 'meta_wa_phone_id', 'meta_wa_waba_id', 'meta_catalog_id'] as $k) set_setting($k, trim(post($k)));
     set_setting('wa_provider_order', post('wa_provider_order') === 'meta_first' ? 'meta_first' : 'thirdparty_first');
     log_activity('settings_save', 'meta whatsapp');
     flash('Meta WhatsApp settings saved.');
+    redirect('settings.php?cat=whatsapp');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'meta_full_sync') {
+    require_perm('settings.edit');
+    require_once __DIR__ . '/includes/wa_meta.php';
+    if (!meta_wa_configured()) { flash('પહેલા Meta Token + Phone ID Save કરો.', 'error'); redirect('settings.php?cat=whatsapp'); }
+    $rep = meta_wa_full_sync();
+    $bad = count(array_filter($rep, fn($x) => $x['status'] === 'fail'));
+    $warn = count(array_filter($rep, fn($x) => $x['status'] === 'warn'));
+    flash($bad ? "Sync પૂરું — $bad વસ્તુ ધ્યાન માંગે છે (નીચે લાલ લાઈન + ઉકેલ જુઓ)." : ($warn ? "Sync પૂરું ✔ — $warn નાની નોંધ નીચે જુઓ." : 'બધું Sync થઈ ગયું ✔ બધું લીલું!'), $bad ? 'error' : 'success');
+    log_activity('meta_full_sync', json_encode(array_map(fn($x) => $x['status'], $rep)));
     redirect('settings.php?cat=whatsapp');
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'meta_wa_sync') {
@@ -493,13 +504,28 @@ exit;
       <div><label>Phone Number ID</label><input type="text" name="meta_wa_phone_id" value="<?= e(setting('meta_wa_phone_id')) ?>" placeholder="1234567890"></div>
       <div><label>WhatsApp Business Account (WABA) ID</label><input type="text" name="meta_wa_waba_id" value="<?= e(setting('meta_wa_waba_id')) ?>" placeholder="1234567890"></div>
     </div>
+    <div class="field"><label>Meta Catalog ID <span class="muted" style="font-weight:normal">(વૈકલ્પિક — Commerce Manager કેટલોગમાં પ્રોડક્ટ પણ Sync થાય)</span></label>
+      <input type="text" name="meta_catalog_id" value="<?= e(setting('meta_catalog_id')) ?>" placeholder="business.facebook.com/commerce → Catalog → Settings માંથી ID"></div>
     <button class="btn" type="submit">Save</button>
   </form>
   <form method="post" style="margin-top:10px">
-    <?= csrf_field() ?><input type="hidden" name="do" value="meta_wa_sync">
-    <button class="btn btn-outline" type="submit">🔗 Connect &amp; Sync Templates</button>
-    <span class="muted" style="font-size:12.5px"> — ટેમ્પ્લેટ આપોઆપ મંજૂરી માટે Meta ને મોકલાય છે, કંઈ મેન્યુઅલ કરવાનું નથી.</span>
+    <?= csrf_field() ?><input type="hidden" name="do" value="meta_full_sync">
+    <button class="btn" type="submit">🔄 Synchronize — બધું એક ક્લિકમાં</button>
+    <span class="muted" style="font-size:12.5px"> — Templates + Profile + Webhook + Catalog + Phone status બધું Sync; જે આપોઆપ ઠીક થાય એ ઠીક, બાકીનું ઉકેલ સાથે નીચે.</span>
   </form>
+  <?php $syncRep = json_decode(setting('meta_sync_report', ''), true) ?: [];
+        if ($syncRep): $sIcon = ['ok' => '✅', 'warn' => '⚠️', 'fail' => '❌', 'skip' => '⏭️']; ?>
+  <table class="table-sm mt">
+    <thead><tr><th></th><th>વિભાગ</th><th>સ્થિતિ / ઉકેલ</th></tr></thead>
+    <tbody>
+    <?php foreach ($syncRep as $sr): ?>
+    <tr><td><?= $sIcon[$sr['status']] ?? '·' ?></td><td style="white-space:nowrap"><?= e($sr['name']) ?></td>
+        <td><?= e($sr['detail']) ?><?= !empty($sr['fix']) ? '<br><span class="muted" style="font-size:12px">🔧 ' . e($sr['fix']) . '</span>' : '' ?></td></tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+  <p class="muted" style="font-size:12px">Last full sync: <?= e(setting('meta_sync_at', '-')) ?></p>
+  <?php endif; ?>
   <?php $tplStatus = json_decode(setting('meta_wa_tpl_status', ''), true) ?: [];
         if ($tplStatus): ?>
   <table class="table-sm mt">
