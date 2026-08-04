@@ -39,17 +39,32 @@ function journal_balance($account_id, $from, $to) {
 
 /** Cash-in-hand balance, cumulative from inception through $to (inclusive). */
 function coa_cash_balance($to) {
+    // SAME formula as the Cash & Bank page's total_cash_in_hand(), just
+    // date-limited - it was missing cash<->bank transfers and cash
+    // adjustments (money_transfers), so the Balance Sheet showed a cash
+    // figure that disagreed with the actual cash drawer (even negative).
     return (float)val("SELECT
         COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='in' AND pay_date <= ?),0)
       - COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='out' AND pay_date <= ?),0)
-      - COALESCE((SELECT SUM(amount) FROM expenses WHERE mode='cash' AND exp_date <= ?),0)", [$to, $to, $to]);
+      - COALESCE((SELECT SUM(amount) FROM expenses WHERE mode='cash' AND exp_date <= ?),0)
+      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_to_bank' AND txn_date <= ?),0)
+      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='bank_to_cash' AND txn_date <= ?),0)
+      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='add' AND txn_date <= ?),0)
+      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='reduce' AND txn_date <= ?),0)",
+      [$to, $to, $to, $to, $to, $to, $to]);
 }
-/** Total bank balance across every bank account, cumulative through $to. */
+/** Total bank balance across every bank account, cumulative through $to -
+ *  mirrors bank_account_balance() summed over all accounts (bank-to-bank
+ *  moves cancel out inside the total, so they are skipped). */
 function coa_bank_balance($to) {
     return (float)val("SELECT COALESCE(SUM(opening_balance),0) FROM bank_accounts")
          + (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE bank_account_id IS NOT NULL AND direction='in' AND pay_date <= ?", [$to])
          - (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE bank_account_id IS NOT NULL AND direction='out' AND pay_date <= ?", [$to])
-         - (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE bank_account_id IS NOT NULL AND exp_date <= ?", [$to]);
+         - (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE bank_account_id IS NOT NULL AND exp_date <= ?", [$to])
+         + (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='cash_to_bank' AND txn_date <= ?", [$to])
+         - (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_to_cash' AND txn_date <= ?", [$to])
+         + (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_adjust' AND adjust_dir='add' AND txn_date <= ?", [$to])
+         - (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_adjust' AND adjust_dir='reduce' AND txn_date <= ?", [$to]);
 }
 /** Accounts Receivable / Accounts Payable through $to, on a net-per-party
  *  basis (a party who is both customer and supplier nets to one balance -
@@ -153,6 +168,12 @@ function coa_gl_rows($account, $from, $to) {
             foreach (all("SELECT * FROM expenses WHERE mode = 'cash' AND exp_date BETWEEN ? AND ? ORDER BY exp_date, id", [$from, $to]) as $x) {
                 $rows[] = ['date' => $x['exp_date'], 'desc' => 'Expense - ' . $x['category'], 'debit' => 0, 'credit' => (float)$x['amount'], 'link' => null];
             }
+            foreach (all("SELECT * FROM money_transfers WHERE status='done' AND txn_type IN ('cash_to_bank','bank_to_cash','cash_adjust') AND txn_date BETWEEN ? AND ? ORDER BY txn_date, id", [$from, $to]) as $t) {
+                $in = $t['txn_type'] === 'bank_to_cash' || ($t['txn_type'] === 'cash_adjust' && $t['adjust_dir'] === 'add');
+                $desc = ['cash_to_bank' => 'Deposit to bank', 'bank_to_cash' => 'Withdrawal from bank', 'cash_adjust' => 'Cash adjustment'][$t['txn_type']];
+                $rows[] = ['date' => $t['txn_date'], 'desc' => $desc . ($t['notes'] ? ' - ' . $t['notes'] : ''),
+                           'debit' => $in ? (float)$t['amount'] : 0, 'credit' => $in ? 0 : (float)$t['amount'], 'link' => null];
+            }
             break;
         case '1100': // Bank Accounts (aggregate across every account)
             foreach (all("SELECT p.*, pt.name party_name, b.account_name FROM payments p LEFT JOIN parties pt ON pt.id = p.party_id
@@ -164,6 +185,14 @@ function coa_gl_rows($account, $from, $to) {
             foreach (all("SELECT x.*, b.account_name FROM expenses x JOIN bank_accounts b ON b.id = x.bank_account_id
                           WHERE x.bank_account_id IS NOT NULL AND x.exp_date BETWEEN ? AND ? ORDER BY x.exp_date, x.id", [$from, $to]) as $x) {
                 $rows[] = ['date' => $x['exp_date'], 'desc' => 'Expense - ' . $x['category'] . ' (' . $x['account_name'] . ')', 'debit' => 0, 'credit' => (float)$x['amount'], 'link' => null];
+            }
+            // cash deposits/withdrawals + bank adjustments (bank-to-bank is
+            // internal to this aggregate account, so it is skipped)
+            foreach (all("SELECT * FROM money_transfers WHERE status='done' AND txn_type IN ('cash_to_bank','bank_to_cash','bank_adjust') AND txn_date BETWEEN ? AND ? ORDER BY txn_date, id", [$from, $to]) as $t) {
+                $in = $t['txn_type'] === 'cash_to_bank' || ($t['txn_type'] === 'bank_adjust' && $t['adjust_dir'] === 'add');
+                $desc = ['cash_to_bank' => 'Cash deposit', 'bank_to_cash' => 'Cash withdrawal', 'bank_adjust' => 'Bank adjustment'][$t['txn_type']];
+                $rows[] = ['date' => $t['txn_date'], 'desc' => $desc . ($t['notes'] ? ' - ' . $t['notes'] : ''),
+                           'debit' => $in ? (float)$t['amount'] : 0, 'credit' => $in ? 0 : (float)$t['amount'], 'link' => null];
             }
             break;
         case '1200': // Accounts Receivable (approximate: every payment direction is netted per-party, same basis as the Balance Sheet)
