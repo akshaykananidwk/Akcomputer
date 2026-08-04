@@ -3,6 +3,7 @@
 // Cost design (per the owner): TEXT questions are answered entirely from OUR
 // items database (zero API cost); only a PHOTO question spends one Gemini
 // free-tier call to name the product, then the database does the rest.
+require_once __DIR__ . '/wa_lang.php';   // languages (en/gu/hi), trigger keywords, auto-replies
 require_once __DIR__ . '/wa_portal.php'; // customer self-service portal (portal:* routes)
 
 /** Words that carry no product meaning in a typical Gujarati/Hindi/English
@@ -17,11 +18,11 @@ function wa_bot_stopwords() {
         'મને', 'મારે', 'આપો', 'આપજો', 'ભાઈ', 'નો', 'ની', 'નું', 'માટે', 'એક', 'બે'];
 }
 
-/** True for plain greetings ("hi", "નમસ્તે") that deserve a welcome, not a search. */
+/** True for plain greetings / configured trigger keywords ("hi", "menu",
+ *  "નમસ્તે"...) that deserve the main menu, not a product search. The list is
+ *  admin-editable in Settings (wa_bot_keywords). */
 function wa_bot_is_greeting($text) {
-    $t = mb_strtolower(trim(preg_replace('/[^\p{L}\p{N} ]+/u', '', $text)));
-    return in_array($t, ['hi', 'hii', 'hiii', 'hello', 'helo', 'hey', 'namaste', 'namaskar', 'jsk',
-        'jay shree krishna', 'jay shri krishna', 'નમસ્તે', 'નમસ્કાર', 'જય શ્રી કૃષ્ણ', 'હેલો', 'હાય'], true);
+    return wa_is_trigger($text);
 }
 
 /** Search the items database for a chat question. Returns up to 3 matches
@@ -76,15 +77,15 @@ function wa_bot_identify_photo($jpegBytes) {
 function wa_bot_reply_text(array $matches, $photoGuess = '') {
     $shop = setting('app_name', 'AK Computer');
     $out = "🙏 *$shop*\n";
-    if ($photoGuess !== '') $out .= "ફોટામાં દેખાય છે: _" . $photoGuess . "_\n";
-    $out .= "\nઆ પ્રોડક્ટ અમારી પાસે છે:\n";
+    if ($photoGuess !== '') $out .= wa_t('photo_seen', ['guess' => $photoGuess]) . "\n";
+    $out .= "\n" . wa_t('we_have') . "\n";
     $n = 1;
     foreach ($matches as $m) {
         $label = trim($m['name'] . ($m['brand'] ? ' (' . trim($m['brand'] . ' ' . $m['model']) . ')' : ''));
-        $out .= "\n$n) *$label*\n   ભાવ: *₹" . money($m['selling_price']) . "*\n   " . base_url('product.php?id=' . $m['id']) . "\n";
+        $out .= "\n$n) *$label*\n   " . wa_t('price_w') . ": *₹" . money($m['selling_price']) . "*\n   " . base_url('product.php?id=' . $m['id']) . "\n";
         $n++;
     }
-    $out .= "\n🛒 લિંક ખોલીને ઓર્ડર કરો, અથવા આ મેસેજનો જવાબ આપો — અમે તરત મદદ કરીશું!";
+    $out .= "\n" . wa_t('order_cta');
     return $out;
 }
 
@@ -107,14 +108,16 @@ function wa_cat_cut($s, $n) {
  *  interactive reply id, a remembered number from a text menu, or a
  *  "catalog"/"menu" keyword. Returns the route id or null. */
 function wa_catalog_want($t, $st, $mobile) {
-    if (preg_match('/^portal:[a-z]+(:\d+)?$/', $t)) return $t; // portal taps work even with catalog off
-    if (!wa_catalog_on()) return null;
-    if (preg_match('/^(cats:\d+|cat:\d+:\d+|item:\d+|act:[a-z]+)$/', $t)) return $t;
+    if (preg_match('/^(portal:[a-z]+(:\d+)?|lang:(en|gu|hi|pick))$/', $t)) return $t; // portal/language taps work even with catalog off
+    // a remembered number from ANY text menu (catalog, portal, language
+    // picker) routes first - this must not depend on the catalog toggle
     if ($st && $st['state'] === 'catalog_pick' && preg_match('/^\d{1,2}$/', $t)) {
         $d = json_decode($st['data'], true) ?: [];
         if (isset($d[$t])) { wa_bot_clear_state($mobile); return $d[$t]; }
         return null;
     }
+    if (!wa_catalog_on()) return null;
+    if (preg_match('/^(cats:\d+|cat:\d+:\d+|item:\d+|act:[a-z]+)$/', $t)) return $t;
     return wa_catalog_kw($t) ? 'cats:0' : null;
 }
 
@@ -149,39 +152,39 @@ function wa_catalog_root($mobile, $offset = 0) {
     $cats = all('SELECT c.id, c.name, COUNT(i.id) n FROM categories c
                  JOIN items i ON i.category_id = c.id AND i.is_active = 1 AND i.show_on_website = 1
                  GROUP BY c.id, c.name ORDER BY n DESC, c.name');
-    if (!$cats) { send_whatsapp($mobile, "🙏 *$shop*\nહમણાં ઓનલાઇન કેટલોગ ખાલી છે.\n🌐 " . base_url('catalog.php')); return 'empty'; }
+    if (!$cats) { send_whatsapp($mobile, wa_t('catalog_empty', ['shop' => $shop, 'link' => base_url('catalog.php')])); return 'empty'; }
     $rows = []; $map = []; $n = 1;
-    $txt = "🙏 *$shop — કેટલોગ* 📚\nકેટેગરી પસંદ કરો:\n";
+    $txt = wa_t('cat_title', ['shop' => $shop]) . "\n";
     foreach (array_slice($cats, $offset, 9) as $c) {
-        $rows[] = ['id' => 'cat:' . $c['id'] . ':0', 'title' => wa_cat_cut($c['name'], 24), 'description' => $c['n'] . ' પ્રોડક્ટ'];
+        $rows[] = ['id' => 'cat:' . $c['id'] . ':0', 'title' => wa_cat_cut($c['name'], 24), 'description' => $c['n'] . ' ' . wa_t('products_w')];
         $map[(string)$n] = 'cat:' . $c['id'] . ':0';
         $txt .= "\n*$n)* {$c['name']} ({$c['n']})";
         $n++;
     }
     if (count($cats) > $offset + 9) {
-        $rows[] = ['id' => 'cats:' . ($offset + 9), 'title' => '➡️ વધુ કેટેગરી...', 'description' => (count($cats) - $offset - 9) . ' બાકી'];
+        $rows[] = ['id' => 'cats:' . ($offset + 9), 'title' => wa_cat_cut(wa_t('more_cats'), 24), 'description' => (count($cats) - $offset - 9) . ' ' . wa_t('left_w')];
         $map['0'] = 'cats:' . ($offset + 9);
-        $txt .= "\n*0)* ➡️ વધુ કેટેગરી...";
+        $txt .= "\n*0)* " . wa_t('more_cats');
     }
-    $txt .= "\n\n👉 નંબર લખીને જવાબ આપો (દા.ત. 1)\n🌐 આખો સ્ટોર: " . base_url('catalog.php');
+    $txt .= "\n\n" . wa_t('reply_number') . "\n" . wa_t('full_store') . ' ' . base_url('catalog.php');
     return wa_catalog_deliver($mobile, [
         'type' => 'list',
         'header' => ['type' => 'text', 'text' => wa_cat_cut('📚 ' . $shop, 60)],
-        'body' => ['text' => "આખો કેટલોગ ભાવ સાથે અહીં જ 👇\nકેટેગરી પસંદ કરો — પ્રોડક્ટ, ભાવ અને ઓર્ડર બટન તરત મળશે."],
+        'body' => ['text' => wa_t('cat_body')],
         'footer' => ['text' => wa_cat_cut(base_url('catalog.php'), 60)],
-        'action' => ['button' => 'કેટેગરી જુઓ', 'sections' => [['title' => 'કેટેગરી', 'rows' => $rows]]],
+        'action' => ['button' => wa_cat_cut(wa_t('cat_btn'), 20), 'sections' => [['title' => wa_cat_cut(wa_t('cat_sec'), 24), 'rows' => $rows]]],
     ], $txt, $map);
 }
 
 /** Screen 2: items of one category, price in every row. */
 function wa_catalog_items($mobile, $catId, $offset = 0) {
-    $cat = val('SELECT name FROM categories WHERE id = ?', [$catId]) ?: 'પ્રોડક્ટ';
+    $cat = val('SELECT name FROM categories WHERE id = ?', [$catId]) ?: wa_t('products_w');
     $items = all('SELECT id, name, brand, model, selling_price FROM items
                   WHERE is_active = 1 AND show_on_website = 1 AND category_id = ?
                   ORDER BY selling_price, name', [$catId]);
-    if (!$items) { send_whatsapp($mobile, "🙏 *$cat* માં હમણાં કોઈ પ્રોડક્ટ ઓનલાઇન નથી.\n🌐 " . base_url('catalog.php')); return 'empty'; }
+    if (!$items) { send_whatsapp($mobile, wa_t('cat_none', ['cat' => $cat, 'link' => base_url('catalog.php')])); return 'empty'; }
     $rows = []; $map = []; $n = 1;
-    $txt = "📚 *$cat* (" . count($items) . " પ્રોડક્ટ)\n";
+    $txt = "📚 *$cat* (" . count($items) . ' ' . wa_t('products_w') . ")\n";
     foreach (array_slice($items, $offset, 9) as $it) {
         $bm = trim($it['brand'] . ' ' . $it['model']);
         $rows[] = ['id' => 'item:' . $it['id'], 'title' => wa_cat_cut($it['name'], 24),
@@ -191,17 +194,17 @@ function wa_catalog_items($mobile, $catId, $offset = 0) {
         $n++;
     }
     if (count($items) > $offset + 9) {
-        $rows[] = ['id' => "cat:$catId:" . ($offset + 9), 'title' => '➡️ વધુ પ્રોડક્ટ...', 'description' => (count($items) - $offset - 9) . ' બાકી'];
+        $rows[] = ['id' => "cat:$catId:" . ($offset + 9), 'title' => wa_cat_cut(wa_t('more_items'), 24), 'description' => (count($items) - $offset - 9) . ' ' . wa_t('left_w')];
         $map['0'] = "cat:$catId:" . ($offset + 9);
-        $txt .= "\n*0)* ➡️ વધુ પ્રોડક્ટ...";
+        $txt .= "\n*0)* " . wa_t('more_items');
     }
-    $txt .= "\n\n👉 નંબર લખીને જવાબ આપો — વિગત અને ઓર્ડર લિંક મળશે.";
+    $txt .= "\n\n" . wa_t('items_hint');
     return wa_catalog_deliver($mobile, [
         'type' => 'list',
         'header' => ['type' => 'text', 'text' => wa_cat_cut('📚 ' . $cat, 60)],
-        'body' => ['text' => wa_cat_cut($cat, 900) . " — " . count($items) . " પ્રોડક્ટ ભાવ સાથે 👇\nપ્રોડક્ટ પસંદ કરો, ઓર્ડર બટન તરત મળશે."],
+        'body' => ['text' => wa_t('items_body', ['cat' => wa_cat_cut($cat, 200), 'n' => count($items)])],
         'footer' => ['text' => wa_cat_cut(setting('app_name', 'AK Computer'), 60)],
-        'action' => ['button' => 'પ્રોડક્ટ જુઓ', 'sections' => [['title' => wa_cat_cut($cat, 24), 'rows' => $rows]]],
+        'action' => ['button' => wa_cat_cut(wa_t('items_btn'), 20), 'sections' => [['title' => wa_cat_cut($cat, 24), 'rows' => $rows]]],
     ], $txt, $map);
 }
 
@@ -209,23 +212,23 @@ function wa_catalog_items($mobile, $catId, $offset = 0) {
  *  with this item already in the cart (order lands in web_orders). */
 function wa_catalog_item($mobile, $id) {
     $it = row('SELECT * FROM items WHERE id = ? AND is_active = 1 AND show_on_website = 1', [$id]);
-    if (!$it) { send_whatsapp($mobile, "🙏 આ પ્રોડક્ટ હમણાં ઉપલબ્ધ નથી.\n🌐 " . base_url('catalog.php')); return 'gone'; }
+    if (!$it) { send_whatsapp($mobile, wa_t('item_gone', ['link' => base_url('catalog.php')])); return 'gone'; }
     $stk = (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$id]);
     $link = base_url('catalog.php?add=' . (int)$id);
     $bm = trim($it['brand'] . ' ' . $it['model']);
     $body = '*' . $it['name'] . '*' . ($bm !== '' ? "\n$bm" : '')
-          . "\n\n💰 ભાવ: *₹" . money($it['selling_price']) . '*'
-          . "\n" . ($stk > 0 ? '✅ સ્ટોકમાં છે' : '📦 ઓર્ડરથી મળી જશે');
+          . "\n\n💰 " . wa_t('price_w') . ": *₹" . money($it['selling_price']) . '*'
+          . "\n" . ($stk > 0 ? wa_t('in_stock') : wa_t('on_order'));
     $photo = trim((string)$it['photo']);
     if ($photo !== '' && !preg_match('#^https?://#i', $photo)) $photo = base_url($photo);
     $interactive = [
         'type' => 'cta_url',
-        'body' => ['text' => mb_substr($body . "\n\n🛒 નીચેનું બટન દબાવો — વેબસાઇટ પર ઓર્ડર થઈ જશે.", 0, 1024)],
+        'body' => ['text' => mb_substr($body . "\n\n" . wa_t('item_cta'), 0, 1024)],
         'footer' => ['text' => wa_cat_cut(setting('app_name', 'AK Computer'), 60)],
-        'action' => ['name' => 'cta_url', 'parameters' => ['display_text' => '🛒 ઓર્ડર કરો', 'url' => $link]],
+        'action' => ['name' => 'cta_url', 'parameters' => ['display_text' => wa_cat_cut(wa_t('btn_order'), 20), 'url' => $link]],
     ];
     if ($photo !== '') $interactive['header'] = ['type' => 'image', 'image' => ['link' => $photo]];
-    return wa_catalog_deliver($mobile, $interactive, $body . "\n\n🛒 ઓર્ડર કરવા આ લિંક ખોલો:\n$link");
+    return wa_catalog_deliver($mobile, $interactive, $body . "\n\n" . wa_t('order_link') . "\n$link");
 }
 
 // ---------- tiny per-number conversation memory (for follow-up questions) ----------
@@ -247,25 +250,49 @@ function wa_bot_party_for($mobile) {
     return row("SELECT * FROM parties WHERE mobile <> '' AND ? LIKE CONCAT('%', RIGHT(REPLACE(REPLACE(mobile, '+', ''), ' ', ''), 10)) ORDER BY is_active DESC LIMIT 1", [$mobile]);
 }
 
-/** "મારા કેટલા બાકી?" - the customer's own balance + their last 3 entries. */
-function wa_bot_ledger_reply($party) {
-    $shop = setting('app_name', 'AK Computer');
-    $bx = party_balance_expr('p');
-    $bal = (float)val("SELECT $bx FROM parties p WHERE p.id = ?", [$party['id']]);
-    $out = "🙏 *$shop*\nનમસ્તે *" . $party['name'] . "*!\n";
-    if ($bal > 0.009) $out .= "તમારા બાકી: *₹" . money($bal) . "* (આપવાના)\n";
-    elseif ($bal < -0.009) $out .= "તમારી જમા: *₹" . money(-$bal) . "* (અમારે આપવાના)\n";
-    else $out .= "તમારો હિસાબ ચોખ્ખો છે — કંઈ બાકી નથી ✅\n";
-    $lines = all("(SELECT sale_date d, CONCAT('બિલ ', invoice_no) label, total amt FROM sales WHERE party_id = ? AND is_cancelled = 0)
-                  UNION ALL
-                  (SELECT pay_date d, IF(direction='in','ચુકવણી મળી','ચુકવણી કરી') label, amount amt FROM payments WHERE party_id = ?)
-                  ORDER BY d DESC LIMIT 3", [$party['id'], $party['id']]);
-    if ($lines) {
-        $out .= "\nછેલ્લી એન્ટ્રી:";
-        foreach ($lines as $l) $out .= "\n- " . dmy($l['d']) . ' ' . $l['label'] . ' ₹' . money($l['amt']);
+/** First contact: ask the customer's language with 3 tap-buttons (or a
+ *  numbered text menu on plain gateways). English / Gujarati / Hindi. */
+function wa_lang_picker($mobile) {
+    $prompt = wa_t('lang_prompt', ['shop' => setting('app_name', 'AK Computer')]);
+    $langs = wa_langs_enabled();
+    require_once __DIR__ . '/wa_meta.php';
+    if (meta_wa_configured()) {
+        $btns = [];
+        foreach (array_slice($langs, 0, 3) as $L) $btns[] = ['type' => 'reply', 'reply' => ['id' => 'lang:' . $L, 'title' => wa_lang_name($L)]];
+        [$ok, ] = meta_wa_send_interactive($mobile, ['type' => 'button', 'body' => ['text' => $prompt], 'action' => ['buttons' => $btns]]);
+        if ($ok) { wa_chat_log($mobile, 'out', $prompt . "\n[" . implode('] [', array_map('wa_lang_name', $langs)) . ']', 'meta'); return 'lang-buttons'; }
     }
-    $out .= "\n\nકોઈ ફરક લાગે તો આ મેસેજનો જવાબ આપો. 🙏";
-    return $out;
+    $txt = $prompt; $map = []; $n = 1;
+    foreach ($langs as $L) { $txt .= "\n*$n)* " . wa_lang_name($L); $map[(string)$n] = 'lang:' . $L; $n++; }
+    $txt .= "\n\n" . wa_t('reply_number');
+    if ($map) wa_bot_set_state($mobile, 'catalog_pick', $map);
+    return send_whatsapp($mobile, $txt) ? 'lang-text' : 'send-failed';
+}
+
+/** The main menu / welcome, in the customer's language: 3 tap-buttons
+ *  (Catalog / My Account / Statement) or a numbered text menu. */
+function wa_bot_send_home($mobile) {
+    $shop = setting('app_name', 'AK Computer');
+    $hello = wa_t('welcome', ['shop' => $shop]);
+    if (wa_catalog_on()) {
+        require_once __DIR__ . '/wa_meta.php';
+        [$bok, ] = meta_wa_configured() ? meta_wa_send_interactive($mobile, [
+            'type' => 'button',
+            'body' => ['text' => $hello],
+            'action' => ['buttons' => [
+                ['type' => 'reply', 'reply' => ['id' => 'cats:0', 'title' => wa_cat_cut(wa_t('btn_catalog'), 20)]],
+                ['type' => 'reply', 'reply' => ['id' => 'portal:menu', 'title' => wa_cat_cut(wa_t('btn_account'), 20)]],
+                ['type' => 'reply', 'reply' => ['id' => 'portal:stmt', 'title' => wa_cat_cut(wa_t('btn_stmt'), 20)]],
+            ]],
+        ]) : [false, ''];
+        if ($bok) {
+            wa_chat_log($mobile, 'out', $hello . "\n\n[" . wa_t('btn_catalog') . '] [' . wa_t('btn_account') . '] [' . wa_t('btn_stmt') . ']', 'meta');
+            return 'home-buttons';
+        }
+    }
+    $map = ['1' => 'cats:0', '2' => 'portal:menu', '3' => 'portal:stmt', '4' => 'lang:pick'];
+    wa_bot_set_state($mobile, 'catalog_pick', $map);
+    return send_whatsapp($mobile, $hello . wa_t('welcome_opts')) ? 'home-text' : 'send-failed';
 }
 
 /** "મારે 4 કેમેરા લગાડવા છે" (પછી IP/HD) -> stock-based mini quotation. */
@@ -287,17 +314,17 @@ function wa_bot_camera_quote($qty, $type) {
                      AND (i.name LIKE '%camera%' OR i.name LIKE '%કેમેરા%' OR i.name LIKE '%cctv%' OR c.name LIKE '%camera%' OR c.name LIKE '%cctv%')
                      ORDER BY i.selling_price ASC LIMIT 3");
     }
-    if (!$cams) return "🙏 *$shop*\nહમણાં કેમેરાની વિગત ઓનલાઇન નથી — અમારા માણસ તરત કોટેશન મોકલશે!";
-    $out = "🙏 *$shop*\n📋 *કોટેશન — $qty " . ($type === 'ip' ? 'IP' : 'HD') . " કેમેરા*\n";
+    if (!$cams) return wa_t('cam_none', ['shop' => $shop]);
+    $out = wa_t('cam_head', ['shop' => $shop, 'qty' => $qty, 'type' => $type === 'ip' ? 'IP' : 'HD']) . "\n";
     $n = 1;
     foreach ($cams as $c) {
         $tot = $qty * (float)$c['selling_price'];
         $out .= "\n$n) *{$c['name']}*\n   ₹" . money($c['selling_price']) . " × $qty = *₹" . money($tot) . "*"
-              . ((float)$c['stk'] >= $qty ? " ✅ સ્ટોકમાં" : " 📦 ઓર્ડરથી")
+              . ((float)$c['stk'] >= $qty ? wa_t('cam_in_stock') : wa_t('cam_on_order'))
               . "\n   " . base_url('product.php?id=' . $c['id']) . "\n";
         $n++;
     }
-    $out .= "\n📌 " . ($type === 'ip' ? 'NVR' : 'DVR') . ", હાર્ડ ડિસ્ક, કેબલ અને ફિટિંગ ચાર્જ અલગથી લાગશે.\nપાક્કા ભાવ માટે આ મેસેજનો જવાબ આપો — અમે તરત ફોન કરીશું! 📞";
+    $out .= "\n" . wa_t('cam_note', ['rec' => $type === 'ip' ? 'NVR' : 'DVR']);
     return $out;
 }
 
@@ -315,13 +342,21 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
     $mobile = wa_normalize_number($mobile);
     if (strlen($mobile) < 12) return 'bad-number';
 
+    // the chat continues in whatever language this number picked (English
+    // until a choice is made; the first trigger keyword asks the question)
+    $langKnown = wa_lang_of($mobile);
+    $GLOBALS['_wa_lang'] = $langKnown ?: wa_lang_default();
+
     // anti-loop / anti-spam: never answer the same person more than once per
     // 15 seconds, and never react to text identical to our own last reply
     $recent = row('SELECT reply, created_at FROM wa_bot_log WHERE mobile = ? ORDER BY id DESC LIMIT 1', [$mobile]);
-    // (catalog menu taps skip the 15s brake - tapping through the list is fast;
+    // (menu taps, trigger keywords like "hi"/"menu" and language picks skip
+    // the 15s brake - those must ALWAYS answer, whatever happened before;
     // same for a "2" reply while a numbered text menu is waiting)
-    $isMenuTap = (bool)preg_match('/^(cats:|cat:|item:|act:|portal:)/', trim($text))
+    $isMenuTap = (bool)preg_match('/^(cats:|cat:|item:|act:|portal:|lang:)/', trim($text))
         || wa_catalog_kw(mb_strtolower(trim($text)))
+        || wa_is_trigger($text)
+        || wa_portal_want(mb_strtolower(trim($text))) !== null
         || (preg_match('/^\d{1,2}$/', trim($text)) && val('SELECT state FROM wa_bot_state WHERE mobile = ?', [$mobile]) === 'catalog_pick');
     if ($recent && strtotime($recent['created_at']) > time() - 15 && !$isMenuTap) return 'rate-limited';
     if ($recent && $text !== '' && trim($recent['reply'] ?? '') === trim($text)) return 'own-echo';
@@ -341,33 +376,18 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
         if ($matches) {
             $reply = wa_bot_reply_text($matches, $photoGuess);
         } else {
-            $reply = "🙏 *" . setting('app_name', 'AK Computer') . "*\nફોટો મળ્યો! અમારા માણસ ચેક કરીને તરત જવાબ આપશે. 👍\nત્યાં સુધી અમારો સ્ટોર જુઓ: " . base_url('catalog.php');
+            $reply = wa_t('photo_wait', ['shop' => setting('app_name', 'AK Computer'), 'link' => base_url('catalog.php')]);
         }
-    } elseif (wa_bot_is_greeting($text)) {
-        // welcome at most once a day per person
-        $lastHello = val("SELECT created_at FROM wa_bot_log WHERE mobile = ? AND matched = 0 AND in_text IS NOT NULL AND created_at > DATE_SUB(NOW(), INTERVAL 1 DAY) ORDER BY id DESC LIMIT 1", [$mobile]);
-        if ($lastHello) return 'greeted-recently';
-        $hello = "🙏 નમસ્તે! *" . setting('app_name', 'AK Computer') . "* માં આપનું સ્વાગત છે.\n\nકોઈપણ પ્રોડક્ટનું નામ લખો (કે ફોટો મોકલો) — ભાવ અને લિંક તરત મળશે!";
-        // with the Meta API the welcome carries tap-buttons (catalog / my account)
-        if (wa_catalog_on()) {
-            require_once __DIR__ . '/wa_meta.php';
-            [$bok, ] = meta_wa_configured() ? meta_wa_send_interactive($mobile, [
-                'type' => 'button',
-                'body' => ['text' => $hello],
-                'action' => ['buttons' => [
-                    ['type' => 'reply', 'reply' => ['id' => 'cats:0', 'title' => '📚 કેટલોગ જુઓ']],
-                    ['type' => 'reply', 'reply' => ['id' => 'portal:menu', 'title' => '🧾 મારું એકાઉન્ટ']],
-                    ['type' => 'reply', 'reply' => ['id' => 'portal:stmt', 'title' => '💰 મારો હિસાબ']],
-                ]],
-            ]) : [false, ''];
-            if ($bok) {
-                wa_chat_log($mobile, 'out', $hello . "\n\n[📚 કેટલોગ જુઓ]  [💰 મારો હિસાબ]", 'meta');
-                q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
-                  [$mobile, mb_substr((string)$text, 0, 500), 0, mb_substr($hello, 0, 1500), 0, 0, $role]);
-                return 'replied:greeting-buttons';
-            }
-        }
-        $reply = $hello . (wa_catalog_on() ? "\n📚 આખો કેટલોગ ભાવ સાથે જોવા *catalog* લખો." : '') . "\n🧾 તમારું ખાતું (બિલ/હિસાબ/રિપેર/વોરંટી) જોવા *account* લખો." . "\n\n🌐 આખો સ્ટોર: " . base_url('catalog.php');
+    } elseif (wa_is_trigger($text)) {
+        // a trigger keyword ("hi"/"menu"/"start"/...) ALWAYS answers - old
+        // state is wiped and the freshest menu goes out, whether the last
+        // chat was 30 minutes or 30 days ago. First-ever contact (language
+        // not chosen yet) asks the language question instead.
+        wa_bot_clear_state($mobile);
+        $hst = ($langKnown === null && count(wa_langs_enabled()) > 1) ? wa_lang_picker($mobile) : wa_bot_send_home($mobile);
+        q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
+          [$mobile, mb_substr((string)$text, 0, 500), 0, '🏠 ' . $hst, 0, 0, $role]);
+        return 'replied:' . $hst;
     } elseif (trim($text) !== '') {
         $t = mb_strtolower(trim($text));
         $st = wa_bot_get_state($mobile);
@@ -378,6 +398,27 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
         $croute = wa_catalog_want($t, $st, $mobile);
         if ($croute === null) $croute = wa_portal_want($t);
         if ($croute === 'act:baki') $croute = 'portal:stmt'; // old greeting button
+        // language pick (button tap, numbered reply, or "language" keyword)
+        if ($croute !== null && preg_match('/^lang:(en|gu|hi|pick)$/', $croute, $lm)) {
+            $lst = 'lang-pick';
+            if ($lm[1] === 'pick') {
+                $lst = wa_lang_picker($mobile);
+            } else {
+                wa_lang_set($mobile, $lm[1]);
+                send_whatsapp($mobile, wa_t('lang_set'));
+                $lst = 'lang-set:' . $lm[1] . ':' . wa_bot_send_home($mobile);
+            }
+            q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
+              [$mobile, mb_substr((string)$text, 0, 500), 0, '🌐 ' . $lst, 0, 0, $role]);
+            return 'replied:' . $lst;
+        }
+        // admin-defined auto replies (Settings: "keyword | reply" lines)
+        if ($croute === null && ($ar = wa_auto_reply($t)) !== null) {
+            q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
+              [$mobile, mb_substr((string)$text, 0, 500), 0, mb_substr($ar, 0, 1500), 0, 0, $role]);
+            send_whatsapp($mobile, $ar);
+            return 'replied:auto-reply';
+        }
         if ($croute !== null) {
             if (strpos($croute, 'portal:') === 0) {
                 $pst = wa_portal_route($mobile, $croute);
@@ -400,7 +441,7 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
         elseif (preg_match('/^(ok|yes|no|na)\s+([A-Za-z]{2,5}-\d{2}-\d{2,6})$/i', trim($text), $qm)) {
             $qt = row('SELECT id FROM estimates WHERE estimate_no = ?', [$qm[2]]);
             $pst = $qt ? wa_portal_route($mobile, 'portal:q' . (in_array(strtolower($qm[1]), ['ok', 'yes'], true) ? 'acc' : 'rej') . ':' . $qt['id']) : null;
-            if ($pst === null) $reply = '🙏 આ કોટેશન નંબર મળ્યો નહીં.';
+            if ($pst === null) $reply = wa_t('q_notfound');
             else return 'portal:' . $pst;
         }
         // 0.7) an invoice number or serial number typed straight in the chat
@@ -415,7 +456,7 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
             } elseif (preg_match('/hd|analog|એચડી|dvr/iu', $t)) {
                 $reply = wa_bot_camera_quote($d['qty'] ?? 4, 'hd'); wa_bot_clear_state($mobile);
             } else {
-                $reply = "🙏 ફક્ત *IP* કે *HD* લખી દો — એટલે તરત કોટેશન મોકલી દઉં!";
+                $reply = wa_t('cam_retry');
             }
         }
         // 2) "મારે 4 કેમેરા લગાડવા છે" -> first ASK which type, then quote
@@ -423,13 +464,15 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
                 || (preg_match('/(camera|કેમેરા|कैमरा)/iu', $t) && preg_match('/lagad|લગાડ|લગાવ|फिट|install|setup|જોઈએ|joie|chahiye/iu', $t))) {
             $qn = isset($cm[1]) ? (int)$cm[1] : 4;
             wa_bot_set_state($mobile, 'camera_type', ['qty' => max(1, $qn)]);
-            $reply = "🙏 *" . setting('app_name', 'AK Computer') . "*\nસરસ! " . max(1, $qn) . " કેમેરા માટે એક સવાલ:\n\n*IP કેમેરા* જોઈએ કે *HD (analog)*?\nફક્ત IP અથવા HD લખી દો — તરત ભાવ સાથે કોટેશન મોકલું. 📋";
+            $reply = wa_t('cam_ask', ['shop' => setting('app_name', 'AK Computer'), 'qty' => max(1, $qn)]);
         }
         // 3) the customer's OWN account: balance / ledger (matched by number)
+        // - same screen as the Statement menu, so it is written only once
         elseif (preg_match('/baki|બાકી|balance|hisab|હિસાબ|ledger|ઉધાર|udhar|खाता|बकाया/iu', $t)) {
-            $party = wa_bot_party_for($mobile);
-            $reply = $party ? wa_bot_ledger_reply($party)
-                : "🙏 *" . setting('app_name', 'AK Computer') . "*\nઆ નંબર પર કોઈ ખાતું નથી મળ્યું. દુકાને તમારો આ નંબર નોંધાવેલો હશે તો હિસાબ અહીં જ મળી જશે — એક વાર દુકાનનો સંપર્ક કરો. 📞";
+            $pst = wa_portal_route($mobile, 'portal:stmt');
+            q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
+              [$mobile, mb_substr((string)$text, 0, 500), 0, '🧾 portal (' . $pst . ')', 0, 0, $role]);
+            return 'portal:' . $pst;
         }
         // 4) product search (any language - matches name/brand/model/category)
         else {
@@ -442,8 +485,13 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
                 $reply = wa_bot_ai_reply($text);
                 if ($reply !== null) $usedAi = 1;
             }
-            // still nothing -> stay SILENT so the bot never talks over a real
-            // conversation the owner is having with the customer
+            // nothing matched -> a short "type menu" nudge (once per 10 min,
+            // so the bot never spams over a real conversation the owner is
+            // having with the customer; switchable off in Settings)
+            if ($reply === null && setting('wa_bot_fallback', '1') === '1') {
+                $nudged = val("SELECT COUNT(*) FROM wa_bot_log WHERE mobile = ? AND reply IS NOT NULL AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)", [$mobile]);
+                if (!$nudged) $reply = wa_t('fallback');
+            }
         }
     }
 
@@ -496,7 +544,7 @@ function wa_bot_ai_reply($text) {
         . "Customer message: \"" . mb_substr($text, 0, 200) . "\"\n"
         . ($catList !== '' ? "Possibly matching products from our stock:\n$catList" : "No matching product found in our stock list.\n")
         . "Store link: " . base_url('catalog.php') . "\n\n"
-        . "Reply in simple Gujarati, MAXIMUM 2 short sentences. If a listed product fits, mention its price and link. "
+        . "Reply in simple " . wa_lang_name_en($GLOBALS['_wa_lang'] ?? wa_lang_default()) . ", MAXIMUM 2 short sentences. If a listed product fits, mention its price and link. "
         . "If none fits, politely say our team will reply soon and share the store link. Never invent products or prices. Plain text only.";
     list($out, $err) = gemini_generate([['text' => $prompt]], 30);
     if ($err || $out === null || trim($out) === '') return null;

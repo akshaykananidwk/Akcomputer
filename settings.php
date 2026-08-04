@@ -49,6 +49,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_whatsapp') {
     redirect('settings.php?cat=whatsapp');
 }
 
+// ---- WhatsApp bot: keywords, languages, menu, auto-replies, statement ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_wabot') {
+    require_perm('settings.edit');
+    set_setting('wa_bot_keywords', trim(post('wa_bot_keywords')));
+    $langs = array_values(array_intersect((array)post('wa_langs', []), ['en', 'gu', 'hi']));
+    set_setting('wa_langs', implode(',', $langs ?: ['en']));
+    set_setting('wa_lang_default', in_array(post('wa_lang_default'), $langs ?: ['en'], true) ? post('wa_lang_default') : ($langs[0] ?? 'en'));
+    set_setting('wa_bot_fallback', post('wa_bot_fallback') ? '1' : '0');
+    set_setting('wa_auto_replies', trim(post('wa_auto_replies')));
+    set_setting('wa_stmt_entries', (string)max(3, min(25, (int)post('wa_stmt_entries', 10))));
+    // menu management: unchecked rows are stored as hidden
+    require_once __DIR__ . '/includes/wa_bot.php';
+    $on = (array)post('wa_menu_on', []);
+    $off = [];
+    foreach (wa_portal_menu_defs() as $d) if (!in_array($d[0], $on, true)) $off[] = $d[0];
+    set_setting('wa_menu_off', implode(',', $off));
+    // welcome / fallback overrides per language (blank = built-in text)
+    foreach (['en', 'gu', 'hi'] as $L) {
+        set_setting('wa_txt_welcome_' . $L, trim(post('wa_txt_welcome_' . $L)));
+        set_setting('wa_txt_fallback_' . $L, trim(post('wa_txt_fallback_' . $L)));
+    }
+    log_activity('settings_save', 'wa bot');
+    flash('WhatsApp bot settings saved.');
+    redirect('settings.php?cat=whatsapp');
+}
+
 // ---- official Meta (Facebook) Cloud API: save + connect & auto-sync templates ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_meta_wa') {
     require_perm('settings.edit');
@@ -628,6 +654,57 @@ exit;
     <?php endforeach; ?></tbody>
   </table></div>
   <?php endif; ?>
+</div>
+<div class="card">
+  <h3>🌐 Bot Menus, Keywords &amp; Languages</h3>
+  <p class="muted">"Hi" કે "Menu" જેવો કોઈપણ keyword ગ્રાહક ગમે ત્યારે લખે — જૂની ચેટ ગમે તેટલી જૂની હોય — તરત મુખ્ય મેનુ જાય છે. પહેલી વાર ગ્રાહકને ભાષા પુછાય છે (English / ગુજરાતી / हिंदी) અને પછી બધા મેનુ-જવાબ એ જ ભાષામાં જાય છે. બધું અહીંથી બદલી શકાય — કોડને હાથ લગાડ્યા વગર.</p>
+  <?php require_once __DIR__ . '/includes/wa_bot.php'; ?>
+  <form method="post" class="mt">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_wabot">
+    <div><label>Trigger keywords <span class="muted" style="font-weight:normal">(comma separated — any of these always opens the main menu)</span></label>
+      <input type="text" name="wa_bot_keywords" value="<?= e(setting('wa_bot_keywords', '')) ?>" placeholder="<?= e(implode(',', array_slice(wa_kw_list(), 0, 12))) ?>,...">
+      <p class="muted" style="font-size:12px">ખાલી રાખો તો default લિસ્ટ ચાલે છે: hi, hello, menu, start, home, namaste, નમસ્તે, नमस्ते...</p></div>
+    <div class="form-row cols-2 mt">
+      <div><label>Languages offered to customers</label>
+        <?php $langsOn = wa_langs_enabled(); foreach (['en' => 'English', 'gu' => 'ગુજરાતી (Gujarati)', 'hi' => 'हिंदी (Hindi)'] as $lc => $ln): ?>
+        <label class="check-inline" style="display:block"><input type="checkbox" name="wa_langs[]" value="<?= $lc ?>" <?= in_array($lc, $langsOn, true) ? 'checked' : '' ?>> <?= $ln ?></label>
+        <?php endforeach; ?></div>
+      <div><label>Default language <span class="muted" style="font-weight:normal">(before the customer picks)</span></label>
+        <select name="wa_lang_default">
+          <?php foreach (['en' => 'English', 'gu' => 'ગુજરાતી', 'hi' => 'हिंदी'] as $lc => $ln): ?>
+          <option value="<?= $lc ?>" <?= wa_lang_default() === $lc ? 'selected' : '' ?>><?= $ln ?></option>
+          <?php endforeach; ?>
+        </select>
+        <label class="check-inline mt" style="display:block"><input type="checkbox" name="wa_bot_fallback" value="1" <?= setting('wa_bot_fallback', '1') === '1' ? 'checked' : '' ?>> Unknown message → "Type *menu*" nudge <span class="muted">(max once / 10 min, so it never spams a live chat)</span></label>
+        <div class="mt"><label>Statement — entries shown</label><input type="number" min="3" max="25" name="wa_stmt_entries" value="<?= (int)setting('wa_stmt_entries', '10') ?>"></div></div>
+    </div>
+    <div class="mt"><label>Account menu items <span class="muted" style="font-weight:normal">(uncheck to hide; a free slot shows the 🌐 Change-Language row)</span></label>
+      <?php $off = array_filter(array_map('trim', explode(',', setting('wa_menu_off', '')))); ?>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px 12px">
+      <?php $GLOBALS['_wa_lang'] = 'en'; foreach (wa_portal_menu_defs() as $d): ?>
+        <label class="check-inline"><input type="checkbox" name="wa_menu_on[]" value="<?= e($d[0]) ?>" <?= in_array($d[0], $off, true) ? '' : 'checked' ?>> <?= e(wa_t($d[1])) ?></label>
+      <?php endforeach; unset($GLOBALS['_wa_lang']); ?>
+      </div></div>
+    <div class="mt"><label>Auto replies <span class="muted" style="font-weight:normal">(one per line: <code>keyword | reply text</code> — exact whole-message match, any language)</span></label>
+      <textarea name="wa_auto_replies" rows="3" placeholder="timing | We are open 9:30am - 8:30pm, Monday to Saturday.&#10;upi | Our UPI ID: shop@upi"><?= e(setting('wa_auto_replies', '')) ?></textarea></div>
+    <details class="mt"><summary style="cursor:pointer;font-weight:600">✍️ Welcome &amp; fallback message text (per language — blank = built-in text)</summary>
+      <div class="form-row cols-3 mt">
+      <?php foreach (['en' => 'English', 'gu' => 'ગુજરાતી', 'hi' => 'हिंदी'] as $lc => $ln): ?>
+        <div><label>Welcome — <?= $ln ?></label>
+          <textarea name="wa_txt_welcome_<?= $lc ?>" rows="4" placeholder="<?= e(wa_strings()['welcome'][$lc] ?? '') ?>"><?= e(setting('wa_txt_welcome_' . $lc, '')) ?></textarea></div>
+      <?php endforeach; ?>
+      </div>
+      <div class="form-row cols-3">
+      <?php foreach (['en' => 'English', 'gu' => 'ગુજરાતી', 'hi' => 'हिंदी'] as $lc => $ln): ?>
+        <div><label>Fallback — <?= $ln ?></label>
+          <textarea name="wa_txt_fallback_<?= $lc ?>" rows="3" placeholder="<?= e(wa_strings()['fallback'][$lc] ?? '') ?>"><?= e(setting('wa_txt_fallback_' . $lc, '')) ?></textarea></div>
+      <?php endforeach; ?>
+      </div>
+      <p class="muted" style="font-size:12px">Placeholders: <code>{shop}</code> = દુકાનનું નામ. ખાલી છોડો એટલે સિસ્ટમનું તૈયાર લખાણ વપરાય.</p>
+    </details>
+    <button class="btn btn-sm mt" type="submit">Save Bot Settings</button>
+  </form>
 </div>
 <div class="card">
   <h3>✈️ Telegram Management Bot</h3>

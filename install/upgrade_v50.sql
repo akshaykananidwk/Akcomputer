@@ -1,0 +1,6 @@
+-- v50: WhatsApp bot remembers each customer's chosen language (en/gu/hi)
+CREATE TABLE IF NOT EXISTS wa_prefs (
+  mobile VARCHAR(20) NOT NULL PRIMARY KEY,
+  lang VARCHAR(5) NOT NULL DEFAULT 'en',
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
