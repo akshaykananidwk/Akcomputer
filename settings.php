@@ -177,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'apply_margin_all') 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_invoice') {
     require_perm('settings.edit');
-    foreach (['google_review_link', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret', 'ocr_api_key', 'gemini_api_key', 'gcs_api_key', 'gcs_cx'] as $k) set_setting($k, post($k));
+    foreach (['google_review_link', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret', 'ocr_api_key', 'gemini_api_key', 'gemini_api_key_paid', 'gcs_api_key', 'gcs_cx'] as $k) set_setting($k, post($k));
     log_activity('settings_save');
     flash('Invoice settings saved.');
     redirect('settings.php?cat=invoice');
@@ -541,6 +541,10 @@ exit;
     <thead><tr><th>સર્વિસ</th><th class="num">આ મહિને વપરાશ</th><th class="num">અંદાજિત ખર્ચ</th></tr></thead>
     <tbody>
       <tr><td>🧠 Gemini AI (બોટ જવાબ + ફોટો ઓળખ + કેટેગરી ગોઠવણ)</td><td class="num"><?= $aiUsed2 + $aiCatCalls ?> calls (cap <?= $aiCap2 ?>)</td><td class="num"><strong>₹0</strong> <span class="muted">(ફ્રી ટિયર)</span></td></tr>
+      <?php $aiPaidCalls = (int)val("SELECT COUNT(*) FROM activity_log WHERE action = 'ai_paid_call' AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')");
+            if ($aiPaidCalls || setting('gemini_api_key_paid') !== ''): ?>
+      <tr><td>💳 Gemini Paid Backup (ફ્રી લિમિટ પતે ત્યારે આપોઆપ)</td><td class="num"><?= $aiPaidCalls ?> calls</td><td class="num"><strong>~₹<?= money($aiPaidCalls * 0.06) ?></strong></td></tr>
+      <?php endif; ?>
       <tr><td>☁️ Meta WhatsApp Cloud API (Official)</td><td class="num"><?= $metaOut ?> મેસેજ</td><td class="num"><strong>વધુમાં વધુ ~₹<?= money($metaEst) ?></strong></td></tr>
       <tr><td>📨 થર્ડ-પાર્ટી ગેટવે (bulk.akdwk.in)</td><td class="num">—</td><td class="num"><span class="muted">તમારું અલગ રિચાર્જ</span></td></tr>
     </tbody>
@@ -696,6 +700,9 @@ exit;
       <div><label>Google Gemini API Key <span class="muted" style="font-weight:normal">(for Items &gt; AI Auto-Fill — category + description)</span>
         <br><span class="muted" style="font-weight:normal;font-size:12.5px">Free at <strong>aistudio.google.com/apikey</strong> — sign in with Google, press "Create API key", paste it here. The free tier covers this shop's whole item list at ₹0.</span></label>
         <input type="password" name="gemini_api_key" value="<?= e(setting('gemini_api_key')) ?>" placeholder="AIza..."></div>
+      <div><label>Paid Backup Gemini Key <span class="muted" style="font-weight:normal">(optional — કામ કદી ન અટકે)</span>
+        <br><span class="muted" style="font-weight:normal;font-size:12.5px">ફ્રી key ની દૈનિક લિમિટ પતી જાય કે કોઈ ભૂલ આવે તો સિસ્ટમ <strong>આપોઆપ</strong> આ key પર ચાલવા લાગે છે — કંઈ મેન્યુઅલ કરવાનું નહીં. બનાવવા: console.cloud.google.com પર એક પ્રોજેક્ટમાં Billing ચાલુ કરી એ પ્રોજેક્ટની Gemini API key અહીં નાખો. ખર્ચ: નાના call દીઠ પૈસા જ (મહિને ₹20-30 થી વધુ ભાગ્યે જ). Paid વપરાશ WhatsApp સેટિંગ્સના ખર્ચ-કાર્ડમાં દેખાય છે.</span></label>
+        <input type="password" name="gemini_api_key_paid" value="<?= e(setting('gemini_api_key_paid')) ?>" placeholder="AIza... (billing-enabled project)"></div>
     </div>
     <div class="form-row cols-2">
       <div><label>Google Image Search API Key <span class="muted" style="font-weight:normal">(for AI Auto-Fill product photos, optional)</span>

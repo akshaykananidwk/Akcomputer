@@ -14,8 +14,28 @@
  *  can use today. Whichever answers is cached so every later call pays for
  *  exactly one HTTP request again. */
 function gemini_generate(array $parts, $timeout = 45, $forceJson = false) {
-    $key = setting('gemini_api_key');
-    if (!$key) return [null, 'Gemini API key is not set (Settings > Invoice & Payment).'];
+    // Never-stop policy: the FREE key runs everything at Rs.0; if it fails
+    // for ANY reason (daily quota 429, dead key, dead models) the optional
+    // PAID backup key (a billing-enabled Google project, Settings > Invoice
+    // & Payment) takes over automatically - a flash call costs paise, and
+    // the owner prefers a few rupees over stopped work. Paid calls are
+    // counted in activity_log so Settings can show the month's spend.
+    $free = trim((string)setting('gemini_api_key'));
+    $paid = trim((string)setting('gemini_api_key_paid'));
+    if ($free === '' && $paid === '') return [null, 'Gemini API key is not set (Settings > Invoice & Payment).'];
+    $err = 'Gemini call failed.';
+    foreach ([[$free, false], [$paid, true]] as [$k, $isPaid]) {
+        if ($k === '' || ($isPaid && $k === $free)) continue;
+        list($out, $err) = gemini_generate_with_key($k, $parts, $timeout, $forceJson);
+        if ($out !== null) {
+            if ($isPaid) { try { log_activity('ai_paid_call', ''); } catch (Exception $e) {} }
+            return [$out, null];
+        }
+    }
+    return [null, $err];
+}
+
+function gemini_generate_with_key($key, array $parts, $timeout = 45, $forceJson = false) {
     if (!function_exists('curl_init')) return [null, 'The server does not have curl.'];
     // 2.5-era flash models "think" before answering and the thoughts count
     // against maxOutputTokens — a small cap truncates the real answer into
@@ -239,8 +259,23 @@ function ai_image_to_jpeg($raw) {
  *  but not a factory photo of the exact unit. Same self-healing model
  *  fallback as gemini_generate. */
 function gemini_generate_image($productLabel, $timeout = 90) {
-    $key = setting('gemini_api_key');
-    if (!$key) return [null, 'Gemini API key is not set (Settings > Invoice & Payment).'];
+    // same never-stop key order as gemini_generate(): free first, paid backup
+    $free = trim((string)setting('gemini_api_key'));
+    $paid = trim((string)setting('gemini_api_key_paid'));
+    if ($free === '' && $paid === '') return [null, 'Gemini API key is not set (Settings > Invoice & Payment).'];
+    $err = 'Gemini image call failed.';
+    foreach ([[$free, false], [$paid, true]] as [$k, $isPaid]) {
+        if ($k === '' || ($isPaid && $k === $free)) continue;
+        list($img, $err) = gemini_generate_image_with_key($k, $productLabel, $timeout);
+        if ($img !== null || $err === 'no-image') {
+            if ($img !== null && $isPaid) { try { log_activity('ai_paid_call', 'image'); } catch (Exception $e) {} }
+            return [$img, $err];
+        }
+    }
+    return [null, $err];
+}
+
+function gemini_generate_image_with_key($key, $productLabel, $timeout = 90) {
     if (!function_exists('curl_init')) return [null, 'The server does not have curl.'];
     $prompt = "A clean e-commerce product photograph of exactly this product: \"{$productLabel}\".\n"
         . "Plain white background, product centered and fully visible, realistic studio lighting, no added text, no watermark, no people, no packaging collage.";

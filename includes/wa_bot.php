@@ -432,11 +432,13 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
  *  free tier, i.e. ₹0; even on paid flash pricing these tiny calls cost a
  *  few paise each, so the month can never cross a few rupees). */
 function wa_bot_ai_allowed() {
-    if (!setting('gemini_api_key')) return false;
+    if (!setting('gemini_api_key') && !setting('gemini_api_key_paid')) return false;
     $cap = (int)setting('wa_bot_ai_monthly_cap', '1500');
-    if ($cap <= 0) return false;
+    if ($cap <= 0) return false; // owner explicitly switched AI off
     $used = (int)val("SELECT COUNT(*) FROM wa_bot_log WHERE used_ai = 1 AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')");
-    return $used < $cap;
+    // cap reached: with a paid backup key the replies keep flowing (never-stop
+    // policy - a flash call costs paise); without one the brake still holds
+    return $used < $cap || setting('gemini_api_key_paid') !== '';
 }
 
 /** This month's AI usage [used, cap] - shown on the Settings card. */
