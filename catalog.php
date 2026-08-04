@@ -318,10 +318,11 @@ body { padding-bottom: 90px; background: var(--bg); }
     ksort($catGroups);
     foreach ($catGroups as $parent => $kids): ksort($kids);
         if ($parent !== ''): ?>
-    <div style="font-weight:800;font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:10px 4px 2px"><?= e(cat_icon($parent)) ?> <?= e($parent) ?></div>
+    <button type="button" class="cat-link" data-cats="<?= e(json_encode(array_keys($kids), JSON_UNESCAPED_UNICODE)) ?>"
+            style="font-weight:800;text-transform:uppercase;font-size:12.5px;letter-spacing:.4px;margin-top:8px"><?= e(cat_icon($parent)) ?> <?= e($parent) ?> <span class="cnt"><?= array_sum($kids) ?></span></button>
     <?php endif;
         foreach ($kids as $cn => $cnt): ?>
-    <button type="button" class="cat-link" data-cat="<?= e($cn) ?>" <?= $parent !== '' ? 'style="padding-left:22px"' : '' ?>><?= e(cat_icon($cn)) ?> <?= e($cn) ?> <span class="cnt"><?= $cnt ?></span></button>
+    <button type="button" class="cat-link" data-cat="<?= e($cn) ?>" <?= $parent !== '' ? 'style="padding-left:24px"' : '' ?>><?= e(cat_icon($cn)) ?> <?= e($cn) ?> <span class="cnt"><?= $cnt ?></span></button>
     <?php endforeach; endforeach; ?>
   </aside>
 
@@ -460,10 +461,15 @@ document.getElementById('cartBar') && document.getElementById('cartBar').addEven
 var filterInp = document.getElementById('cFilter');
 function applyFilter() {
   var q = (filterInp.value || '').toLowerCase();
-  var cat = (document.querySelector('.cat-link.on') || {}).dataset ? document.querySelector('.cat-link.on').dataset.cat : '';
+  var onBtn = document.querySelector('.cat-link.on');
+  var cat = onBtn && onBtn.dataset.cat ? onBtn.dataset.cat : '';
+  // a parent-category button carries data-cats = its sub-category names, so
+  // clicking it shows every product of all its sub-categories together
+  var cats = null;
+  if (onBtn && onBtn.dataset.cats) { try { cats = JSON.parse(onBtn.dataset.cats); } catch (e) {} }
   document.querySelectorAll('#cGrid .cat-card').forEach(function (c) {
     var okQ = c.textContent.toLowerCase().indexOf(q) > -1;
-    var okC = !cat || c.dataset.cat === cat;
+    var okC = cats ? cats.indexOf(c.dataset.cat) > -1 : (!cat || c.dataset.cat === cat);
     c.style.display = okQ && okC ? '' : 'none';
   });
 }

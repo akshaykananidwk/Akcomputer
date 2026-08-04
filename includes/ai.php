@@ -357,17 +357,46 @@ function gemini_discover_image_model($key) {
  *  AI Catalog Organizer batches AND by the new-item save hook, so a product
  *  added without a category files itself the moment it is saved.
  *  Returns [rowsAssigned(['name','cat','sub']...), error]. */
+/** The shop's FIXED category tree (megajaipur.com-style dealer structure,
+ *  per the owner). Both the one-time migration and every new product are
+ *  filed into EXACTLY this hierarchy - the AI only picks from this list,
+ *  it can never invent new category names, so the catalog stays tidy. */
+function ai_taxonomy() {
+    return [
+        'Security (CCTV)' => ['IP Camera', 'HD Camera', 'WiFi Camera', '4G Sim Camera', 'DVR', 'NVR', 'Hard Disk (HDD)', 'POE Switch', 'SMPS & Power Supply', 'CCTV Cable', 'BNC & Connector', 'Rack & Junction Box', 'Video Door Phone', 'Biometric & Access Control', 'CCTV Accessories'],
+        'Networking' => ['WiFi Router', 'Network Switch', 'Fiber & ONU', 'Network Cable (Cat6)', 'Patch Cord & Accessories'],
+        'Computers' => ['Desktop & CPU', 'Monitor', 'Motherboard', 'Processor', 'RAM', 'SSD & Hard Drive', 'Cabinet & Power Supply', 'Graphics Card'],
+        'Laptops' => ['Laptop', 'Laptop Charger', 'Laptop Battery', 'Laptop Accessories'],
+        'Printers' => ['Ink Tank Printer', 'Laser Printer', 'Dot Matrix Printer', 'Cartridge & Toner', 'Ink & Refill', 'Printer Accessories'],
+        'Accessories' => ['Keyboard & Mouse', 'Pendrive & Memory Card', 'Cables & Adapters', 'Speaker & Headphone', 'Webcam', 'Power Strip & Extension', 'Other Accessories'],
+        'Power & UPS' => ['UPS', 'UPS Battery', 'Stabilizer'],
+        'Software & Services' => ['Antivirus & Software', 'Repair & Service', 'Installation & AMC'],
+    ];
+}
+
+/** File products into the FIXED taxonomy with ONE Gemini call. $items =
+ *  [['id'=>..,'name'=>..], ...]; answers outside the list are snapped to
+ *  the nearest valid pair ("Other Accessories" as the last resort), so
+ *  every product always lands somewhere sensible. Used by the AI Catalog
+ *  Organizer batches AND by the new-item save hook.
+ *  Returns [rowsAssigned(['name','cat','sub']...), error]. */
 function ai_categorize_apply(array $items) {
     if (!$items) return [[], null];
-    $parents = array_column(all('SELECT name FROM categories WHERE parent_id IS NULL ORDER BY name'), 'name');
+    $tax = ai_taxonomy();
+    $taxTxt = '';
+    $childToParent = [];
+    foreach ($tax as $p => $kids) {
+        $taxTxt .= $p . ': ' . implode(', ', $kids) . "\n";
+        foreach ($kids as $k) $childToParent[mb_strtolower($k)] = [$p, $k];
+    }
     $list = '';
     foreach ($items as $it) $list .= (int)$it['id'] . '|' . trim((string)$it['name']) . "\n";
-    $prompt = "You are organizing the product catalog of a computer & CCTV shop in India.\n"
-        . "For EVERY product below, assign a short category and sub-category in English (2-3 words each, Title Case).\n"
-        . ($parents ? "PREFER these existing categories when they fit: " . implode(', ', $parents) . ".\n" : '')
-        . "Good examples: CCTV & Security > IP Camera / HD Camera / DVR & NVR / CCTV Accessories; Computers & Laptops > Laptop / Desktop & CPU / Monitor; Printers & Ink > Ink Tank Printer / Cartridge & Ink; Networking > WiFi Router / Switch & LAN; Accessories > Keyboard & Mouse / Cables & Adapters; Power > UPS & Battery.\n"
+    $prompt = "You are filing products of a computer & CCTV shop into its FIXED category tree.\n"
+        . "Category tree (category: sub-categories):\n$taxTxt\n"
+        . "For EVERY product below pick the best matching category + sub-category FROM THE TREE ONLY (copy the names exactly). "
+        . "If nothing fits, use cat \"Accessories\" sub \"Other Accessories\".\n"
         . "Products (id|name):\n$list\n"
-        . 'Reply ONLY a JSON array like [{"id":12,"cat":"CCTV & Security","sub":"IP Camera"}] with one object per product, every id present.';
+        . 'Reply ONLY a JSON array like [{"id":12,"cat":"Security (CCTV)","sub":"IP Camera"}] with one object per product, every id present.';
     list($out, $err) = gemini_generate([['text' => $prompt]], 90, true);
     if ($out === null) return [null, $err];
     $map = json_decode($out, true);
@@ -377,16 +406,16 @@ function ai_categorize_apply(array $items) {
     $rows = [];
     foreach ($map as $m) {
         $iid = (int)($m['id'] ?? 0);
-        $cat = trim((string)($m['cat'] ?? ''));
+        if (!$iid || !isset($names[$iid])) continue;
+        // snap the answer into the taxonomy: exact child match wins (its real
+        // parent is used even if the AI paired it wrong), else the fallback
         $sub = trim((string)($m['sub'] ?? ''));
-        if (!$iid || $cat === '' || !isset($names[$iid])) continue;
+        $hit = $childToParent[mb_strtolower($sub)] ?? $childToParent['other accessories'];
+        list($cat, $sub) = $hit;
         $pid = (int)val('SELECT id FROM categories WHERE parent_id IS NULL AND LOWER(name) = LOWER(?)', [$cat]);
         if (!$pid) { q('INSERT INTO categories (name, parent_id) VALUES (?, NULL)', [$cat]); $pid = insert_id(); }
-        $cid = $pid;
-        if ($sub !== '' && mb_strtolower($sub) !== mb_strtolower($cat)) {
-            $cid = (int)val('SELECT id FROM categories WHERE parent_id = ? AND LOWER(name) = LOWER(?)', [$pid, $sub]);
-            if (!$cid) { q('INSERT INTO categories (name, parent_id) VALUES (?, ?)', [$sub, $pid]); $cid = insert_id(); }
-        }
+        $cid = (int)val('SELECT id FROM categories WHERE parent_id = ? AND LOWER(name) = LOWER(?)', [$pid, $sub]);
+        if (!$cid) { q('INSERT INTO categories (name, parent_id) VALUES (?, ?)', [$sub, $pid]); $cid = insert_id(); }
         q('UPDATE items SET category_id = ? WHERE id = ?', [$cid, $iid]);
         $rows[] = ['name' => $names[$iid], 'cat' => $cat, 'sub' => $sub];
     }

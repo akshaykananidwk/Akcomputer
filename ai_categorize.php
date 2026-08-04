@@ -56,7 +56,14 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="card">
   <h2>🤖 AI Catalog Organizer</h2>
-  <p class="muted">એક ક્લિકમાં બધી પ્રોડક્ટ <strong>કેટેગરી → સબ-કેટેગરી</strong> માં ગોઠવાઈ જશે (દા.ત. CCTV &amp; Security → IP Camera). AI દરેક પ્રોડક્ટનું નામ વાંચીને જાતે ગોઠવે છે; હાલની કેટેગરી બંધબેસતી હોય તો એ જ વપરાય છે. ફરી ચલાવવું સેફ છે.</p>
+  <p class="muted">બધી પ્રોડક્ટ નીચે બતાવેલા <strong>ફિક્સ્ડ સ્ટ્રક્ચર</strong> (ડીલર-સાઇટ સ્ટાઇલ) માં જ ગોઠવાય છે — AI આ યાદી બહારની કોઈ નવી કેટેગરી કદી નહીં બનાવે, એટલે કેટલોગ હંમેશા ચોખ્ખો રહે. IP Camera ખોલો તો ફક્ત IP Camera ની જ પ્રોડક્ટ દેખાય.</p>
+  <details style="margin:8px 0"><summary style="cursor:pointer;font-weight:700">📂 આખું સ્ટ્રક્ચર જુઓ (<?= count(ai_taxonomy()) ?> મુખ્ય કેટેગરી)</summary>
+    <div style="font-size:13px;margin-top:8px;line-height:1.7">
+    <?php foreach (ai_taxonomy() as $p => $kids): ?>
+      <strong><?= e($p) ?></strong>: <span class="muted"><?= e(implode(' · ', $kids)) ?></span><br>
+    <?php endforeach; ?>
+    </div>
+  </details>
   <div class="grid-stats">
     <div class="stat"><div class="stat-label">કુલ પ્રોડક્ટ</div><div class="stat-value"><?= $total ?></div></div>
     <div class="stat <?= $uncat ? 's-bad' : 's-ok' ?>"><div class="stat-label">કેટેગરી વગરની</div><div class="stat-value"><?= $uncat ?></div></div>
@@ -69,7 +76,7 @@ include __DIR__ . '/includes/header.php';
   <?php else: ?>
   <div class="no-print" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0">
     <button class="btn" id="startBtn">▶ Start — <?= $uncat ?> નવી/બાકી પ્રોડક્ટ ગોઠવો</button>
-    <label class="check-inline" style="margin:0"><input type="checkbox" id="modeAll"> બધી <?= $total ?> પ્રોડક્ટ ફરી ગોઠવવી (સામાન્ય રીતે જરૂર નથી)</label>
+    <label class="check-inline" style="margin:0"><input type="checkbox" id="modeAll"> 🔁 Migration — બધી <?= $total ?> પ્રોડક્ટ (જૂની સહિત) નવા સ્ટ્રક્ચરમાં ફરી ગોઠવો</label>
     <form method="post" onsubmit="return confirm('ખાલી કેટેગરી કાઢી નાખવી?')"><?= csrf_field() ?><input type="hidden" name="do" value="cleanup"><button class="btn btn-outline" type="submit">🧹 ખાલી કેટેગરી સાફ કરો</button></form>
   </div>
   <?php if (!$uncat): ?><p class="muted">✅ બધી પ્રોડક્ટને કેટેગરી લાગેલી છે — નવી પ્રોડક્ટ ઉમેરશો એટલે એની કેટેગરી સેવ થતાં જ આપોઆપ લાગી જશે.</p><?php endif; ?>
