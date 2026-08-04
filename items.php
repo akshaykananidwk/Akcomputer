@@ -83,7 +83,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$cats = all('SELECT * FROM categories ORDER BY name');
+// categories with their parent name, so dropdowns read "CCTV › IP Camera"
+// (pre-v47 DBs have no parent_id column - fall back to the flat list)
+try {
+    $cats = all('SELECT c.*, p.name parent_name FROM categories c LEFT JOIN categories p ON p.id = c.parent_id
+                 ORDER BY COALESCE(p.name, c.name), (c.parent_id IS NOT NULL), c.name');
+} catch (Exception $e) {
+    $cats = all('SELECT *, NULL parent_name FROM categories ORDER BY name');
+}
+foreach ($cats as &$c) $c['label'] = ($c['parent_name'] ?? '') !== '' && $c['parent_name'] !== null ? $c['parent_name'] . ' › ' . $c['name'] : $c['name'];
+unset($c);
 
 if ($action === 'new' || $action === 'edit') {
     require_perm($action === 'new' ? 'items.add' : 'items.edit');
@@ -101,7 +110,7 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Item name *</label><input type="text" name="name" value="<?= e($it['name'] ?? get('model', '')) ?>" required></div>
           <div><label>Category</label>
             <select name="category_id"><option value="">-- none --</option>
-            <?php foreach ($cats as $c): ?><option value="<?= $c['id'] ?>" <?= ($it['category_id'] ?? '') == $c['id'] ? 'selected' : '' ?>><?= e($c['name']) ?></option><?php endforeach; ?>
+            <?php foreach ($cats as $c): ?><option value="<?= $c['id'] ?>" <?= ($it['category_id'] ?? '') == $c['id'] ? 'selected' : '' ?>><?= e($c['label']) ?></option><?php endforeach; ?>
             </select></div>
         </div>
         <div class="form-row cols-3">
@@ -197,6 +206,7 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="page-actions">
   <?php if (can('items.add')): ?><a class="btn" href="items.php?action=new">+ New Item</a><?php endif; ?>
+  <?php if (can('items.edit')): ?><a class="btn btn-outline" href="ai_categorize.php">🤖 AI Categories</a><?php endif; ?>
   <a class="btn btn-outline" href="items.php<?= $showAll ? '' : '?show=all' ?>"><?= $showAll ? 'Show Active only' : 'Show Inactive too' ?></a>
 </div>
 <form method="get" class="filterbar no-print">
@@ -204,7 +214,7 @@ include __DIR__ . '/includes/header.php';
   <div style="flex:1;min-width:170px"><input type="text" id="itemFilter" placeholder="🔍 Search items..."></div>
   <div><select name="f_cat" onchange="this.form.submit()">
     <option value="">All categories</option>
-    <?php foreach ($cats as $c): ?><option value="<?= $c['id'] ?>" <?= $fCat == $c['id'] ? 'selected' : '' ?>><?= e($c['name']) ?></option><?php endforeach; ?>
+    <?php foreach ($cats as $c): ?><option value="<?= $c['id'] ?>" <?= $fCat == $c['id'] ? 'selected' : '' ?>><?= e($c['label']) ?></option><?php endforeach; ?>
   </select></div>
   <div><select name="f_stock" onchange="this.form.submit()">
     <option value="">All stock</option>

@@ -529,6 +529,25 @@ exit;
   </form>
 </div>
 <div class="card">
+  <h3>💰 મહિનાનો અંદાજિત ખર્ચ — AI + Meta WhatsApp API</h3>
+  <?php
+  require_once __DIR__ . '/includes/wa_bot.php';
+  try { list($aiUsed2, $aiCap2) = wa_bot_ai_usage(); } catch (Exception $e) { $aiUsed2 = 0; $aiCap2 = 1500; }
+  $aiCatCalls = (int)val("SELECT COUNT(*) FROM activity_log WHERE action = 'ai_categorize' AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')");
+  try { $metaOut = (int)val("SELECT COUNT(*) FROM wa_chats WHERE via = 'meta' AND direction = 'out' AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')"); } catch (Exception $e) { $metaOut = 0; }
+  $metaEst = round($metaOut * 0.13, 2); // WORST case: every message billed as a utility/auth template (~₹0.115-0.13); replies inside the 24h window are actually FREE
+  ?>
+  <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
+    <thead><tr><th>સર્વિસ</th><th class="num">આ મહિને વપરાશ</th><th class="num">અંદાજિત ખર્ચ</th></tr></thead>
+    <tbody>
+      <tr><td>🧠 Gemini AI (બોટ જવાબ + ફોટો ઓળખ + કેટેગરી ગોઠવણ)</td><td class="num"><?= $aiUsed2 + $aiCatCalls ?> calls (cap <?= $aiCap2 ?>)</td><td class="num"><strong>₹0</strong> <span class="muted">(ફ્રી ટિયર)</span></td></tr>
+      <tr><td>☁️ Meta WhatsApp Cloud API (Official)</td><td class="num"><?= $metaOut ?> મેસેજ</td><td class="num"><strong>વધુમાં વધુ ~₹<?= money($metaEst) ?></strong></td></tr>
+      <tr><td>📨 થર્ડ-પાર્ટી ગેટવે (bulk.akdwk.in)</td><td class="num">—</td><td class="num"><span class="muted">તમારું અલગ રિચાર્જ</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted" style="font-size:12.5px">📌 Meta નો હિસાબ: ગ્રાહકે છેલ્લા 24 કલાકમાં મેસેજ કર્યો હોય એની અંદરના બધા જવાબ (કેટલોગ, બોટ, ટેક્સ્ટ) <strong>ફ્રી</strong>; ફક્ત 24-કલાક બહાર જતા ટેમ્પ્લેટ મેસેજ (OTP/બિલ/રિમાઇન્ડર) આશરે <strong>₹0.12-0.13 પ્રતિ મેસેજ</strong> લાગે. ઉપરનો આંકડો બધા જ મેસેજ paid ગણીને કાઢેલો <em>મહત્તમ</em> અંદાજ છે — સાચું બિલ એનાથી ઓછું જ આવે (ચોક્કસ આંકડો business.facebook.com → Billing માં). Gemini AI હાલના વપરાશે ફ્રી-ટિયરમાં જ રહે છે = ₹0.</p>
+</div>
+<div class="card">
   <h3>🤖 WhatsApp Product Bot (auto-reply)</h3>
   <?php if (setting('wa_webhook_key', '') === '') set_setting('wa_webhook_key', bin2hex(random_bytes(16)));
         $whUrl = base_url('wa_webhook.php?key=' . setting('wa_webhook_key')); ?>

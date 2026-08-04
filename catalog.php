@@ -308,9 +308,21 @@ body { padding-bottom: 90px; background: var(--bg); }
   <aside class="side" id="sideBar">
     <h3>Categories</h3>
     <button type="button" class="cat-link on" data-cat="">🏪 All Products <span class="cnt"><?= count($items) ?></span></button>
-    <?php foreach ($cats as $cn => $cnt): ?>
-    <button type="button" class="cat-link" data-cat="<?= e($cn) ?>"><?= e(cat_icon($cn)) ?> <?= e($cn) ?> <span class="cnt"><?= $cnt ?></span></button>
-    <?php endforeach; ?>
+    <?php
+    // group sub-categories under their parent (v47 tree); a pre-migrate DB
+    // (no parent_id yet) simply renders the flat list as before
+    $catParent = [];
+    try { foreach (all('SELECT c.name child, p.name parent FROM categories c JOIN categories p ON p.id = c.parent_id') as $cp) $catParent[$cp['child']] = $cp['parent']; } catch (Exception $e) {}
+    $catGroups = [];
+    foreach ($cats as $cn => $cnt) $catGroups[$catParent[$cn] ?? ''][$cn] = $cnt;
+    ksort($catGroups);
+    foreach ($catGroups as $parent => $kids): ksort($kids);
+        if ($parent !== ''): ?>
+    <div style="font-weight:800;font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:10px 4px 2px"><?= e(cat_icon($parent)) ?> <?= e($parent) ?></div>
+    <?php endif;
+        foreach ($kids as $cn => $cnt): ?>
+    <button type="button" class="cat-link" data-cat="<?= e($cn) ?>" <?= $parent !== '' ? 'style="padding-left:22px"' : '' ?>><?= e(cat_icon($cn)) ?> <?= e($cn) ?> <span class="cnt"><?= $cnt ?></span></button>
+    <?php endforeach; endforeach; ?>
   </aside>
 
   <main>
