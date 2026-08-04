@@ -24,16 +24,24 @@ function gemini_generate(array $parts, $timeout = 45, $forceJson = false) {
     $paid = trim((string)setting('gemini_api_key_paid'));
     if ($free === '' && $paid === '') return [null, 'Gemini API key is not set (Settings > Invoice & Payment).'];
     $err = 'Gemini call failed.';
+    $freeErr = null;
     foreach ([[$free, false], [$paid, true]] as [$k, $isPaid]) {
         if ($k === '' || ($isPaid && $k === $free)) continue;
         list($out, $err) = gemini_generate_with_key($k, $parts, $timeout, $forceJson);
         if ($out !== null) {
-            if ($isPaid) { try { log_activity('ai_paid_call', ''); } catch (Exception $e) {} }
+            // remember which key answered, and log every paid rescue with the
+            // free key's failure reason - so "which API ran" stays trackable
+            $GLOBALS['_gemini_last_src'] = $isPaid ? 'paid' : 'free';
+            if ($isPaid) { try { log_activity('ai_paid_call', $freeErr !== null ? mb_substr('free failed: ' . $freeErr, 0, 180) : 'paid key only'); } catch (Exception $e) {} }
             return [$out, null];
         }
+        if (!$isPaid) $freeErr = $err;
     }
     return [null, $err];
 }
+
+/** Which key answered the LAST successful gemini_generate(): 'free'|'paid'|''. */
+function gemini_last_src() { return $GLOBALS['_gemini_last_src'] ?? ''; }
 
 function gemini_generate_with_key($key, array $parts, $timeout = 45, $forceJson = false) {
     if (!function_exists('curl_init')) return [null, 'The server does not have curl.'];

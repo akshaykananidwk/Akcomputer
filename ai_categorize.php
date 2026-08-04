@@ -24,10 +24,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'batch') {
         if (!$items) die(json_encode(['ok' => true, 'skip' => $skip, 'remaining' => $remaining, 'done' => true, 'rows' => []]));
         list($rows, $err) = ai_categorize_apply(array_map(fn($it) => ['id' => $it['id'], 'name' => trim($it['name'] . ' ' . $it['brand'] . ' ' . $it['model'])], $items));
         if ($rows === null) die(json_encode(['ok' => false, 'error' => $err]));
-        log_activity('ai_categorize', "mode=$mode skip=$skip assigned=" . count($rows));
+        log_activity('ai_categorize', "mode=$mode skip=$skip assigned=" . count($rows) . ' via=' . (gemini_last_src() ?: '?'));
         $nextSkip = $mode === 'all' ? $skip + count($items) : $skip + (count($items) - count($rows));
         $remaining = (int)val("SELECT COUNT(*) FROM items WHERE is_active = 1$w");
-        die(json_encode(['ok' => true, 'skip' => $nextSkip, 'remaining' => $remaining,
+        die(json_encode(['ok' => true, 'skip' => $nextSkip, 'remaining' => $remaining, 'via' => gemini_last_src(),
                          'done' => $remaining <= $nextSkip, 'rows' => $rows], JSON_UNESCAPED_UNICODE));
     } catch (Exception $e) {
         die(json_encode(['ok' => false, 'error' => $e->getMessage()]));
@@ -91,16 +91,31 @@ include __DIR__ . '/includes/header.php';
     document.getElementById('progWrap').style.display = '';
     var log = document.getElementById('logBox');
     var mode = document.getElementById('modeAll').checked ? 'all' : 'new';
-    var assigned = 0;
+    var assigned = 0, retries = 0;
+    // never-stop: a failed batch (free quota over + paid also failed, or a
+    // network hiccup) retries ITSELF after a countdown - no button pressing.
+    // Free-tier per-minute limits reset within a minute, so waiting usually
+    // is all it takes even without a paid backup key.
+    function retryLater(skip, msg) {
+      retries++;
+      if (retries > 8) {
+        document.getElementById('progTxt').textContent = '❌ ' + msg + ' — ઘણા પ્રયત્ન પછી પણ ન ચાલ્યું. થોડી વારે ફરી Start દબાવો (થયેલી પ્રોડક્ટ ફરી નહીં થાય).';
+        btn.disabled = false; btn.textContent = '▶ Start (ફરી)';
+        return;
+      }
+      var wait = 45;
+      var t = setInterval(function () {
+        wait--;
+        document.getElementById('progTxt').textContent = '⏳ ' + msg.slice(0, 80) + ' — ' + wait + ' સેકન્ડમાં આપોઆપ આગળ વધશે (પ્રયત્ન ' + retries + '/8), કંઈ દબાવવાનું નથી...';
+        if (wait <= 0) { clearInterval(t); step(skip); }
+      }, 1000);
+    }
     function step(skip) {
       var fd = new FormData();
       fd.append('csrf', CSRF_TOKEN); fd.append('do', 'batch'); fd.append('mode', mode); fd.append('skip', skip);
       fetch('ai_categorize.php', { method: 'POST', body: fd }).then(function (r) { return r.json(); }).then(function (d) {
-        if (!d.ok) {
-          document.getElementById('progTxt').textContent = '❌ ' + (d.error || 'error') + ' — ફરી Start દબાવો, જ્યાં અટક્યું ત્યાંથી આગળ વધશે (થયેલી પ્રોડક્ટ ફરી નહીં થાય).';
-          btn.disabled = false; btn.textContent = '▶ Start (ફરી)';
-          return;
-        }
+        if (!d.ok) { retryLater(skip, d.error || 'error'); return; }
+        retries = 0;
         (d.rows || []).forEach(function (x) {
           var div = document.createElement('div');
           div.textContent = x.name + '  →  ' + x.cat + (x.sub ? ' › ' + x.sub : '');
@@ -112,16 +127,13 @@ include __DIR__ . '/includes/header.php';
         var tot = mode === 'all' ? d.remaining : assigned + d.remaining;
         var pct = tot ? Math.min(100, Math.round(doneCount / tot * 100)) : 100;
         document.getElementById('progBar').style.width = pct + '%';
-        document.getElementById('progTxt').textContent = assigned + ' પ્રોડક્ટ ગોઠવાઈ' + (d.skip && mode === 'new' ? ' · ' + d.skip + ' ઓળખાઈ નહીં (skip)' : '') + ' (' + pct + '%)';
+        document.getElementById('progTxt').textContent = assigned + ' પ્રોડક્ટ ગોઠવાઈ' + (d.skip && mode === 'new' ? ' · ' + d.skip + ' ઓળખાઈ નહીં (skip)' : '') + ' (' + pct + '%)' + (d.via === 'paid' ? ' · 💳 paid API' : d.via === 'free' ? ' · 🟢 free API' : '');
         if (d.done) {
           document.getElementById('progBar').style.width = '100%';
           document.getElementById('progTxt').textContent = '✅ પૂરું! ' + assigned + ' પ્રોડક્ટ ગોઠવાઈ' + (mode === 'new' && d.skip ? '; ' + d.skip + ' ને AI ઓળખી ન શક્યું — એ Items માં જાતે ગોઠવી દો.' : '.');
           btn.textContent = '✅ Done';
         } else { step(d.skip); }
-      }).catch(function () {
-        document.getElementById('progTxt').textContent = '❌ નેટવર્ક ભૂલ — ફરી Start દબાવો (થયેલી ફરી નહીં થાય).';
-        btn.disabled = false; btn.textContent = '▶ Start (ફરી)';
-      });
+      }).catch(function () { retryLater(skip, 'નેટવર્ક ભૂલ'); });
     }
     step(0);
   });
