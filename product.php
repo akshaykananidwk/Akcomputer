@@ -14,6 +14,53 @@ $it = row('SELECT i.*, c.name cat_name FROM items i LEFT JOIN categories c ON c.
            WHERE i.id = ? AND i.is_active = 1 AND i.show_on_website = 1', [(int)get('id')]);
 if (!$it) { header('HTTP/1.1 404 Not Found'); die('<meta charset="utf-8"><p style="font-family:sans-serif;text-align:center;margin-top:60px">Product not found. <a href="catalog.php">← Store</a></p>'); }
 
+// ---------- customer review submit ----------
+// Real reviews only: a review whose mobile matches an actual sale of THIS
+// item is auto-approved ("Verified purchase"); everything else waits for
+// the admin (Online Store > Product Reviews). These reviews are the ONLY
+// source of the aggregateRating/review structured data below - nothing is
+// ever invented.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'review') {
+    $rvName = mb_substr(trim(post('name')), 0, 120);
+    $rvMob = preg_replace('/\D/', '', post('mobile'));
+    $rvRate = max(1, min(5, (int)post('rating')));
+    $rvTxt = mb_substr(trim(post('comment')), 0, 1000);
+    $err = '';
+    if (post('website') !== '') $err = 'spam'; // honeypot - bots fill every field
+    elseif ($rvName === '' || (int)post('rating') < 1) $err = 'નામ અને રેટિંગ (સ્ટાર) બંને જરૂરી છે.';
+    else {
+        try {
+            if ($rvMob !== '' && val('SELECT id FROM product_reviews WHERE item_id = ? AND mobile = ?', [$it['id'], $rvMob])) {
+                $err = 'આ નંબર પરથી આ પ્રોડક્ટનો રિવ્યૂ પહેલેથી અપાયેલો છે. આભાર!';
+            } else {
+                $ver = 0;
+                if (strlen($rvMob) >= 10) {
+                    $ten = '%' . substr($rvMob, -10);
+                    $ver = (int)(bool)val("SELECT s.id FROM sales s JOIN sale_items si ON si.sale_id = s.id
+                                           WHERE si.item_id = ? AND s.is_cancelled = 0
+                                           AND REPLACE(REPLACE(s.customer_mobile, '+', ''), ' ', '') LIKE ? LIMIT 1", [$it['id'], $ten]);
+                }
+                q("INSERT INTO product_reviews (item_id, customer_name, mobile, rating, comment, is_verified, status) VALUES (?,?,?,?,?,?,?)",
+                  [$it['id'], $rvName, $rvMob, $rvRate, $rvTxt, $ver, $ver ? 'approved' : 'pending']);
+                if (!$ver) { try { tg_notify_admins("⭐ નવો પ્રોડક્ટ રિવ્યૂ (મંજૂરી બાકી)\n{$it['name']} — $rvRate★ — $rvName\n" . mb_substr($rvTxt, 0, 200) . "\n\n" . base_url('reviews.php')); } catch (Exception $e) {} }
+                flash($ver ? '✅ આભાર! તમારો રિવ્યૂ મુકાઈ ગયો (Verified purchase).' : '✅ આભાર! તમારો રિવ્યૂ મળ્યો — ચકાસીને થોડી વારમાં દેખાશે.');
+            }
+        } catch (Exception $e) { $err = 'હમણાં રિવ્યૂ સેવ ન થયો — થોડી વારે ફરી પ્રયત્ન કરો.'; }
+    }
+    if ($err !== '' && $err !== 'spam') flash($err, 'error');
+    redirect(seo_product_url($it) . '#reviews');
+}
+
+// approved reviews: full stats for schema + latest few for display
+$rvStats = ['n' => 0, 'avg' => 0];
+$revs = [];
+try {
+    $rvStats = row("SELECT COUNT(*) n, COALESCE(AVG(rating),0) avg FROM product_reviews WHERE item_id = ? AND status = 'approved'", [$it['id']]) ?: $rvStats;
+    if ((int)$rvStats['n'] > 0) $revs = all("SELECT * FROM product_reviews WHERE item_id = ? AND status = 'approved' ORDER BY is_verified DESC, id DESC LIMIT 10", [$it['id']]);
+} catch (Exception $e) { /* pre-v52 */ }
+$rvN = (int)$rvStats['n'];
+$rvAvg = round((float)$rvStats['avg'], 1);
+
 site_visit_track('product');
 
 $webAcct = null;
@@ -48,7 +95,11 @@ $purl = seo_product_url($it);
 <link rel="icon" href="<?= e(base_url('assets/icon.svg')) ?>" type="image/svg+xml">
 <link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=<?= asset_v('style.css') ?>">
 <script type="application/ld+json">
-<?= json_encode([
+<?php
+// aggregateRating/review come ONLY from real approved customer reviews -
+// products without reviews simply omit the fields (Google treats that as a
+// non-critical note; it clears per-page as genuine reviews come in)
+$ld = [
     '@context' => 'https://schema.org', '@type' => 'Product',
     'name' => $it['name'],
     'description' => mb_substr($desc, 0, 400),
@@ -61,7 +112,19 @@ $purl = seo_product_url($it);
         'availability' => $inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
         'seller' => ['@type' => 'Organization', 'name' => $app_name],
     ],
-], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>
+];
+if ($rvN > 0) {
+    $ld['aggregateRating'] = ['@type' => 'AggregateRating', 'ratingValue' => (string)$rvAvg, 'reviewCount' => $rvN, 'bestRating' => '5', 'worstRating' => '1'];
+    $ld['review'] = array_map(fn($r) => [
+        '@type' => 'Review',
+        'author' => ['@type' => 'Person', 'name' => $r['customer_name'] ?: 'Customer'],
+        'datePublished' => date('Y-m-d', strtotime($r['created_at'])),
+        'reviewRating' => ['@type' => 'Rating', 'ratingValue' => (string)(int)$r['rating'], 'bestRating' => '5', 'worstRating' => '1'],
+        'reviewBody' => $r['comment'],
+    ], array_slice($revs, 0, 5));
+}
+echo json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+?>
 </script>
 <?= seo_breadcrumbs([[$app_name, base_url('catalog.php')],
                      $it['cat_name'] ? [$it['cat_name'], seo_cat_url($it['cat_name'])] : [$app_name . ' Store', base_url('catalog.php')],
@@ -119,6 +182,10 @@ body { background: var(--bg); }
     <?php if ($it['brand'] || $it['model']): ?><div class="pbrand"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></div><?php endif; ?>
     <div class="pprice">₹<?= money($dp) ?><?php if ($webAcct): ?> <span style="font-size:13px;color:#059669;font-weight:700">👷 તમારો ભાવ</span><?php endif; ?></div>
     <div class="pstock" style="color:<?= $inStock ? '#059669' : '#dc2626' ?>"><?= $inStock ? '✅ In stock — આજે જ મળે' : '📦 Order પર મળશે — WhatsApp કરો' ?></div>
+    <?php if ($rvN > 0): ?>
+    <a href="#reviews" style="display:inline-block;margin-top:6px;text-decoration:none;color:var(--text);font-weight:700;font-size:14px">
+      <span style="color:#f59e0b">★</span> <?= $rvAvg ?> <span class="muted" style="font-weight:500">(<?= $rvN ?> review<?= $rvN > 1 ? 's' : '' ?>)</span></a>
+    <?php endif; ?>
     <?php if ($it['description']): ?><p class="pdesc"><?= nl2br(e($it['description'])) ?></p><?php endif; ?>
     <div class="facts">
       <?php if ($it['warranty_months'] > 0): ?><div>🛡️ Warranty: <?= (int)$it['warranty_months'] ?> months</div><?php endif; ?>
@@ -138,6 +205,52 @@ body { background: var(--bg); }
       <?php endif; ?>
     </div>
   </div>
+</div>
+
+<div class="rel" id="reviews">
+  <h2>⭐ Reviews<?= $rvN ? " — $rvAvg★ ($rvN)" : '' ?></h2>
+  <?php foreach (get_flashes() as $f): ?>
+  <div style="background:<?= $f['type'] === 'error' ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534' ?>;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:14px"><?= e($f['msg']) ?></div>
+  <?php endforeach; ?>
+  <?php foreach ($revs as $r): ?>
+  <div style="background:var(--card);border-radius:12px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.08)">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <strong style="font-size:14px"><?= e($r['customer_name'] ?: 'Customer') ?></strong>
+      <?php if ($r['is_verified']): ?><span style="background:#dcfce7;color:#166534;border-radius:99px;padding:1px 8px;font-size:11.5px;font-weight:700">✓ Verified purchase</span><?php endif; ?>
+      <span class="muted" style="font-size:12px;margin-left:auto"><?= dmy($r['created_at']) ?></span>
+    </div>
+    <div style="color:#f59e0b;font-size:15px;margin-top:2px"><?= str_repeat('★', (int)$r['rating']) . str_repeat('☆', 5 - (int)$r['rating']) ?></div>
+    <?php if ($r['comment']): ?><p style="margin-top:4px;font-size:14px;line-height:1.5"><?= nl2br(e($r['comment'])) ?></p><?php endif; ?>
+  </div>
+  <?php endforeach; ?>
+  <?php if (!$revs): ?><p class="muted" style="margin-bottom:10px">હજી કોઈ રિવ્યૂ નથી — પહેલા બનો!</p><?php endif; ?>
+  <details style="background:var(--card);border-radius:12px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.08)">
+    <summary style="cursor:pointer;font-weight:700;font-size:14.5px">✍️ તમારો રિવ્યૂ લખો / Write a review</summary>
+    <form method="post" action="<?= e(base_url('product.php?id=' . $it['id'])) ?>" style="margin-top:10px;display:grid;gap:10px">
+      <?= csrf_field() ?>
+      <input type="hidden" name="do" value="review">
+      <input type="text" name="website" value="" style="display:none" tabindex="-1" autocomplete="off">
+      <div>
+        <div id="rvStars" style="font-size:34px;letter-spacing:5px;cursor:pointer;color:#f59e0b">☆☆☆☆☆</div>
+        <input type="hidden" name="rating" id="rvRating" value="0">
+      </div>
+      <input type="text" name="name" placeholder="તમારું નામ *" required maxlength="120" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)">
+      <input type="tel" name="mobile" placeholder="મોબાઈલ (ખરીદી હોય એ નંબર = ✓ Verified બેજ)" maxlength="15" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)">
+      <textarea name="comment" rows="3" maxlength="1000" placeholder="પ્રોડક્ટ કેવી લાગી?" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)"></textarea>
+      <button class="btn" type="submit" style="background:linear-gradient(100deg,#4f46e5,#2563eb);border:0">રિવ્યૂ મોકલો</button>
+    </form>
+    <script>
+      (function () {
+        var s = document.getElementById('rvStars');
+        s.addEventListener('click', function (e) {
+          var rect = s.getBoundingClientRect();
+          var n = Math.min(5, Math.max(1, Math.ceil((e.clientX - rect.left) / (rect.width / 5))));
+          document.getElementById('rvRating').value = n;
+          s.textContent = '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(n);
+        });
+      })();
+    </script>
+  </details>
 </div>
 
 <?php if ($related): ?>
