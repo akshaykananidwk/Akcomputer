@@ -298,6 +298,24 @@ function party_balance_expr($alias = 'p') {
 function party_balance($party_id) {
     return (float)val('SELECT ' . party_balance_expr('p') . ' FROM parties p WHERE p.id = ?', [$party_id]);
 }
+
+/** Unsettled part of a party's OPENING balance for one payment direction:
+ *  'in' = old receivable (opening_balance > 0), 'out' = old payable
+ *  (opening_balance < 0), minus whatever payments were already linked to it
+ *  (payment_allocations ref_type='opening', ref_id=party). Lets the payment
+ *  allocator show "જૂનો હિસાબ" as its own linkable line. */
+function opening_due($party_id, $dir) {
+    $ob = (float)val('SELECT opening_balance FROM parties WHERE id = ?', [$party_id]);
+    $base = $dir === 'in' ? max(0.0, $ob) : max(0.0, -$ob);
+    if ($base <= 0.009) return 0.0;
+    $paid = 0.0;
+    try {
+        $paid = (float)val("SELECT COALESCE(SUM(pa.amount),0) FROM payment_allocations pa
+                            JOIN payments p ON p.id = pa.payment_id
+                            WHERE pa.ref_type = 'opening' AND pa.ref_id = ? AND p.direction = ?", [$party_id, $dir]);
+    } catch (Exception $e) { /* pre-v53 */ }
+    return max(0.0, round($base - $paid, 2));
+}
 // ---------- Staff cash wallets & internal money movements ----------
 /** How much CASH one staff member is holding right now. Every cash payment
  *  row carries created_by, so the shop's cash naturally partitions by who

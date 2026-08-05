@@ -112,9 +112,14 @@ if ($a === 'party_bills' && can('payments.view')) {
         $bills = all("SELECT id, IF(bill_no = '', CONCAT('#', id), bill_no) no, purchase_date d, total - paid due FROM purchases
                       WHERE party_id = ? AND status <> 'paid' ORDER BY purchase_date, id", [$party_id]);
     }
-    echo json_encode(['balance' => round($balance, 2), 'bills' => array_map(fn($b) => [
-        'id' => (int)$b['id'], 'no' => $b['no'], 'date' => dmy($b['d']), 'due' => round((float)$b['due'], 2),
-    ], $bills)]);
+    echo json_encode(['balance' => round($balance, 2), 'bills' => array_merge(
+        // the party's unsettled OPENING balance (pre-software ledger) rides
+        // on top as its own linkable line - id 'op' instead of a bill id
+        ($opDue = opening_due($party_id, $dir)) > 0.009
+            ? [['id' => 'op', 'no' => '📜 Opening Balance / જૂનો હિસાબ', 'date' => '—', 'due' => $opDue]] : [],
+        array_map(fn($b) => [
+            'id' => (int)$b['id'], 'no' => $b['no'], 'date' => dmy($b['d']), 'due' => round((float)$b['due'], 2),
+        ], $bills))]);
     exit;
 }
 

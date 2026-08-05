@@ -29,8 +29,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         $allocNotes = [];
         $allocRows = []; // structured record of which bills this payment settles, so a later delete can be reversed correctly
         foreach ($allocIds as $i => $bid) {
-            $bid = (int)$bid;
             $amt = round((float)($allocAmts[$i] ?? 0), 2);
+            // 'op' = the party's OPENING balance line (જૂનો હિસાબ) - nothing
+            // to update on any bill; the allocation row itself is the record
+            if ($bid === 'op') {
+                $amt = min($amt, opening_due($party_id, $dir));
+                if ($amt <= 0.009) continue;
+                $allocNotes[] = 'Opening Bal: ₹' . money($amt);
+                $allocRows[] = ['ref_type' => 'opening', 'ref_id' => $party_id, 'amount' => $amt];
+                $allocated += $amt;
+                continue;
+            }
+            $bid = (int)$bid;
             if (!$bid || $amt <= 0) continue;
             if ($dir === 'in') {
                 $bill = row('SELECT * FROM sales WHERE id = ? AND party_id = ? AND is_cancelled = 0', [$bid, $party_id]);
@@ -141,6 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remind') {
 // rows). Previously the bill's own `paid` figure just stayed inflated
 // forever after a delete, silently drifting from the party's real ledger.
 function reverse_bill_paid($ref_type, $ref_id, $amt) {
+    if ($ref_type === 'opening') return; // opening due derives from the allocation rows themselves - deleting them IS the reversal
     $table = $ref_type === 'sale' ? 'sales' : 'purchases';
     $bill = row("SELECT total, paid FROM $table WHERE id = ?", [$ref_id]);
     if (!$bill) return;
@@ -219,6 +230,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         $left = $amount;
         foreach ($targets as $t) {
             if ($left <= 0.009) break;
+            if ($t['type'] === 'opening') {
+                $use = min($left, opening_due($party_id, $dir));
+                if ($use <= 0.009) continue;
+                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, 'opening', $party_id, $use]);
+                $left -= $use;
+                continue;
+            }
             $tbl = $t['type'] === 'sale' ? 'sales' : 'purchases';
             $b = row("SELECT total, paid, is_cancelled FROM $tbl WHERE id = ?", [$t['id']]);
             if (!$b || $b['is_cancelled']) continue;
@@ -573,6 +591,11 @@ if ($action === 'view' && $id) {
     // bills this payment settled (structured allocations + any direct bill link)
     $links = [];
     foreach (all('SELECT * FROM payment_allocations WHERE payment_id = ?', [$id]) as $a) {
+        if ($a['ref_type'] === 'opening') {
+            $links[] = ['label' => '📜 Opening Balance / જૂનો હિસાબ', 'amt' => $a['amount'],
+                        'link' => 'parties.php?action=ledger&id=' . $a['ref_id']];
+            continue;
+        }
         $t = $a['ref_type'] === 'sale' ? 'sales' : 'purchases';
         $noCol = $a['ref_type'] === 'sale' ? 'invoice_no' : 'bill_no';
         $b = row("SELECT $noCol no FROM $t WHERE id = ?", [$a['ref_id']]);
