@@ -11,6 +11,7 @@ Options -Indexes
 
   # SEO pretty URLs (the plain ?id= URLs still work and canonical-tag here)
   RewriteRule ^sitemap\.xml$ sitemap.php [L]
+  RewriteRule ^sitemap-([a-z]+)\.xml$ sitemap.php?part=$1 [L]
   RewriteRule ^p/([0-9]+)(/.*)?$ product.php?id=$1 [L,QSA]
   RewriteRule ^price/([0-9]+)(/.*)?$ price.php?id=$1 [L,QSA]
   RewriteRule ^c/([A-Za-z0-9-]+)/?$ category.php?s=$1 [L,QSA]

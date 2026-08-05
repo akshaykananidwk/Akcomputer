@@ -19,3 +19,8 @@ Disallow: /uploads/repair_photos/
 Disallow: /uploads/purchase_scans/
 
 Sitemap: https://shop.akdwk.in/sitemap.xml
+Sitemap: https://shop.akdwk.in/sitemap-main.xml
+Sitemap: https://shop.akdwk.in/sitemap-categories.xml
+Sitemap: https://shop.akdwk.in/sitemap-brands.xml
+Sitemap: https://shop.akdwk.in/sitemap-products.xml
+Sitemap: https://shop.akdwk.in/sitemap-prices.xml
