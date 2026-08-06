@@ -65,6 +65,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         }
         if ($allocated > $amount + $discount + 0.009) throw new Exception('Linked amount is more than payment + discount.');
 
+        // whatever is NOT explicitly linked settles the party's OLDEST due
+        // bills automatically (Vyapar-style): a plain "received ₹400" also
+        // clears the bill it obviously pays, so the Receivables list stays
+        // truthful instead of showing already-collected bills forever
+        $autoLeft = round($amount + $discount - $allocated, 2);
+        if ($autoLeft > 0.009) {
+            $tblA = $dir === 'in' ? 'sales' : 'purchases';
+            foreach (all("SELECT * FROM $tblA WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0
+                          ORDER BY due_date IS NULL, due_date, id", [$party_id]) as $bill) {
+                if ($autoLeft <= 0.009) break;
+                $due = round($bill['total'] - $bill['paid'], 2);
+                if ($due <= 0.009) continue;
+                $take = min($autoLeft, $due);
+                q("UPDATE $tblA SET paid = paid + ?, status = ? WHERE id = ?", [$take, payment_status($bill['total'], $bill['paid'] + $take), $bill['id']]);
+                $allocNotes[] = ($dir === 'in' ? $bill['invoice_no'] : ($bill['bill_no'] ?: '#' . $bill['id'])) . ': ₹' . money($take);
+                $allocRows[] = ['ref_type' => $dir === 'in' ? 'sale' : 'purchase', 'ref_id' => $bill['id'], 'amount' => $take];
+                $allocated += $take;
+                $autoLeft -= $take;
+            }
+        }
+
         // bills settle from the CASH part first; whatever remains rides the
         // separate discount row so a later delete reverses each correctly
         $mainAlloc = []; $discAlloc = []; $left = $amount;
@@ -125,6 +146,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         flash('Error: ' . $ex->getMessage(), 'error');
         redirect('payments.php?action=new&dir=' . $dir);
     }
+}
+
+// ---------- one-time cleanup: link OLD unlinked payments to their bills ----------
+// Payments that were recorded without picking a bill settled the party's
+// LEDGER but never the bill's own paid amount - so long-collected bills kept
+// showing in Receivables/Payables. This walks every such payment (oldest
+// first) and allocates its unused remainder to that party's oldest due
+// bills, exactly like the auto-settle that now runs on new payments.
+// Idempotent: a second run finds nothing left to do.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'backfill_alloc') {
+    require_perm('payments.add');
+    if (!is_full_admin()) { flash('Only the admin can run this.', 'error'); redirect('payments.php'); }
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $fixedPays = 0; $fixedAmt = 0.0; $billsTouched = 0;
+        $pays = all("SELECT p.*, COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa WHERE pa.payment_id = p.id), 0) used
+                     FROM payments p
+                     WHERE p.party_id IS NOT NULL AND p.mode <> 'contra' AND p.ref_type IS NULL
+                     HAVING p.amount - used > 0.009
+                     ORDER BY p.pay_date, p.id");
+        foreach ($pays as $pm) {
+            $left = round($pm['amount'] - $pm['used'], 2);
+            $tblA = $pm['direction'] === 'in' ? 'sales' : 'purchases';
+            $did = false;
+            foreach (all("SELECT * FROM $tblA WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0
+                          ORDER BY due_date IS NULL, due_date, id", [$pm['party_id']]) as $bill) {
+                if ($left <= 0.009) break;
+                $due = round($bill['total'] - $bill['paid'], 2);
+                if ($due <= 0.009) continue;
+                $take = min($left, $due);
+                q("UPDATE $tblA SET paid = paid + ?, status = ? WHERE id = ?", [$take, payment_status($bill['total'], $bill['paid'] + $take), $bill['id']]);
+                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)',
+                  [$pm['id'], $pm['direction'] === 'in' ? 'sale' : 'purchase', $bill['id'], $take]);
+                $left -= $take;
+                $fixedAmt += $take;
+                $billsTouched++;
+                $did = true;
+            }
+            if ($did) $fixedPays++;
+        }
+        $pdo->commit();
+        log_activity('payments_backfill_alloc', "payments=$fixedPays bills=$billsTouched amount=$fixedAmt");
+        flash($fixedPays
+            ? "✅ $fixedPays જૂના પેમેન્ટ કુલ ₹" . money($fixedAmt) . " માટે $billsTouched બિલ સાથે જોડાઈ ગયા — હવે યાદી સાચી બાકી જ બતાવે છે."
+            : 'બધું પહેલેથી બરાબર છે — કોઈ છૂટું પેમેન્ટ બાકી નથી.');
+    } catch (Exception $ex) {
+        $pdo->rollBack();
+        flash('Error: ' . $ex->getMessage(), 'error');
+    }
+    redirect('payments.php');
 }
 
 // ---------- WhatsApp reminder ----------
@@ -714,6 +786,12 @@ include __DIR__ . '/includes/header.php';
   <a class="btn btn-success" href="payments.php?action=new&dir=in">⬇ Payment-In</a>
   <a class="btn btn-danger" href="payments.php?action=new&dir=out">⬆ Payment-Out</a>
   <a class="btn btn-outline" href="payments.php?action=contra">🔄 Contra / Settle</a>
+  <?php endif; ?>
+  <?php if (is_full_admin()): ?>
+  <form method="post" style="display:inline" onsubmit="return confirm('જૂના (બિલ સાથે ન જોડાયેલા) બધા પેમેન્ટ એમની પાર્ટીના જૂનામાં જૂના બાકી બિલ સાથે આપોઆપ જોડી દેવા છે? હિસાબ બદલાતો નથી — ફક્ત બિલની બાકી સાચી થાય છે.')">
+    <?= csrf_field() ?><input type="hidden" name="do" value="backfill_alloc">
+    <button class="btn btn-outline" type="submit">🧹 જૂના પેમેન્ટ બિલ સાથે જોડો</button>
+  </form>
   <?php endif; ?>
 </div>
 
