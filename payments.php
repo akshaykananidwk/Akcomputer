@@ -774,9 +774,37 @@ $recent = all('SELECT p.*, pt.name party_name, u2.name by_name FROM payments p
                LEFT JOIN parties pt ON pt.id = p.party_id JOIN users u2 ON u2.id = p.created_by
                ORDER BY p.id DESC LIMIT 100');
 $dueSales = all("SELECT s.*, c.name company_name FROM sales s JOIN companies c ON c.id = s.company_id
-                 WHERE s.status <> 'paid' AND s.is_cancelled = 0 ORDER BY s.due_date IS NULL, s.due_date LIMIT 100");
+                 WHERE s.status <> 'paid' AND s.is_cancelled = 0 ORDER BY s.due_date IS NULL, s.due_date, s.id LIMIT 100");
 $duePurchases = all("SELECT p.*, pt.name party_name FROM purchases p JOIN parties pt ON pt.id = p.party_id
-                     WHERE p.status <> 'paid' ORDER BY p.due_date IS NULL, p.due_date LIMIT 100");
+                     WHERE p.status <> 'paid' ORDER BY p.due_date IS NULL, p.due_date, p.id LIMIT 100");
+
+// The party LEDGER is the truth. A bill's own due can overstate reality when
+// something reduced the ledger without touching the bill (an unlinked
+// payment, a sales return, a settlement discount) - so per party, the dues
+// shown here are capped at the party's real receivable/payable, trimming
+// the OLDEST bills first (money always settles oldest-first). Pareshbhai
+// with bills 2,041 + 2,800 but a real balance of 2,041 shows exactly 2,041.
+function cap_bill_dues(array $bills, $dir) {
+    $byParty = [];
+    foreach ($bills as $i => $b) if ($b['party_id']) $byParty[(int)$b['party_id']][] = $i;
+    foreach ($byParty as $pid => $idxs) {
+        $bal = party_balance($pid);
+        $bal = $dir === 'in' ? max(0.0, $bal) : max(0.0, -$bal);
+        $sum = 0.0;
+        foreach ($idxs as $i) $sum += $bills[$i]['total'] - $bills[$i]['paid'];
+        $excess = round($sum - $bal, 2); // covered-but-unlinked portion
+        foreach ($idxs as $i) {
+            if ($excess <= 0.009) break;
+            $d = round($bills[$i]['total'] - $bills[$i]['paid'], 2);
+            $cut = min($d, $excess);
+            $bills[$i]['adj_due'] = round($d - $cut, 2);
+            $excess = round($excess - $cut, 2);
+        }
+    }
+    return array_values(array_filter($bills, fn($b) => round($b['adj_due'] ?? ($b['total'] - $b['paid']), 2) > 0.009));
+}
+$dueSales = cap_bill_dues($dueSales, 'in');
+$duePurchases = cap_bill_dues($duePurchases, 'out');
 
 $page_title = 'Payments';
 include __DIR__ . '/includes/header.php';
@@ -800,7 +828,7 @@ include __DIR__ . '/includes/header.php';
   <div class="table-wrap" style="box-shadow:none">
   <table>
     <thead><tr><th>Invoice</th><th>Customer</th><th class="num">Due ₹</th><th>Due date</th><th></th></tr></thead>
-    <tbody><?php foreach ($dueSales as $s): $d = $s['total'] - $s['paid']; ?>
+    <tbody><?php foreach ($dueSales as $s): $d = $s['adj_due'] ?? ($s['total'] - $s['paid']); ?>
       <tr>
         <td><a href="sale_view.php?id=<?= $s['id'] ?>"><?= e($s['invoice_no']) ?></a></td>
         <td><?= $s['party_id'] ? '<a href="parties.php?action=ledger&id=' . $s['party_id'] . '">' . e($s['customer_name'] ?: 'Walk-in') . '</a>' : e($s['customer_name'] ?: 'Walk-in') ?></td>
@@ -830,7 +858,7 @@ include __DIR__ . '/includes/header.php';
       <tr>
         <td><a href="purchase_view.php?id=<?= $p['id'] ?>">#<?= $p['id'] ?> <?= e($p['bill_no']) ?></a></td>
         <td><a href="parties.php?action=ledger&id=<?= $p['party_id'] ?>"><?= e($p['party_name']) ?></a></td>
-        <td class="num">₹<?= money($p['total'] - $p['paid']) ?></td>
+        <td class="num">₹<?= money($p['adj_due'] ?? ($p['total'] - $p['paid'])) ?></td>
         <td><?= dmy($p['due_date']) ?><?= $p['due_date'] && $p['due_date'] < today() ? ' <span class="badge badge-bad">overdue</span>' : '' ?></td>
         <td><?php if (can('payments.add')): ?><a class="btn btn-sm btn-danger" href="payments.php?action=new&dir=out&party=<?= $p['party_id'] ?>">Pay</a><?php endif; ?></td>
       </tr>
