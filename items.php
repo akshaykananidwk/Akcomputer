@@ -10,12 +10,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (post('do') === 'save') {
         require_perm($id ? 'items.edit' : 'items.add');
         $photo = post('old_photo');
+        $photoUploaded = false;
         if (!empty($_FILES['photo']['tmp_name'])) {
             $ext = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
             if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) {
                 if (!is_dir(__DIR__ . '/uploads')) mkdir(__DIR__ . '/uploads', 0755, true);
                 $photo = 'uploads/item_' . time() . '_' . rand(100, 999) . '.' . $ext;
                 move_uploaded_file($_FILES['photo']['tmp_name'], __DIR__ . '/' . $photo);
+                $photoUploaded = true;
             }
         }
         $data = [
@@ -54,6 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($sellAfter > $sellBefore + 0.005) {
             flash('વેચાણ-ભાવ ₹' . money($sellBefore) . ' થી વધારીને ₹' . money($sellAfter) . ' કર્યો — ખરીદ + ' . (0 + ((float)post('margin_pct') > 0 ? (float)post('margin_pct') : default_margin_pct())) . '% નો મિનિમમ નફો જળવાય એ માટે.', 'success');
         }
+        // photo-upload work log: feeds Reports > Photo Upload Log (daily
+        // counts + minutes-per-photo per staff member)
+        if ($photoUploaded) log_activity('item_photo', $id . '|' . post('name'));
         log_activity('item_save', post('name'));
         redirect('items.php');
     }

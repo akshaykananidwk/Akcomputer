@@ -1343,3 +1343,88 @@ if ($r === 'profit_loss' && can('reports.accounting')) {
     echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>NET PROFIT</td><td class="num">₹' . money($net) . '</td></tr>';
     echo '</tbody></table></div></div>';
 }
+
+if ($r === 'photo_log' && can('users.view')) {
+    // 📸 Photo Upload Log: the photo-upload boy's work diary. Every item
+    // photo upload is logged (activity_log action=item_photo, details
+    // "itemId|itemName"); this shows per-staff daily counts, each upload
+    // with the minutes it took (gap from the SAME person's previous upload
+    // that day - gaps over 60 min count as a break, not photo time), and
+    // the average minutes-per-photo.
+    $prRows = all("SELECT a.created_at, a.details, a.user_id, u2.name staff FROM activity_log a
+                   LEFT JOIN users u2 ON u2.id = a.user_id
+                   WHERE a.action = 'item_photo' AND DATE(a.created_at) BETWEEN ? AND ?
+                   ORDER BY a.user_id, a.created_at", [$from, $to]);
+    $prIds = [];
+    foreach ($prRows as $x) $prIds[] = (int)explode('|', $x['details'], 2)[0];
+    $prPhotos = [];
+    if ($prIds) {
+        foreach (all('SELECT id, photo FROM items WHERE id IN (' . implode(',', array_unique(array_map('intval', $prIds))) . ')') as $it) $prPhotos[(int)$it['id']] = $it['photo'];
+    }
+    $byUser = []; $dailyC = []; $uNames = [];
+    foreach ($prRows as $x) {
+        $uid = (int)$x['user_id'];
+        $uNames[$uid] = $x['staff'] ?: ('User #' . $uid);
+        $d = date('Y-m-d', strtotime($x['created_at']));
+        $dailyC[$d][$uid] = ($dailyC[$d][$uid] ?? 0) + 1;
+        $prev = $byUser[$uid]['last'] ?? null;
+        $gap = ($prev && date('Y-m-d', strtotime($prev)) === $d) ? round((strtotime($x['created_at']) - strtotime($prev)) / 60, 1) : null;
+        [$iid, $iname] = array_pad(explode('|', $x['details'], 2), 2, '');
+        $byUser[$uid]['rows'][] = ['t' => $x['created_at'], 'iid' => (int)$iid, 'name' => $iname, 'gap' => $gap];
+        $byUser[$uid]['last'] = $x['created_at'];
+    }
+
+    if (!$prRows) {
+        echo '<div class="card"><h3>📸 Photo Upload Log</h3><p class="muted">આ સમયગાળામાં કોઈ ફોટો અપલોડ નોંધાયો નથી. (આજથી દરેક પ્રોડક્ટ-ફોટો અપલોડ આપોઆપ અહીં નોંધાય છે.)</p></div>';
+    } else {
+        // ---- per-staff summary ----
+        echo '<div class="card"><h3>📸 Photo Upload Log <span class="muted" style="font-size:13px;font-weight:normal">(' . dmy($from) . ' → ' . dmy($to) . ')</span></h3>';
+        echo '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>Staff</th><th class="num">કુલ ફોટા</th><th class="num">દિવસ</th><th class="num">સરેરાશ ફોટા/દિવસ</th><th class="num">સરેરાશ મિનિટ/ફોટો</th></tr></thead><tbody>';
+        foreach ($byUser as $uid => $bu) {
+            $n = count($bu['rows']);
+            $days = [];
+            $gaps = [];
+            foreach ($bu['rows'] as $rw) {
+                $days[date('Y-m-d', strtotime($rw['t']))] = 1;
+                if ($rw['gap'] !== null && $rw['gap'] <= 60) $gaps[] = $rw['gap'];
+            }
+            $avgGap = $gaps ? round(array_sum($gaps) / count($gaps), 1) : null;
+            echo '<tr><td>' . e($uNames[$uid]) . '</td><td class="num"><strong>' . $n . '</strong></td><td class="num">' . count($days) . '</td>'
+               . '<td class="num">' . round($n / max(1, count($days)), 1) . '</td>'
+               . '<td class="num">' . ($avgGap !== null ? '<strong>' . $avgGap . '</strong> min' : '<span class="muted">—</span>') . '</td></tr>';
+        }
+        echo '</tbody></table></div>';
+        echo '<p class="muted" style="font-size:12.5px">⏱ મિનિટ/ફોટો = એ જ વ્યક્તિના આગલા ફોટાથી આ ફોટા સુધીનો સમય (60 મિનિટથી મોટો ગેપ = બ્રેક, સરેરાશમાં નથી ગણાતો).</p></div>';
+
+        // ---- daily counts ----
+        krsort($dailyC);
+        echo '<div class="card"><h3>📅 રોજના ફોટા</h3><div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>તારીખ</th>';
+        foreach ($uNames as $nm) echo '<th class="num">' . e($nm) . '</th>';
+        echo '<th class="num">કુલ</th></tr></thead><tbody>';
+        foreach ($dailyC as $d => $per) {
+            echo '<tr><td>' . dmy($d) . '</td>';
+            $tot = 0;
+            foreach ($uNames as $uid => $nm) { $c = $per[$uid] ?? 0; $tot += $c; echo '<td class="num">' . ($c ?: '<span class="muted">-</span>') . '</td>'; }
+            echo '<td class="num"><strong>' . $tot . '</strong></td></tr>';
+        }
+        echo '</tbody></table></div></div>';
+
+        // ---- detail log per staff: name, photo, time, minutes ----
+        foreach ($byUser as $uid => $bu) {
+            $rows2 = array_reverse($bu['rows']); // newest first
+            echo '<div class="card"><h3>🧑 ' . e($uNames[$uid]) . ' — ફોટો-બાય-ફોટો</h3>';
+            echo '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>સમય</th><th>પ્રોડક્ટ</th><th class="num">⏱ કેટલી મિનિટે</th></tr></thead><tbody>';
+            $shown = 0;
+            foreach ($rows2 as $rw) {
+                if (++$shown > 300) { echo '<tr><td colspan="3" class="muted">…(જૂના ' . (count($rows2) - 300) . ' વધુ)</td></tr>'; break; }
+                $ph = $prPhotos[$rw['iid']] ?? '';
+                echo '<tr><td style="white-space:nowrap">' . dmyt($rw['t']) . '</td>'
+                   . '<td>' . ($ph ? '<img src="' . e($ph) . '" style="width:34px;height:34px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:6px">' : '')
+                   . '<a href="items.php?action=edit&id=' . $rw['iid'] . '">' . e($rw['name']) . '</a></td>'
+                   . '<td class="num">' . ($rw['gap'] === null ? '<span class="muted">પહેલો (તે દિવસનો)</span>'
+                        : ($rw['gap'] > 60 ? '<span class="muted">' . $rw['gap'] . ' min (બ્રેક પછી)</span>' : '<strong>' . $rw['gap'] . '</strong> min')) . '</td></tr>';
+            }
+            echo '</tbody></table></div></div>';
+        }
+    }
+}

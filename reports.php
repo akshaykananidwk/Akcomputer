@@ -101,6 +101,7 @@ $tabs = [
     'bill_profit' => '🧮 Bill Profit', 'branch_staff' => '📊 Branch / Staff Comparison', 'staff' => '🎒 Staff Stock',
     'web_visits' => '🌐 Website Visitors',
     'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'tech_sla' => '⏱️ Technician SLA',
+    'photo_log' => '📸 Photo Upload Log',
     'forecast' => '🔮 AI Sales Forecast', 'low' => '⚠️ Low Stock', 'purchase_reco' => '🛒 Purchase Recommendations (AI)', 'dead_stock' => '🐌 Dead / Slow-moving Stock',
     'general_ledger' => '📗 General Ledger', 'trial_balance' => '⚖️ Trial Balance',
     'balance_sheet' => '📑 Balance Sheet', 'profit_loss' => '💹 Profit & Loss',
@@ -113,7 +114,7 @@ if (!can('reports.gst')) unset($tabs['gst']);
 if (!can('purchases.view')) unset($tabs['payables']);
 if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); unset($tabs['dead_stock']); unset($tabs['branch_staff']); }
 if (!can('expenses.view')) unset($tabs['expense']);
-if (!can('users.view')) { unset($tabs['activity']); unset($tabs['login_history']); }
+if (!can('users.view')) { unset($tabs['activity']); unset($tabs['login_history']); unset($tabs['photo_log']); }
 if (!can('payments.view')) unset($tabs['bank_ledger']);
 // whole-shop money reports (bank passbook, full cashbook) are for the admin /
 // whoever explicitly holds cashbank.viewall - a manager only sees own cash
@@ -122,7 +123,7 @@ if (!can('reports.accounting')) { unset($tabs['general_ledger']); unset($tabs['t
 if (!can('reports.builder')) unset($tabs['custom']);
 if ($r === 'business' && !can('reports.profit')) $r = 'daily';
 if ($r === 'branch_staff' && !can('reports.profit')) $r = 'daily';
-if (in_array($r, ['activity', 'login_history'], true) && !can('users.view')) $r = 'daily';
+if (in_array($r, ['activity', 'login_history', 'photo_log'], true) && !can('users.view')) $r = 'daily';
 if ($r === 'bank_ledger' && !can('payments.view')) $r = 'daily';
 if (in_array($r, ['bank_ledger', 'cashbook'], true) && !can('cashbank.viewall')) $r = 'daily';
 if (in_array($r, ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'], true) && !can('reports.accounting')) $r = 'daily';
@@ -141,7 +142,7 @@ $tabCategories = [
     'Business Status' => ['cashbook', 'bank_ledger', 'profit', 'bill_profit', 'branch_staff', 'web_visits'],
     'Accounting' => ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'],
     'Expense Reports' => ['expense'],
-    'Staff & Service Reports' => ['staff', 'repair_tat', 'warranty_tat', 'tech_sla'],
+    'Staff & Service Reports' => ['staff', 'photo_log', 'repair_tat', 'warranty_tat', 'tech_sla'],
     'Custom' => ['custom'],
     'Activity' => ['activity', 'login_history', 'health'],
 ];
