@@ -301,25 +301,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         // 2) save the new values (link now tracked purely via allocations below)
         q('UPDATE payments SET amount=?, mode=?, bank_account_id=?, payment_method_id=?, pay_date=?, notes=?, ref_type=NULL, ref_id=NULL WHERE id=?',
           [$amount, $mode, $bankAccId, $pmEditId, $payDate, $notes, $pid]);
-        // 3) re-apply the new amount to the same bills, capped to each one's due
+        // 3) re-apply the new amount. When the edit screen's allocator was
+        // used (alloc_ui=1), the OWNER's picks replace the old links - this
+        // is how an unlinked payment gets linked to bills any time later.
+        // Otherwise the amount goes back to the same bills it settled before.
         $left = $amount;
-        foreach ($targets as $t) {
-            if ($left <= 0.009) break;
-            if ($t['type'] === 'opening') {
-                $use = min($left, opening_due($party_id, $dir));
+        if (post('alloc_ui') === '1' && $party_id) {
+            $tblU = $dir === 'in' ? 'sales' : 'purchases';
+            $aIds = post('alloc_id', []); $aAmts = post('alloc_amt', []);
+            foreach ($aIds as $i => $bid) {
+                if ($left <= 0.009) break;
+                $amt2 = min(round((float)($aAmts[$i] ?? 0), 2), $left);
+                if ($amt2 <= 0.009) continue;
+                if ($bid === 'op') {
+                    $use = min($amt2, opening_due($party_id, $dir));
+                    if ($use <= 0.009) continue;
+                    q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, 'opening', $party_id, $use]);
+                    $left -= $use;
+                    continue;
+                }
+                $b = row("SELECT * FROM $tblU WHERE id = ? AND party_id = ? AND is_cancelled = 0", [(int)$bid, $party_id]);
+                if (!$b) continue;
+                $use = min($amt2, round($b['total'] - $b['paid'], 2));
                 if ($use <= 0.009) continue;
-                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, 'opening', $party_id, $use]);
+                q("UPDATE $tblU SET paid = paid + ?, status = ? WHERE id = ?", [$use, payment_status($b['total'], $b['paid'] + $use), $b['id']]);
+                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $dir === 'in' ? 'sale' : 'purchase', $b['id'], $use]);
                 $left -= $use;
-                continue;
             }
-            $tbl = $t['type'] === 'sale' ? 'sales' : 'purchases';
-            $b = row("SELECT total, paid, is_cancelled FROM $tbl WHERE id = ?", [$t['id']]);
-            if (!$b || $b['is_cancelled']) continue;
-            $use = min($left, round($b['total'] - $b['paid'], 2));
-            if ($use <= 0.009) continue;
-            q("UPDATE $tbl SET paid = paid + ?, status = ? WHERE id = ?", [$use, payment_status($b['total'], $b['paid'] + $use), $t['id']]);
-            q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $t['type'], $t['id'], $use]);
-            $left -= $use;
+            // whatever the owner left unassigned auto-settles the oldest due
+            // bills, same rule as a brand-new payment
+            if ($left > 0.009) {
+                foreach (all("SELECT * FROM $tblU WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0
+                              ORDER BY due_date IS NULL, due_date, id", [$party_id]) as $b) {
+                    if ($left <= 0.009) break;
+                    $use = min($left, round($b['total'] - $b['paid'], 2));
+                    if ($use <= 0.009) continue;
+                    q("UPDATE $tblU SET paid = paid + ?, status = ? WHERE id = ?", [$use, payment_status($b['total'], $b['paid'] + $use), $b['id']]);
+                    q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $dir === 'in' ? 'sale' : 'purchase', $b['id'], $use]);
+                    $left -= $use;
+                }
+            }
+        } else {
+            foreach ($targets as $t) {
+                if ($left <= 0.009) break;
+                if ($t['type'] === 'opening') {
+                    $use = min($left, opening_due($party_id, $dir));
+                    if ($use <= 0.009) continue;
+                    q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, 'opening', $party_id, $use]);
+                    $left -= $use;
+                    continue;
+                }
+                $tbl = $t['type'] === 'sale' ? 'sales' : 'purchases';
+                $b = row("SELECT total, paid, is_cancelled FROM $tbl WHERE id = ?", [$t['id']]);
+                if (!$b || $b['is_cancelled']) continue;
+                $use = min($left, round($b['total'] - $b['paid'], 2));
+                if ($use <= 0.009) continue;
+                q("UPDATE $tbl SET paid = paid + ?, status = ? WHERE id = ?", [$use, payment_status($b['total'], $b['paid'] + $use), $t['id']]);
+                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $t['type'], $t['id'], $use]);
+                $left -= $use;
+            }
         }
         $pdo->commit();
         log_activity('payment_edit', "P-$pid amount $amount");
@@ -735,6 +775,30 @@ if ($action === 'edit' && $id) {
     if ($pay['mode'] === 'contra') { flash("A contra settlement can't be edited - delete it and record a fresh one.", 'error'); redirect('payments.php?action=view&id=' . $id); }
     $pms = active_payment_methods();
     $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
+
+    // Bill allocator on the EDIT screen too: staff often save a payment
+    // without picking bills - the owner can open it any time later and link
+    // it properly. Each open bill's due gets THIS payment's own share added
+    // back (updating reverses first), and current links come pre-filled.
+    $curAlloc = [];
+    foreach (all('SELECT ref_type, ref_id, SUM(amount) a FROM payment_allocations WHERE payment_id = ? GROUP BY ref_type, ref_id', [$id]) as $x) {
+        $curAlloc[$x['ref_type'] . ':' . $x['ref_id']] = (float)$x['a'];
+    }
+    $editBills = [];
+    if ($pay['party_id']) {
+        $refT = $pay['direction'] === 'in' ? 'sale' : 'purchase';
+        $opMine = $curAlloc['opening:' . $pay['party_id']] ?? 0.0;
+        $opDue = round(opening_due((int)$pay['party_id'], $pay['direction']) + $opMine, 2);
+        if ($opDue > 0.009) $editBills[] = ['id' => 'op', 'no' => '📜 Opening Balance / જૂનો હિસાબ', 'date' => '—', 'due' => $opDue, 'mine' => $opMine];
+        $tblE = $pay['direction'] === 'in' ? 'sales' : 'purchases';
+        foreach (all("SELECT * FROM $tblE WHERE party_id = ? AND is_cancelled = 0 ORDER BY due_date IS NULL, due_date, id", [$pay['party_id']]) as $b) {
+            $mine = $curAlloc[$refT . ':' . $b['id']] ?? 0.0;
+            $due = round($b['total'] - $b['paid'] + $mine, 2);
+            if ($due <= 0.009) continue;
+            $editBills[] = ['id' => $b['id'], 'no' => $pay['direction'] === 'in' ? $b['invoice_no'] : ($b['bill_no'] ?: '#' . $b['id']),
+                            'date' => dmy($pay['direction'] === 'in' ? $b['sale_date'] : $b['purchase_date']), 'due' => $due, 'mine' => $mine];
+        }
+    }
     $page_title = 'Edit Payment P-' . str_pad($id, 5, '0', STR_PAD_LEFT);
     include __DIR__ . '/includes/header.php';
     ?>
@@ -762,10 +826,35 @@ if ($action === 'edit' && $id) {
           </div>
         </div>
         <div class="field"><label>Notes</label><input type="text" name="notes" value="<?= e($pay['notes']) ?>"></div>
-        <div class="page-actions" style="margin-top:10px">
-          <button class="btn" type="submit">💾 Update Payment</button>
-          <a class="btn btn-outline" href="payments.php?action=view&id=<?= $id ?>">Cancel</a>
-        </div>
+      </div>
+      <?php if ($pay['party_id']): ?>
+      <div class="card">
+        <h3>🔗 Link to a Bill</h3>
+        <p class="muted mb">આ પેમેન્ટ કયા બિલ સામે ગણવું એ અહીંથી ગમે ત્યારે બદલો — સ્ટાફે લિંક કર્યા વગર સેવ કર્યું હોય તો પણ. હાલની લિંક ભરેલી દેખાય છે; રકમ બદલો/0 કરો/બીજા બિલમાં નાખો. જે રકમ કોઈ બિલમાં ન નાખો એ આપોઆપ જૂનામાં જૂના બાકી બિલમાં જશે.</p>
+        <input type="hidden" name="alloc_ui" value="1">
+        <?php if (!$editBills): ?>
+        <p class="muted">આ પાર્ટીનું કોઈ બાકી બિલ નથી — પેમેન્ટ ફક્ત ખાતામાં રહેશે.</p>
+        <?php else: ?>
+        <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
+          <thead><tr><th>Bill</th><th>Date</th><th class="num">Due ₹</th><th style="width:130px">Link ₹</th></tr></thead>
+          <tbody>
+          <?php foreach ($editBills as $eb): ?>
+          <tr>
+            <td><?= e($eb['no']) ?><input type="hidden" name="alloc_id[]" value="<?= e($eb['id']) ?>"></td>
+            <td><?= e($eb['date']) ?></td>
+            <td class="num"><?= money($eb['due']) ?></td>
+            <td><input type="number" step="any" min="0" max="<?= $eb['due'] ?>" name="alloc_amt[]" value="<?= 0 + $eb['mine'] ?>" class="alloc-inp" data-due="<?= $eb['due'] ?>"></td>
+          </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table></div>
+        <button type="button" class="btn btn-sm btn-outline mt" onclick="var l=parseFloat(document.querySelector('input[name=amount]').value)||0;document.querySelectorAll('.alloc-inp').forEach(function(i){var d=parseFloat(i.dataset.due)||0;var u=Math.min(l,d);i.value=u>0?u.toFixed(2):0;l-=u;})">⚡ Auto-link (oldest first)</button>
+        <?php endif; ?>
+      </div>
+      <?php endif; ?>
+      <div class="page-actions" style="margin-top:10px">
+        <button class="btn" type="submit">💾 Update Payment</button>
+        <a class="btn btn-outline" href="payments.php?action=view&id=<?= $id ?>">Cancel</a>
       </div>
     </form>
     <?php include __DIR__ . '/includes/footer.php'; exit;
