@@ -63,7 +63,7 @@ function wa_portal_bill_text($s) {
         $s['share_token'] = share_token();
         q('UPDATE sales SET share_token = ? WHERE id = ?', [$s['share_token'], $s['id']]);
     }
-    $due = $s['total'] - $s['paid'];
+    $due = sale_true_due($s);
     return wa_t('bill_title', ['no' => $s['invoice_no']]) . "\n📅 " . dmy($s['sale_date'])
         . "\n" . wa_t('bill_total') . " *₹" . money($s['total']) . '*'
         . ($due > 0.009 ? "\n" . wa_t('bill_due') . " *₹" . money($due) . '*' : "\n" . wa_t('bill_paid'))
@@ -163,13 +163,13 @@ function wa_portal_route($mobile, $id) {
     // ---------- bills ----------
     if ($id === 'portal:bills') {
         $w = wa_portal_sales_where($mobile, $p);
-        $bills = all("SELECT s.id, s.invoice_no, s.sale_date, s.total, s.paid FROM sales s
+        $bills = all("SELECT s.id, s.invoice_no, s.sale_date, s.total, s.paid, s.party_id FROM sales s
                       WHERE s.is_cancelled = 0 AND $w ORDER BY s.id DESC LIMIT 9", $p);
         if (!$bills) { send_whatsapp($mobile, wa_t('bills_none', ['shop' => $shop])); return 'bills-none'; }
         $rows = []; $map = []; $n = 1;
         $txt = wa_t('bills_head') . "\n";
         foreach ($bills as $b) {
-            $due = $b['total'] - $b['paid'];
+            $due = sale_true_due($b);
             $rows[] = ['id' => 'portal:bill:' . $b['id'], 'title' => wa_cat_cut($b['invoice_no'], 24),
                        'description' => wa_cat_cut(dmy($b['sale_date']) . ' · ₹' . money($b['total']) . ($due > 0.009 ? ' · ' . wa_t('due_w') . ' ₹' . money($due) : ' · ✅'), 72)];
             $map[(string)$n] = 'portal:bill:' . $b['id'];
@@ -188,7 +188,7 @@ function wa_portal_route($mobile, $id) {
         $w = wa_portal_sales_where($mobile, $p);
         $s = row("SELECT s.* FROM sales s WHERE s.id = ? AND s.is_cancelled = 0 AND $w", array_merge([(int)$m[1]], $p));
         if (!$s) { send_whatsapp($mobile, wa_t('bill_denied')); return 'bill-denied'; }
-        $due = $s['total'] - $s['paid'];
+        $due = sale_true_due($s);
         $body = wa_portal_bill_text($s);
         if ($due > 0.009) {
             require_once __DIR__ . '/wa_meta.php';
@@ -236,7 +236,7 @@ function wa_portal_route($mobile, $id) {
             $w = wa_portal_sales_where($mobile, $p);
             $s = row("SELECT s.* FROM sales s WHERE s.id = ? AND s.is_cancelled = 0 AND $w", array_merge([(int)$m[1]], $p));
             if (!$s) { send_whatsapp($mobile, wa_t('bill_denied')); return 'pay-denied'; }
-            $due = $s['total'] - $s['paid'];
+            $due = sale_true_due($s); // never over-collect a covered bill
             $ref = $s['invoice_no']; $desc = 'Invoice ' . $s['invoice_no']; $saleId = (int)$s['id'];
             $name = $s['customer_name'];
         } else {

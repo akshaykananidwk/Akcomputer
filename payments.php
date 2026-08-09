@@ -202,11 +202,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'backfill_alloc') {
 // ---------- WhatsApp reminder ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remind') {
     $s = row('SELECT s.*, c.name company_name FROM sales s JOIN companies c ON c.id = s.company_id WHERE s.id = ?', [(int)post('sale_id')]);
-    if ($s && $s['customer_mobile']) {
+    $trueDue = $s ? sale_true_due($s) : 0;
+    if ($s && $trueDue <= 0.009) {
+        flash('આ બિલનું ખરેખર કંઈ બાકી નથી (ખાતામાં પેમેન્ટ આવી ગયેલું છે) — રિમાઇન્ડર ન મોકલ્યું. "🧹 જૂના પેમેન્ટ બિલ સાથે જોડો" દબાવશો તો બિલ પણ ચૂકતે દેખાશે.', 'error');
+    } elseif ($s && $s['customer_mobile']) {
         wa_context(['kind' => 'reminder']);
         send_whatsapp($s['customer_mobile'], wa_template('reminder', [
             'firm' => $s['company_name'], 'invoice_no' => $s['invoice_no'], 'date' => dmy($s['sale_date']),
-            'due' => money($s['total'] - $s['paid']),
+            'due' => money($trueDue),
             'due_date_line' => $s['due_date'] ? 'Due date: ' . dmy($s['due_date']) . "\n" : '',
         ]));
         flash('Reminder sent on WhatsApp.');

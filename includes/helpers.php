@@ -316,6 +316,33 @@ function opening_due($party_id, $dir) {
     } catch (Exception $e) { /* pre-v53 */ }
     return max(0.0, round($base - $paid, 2));
 }
+
+/** TRUE remaining due of one sale bill: the bill's own total-paid, capped by
+ *  the party's real LEDGER balance. Unlinked payments, sales returns and
+ *  settlement discounts reduce the ledger without touching bills - money
+ *  settles oldest bill first, so the older bills absorb that covered-but-
+ *  unlinked portion and this bill only claims what is genuinely left.
+ *  Walk-in bills (no party) just use total-paid. Used by every customer-
+ *  facing due figure: payment reminders (cron + manual), the WhatsApp
+ *  portal's bill screens and its Razorpay pay links. */
+function sale_true_due(array $s) {
+    $due = round($s['total'] - $s['paid'], 2);
+    if ($due <= 0.009 || empty($s['party_id'])) return max(0.0, $due);
+    $pid = (int)$s['party_id'];
+    $bills = all("SELECT id, ROUND(total - paid, 2) d FROM sales WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0
+                  ORDER BY due_date IS NULL, due_date, id", [$pid]);
+    $sum = 0.0;
+    foreach ($bills as $b) $sum += (float)$b['d'];
+    $excess = round($sum - max(0.0, party_balance($pid)), 2);
+    if ($excess <= 0.009) return $due;
+    foreach ($bills as $b) {
+        $cut = min((float)$b['d'], $excess);
+        $excess = round($excess - $cut, 2);
+        if ((int)$b['id'] === (int)$s['id']) return max(0.0, round($b['d'] - $cut, 2));
+        if ($excess <= 0.009) break;
+    }
+    return $due;
+}
 // ---------- Staff cash wallets & internal money movements ----------
 /** How much CASH one staff member is holding right now. Every cash payment
  *  row carries created_by, so the shop's cash naturally partitions by who

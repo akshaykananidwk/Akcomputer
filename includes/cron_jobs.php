@@ -105,21 +105,26 @@ function cron_job_overdue_reminders() {
                     AND s.due_date IS NOT NULL AND s.due_date <= ?
                     AND (s.last_reminder IS NULL OR s.last_reminder <= DATE_SUB(?, INTERVAL ? DAY))
                   ORDER BY s.due_date LIMIT 30", [$today, $today, $gap]);
-    $sent = 0;
+    $sent = 0; $covered = 0;
     foreach ($bills as $s) {
+        // the message must claim only what is GENUINELY left: the bill's due
+        // capped by the party's real ledger (sale_true_due) - a fully covered
+        // bill sends nothing at all and stops being re-checked today
+        $trueDue = sale_true_due($s);
+        if ($trueDue <= 0.009) { q('UPDATE sales SET last_reminder = ? WHERE id = ?', [$today, $s['id']]); $covered++; continue; }
         $lateDays = (int)floor((strtotime($today) - strtotime($s['due_date'])) / 86400);
         $dueLine = $lateDays <= 0 ? "📅 આજે પેમેન્ટની છેલ્લી તારીખ છે!\n"
                  : '📅 Due date: ' . dmy($s['due_date']) . " — ⏰ *$lateDays દિવસ* થઈ ગયા\n";
         wa_context(['kind' => 'reminder']);
         $ok = send_whatsapp($s['customer_mobile'], wa_template('reminder', [
             'firm' => $s['company_name'], 'invoice_no' => $s['invoice_no'], 'date' => dmy($s['sale_date']),
-            'due' => money($s['total'] - $s['paid']),
+            'due' => money($trueDue),
             'due_date_line' => $dueLine,
         ]));
         if ($ok) { q('UPDATE sales SET last_reminder = ? WHERE id = ?', [$today, $s['id']]); $sent++; }
         usleep(400000);
     }
-    return 'checked ' . count($bills) . ', sent ' . $sent;
+    return 'checked ' . count($bills) . ', sent ' . $sent . ($covered ? ", already-covered $covered" : '');
 }
 
 /** Custom reminders (Reminder module): fire anything whose time arrived. */
