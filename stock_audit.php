@@ -14,6 +14,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
     $locId = (int)post('location_id');
     if (locked_location_id()) $locId = locked_location_id(); // godown/shop manager counts only their own place
     if (!$locId) { flash('Pick a location.', 'error'); redirect('stock_audit.php?action=new'); }
+    // one OPEN sheet per location: starting a second one by mistake would
+    // split the same physical count across two sheets - reuse the open one
+    $already = row("SELECT id, count_no FROM stock_counts WHERE location_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1", [$locId]);
+    if ($already) {
+        flash('આ Location નું ઓડિટ ' . $already['count_no'] . ' પહેલેથી ચાલુ છે — એ જ ખોલ્યું છે. (નવું શરૂ કરવું હોય તો પહેલા આ Post કે Cancel કરો.)', 'error');
+        redirect('stock_audit.php?action=count&id=' . $already['id']);
+    }
     $onlyLow = post('only_low') === '1';
     $includeZero = post('include_zero') === '1';
     $pdo = db();
@@ -60,6 +67,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete_count') {
         flash('ઓડિટ ' . $count['count_no'] . ' ડિલીટ થયું' . ($count['status'] === 'posted' ? ' — એના સ્ટોક-ફેરફાર પણ પાછા વાળ્યા' : '') . '.');
     }
     redirect('stock_audit.php');
+}
+
+// Change an OPEN sheet's location (staff picked the wrong one): the sheet
+// moves to the new location and every line's system qty re-snapshots from
+// THAT location's stock. Whatever was already counted stays entered.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'change_loc') {
+    require_perm('stock_audit.edit');
+    $cid = (int)post('id');
+    $count = row('SELECT * FROM stock_counts WHERE id = ?', [$cid]);
+    $newLoc = (int)post('location_id');
+    if (locked_location_id()) { flash('Location બદલવાનું ફક્ત એડમિન કરી શકે.', 'error'); redirect('stock_audit.php?action=count&id=' . $cid); }
+    if (!$count || $count['status'] !== 'open' || !$newLoc) { flash('This count is not open.', 'error'); redirect('stock_audit.php'); }
+    if ($newLoc !== (int)$count['location_id']) {
+        $pdo = db();
+        $pdo->beginTransaction();
+        q('UPDATE stock_counts SET location_id = ? WHERE id = ?', [$newLoc, $cid]);
+        foreach (all('SELECT id, item_id FROM stock_count_items WHERE count_id = ?', [$cid]) as $l) {
+            q('UPDATE stock_count_items SET system_qty = ? WHERE id = ?', [stock_qty($l['item_id'], $newLoc), $l['id']]);
+        }
+        $pdo->commit();
+        $ln = val('SELECT name FROM locations WHERE id = ?', [$newLoc]);
+        log_activity('stock_audit_change_loc', $count['count_no'] . ' -> ' . $ln);
+        flash('ઓડિટ હવે "' . $ln . '" નું છે — દરેક આઇટમની System qty એ Location પ્રમાણે ફરી લેવાઈ ગઈ. ગણેલી સંખ્યા એમની એમ છે.');
+    }
+    redirect('stock_audit.php?action=count&id=' . $cid);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_counts') {
@@ -158,7 +190,23 @@ if ($action === 'count') {
     ?>
     <div class="card">
       <h2><?= e($count['count_no']) ?> <?= status_badge($count['status']) ?></h2>
-      <p class="muted">📍 <?= e($count['loc_name']) ?> · started <?= dmyt($count['created_at']) ?><?= $count['notes'] ? ' · ' . e($count['notes']) : '' ?></p>
+      <div style="background:linear-gradient(100deg,var(--primary,#1a56db),#6D28D9);color:#fff;border-radius:12px;padding:12px 16px;margin:8px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:22px">📍</span>
+        <span style="font-size:17px;font-weight:800">તમે "<?= e($count['loc_name']) ?>" નો સ્ટોક ગણો છો</span>
+        <span style="font-size:12.5px;opacity:.85">— System qty આ Location ની જ છે; બીજી જગ્યાનો માલ આમાં ન ગણવો</span>
+        <?php if ($count['status'] === 'open' && can('stock_audit.edit') && !locked_location_id()): ?>
+        <form method="post" style="margin-left:auto;display:flex;gap:6px;align-items:center" onsubmit="return confirm('Location બદલવી? દરેક આઇટમની System qty નવી Location પ્રમાણે ફરી લેવાશે (ગણેલી સંખ્યા રહેશે).')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="change_loc"><input type="hidden" name="id" value="<?= $cid ?>">
+          <select name="location_id" style="padding:6px 8px;border-radius:8px;border:0">
+            <?php foreach (all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name') as $l): ?>
+            <option value="<?= $l['id'] ?>" <?= $l['id'] == $count['location_id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+          <button class="btn btn-sm" type="submit" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5)">બદલો</button>
+        </form>
+        <?php endif; ?>
+      </div>
+      <p class="muted">started <?= dmyt($count['created_at']) ?><?= $count['notes'] ? ' · ' . e($count['notes']) : '' ?></p>
       <?php if ($zeroCount > 0 || $showZeros): ?>
       <p class="no-print"><a class="btn btn-sm btn-outline" href="stock_audit.php?action=count&id=<?= $cid ?><?= $showZeros ? '' : '&zeros=1' ?>">
         <?= $showZeros ? '🙈 ઝીરોવાળી પાછી છુપાવો' : '👁 ઝીરો-સ્ટોકવાળી ' . $zeroCount . ' આઇટમ પણ દેખાડો' ?></a></p>
@@ -229,15 +277,25 @@ if ($action === 'count') {
 }
 
 // ---------- list ----------
-$llFilter = locked_location_id() ? ' WHERE sc.location_id = ' . locked_location_id() : '';
+$fLoc = (int)get('loc') ?: 0;
+if (locked_location_id()) $fLoc = locked_location_id();
+$llFilter = $fLoc ? ' WHERE sc.location_id = ' . $fLoc : '';
 $counts = all('SELECT sc.*, l.name loc_name, s.name staff_name FROM stock_counts sc
                JOIN locations l ON l.id = sc.location_id JOIN users s ON s.id = sc.created_by
                ' . $llFilter . ' ORDER BY sc.id DESC LIMIT 100');
+$allLocs = all('SELECT * FROM locations WHERE is_active = 1' . (locked_location_id() ? ' AND id = ' . locked_location_id() : '') . ' ORDER BY name');
 $page_title = 'Stock Audit / Cycle Counting';
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="page-actions">
   <?php if (can('stock_audit.add')): ?><a class="btn" href="stock_audit.php?action=new">+ Start Count</a><?php endif; ?>
+</div>
+<div class="filterbar mb no-print" style="flex-wrap:wrap;gap:6px">
+  <a class="btn btn-sm <?= !$fLoc ? '' : 'btn-outline' ?>" href="stock_audit.php">બધી Location</a>
+  <?php foreach ($allLocs as $l):
+      $open = row("SELECT id, count_no FROM stock_counts WHERE location_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1", [$l['id']]); ?>
+  <a class="btn btn-sm <?= $fLoc === (int)$l['id'] ? '' : 'btn-outline' ?>" href="stock_audit.php?loc=<?= $l['id'] ?>">📍 <?= e($l['name']) ?><?= $open ? ' · 🟢 ચાલુ' : '' ?></a>
+  <?php endforeach; ?>
 </div>
 <div class="table-wrap">
 <table>
