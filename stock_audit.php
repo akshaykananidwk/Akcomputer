@@ -50,6 +50,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
 // Delete a count sheet - ADMIN ONLY (cleaning up test sheets etc.). If the
 // sheet was already posted, its cycle_count stock adjustments are reversed
 // first, so deleting a test audit leaves stock exactly as before it.
+// NET effect this audit still has on stock: its cycle_count adjustments
+// minus any cycle_count_undo reversals already made (a sheet can be
+// posted, re-opened and posted again - only the net may be reversed).
+function audit_net_adjustments($cid) {
+    return all("SELECT item_id, location_id, SUM(change_qty) q FROM stock_ledger
+                WHERE ref_type IN ('cycle_count','cycle_count_undo') AND ref_id = ?
+                GROUP BY item_id, location_id HAVING ABS(SUM(change_qty)) > 0.0001", [$cid]);
+}
+
+// Un-complete (re-open) a posted audit - ADMIN ONLY. The posted stock
+// adjustments are reversed so stock is exactly as before posting, the
+// sheet goes back to OPEN with every counted qty still filled in, and
+// staff can view/edit and post again (or cancel) as if nothing happened.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reopen') {
+    if (!is_full_admin()) { flash('ઓડિટ ફરી ખોલવાનું ફક્ત એડમિન જ કરી શકે.', 'error'); redirect('stock_audit.php'); }
+    $cid = (int)post('id');
+    $count = row("SELECT * FROM stock_counts WHERE id = ? AND status = 'completed'", [$cid]);
+    if (!$count) { flash('આ ઓડિટ Completed નથી.', 'error'); redirect('stock_audit.php'); }
+    if (is_period_locked(today())) { flash(period_lock_message(), 'error'); redirect('stock_audit.php?action=count&id=' . $cid); }
+    $pdo = db();
+    $pdo->beginTransaction();
+    $undone = 0;
+    foreach (audit_net_adjustments($cid) as $n) {
+        adjust_stock($n['item_id'], $n['location_id'], -(float)$n['q'], 'cycle_count_undo', $cid, 'Audit ' . $count['count_no'] . ' re-opened');
+        $undone++;
+    }
+    q("UPDATE stock_counts SET status = 'open', completed_by = NULL, completed_at = NULL WHERE id = ?", [$cid]);
+    $pdo->commit();
+    log_activity('stock_audit_reopen', $count['count_no'] . ": $undone adjustment(s) reversed");
+    flash('ઓડિટ ' . $count['count_no'] . ' પાછું ખૂલી ગયું — ' . $undone . ' આઇટમના સ્ટોક-ફેરફાર પાછા વળ્યા, સ્ટોક પહેલા જેવો જ છે. ગણેલી સંખ્યા એમની એમ છે, સુધારીને ફરી Post કરી શકાય.');
+    redirect('stock_audit.php?action=count&id=' . $cid);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete_count') {
     if (!is_full_admin()) { flash('ઓડિટ ડિલીટ ફક્ત એડમિન જ કરી શકે.', 'error'); redirect('stock_audit.php'); }
     $cid = (int)post('id');
@@ -57,8 +90,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete_count') {
     if ($count) {
         $pdo = db();
         $pdo->beginTransaction();
-        foreach (all("SELECT * FROM stock_ledger WHERE ref_type = 'cycle_count' AND ref_id = ?", [$cid]) as $adj) {
-            adjust_stock($adj['item_id'], $adj['location_id'], -(float)$adj['change_qty'], 'cycle_count_undo', $cid, 'Audit ' . $count['count_no'] . ' deleted');
+        foreach (audit_net_adjustments($cid) as $adj) {
+            adjust_stock($adj['item_id'], $adj['location_id'], -(float)$adj['q'], 'cycle_count_undo', $cid, 'Audit ' . $count['count_no'] . ' deleted');
         }
         q('DELETE FROM stock_count_items WHERE count_id = ?', [$cid]);
         q('DELETE FROM stock_counts WHERE id = ?', [$cid]);
@@ -211,7 +244,15 @@ if ($action === 'count') {
       <p class="no-print"><a class="btn btn-sm btn-outline" href="stock_audit.php?action=count&id=<?= $cid ?><?= $showZeros ? '' : '&zeros=1' ?>">
         <?= $showZeros ? '🙈 ઝીરોવાળી પાછી છુપાવો' : '👁 ઝીરો-સ્ટોકવાળી ' . $zeroCount . ' આઇટમ પણ દેખાડો' ?></a></p>
       <?php endif; ?>
-      <?php if ($count['status'] === 'completed'): ?><p class="mt">Posted <?= dmyt($count['completed_at']) ?></p><?php endif; ?>
+      <?php if ($count['status'] === 'completed'): ?>
+      <p class="mt">Posted <?= dmyt($count['completed_at']) ?></p>
+      <?php if (is_full_admin()): ?>
+      <form method="post" class="mt no-print" onsubmit="return confirm('ઓડિટ <?= e($count['count_no']) ?> પાછું ખોલવું? Post થયેલા બધા સ્ટોક-ફેરફાર પાછા વળી જશે (સ્ટોક પહેલા જેવો), ગણેલી સંખ્યા રહેશે અને શીટ ફરી Open થશે.')">
+        <?= csrf_field() ?><input type="hidden" name="do" value="reopen"><input type="hidden" name="id" value="<?= $cid ?>">
+        <button class="btn btn-outline" type="submit">🔓 Un-complete (ફરી ખોલો)</button>
+      </form>
+      <?php endif; ?>
+      <?php endif; ?>
     </div>
 
     <?php if ($count['status'] === 'open'): ?>
