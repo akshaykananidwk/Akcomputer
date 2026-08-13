@@ -17,6 +17,38 @@
 /** Slow-moving cutoff, shared by the dead-stock card and the alerts. */
 function dash_dead_days() { return max(1, (int)setting('dead_stock_days', 90)); }
 
+// ----------------------------------------------------------------- cache ----
+
+/** A tiny result cache for dashboard sections that are expensive to compute
+ *  and do not change minute to minute.
+ *
+ *  Used sparingly and only where profiling said so - the KPIs, collection and
+ *  stock figures are computed live on every load, because an owner acting on
+ *  a stale collection number is worse than a slower page. The Data Health
+ *  sweep is the one section that genuinely does not need to be live: it runs
+ *  25 integrity queries and measured 77ms of a ~180ms page, while what it
+ *  reports (bad rows in the database) changes over days, not seconds.
+ *
+ *  Stored as one JSON settings row, so there is no new table and no migration.
+ *  dash_cache_forget() lets a screen force a fresh sweep. */
+function dash_cache($key, $ttl, callable $fn) {
+    $name = 'dashcache_' . $key;
+    $raw = setting($name, '');
+    if ($raw !== '') {
+        $hit = json_decode($raw, true);
+        if (is_array($hit) && isset($hit['at'], $hit['v']) && (time() - (int)$hit['at']) < $ttl) {
+            $hit['v']['cached_at'] = (int)$hit['at'];
+            return $hit['v'];
+        }
+    }
+    $val = $fn();
+    set_setting($name, json_encode(['at' => time(), 'v' => $val]));
+    $val['cached_at'] = time();
+    return $val;
+}
+
+function dash_cache_forget($key) { set_setting('dashcache_' . $key, ''); }
+
 // ------------------------------------------------------------ date ranges --
 
 /** The ranges the owner can pick, as [from, to, label]. */
@@ -600,8 +632,14 @@ function dash_summary(array $ctx) {
     return implode(' ', $bits);
 }
 
-/** Data Health status for the dashboard strip. Reuses the existing checks. */
-function dash_health() {
+/** Data Health status for the dashboard strip. Reuses the existing checks,
+ *  cached for 15 minutes - see dash_cache() for why this one and not the
+ *  money figures. The Data Health page itself always runs them live. */
+function dash_health($ttl = 900) {
+    return dash_cache('health', $ttl, 'dash_health_compute');
+}
+
+function dash_health_compute() {
     require_once __DIR__ . '/health.php';
     $checks = health_checks();
     $issues = [];

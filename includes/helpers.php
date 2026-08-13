@@ -78,7 +78,7 @@ function secret_setting_keys() {
 }
 function is_secret_setting($name) { return in_array($name, secret_setting_keys(), true); }
 
-function setting($name, $default = '') {
+function setting($name, $default = '', $poke = null) {
     static $cache = null;
     if ($cache === null) {
         $cache = [];
@@ -90,6 +90,10 @@ function setting($name, $default = '') {
             $cache[$r['name']] = $v;
         }
     }
+    // set_setting() calls this to keep the in-request cache honest - without
+    // it, a value written and re-read in the same request returns the stale
+    // one, which silently defeated the dashboard result cache.
+    if ($poke !== null) { $cache[$name] = $poke; return $poke; }
     return array_key_exists($name, $cache) ? $cache[$name] : $default;
 }
 function set_setting($name, $value) {
@@ -99,6 +103,7 @@ function set_setting($name, $value) {
         if ($enc !== '') $stored = SECRET_PREFIX . $enc; // openssl missing -> store as before rather than lose the key
     }
     q('INSERT INTO settings (name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)', [$name, $stored]);
+    setting($name, '', (string)$value); // keep the in-request cache in step (plaintext side)
 }
 
 /** Encrypt a backup blob in the SAME "AKENC1" container the manual
