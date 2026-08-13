@@ -1074,7 +1074,9 @@ $sales = all("SELECT s.*, c.name AS company_name, u2.name AS staff_name
               WHERE s.sale_date BETWEEN ? AND ? $scope
               ORDER BY s.id DESC LIMIT 500", array_merge([$from, $to], $params));
 $sumTotal = array_sum(array_column($sales, 'total'));
-$sumDue = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales s WHERE s.status <> 'paid' AND s.is_cancelled = 0 " . str_replace('s.created_by', 'created_by', $scope), $params);
+// status IN (...) is identical to <> 'paid' on this NOT NULL 3-value enum, and
+// lets idx_sale_status_due be used instead of scanning every bill.
+$sumDue = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales s WHERE s.status IN ('due','partial') AND s.is_cancelled = 0 " . str_replace('s.created_by', 'created_by', $scope), $params);
 $page_title = 'Sales / Billing';
 include __DIR__ . '/includes/header.php';
 ?>

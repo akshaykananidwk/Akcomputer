@@ -27,10 +27,13 @@ foreach ($sum as $title => $n) {
 }
 
 t_group('the checks catch a problem that is really there');
-// a bill that claims more than the ledger — the over-claim class of bug
+// A bill that claims more than the ledger — the over-claim class of bug.
+// The check reports the ten WORST offenders, so the fixture is deliberately
+// large: that keeps the test deterministic on a shop that already has real
+// over-claiming parties in its data.
 $p = t_party();
-$b = t_sale($p, 5000);
-t_payment($p, 4000); // paid, but never linked to the bill
+$b = t_sale($p, 9000000);
+t_payment($p, 8000000); // paid, but never linked to the bill
 $over = null;
 foreach (health_checks() as $c) if (strpos($c['t'], 'more than the ledger') !== false) $over = $c;
 t_ok('the over-claim check exists', $over !== null);

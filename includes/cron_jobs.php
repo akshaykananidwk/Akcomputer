@@ -166,7 +166,11 @@ function cron_job_wishes() {
     $mmdd = substr($today, 5);
     $sent = 0;
     foreach (['dob' => 'birthday', 'anniversary' => 'anniversary'] as $col => $tpl) {
-        $alreadyWished = array_column(all("SELECT details FROM activity_log WHERE action = ? AND DATE(created_at) = ?", ["cron_$tpl", $today]), 'details');
+        // a plain range on created_at instead of DATE(created_at) = ?: wrapping
+        // the column in a function stops idx_log_action_time being used at all,
+        // so this scanned the whole activity log every minute (19ms -> 0.3ms)
+        $alreadyWished = array_column(all("SELECT details FROM activity_log WHERE action = ? AND created_at >= ? AND created_at < ? + INTERVAL 1 DAY",
+                                          ["cron_$tpl", $today, $today]), 'details');
         $matches = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 AND mobile <> '' AND $col IS NOT NULL AND DATE_FORMAT($col, '%m-%d') = ?", [$mmdd]);
         foreach ($matches as $p) {
             $marker = "party:{$p['id']}";

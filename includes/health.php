@@ -140,6 +140,27 @@ function health_system_checks() {
     foreach (all("SELECT job who, COUNT(*) amount FROM cron_runs WHERE status='fail' AND started_at > NOW() - INTERVAL 1 DAY GROUP BY job LIMIT 5") as $f) $c[] = $f;
     $add('Automatic tasks are not running cleanly', 'Cron Manager ખોલીને જુઓ કયું કામ અટક્યું છે — રિમાઇન્ડર, બેકઅપ અને WhatsApp બધું આના પર ચાલે છે.', $c);
 
+    // indexes are what keep the shop fast as the years pile up; they arrive
+    // with a migration, so a missing one usually means Update was pressed but
+    // Migrate was not
+    $wantIdx = [
+        'payments' => ['idx_pay_date', 'idx_pay_created_date'],
+        'sale_items' => ['idx_si_item'],
+        'sales' => ['idx_sale_status_due'],
+        'activity_log' => ['idx_log_action_time'],
+        'estimates' => ['idx_est_status_date'],
+        'web_orders' => ['idx_wo_status', 'idx_wo_created', 'idx_wo_account'],
+    ];
+    $missing = [];
+    try {
+        $have = array_column(all("SELECT DISTINCT INDEX_NAME n FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE()"), 'n');
+        foreach ($wantIdx as $tbl => $idxs) {
+            foreach ($idxs as $ix) if (!in_array($ix, $have, true)) $missing[] = ['who' => "$tbl → $ix"];
+        }
+    } catch (Exception $e2) { /* no access to information_schema - skip */ }
+    $add('Database speed-up indexes are missing',
+         'આ ઇન્ડેક્સ વગર મોટા રિપોર્ટ અને પેમેન્ટની યાદી ધીમી ચાલશે. Settings → Update પછી "Migrate" પણ એક વાર દબાવો, પછી આ લિસ્ટ ખાલી થઈ જશે.', $missing);
+
     // errors the software hit recently
     $e = [];
     $logf = function_exists('error_log_path') ? error_log_path() : '';
