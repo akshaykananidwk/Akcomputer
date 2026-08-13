@@ -69,6 +69,26 @@ function dash_cache($key, $ttl, callable $fn) {
 
 function dash_cache_forget($key) { @unlink(dash_cache_file($key)); }
 
+// ------------------------------------------------------------------- UI ----
+
+/** One clickable KPI tile with its comparison arrow. Lives here rather than
+ *  in index.php because Customer 360 shows the same kind of tile, and two
+ *  copies would drift apart. Pass $now/$before to get the arrow, or leave
+ *  them null for a plain figure. */
+function dash_card($label, $value, $link, $now = null, $before = null, $tone = '', $suffix = '₹') {
+    $d = ($now === null) ? null : dash_delta($now, $before);
+    $arrow = $d === null ? '' : ($d > 0 ? '↑' : ($d < 0 ? '↓' : '→'));
+    $dTone = $d === null ? '' : ($d > 0 ? 'up' : ($d < 0 ? 'down' : ''));
+    echo '<a class="kpi ' . $tone . '" href="' . e($link) . '">'
+       . '<div class="kpi-label">' . e($label) . '</div>'
+       . '<div class="kpi-value">' . ($suffix === '₹' ? '₹' : '') . e($value) . ($suffix !== '₹' ? $suffix : '') . '</div>'
+       // no comparison to make -> an empty line, so the tiles still line up
+       // without printing a dash the reader has to decode
+       . ($d === null ? '<div class="kpi-delta">&nbsp;</div>'
+                      : '<div class="kpi-delta ' . $dTone . '">' . $arrow . ' ' . abs($d) . '%</div>')
+       . '</a>';
+}
+
 // ------------------------------------------------------------ date ranges --
 
 /** The ranges the owner can pick, as [from, to, label]. */

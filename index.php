@@ -144,18 +144,6 @@ $sActions = dash_actions($dashCtx);
 $sAlerts  = dash_alerts($dashCtx);
 $sSummary = $ctxKpis ? dash_summary($dashCtx) : '';
 
-/** One clickable KPI tile with its comparison arrow. */
-function dash_card($label, $value, $link, $now = null, $before = null, $tone = '', $suffix = '₹') {
-    $d = ($now === null) ? null : dash_delta($now, $before);
-    $arrow = $d === null ? '' : ($d > 0 ? '↑' : ($d < 0 ? '↓' : '→'));
-    $dTone = $d === null ? '' : ($d > 0 ? 'up' : ($d < 0 ? 'down' : ''));
-    echo '<a class="kpi ' . $tone . '" href="' . e($link) . '">'
-       . '<div class="kpi-label">' . e($label) . '</div>'
-       . '<div class="kpi-value">' . ($suffix === '₹' ? '₹' : '') . e($value) . ($suffix !== '₹' ? $suffix : '') . '</div>'
-       . ($d === null ? '<div class="kpi-delta muted">—</div>'
-                      : '<div class="kpi-delta ' . $dTone . '">' . $arrow . ' ' . abs($d) . '%</div>')
-       . '</a>';
-}
 
 // ---------- Customizable widgets ----------
 // Two groups so reordering can't break the layout: "top" widgets are

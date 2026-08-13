@@ -714,3 +714,79 @@ function coll_summary() {
     foreach (['outstanding', 'overdue', 'promised_today', 'collected_today'] as $k) $out[$k] = round($out[$k], 2);
     return $out;
 }
+
+// ------------------------------------------------ 360 supporting aggregates -
+
+/** What this customer likes buying: top categories, brands and products.
+ *  Three grouped queries, no per-row lookups. */
+function cust_favourites($partyId, $limit = 5) {
+    $p = [(int)$partyId];
+    return [
+        'categories' => all("SELECT COALESCE(c.name,'(કોઈ કેટેગરી નહીં)') name, c.id,
+                                    SUM(si.total) amount, SUM(si.qty) qty
+                             FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
+                             LEFT JOIN categories c ON c.id = i.category_id
+                             WHERE s.party_id = ? AND s.is_cancelled = 0
+                             GROUP BY i.category_id ORDER BY amount DESC LIMIT $limit", $p),
+        'brands' => all("SELECT COALESCE(NULLIF(i.brand,''),'(કોઈ બ્રાન્ડ નહીં)') name, SUM(si.total) amount
+                         FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
+                         WHERE s.party_id = ? AND s.is_cancelled = 0
+                         GROUP BY i.brand ORDER BY amount DESC LIMIT $limit", $p),
+        'products' => all("SELECT i.id, i.name, SUM(si.qty) qty, SUM(si.total) amount, MAX(s.sale_date) last_buy
+                           FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
+                           WHERE s.party_id = ? AND s.is_cancelled = 0
+                           GROUP BY si.item_id ORDER BY amount DESC LIMIT $limit", $p),
+    ];
+}
+
+/** Service history counts, each gated by the permission that owns that module. */
+function cust_service($partyId) {
+    $p = [(int)$partyId];
+    $out = ['repairs' => 0, 'repairs_open' => 0, 'last_repair' => null,
+            'warranty' => 0, 'warranty_open' => 0, 'amc' => 0, 'amc_active' => 0, 'amc_next' => null];
+    if (can('repairs.view')) {
+        $r = row("SELECT COUNT(*) n, SUM(status NOT IN ('delivered','returned_unrepaired')) open, MAX(received_date) last
+                  FROM repairs WHERE party_id = ?", $p);
+        $out['repairs'] = (int)$r['n']; $out['repairs_open'] = (int)$r['open']; $out['last_repair'] = $r['last'];
+    }
+    if (can('warranty.view')) {
+        $w = row("SELECT COUNT(*) n, SUM(status NOT IN ('delivered','rejected')) open FROM warranty_claims WHERE party_id = ?", $p);
+        $out['warranty'] = (int)$w['n']; $out['warranty_open'] = (int)$w['open'];
+    }
+    if (can('amc.view')) {
+        $a = row("SELECT COUNT(*) n, SUM(status = 'active') act, MIN(CASE WHEN status='active' THEN next_bill_date END) nxt
+                  FROM amc_contracts WHERE party_id = ?", $p);
+        $out['amc'] = (int)$a['n']; $out['amc_active'] = (int)$a['act']; $out['amc_next'] = $a['nxt'];
+    }
+    return $out;
+}
+
+/** How this customer engages with the shop outside of buying. */
+function cust_engagement($partyId) {
+    $p = row('SELECT mobile FROM parties WHERE id = ?', [(int)$partyId]);
+    $mob = $p['mobile'] ?? '';
+    $out = ['quotes' => 0, 'quotes_open' => 0, 'orders' => 0, 'reviews' => 0,
+            'loyalty' => 0, 'wa_msgs' => 0, 'wa_last' => null];
+    if (can('estimates.view')) {
+        $e = row("SELECT COUNT(*) n, SUM(status='open') o FROM estimates WHERE party_id = ?", [(int)$partyId]);
+        $out['quotes'] = (int)$e['n']; $out['quotes_open'] = (int)$e['o'];
+    }
+    if ($mob) {
+        if (can('weborders.view'))
+            $out['orders'] = (int)val("SELECT COUNT(*) FROM web_orders WHERE mobile = ?", [$mob]);
+        $out['reviews'] = (int)val("SELECT COUNT(*) FROM product_reviews WHERE mobile = ?", [$mob]);
+        $wa = row("SELECT COUNT(*) n, MAX(created_at) last FROM wa_chats WHERE mobile LIKE ?", ['%' . preg_replace('/\D/', '', $mob)]);
+        $out['wa_msgs'] = (int)$wa['n']; $out['wa_last'] = $wa['last'];
+    }
+    try { $out['loyalty'] = (int)val("SELECT COALESCE(SUM(points),0) FROM loyalty_ledger WHERE party_id = ?", [(int)$partyId]); }
+    catch (Exception $e) { /* loyalty not in use */ }
+    return $out;
+}
+
+/** The collection follow-up trail for one customer, newest first - so staff
+ *  can see at a glance that somebody already rang this person yesterday. */
+function cust_events($partyId, $limit = 30) {
+    return all("SELECT e.*, u.name staff FROM collection_events e
+                LEFT JOIN users u ON u.id = e.created_by
+                WHERE e.party_id = ? ORDER BY e.id DESC LIMIT " . (int)$limit, [(int)$partyId]);
+}

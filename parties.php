@@ -220,6 +220,7 @@ if ($action === 'ledger' && $id) {
             <button class="btn btn-sm btn-wa" type="submit">📲 Statement WhatsApp</button>
           </form>
           <?php endif; ?>
+          <a class="btn btn-sm btn-outline" href="customer.php?id=<?= $p['id'] ?>">👤 Customer 360</a>
           <?php if (can('parties.edit')): ?><a class="btn btn-sm btn-outline" href="parties.php?action=edit&id=<?= $p['id'] ?>">✏️ Edit</a><?php endif; ?>
           <?php if (can('parties.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Delete this party? If it has transactions, it will just be made inactive.')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
         </span>
