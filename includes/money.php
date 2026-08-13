@@ -173,6 +173,17 @@ function money_cap_bill_dues(array $bills, $dir) {
     return array_values(array_filter($bills, fn($b) => money_r($b['adj_due'] ?? ($b['total'] - $b['paid'])) > MONEY_EPS));
 }
 
+// ----------------------------------------------------------------- cost ----
+
+/** The cost side of gross profit, as SQL. A service line carries its own
+ *  cost_price; a product line uses the cost captured on the bill when there is
+ *  one, and falls back to the item's purchase price otherwise. Expects
+ *  sale_items aliased si and items aliased i. Used by the profit reports, the
+ *  P&L and the dashboard, so all three agree. */
+function profit_cost_sql() {
+    return "si.qty * IF(i.item_type = 'service', si.cost_price, IF(si.cost_price > 0, si.cost_price, i.purchase_price))";
+}
+
 // ------------------------------------------------------------ settlement ---
 
 /** Applies $amount to a party's unpaid bills, OLDEST FIRST, updating each

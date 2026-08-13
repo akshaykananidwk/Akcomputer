@@ -9,9 +9,8 @@
 // captured at sale time, but a SERVICE line's cost is ONLY what was entered
 // on that bill - a one-off outside-repair purchase must never become the
 // standing "cost" of every future bill of that service item.
-function profit_cost_sql() {
-    return "si.qty * IF(i.item_type = 'service', si.cost_price, IF(si.cost_price > 0, si.cost_price, i.purchase_price))";
-}
+// profit_cost_sql() moved to includes/money.php (unchanged) so the dashboard
+// can use the same verified cost formula without loading this whole file.
 
 // ---------------- business report (P&L) ----------------
 if ($r === 'business' && can('reports.profit')) {
@@ -476,16 +475,12 @@ if ($r === 'aging') {
     foreach ($byParty as $key => $bills) {
         $pid = (int)$bills[0]['party_id'];
         if ($pid) {
+            // same oldest-first ledger cap the Payments list and every reminder
+            // use - money_trim_dues() in includes/money.php is the one copy
             $sumDue = 0;
             foreach ($bills as $b) $sumDue += (float)$b['due'];
-            try { $ledger = party_balance($pid); } catch (Exception $e) { $ledger = $sumDue; }
-            $knock = $sumDue - max(0, $ledger); // money already received but not linked to bills
-            foreach ($bills as $i => $b) {
-                if ($knock <= 0.009) break;
-                $cut = min((float)$b['due'], $knock);
-                $bills[$i]['due'] = (float)$b['due'] - $cut;
-                $knock -= $cut;
-            }
+            try { $cap = party_balance_side($pid, 'in'); } catch (Exception $e) { $cap = $sumDue; }
+            foreach (money_trim_dues(array_column($bills, 'due'), $cap) as $i => $adj) $bills[$i]['due'] = $adj;
         }
         foreach ($bills as $x) {
             if ((float)$x['due'] <= 0.009) continue;
