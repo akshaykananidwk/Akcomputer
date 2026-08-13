@@ -303,6 +303,18 @@ if (get('do') === 'backup' || post('do') === 'backup') {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_backup_auto') {
+    require_perm('settings.edit');
+    set_setting('backup_passphrase', post('backup_passphrase'));
+    set_setting('backup_telegram', post('backup_telegram') ? '1' : '0');
+    set_setting('error_alerts', post('error_alerts') ? '1' : '0');
+    log_activity('settings_save', 'auto backup + error alerts');
+    flash(post('backup_passphrase') !== ''
+        ? '✅ સેવ થયું — હવેથી રોજનું બેકઅપ લોક થઈને (encrypted) બનશે.'
+        : '✅ સેવ થયું — પાસફ્રેઝ ખાલી છે, એટલે બેકઅપ ફાઈલ Telegram પર નહીં મોકલાય (સર્વર પર સેવ થશે).');
+    redirect('settings.php?cat=backup');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'backup_decrypt') {
     require_perm('settings.edit');
     if (empty($_FILES['encfile']['tmp_name']) || $_FILES['encfile']['error'] !== UPLOAD_ERR_OK) {
@@ -1053,6 +1065,33 @@ exit;
     <div><label>Passphrase (optional)</label><input type="password" name="passphrase" placeholder="leave blank for plain .sql"></div>
     <button class="btn btn-outline" type="submit">⬇ Download backup</button>
   </form>
+</div>
+
+<div class="card">
+  <h3>🔐 રોજનું ઓટોમેટિક બેકઅપ</h3>
+  <p class="muted mb">રોજનું બેકઅપ આખા ધંધાની નકલ છે — ગ્રાહકો, ભાવ, પાસવર્ડ, બધું. અહીં પાસફ્રેઝ નાખશો એટલે એ ફાઈલ <strong>લોક (AES-256)</strong> થઈને સેવ થશે અને તો જ Telegram પર મોકલાશે. પાસફ્રેઝ વગર ફાઈલ સર્વર પર જ રહે છે અને Telegram પર ફક્ત જાણ જાય છે — ખુલ્લી ફાઈલ ક્યારેય નહીં મોકલાય.</p>
+  <p class="muted mb"><strong>પાસફ્રેઝ સાચવીને રાખજો</strong> — એના વગર બેકઅપ ખૂલશે નહીં (ઉપરના "Decrypt a backup file" થી ખૂલે છે).</p>
+  <form method="post" action="settings.php" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_backup_auto">
+    <div><label>બેકઅપ પાસફ્રેઝ <span class="muted" style="font-weight:normal">(ખાલી = Telegram પર ફાઈલ નહીં)</span></label>
+      <input type="text" name="backup_passphrase" value="<?= e(setting('backup_passphrase')) ?>" placeholder="દા.ત. AkC-2026-Backup!"></div>
+    <label class="check-inline"><input type="checkbox" name="backup_telegram" value="1" <?= setting('backup_telegram', '1') === '1' ? 'checked' : '' ?>> એન્ક્રિપ્ટેડ ફાઈલ Telegram પર મોકલો</label>
+    <label class="check-inline"><input type="checkbox" name="error_alerts" value="1" <?= setting('error_alerts', '1') === '1' ? 'checked' : '' ?>> 🚨 ભૂલ (error) આવે તો Telegram પર તરત જાણ કરો</label>
+    <button class="btn" type="submit">Save</button>
+  </form>
+  <?php $elog = dirname(__FILE__) . '/uploads/logs/error.log';
+        $eSize = is_file($elog) ? filesize($elog) : 0;
+        $eLast = [];
+        if ($eSize > 0) { $lines = @file($elog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []; $eLast = array_slice($lines, -8); } ?>
+  <h4 class="mt">🩺 Error log <span class="muted" style="font-weight:normal">(<?= $eSize ? round($eSize / 1024, 1) . ' KB' : 'ખાલી — કોઈ ભૂલ નથી ✅' ?>)</span></h4>
+  <?php if ($eLast): ?>
+  <div class="table-wrap" style="box-shadow:none"><table class="table-sm"><tbody>
+    <?php foreach (array_reverse($eLast) as $ln): ?>
+    <tr><td style="font-size:12px;font-family:monospace;word-break:break-all"><?= e(mb_substr($ln, 0, 300)) ?></td></tr>
+    <?php endforeach; ?>
+  </tbody></table></div>
+  <?php endif; ?>
 </div>
 
 <div class="card">

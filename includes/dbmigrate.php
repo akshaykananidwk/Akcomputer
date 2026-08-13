@@ -47,6 +47,8 @@ function run_all_migrations() {
         $totals['applied'] += $a; $totals['already'] += $al; $totals['failed'] += $f;
     }
     set_setting('db_last_migrated', date('Y-m-d H:i:s'));
-    log_activity('db_migrate', "applied={$totals['applied']} already={$totals['already']} failed={$totals['failed']}");
-    return ['totals' => $totals, 'log' => $log];
+    // encrypt any API keys still sitting in the settings table as plaintext
+    $enc = function_exists('secrets_encrypt_existing') ? secrets_encrypt_existing() : 0;
+    log_activity('db_migrate', "applied={$totals['applied']} already={$totals['already']} failed={$totals['failed']} secrets_encrypted=$enc");
+    return ['totals' => $totals, 'log' => $log, 'secrets_encrypted' => $enc];
 }

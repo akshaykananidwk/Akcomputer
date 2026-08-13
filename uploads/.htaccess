@@ -2,6 +2,19 @@
 <FilesMatch "\.(php|phtml|php3|php4|php5|pl|py|cgi|sh)$">
   Require all denied
 </FilesMatch>
+# error logs and database backups are never web-readable
+<FilesMatch "\.(log|sql|gz|enc)$">
+  Require all denied
+</FilesMatch>
 <IfModule mod_php.c>
   php_flag engine off
+</IfModule>
+# anything that a browser could execute as a document in our origin is
+# handed over as a download instead of being rendered (old SVG logos
+# uploaded before the raster-only rule, stray html/xml)
+<IfModule mod_headers.c>
+  <FilesMatch "\.(svg|svgz|html?|xht|xml)$">
+    Header set Content-Disposition "attachment"
+    Header set X-Content-Type-Options "nosniff"
+  </FilesMatch>
 </IfModule>

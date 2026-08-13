@@ -9,7 +9,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $logo = post('old_logo');
     if (!empty($_FILES['logo']['tmp_name'])) {
         $ext = strtolower(pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION));
-        if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'svg'])) {
+        // raster only - an SVG logo can carry <script> and would run in our
+        // own origin the moment anyone opens the uploaded file directly
+        if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
             if (!is_dir(__DIR__ . '/uploads')) mkdir(__DIR__ . '/uploads', 0755, true);
             $logo = 'uploads/logo_' . time() . '.' . $ext;
             move_uploaded_file($_FILES['logo']['tmp_name'], __DIR__ . '/' . $logo);

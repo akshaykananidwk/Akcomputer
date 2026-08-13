@@ -22,6 +22,22 @@ Options -Indexes
   RewriteRule ^terms/?$ terms.php [L]
 </IfModule>
 
+# Security response headers. No Content-Security-Policy yet: the app still
+# uses inline onclick handlers in several screens, so a strict CSP would
+# break them - that is tracked as a later cleanup.
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "geolocation=(self), microphone=(), payment=()"
+  # HSTS only on HTTPS responses (harmless on http, browsers ignore it there)
+  Header always set Strict-Transport-Security "max-age=15552000" env=HTTPS
+  # uploaded files are never rendered as a document in our origin
+  <FilesMatch "\.(svg|xml|html?)$">
+    Header set X-Content-Type-Options "nosniff"
+  </FilesMatch>
+</IfModule>
+
 # compress text responses (page speed = ranking factor)
 <IfModule mod_deflate.c>
   AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json application/xml image/svg+xml

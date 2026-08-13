@@ -39,6 +39,9 @@ function gemini_generate(array $parts, $timeout = 45, $forceJson = false) {
         }
         if (!$isPaid) $freeErr = $err;
     }
+    // both keys exhausted / API down - recorded so Cost Analytics and the
+    // error log show WHY AI features went quiet (no alert: AI is optional)
+    if (function_exists('app_error')) app_error('ai', 'gemini_generate failed: ' . (string)$err, 'ai.php', false);
     return [null, $err];
 }
 

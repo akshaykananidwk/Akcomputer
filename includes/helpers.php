@@ -62,16 +62,73 @@ function csrf_check() {
 }
 
 // ---------- Settings ----------
+// Third-party credentials are encrypted at rest (AES-256 via the same
+// vault_encrypt/vault_decrypt pair the site-credential vault uses), so a
+// database dump - including the nightly backup - never carries a usable
+// live key. Encryption and decryption happen INSIDE setting()/set_setting(),
+// which is why no call site changed: every existing setting('meta_wa_token')
+// keeps returning the plain token. Values stored before this change stay
+// readable and are upgraded in place by secrets_encrypt_existing().
+const SECRET_PREFIX = 'enc:v1:';
+
+function secret_setting_keys() {
+    return ['meta_wa_token', 'razorpay_key_secret', 'razorpay_webhook_secret', 'gemini_api_key',
+            'gemini_api_key_paid', 'wa_api_key', 'tg_bot_token', 'ocr_api_key', 'google_cse_key',
+            'smtp_pass', 'wa_session_id', 'backup_passphrase'];
+}
+function is_secret_setting($name) { return in_array($name, secret_setting_keys(), true); }
+
 function setting($name, $default = '') {
     static $cache = null;
     if ($cache === null) {
         $cache = [];
-        foreach (all('SELECT name, value FROM settings') as $r) $cache[$r['name']] = $r['value'];
+        foreach (all('SELECT name, value FROM settings') as $r) {
+            $v = $r['value'];
+            if (is_string($v) && strncmp($v, SECRET_PREFIX, strlen(SECRET_PREFIX)) === 0) {
+                $v = vault_decrypt(substr($v, strlen(SECRET_PREFIX)));
+            }
+            $cache[$r['name']] = $v;
+        }
     }
     return array_key_exists($name, $cache) ? $cache[$name] : $default;
 }
 function set_setting($name, $value) {
-    q('INSERT INTO settings (name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)', [$name, $value]);
+    $stored = (string)$value;
+    if (is_secret_setting($name) && $stored !== '') {
+        $enc = vault_encrypt($stored);
+        if ($enc !== '') $stored = SECRET_PREFIX . $enc; // openssl missing -> store as before rather than lose the key
+    }
+    q('INSERT INTO settings (name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)', [$name, $stored]);
+}
+
+/** Encrypt a backup blob in the SAME "AKENC1" container the manual
+ *  Settings download and its decrypt tool already use, so one file format
+ *  and one decrypt path serve both. Returns the raw encrypted bytes. */
+function backup_encrypt($sql, $passphrase) {
+    $salt = random_bytes(16);
+    $iv = random_bytes(16);
+    $key = hash_pbkdf2('sha256', $passphrase, $salt, 100000, 32, true);
+    $cipher = openssl_encrypt($sql, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
+    return $cipher === false ? '' : "AKENC1" . $salt . $iv . $cipher;
+}
+
+/** One-time upgrade of secrets already sitting in the table as plaintext.
+ *  Idempotent and cheap (skips anything already encrypted); called by the
+ *  migration runner and by the cron housekeeping job. */
+function secrets_encrypt_existing() {
+    $n = 0;
+    foreach (secret_setting_keys() as $k) {
+        try {
+            $raw = val('SELECT value FROM settings WHERE name = ?', [$k]);
+            if ($raw === null || $raw === '' ) continue;
+            if (strncmp($raw, SECRET_PREFIX, strlen(SECRET_PREFIX)) === 0) continue; // already done
+            $enc = vault_encrypt($raw);
+            if ($enc === '') continue;
+            q('UPDATE settings SET value = ? WHERE name = ?', [SECRET_PREFIX . $enc, $k]);
+            $n++;
+        } catch (Exception $e) { /* never block a page over this */ }
+    }
+    return $n;
 }
 
 // ---------- Per-user preferences (theme, dashboard layout, etc.) ----------

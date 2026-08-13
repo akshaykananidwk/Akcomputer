@@ -6,7 +6,7 @@ header('Content-Type: application/json');
 
 $a = get('a');
 
-if ($a === 'item_search') {
+if ($a === 'item_search' && can('items.view')) {
     $loc = (int)get('loc');
     // Word-wise matching: every typed word must appear SOMEWHERE in the item's
     // name/brand/model/barcode, in any order. So for "Ultra HD Gaming Monitor
@@ -52,7 +52,9 @@ if ($a === 'item_search') {
     exit;
 }
 
-if ($a === 'last_price') {
+// a customer's past price is commercial information - same gate as the
+// sale screens that show it
+if ($a === 'last_price' && can('sales.view')) {
     // "what did THIS customer pay for THIS item last time" - shown as a
     // persistent line under the picked item on the bill screen
     $lpItem = (int)get('item_id');
@@ -63,7 +65,7 @@ if ($a === 'last_price') {
     exit;
 }
 
-if ($a === 'serials') {
+if ($a === 'serials' && can('items.view')) {
     // available serial numbers of item at a location - when editing a bill
     // (sale_id given), also include this item's serials already sold on
     // THIS bill (status='sold'), so they stay pickable/keepable while editing
@@ -81,7 +83,7 @@ if ($a === 'serials') {
     exit;
 }
 
-if ($a === 'staff_serials') {
+if ($a === 'staff_serials' && can('items.view')) {
     // serials held by the logged-in staff
     $item_id = (int)get('item_id');
     $sns = all("SELECT serial_no FROM item_serials WHERE item_id = ? AND user_id = ? AND status = 'with_staff' ORDER BY serial_no", [$item_id, current_user()['id']]);
@@ -123,7 +125,9 @@ if ($a === 'party_bills' && can('payments.view')) {
     exit;
 }
 
-if ($a === 'serial_lookup') {
+// returns the buyer's name/mobile with the warranty chain - warranty or
+// sales permission required, not merely being logged in
+if ($a === 'serial_lookup' && (can('warranty.view') || can('sales.view'))) {
     // warranty check by serial number + full history chain
     $sn = get('sn');
     $r = row("SELECT isr.*, i.name AS item_name, s.invoice_no, s.sale_date, s.customer_name, s.customer_mobile
@@ -214,4 +218,8 @@ if ($a === 'global_search') {
     exit;
 }
 
-echo json_encode(['error' => 'Unknown action']);
+// No handler matched: either an unknown action, or the caller lacks the
+// permission its handler now requires. Fail closed with 403 so a missing
+// permission is visible instead of looking like an empty result.
+http_response_code(403);
+echo json_encode(['error' => 'Forbidden or unknown action']);

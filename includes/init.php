@@ -13,11 +13,19 @@ require_once $configFile;
 date_default_timezone_set(defined('APP_TZ') ? APP_TZ : 'Asia/Kolkata');
 
 session_name('akcsess');
-session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
+// 'secure' is set only when the request actually arrived over HTTPS, so a
+// local/http install still logs in while the live site never leaks its
+// session cookie over a plain-HTTP request. Proxy/CDN setups terminate TLS
+// upstream and tell us through X-Forwarded-Proto.
+$_isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+    || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')
+    || (int)($_SERVER['SERVER_PORT'] ?? 0) === 443;
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax', 'secure' => $_isHttps]);
 session_start();
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/errors.php'; // capture + alert (needs setting()/tg from helpers)
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/whatsapp.php';

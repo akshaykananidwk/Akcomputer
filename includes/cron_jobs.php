@@ -85,6 +85,7 @@ function cron_run_all(array $only = [], $force = false) {
             $err = $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine();
             if ($runId) q("UPDATE cron_runs SET finished_at = NOW(), status = 'fail', detail = ? WHERE id = ?", [mb_substr($err, 0, 500), $runId]);
             try { q('INSERT INTO activity_log (user_id, action, details) VALUES (NULL, ?, ?)', ['cron_fail', mb_substr("$id: $err", 0, 400)]); } catch (Exception $e2) {}
+            if (function_exists('app_error')) app_error('cron', "job '$id' failed: $err", 'cron_jobs.php');
             $out[] = ['job' => $id, 'status' => 'fail', 'detail' => $err];
         }
     }
@@ -246,20 +247,53 @@ function cron_job_auto_backup() {
     set_setting('auto_backup_last', $today);
     $bkDir = dirname(__DIR__) . '/uploads/backups';
     if (!is_dir($bkDir)) mkdir($bkDir, 0755, true);
-    $bkFile = $bkDir . '/backup_' . date('Ymd') . '.sql.gz';
-    file_put_contents($bkFile, gzencode(db_backup_sql(), 6));
-    $old = glob($bkDir . '/backup_*.sql.gz');
-    rsort($old);
-    foreach (array_slice($old, 7) as $f) @unlink($f);
-    $tgSent = 0;
+
+    // The dump carries EVERYTHING - customers, prices, password hashes and
+    // (until they were encrypted) API keys - so it is AES-256 encrypted
+    // whenever a passphrase is set in Settings > Backup, using the same
+    // AKENC1 container the manual download and its decrypt tool use.
+    $pass = (string)setting('backup_passphrase', '');
+    $sql = db_backup_sql();
+    if ($pass !== '') {
+        $blob = backup_encrypt($sql, $pass);
+        $ext = '.sql.enc';
+    } else {
+        $blob = gzencode($sql, 6);
+        $ext = '.sql.gz';
+    }
+    $bkFile = $bkDir . '/backup_' . date('Ymd') . $ext;
+    file_put_contents($bkFile, $blob);
+    foreach (['.sql.gz', '.sql.enc'] as $e) {
+        $old = glob($bkDir . '/backup_*' . $e);
+        rsort($old);
+        foreach (array_slice($old, 7) as $f) @unlink($f);
+    }
+
+    // Sending the file itself to Telegram puts the whole business in a chat
+    // history. Encrypted backups may be attached; an UNENCRYPTED one never
+    // is - admins get a notice telling them where it is and how to turn
+    // encryption on. Settings > Backup can also switch attachments off.
+    $tgSent = 0; $mode = 'not sent';
+    $attach = $pass !== '' && setting('backup_telegram', '1') === '1';
     if (setting('tg_bot_token', '') !== '') {
         foreach (tg_admin_chats() as $chat) {
-            $r = tg_call('sendDocument', ['chat_id' => $chat, 'document' => new CURLFile($bkFile, 'application/gzip', basename($bkFile)),
-                                          'caption' => '🗄 ' . setting('app_name', 'AK Computer') . ' daily backup ' . dmy($today)], true);
+            if ($attach) {
+                $r = tg_call('sendDocument', ['chat_id' => $chat, 'document' => new CURLFile($bkFile, 'application/octet-stream', basename($bkFile)),
+                                              'caption' => '🗄 ' . setting('app_name', 'AK Computer') . ' daily backup ' . dmy($today) . ' (encrypted)'], true);
+                $mode = 'encrypted attachment';
+            } else {
+                $note = "🗄 " . setting('app_name', 'AK Computer') . " daily backup " . dmy($today) . "\n"
+                      . basename($bkFile) . ' · ' . round(filesize($bkFile) / 1024) . " KB\n"
+                      . ($pass === ''
+                          ? "⚠️ બેકઅપ ફાઈલ અહીં નથી મોકલી — એ ખુલ્લી (unencrypted) છે.\nSettings → Backup માં પાસફ્રેઝ નાખો એટલે એન્ક્રિપ્ટ થઈને અહીં આવશે."
+                          : "Attachment off in Settings → Backup.");
+                $r = tg_call('sendMessage', ['chat_id' => $chat, 'text' => $note]);
+                $mode = $pass === '' ? 'notice only (no passphrase set)' : 'notice only (attachment off)';
+            }
             if ($r['ok'] ?? false) $tgSent++;
         }
     }
-    return basename($bkFile) . ' (' . round(filesize($bkFile) / 1024) . ' KB), Telegram → ' . $tgSent . ' admin(s)';
+    return basename($bkFile) . ' (' . round(filesize($bkFile) / 1024) . ' KB), Telegram: ' . $mode . ' → ' . $tgSent . ' admin(s)';
 }
 
 /** Weekly data-health auto-run; owner hears about it only when wrong. */
@@ -290,5 +324,10 @@ function cron_job_housekeeping() {
     $wh = q('DELETE FROM webhook_deliveries WHERE created_at < DATE_SUB(?, INTERVAL 30 DAY)', [today()])->rowCount();
     $cr = 0;
     try { $cr = q('DELETE FROM cron_runs WHERE started_at < DATE_SUB(NOW(), INTERVAL 30 DAY)')->rowCount(); } catch (Exception $e) {}
-    return "trimmed $wh webhook + $cr cron rows";
+    // safety net: encrypt any secret that reached the settings table as
+    // plaintext (e.g. an install that updated code but never hit Migrate)
+    $sec = function_exists('secrets_encrypt_existing') ? secrets_encrypt_existing() : 0;
+    // error log rotation - keep the file bounded on shared hosting
+    $rot = function_exists('error_log_rotate') ? error_log_rotate() : 0;
+    return "trimmed $wh webhook + $cr cron rows" . ($sec ? ", encrypted $sec secret(s)" : '') . ($rot ? ', rotated error log' : '');
 }

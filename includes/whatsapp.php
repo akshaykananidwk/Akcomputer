@@ -83,7 +83,8 @@ function wa_send_thirdparty($mobile, $message, $media_url = '') {
         curl_close($ch);
         $ok = wa_interpret_response($resp, $httpCode);
         if ($ok) api_usage_log('whatsapp', 'gateway', 0, 1); // own recharge - counted, not costed
-        else log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
+        else { log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
+               if (function_exists('app_error')) app_error('whatsapp', 'send failed to ' . $number . ': ' . whatsapp_last_error(), 'whatsapp.php'); }
         return $ok;
     }
     $ctx = stream_context_create(['http' => ['timeout' => 20, 'ignore_errors' => true]]);
@@ -91,7 +92,8 @@ function wa_send_thirdparty($mobile, $message, $media_url = '') {
     $httpCode = 200;
     if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) $httpCode = (int)$m[1];
     $ok = wa_interpret_response($resp, $httpCode);
-    if (!$ok) log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
+    if (!$ok) { log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
+                if (function_exists('app_error')) app_error('whatsapp', 'send failed to ' . $number . ': ' . whatsapp_last_error(), 'whatsapp.php'); }
     return $ok;
 }
 
@@ -114,6 +116,7 @@ function send_whatsapp($mobile, $message, $media_url = '') {
             if (meta_wa_send($mobile, $message, $media_url)) { $sent = true; break; }
             $errs[] = 'Meta: ' . whatsapp_last_error();
             log_activity('whatsapp_send_fail', mb_substr('meta ' . wa_normalize_number($mobile) . ': ' . whatsapp_last_error(), 0, 400));
+            if (function_exists('app_error')) app_error('whatsapp', 'meta send failed to ' . wa_normalize_number($mobile) . ': ' . whatsapp_last_error(), 'whatsapp.php');
         } else {
             if (!wa_thirdparty_configured()) { $errs[] = 'Gateway: not configured'; continue; }
             if (wa_send_thirdparty($mobile, $message, $media_url)) { $sent = true; break; }

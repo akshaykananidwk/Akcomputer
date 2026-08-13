@@ -20,6 +20,7 @@ header('Content-Type: text/plain');
 
 if (!$secret || !$sig || !hash_equals(hash_hmac('sha256', $raw, $secret), $sig)) {
     log_activity('razorpay_webhook_reject', $secret ? 'bad signature' : 'webhook secret not configured');
+    if (function_exists('app_error')) app_error('razorpay', $secret ? 'webhook rejected: bad signature' : 'webhook rejected: secret not configured', 'razorpay_webhook.php');
     exit('ignored');
 }
 
