@@ -42,6 +42,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'send_aging_reminder
 }
 
 // Bulk: send a WhatsApp reminder to every party ticked on the Aging report.
+// Bulk reminders go out to real customers and cost real money, so nothing is
+// sent until the owner has seen WHO gets it, WHAT it says and WHAT it costs.
+// This step only renders - it sends nothing.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'preview_aging_bulk' && can('payments.view')) {
+    $picked = [];
+    $total = 0.0;
+    foreach (post('rem', []) as $val) {
+        list($mobile, $amountRaw, $pname) = array_pad(explode('|', (string)$val, 3), 3, '');
+        $mobile = trim($mobile);
+        $amount = (float)$amountRaw;
+        if (!$mobile || $amount <= 0.009) continue;
+        $picked[] = ['raw' => $val, 'mobile' => $mobile, 'amount' => $amount, 'name' => $pname];
+        $total += $amount;
+    }
+    $shopName = setting('app_name', 'AK Computer');
+    $rate = (float)setting('wa_cost_per_msg', 0);
+    $sample = $picked ? wa_template('aging_reminder', [
+        'amount' => money($picked[0]['amount']), 'shop' => $shopName, 'customer' => $picked[0]['name'],
+    ]) : '';
+    $page_title = 'રિમાઇન્ડર મોકલતાં પહેલાં';
+    include __DIR__ . '/includes/header.php';
+    ?>
+    <div class="card">
+      <h2>📲 રિમાઇન્ડર મોકલતાં પહેલાં એક વાર જોઈ લો</h2>
+      <?php if (!$picked): ?>
+        <p class="muted">એકેય ગ્રાહક પસંદ થયો નથી, અથવા પસંદ કરેલા ગ્રાહકોનો મોબાઇલ નંબર નથી.</p>
+        <a class="btn btn-outline" href="reports.php?r=aging">← પાછા જાઓ</a>
+      <?php else: ?>
+      <div class="grid-stats">
+        <div class="stat"><div class="stat-label">કેટલા ગ્રાહકને</div><div class="stat-value"><?= count($picked) ?></div></div>
+        <div class="stat s-bad"><div class="stat-label">કુલ ઉઘરાણી</div><div class="stat-value">₹<?= money($total) ?></div></div>
+        <div class="stat <?= $rate > 0 ? 's-warn' : '' ?>"><div class="stat-label">અંદાજિત ખર્ચ</div>
+          <div class="stat-value"><?= $rate > 0 ? '₹' . money($rate * count($picked)) : '—' ?></div></div>
+        <div class="stat"><div class="stat-label">એક મેસેજનો ભાવ</div>
+          <div class="stat-value"><?= $rate > 0 ? '₹' . money($rate) : '—' ?></div></div>
+      </div>
+      <?php if ($rate <= 0): ?>
+      <p class="muted mb">ખર્ચ બતાવવા માટે <a href="settings.php?cat=whatsapp">Settings → WhatsApp</a> માં "એક મેસેજનો ખર્ચ" ભરો.</p>
+      <?php endif; ?>
+
+      <h3>મેસેજ આવો જશે</h3>
+      <p class="muted" style="font-size:12px">દરેક ગ્રાહકને એમનું પોતાનું નામ અને એમની પોતાની રકમ સાથે જશે. નીચે <strong><?= e($picked[0]['name']) ?></strong> નો નમૂનો છે.</p>
+      <pre style="white-space:pre-wrap;background:var(--bg);padding:12px;border-radius:10px;font-family:inherit;font-size:14px"><?= e($sample) ?></pre>
+
+      <h3>આ ગ્રાહકોને જશે</h3>
+      <div class="table-wrap"><table class="table-sm">
+        <thead><tr><th>ગ્રાહક</th><th>મોબાઇલ</th><th class="num">બાકી ₹</th></tr></thead>
+        <tbody>
+        <?php foreach ($picked as $p): ?>
+          <tr><td><?= e($p['name']) ?></td><td><?= e($p['mobile']) ?></td><td class="num">₹<?= money($p['amount']) ?></td></tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table></div>
+
+      <form method="post" class="mt" onsubmit="this.querySelector('button').disabled=true">
+        <?= csrf_field() ?>
+        <input type="hidden" name="do" value="send_aging_bulk">
+        <?php foreach ($picked as $p): ?><input type="hidden" name="rem[]" value="<?= e($p['raw']) ?>"><?php endforeach; ?>
+        <button class="btn btn-wa" type="submit">✅ હા, <?= count($picked) ?> ગ્રાહકને મોકલો</button>
+        <a class="btn btn-outline" href="reports.php?r=aging">રહેવા દો</a>
+      </form>
+      <?php endif; ?>
+    </div>
+    <?php
+    include __DIR__ . '/includes/footer.php';
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'send_aging_bulk' && can('payments.view')) {
     require_once __DIR__ . '/includes/billimage.php';
     $shopName = setting('app_name', 'AK Computer');

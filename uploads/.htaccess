@@ -2,8 +2,10 @@
 <FilesMatch "\.(php|phtml|php3|php4|php5|pl|py|cgi|sh)$">
   Require all denied
 </FilesMatch>
-# error logs and database backups are never web-readable
-<FilesMatch "\.(log|sql|gz|enc)$">
+# error logs, database backups and cached dashboard data are never web-readable
+# (json covers uploads/cache/, which also has its own deny file - two layers,
+# because a single missing .htaccess should never expose shop figures)
+<FilesMatch "\.(log|sql|gz|enc|json)$">
   Require all denied
 </FilesMatch>
 <IfModule mod_php.c>

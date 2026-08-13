@@ -510,7 +510,7 @@ if ($r === 'aging') {
 
     // ---- the table (wrapped in a bulk-send form on screen) ----
     $canWa = !$isPdf && can('payments.view');
-    if ($canWa) echo '<form method="post" id="agingForm">' . csrf_field() . '<input type="hidden" name="do" value="send_aging_bulk">';
+    if ($canWa) echo '<form method="post" id="agingForm">' . csrf_field() . '<input type="hidden" name="do" value="preview_aging_bulk">';
     echo '<div class="table-wrap"><table class="aging-table"><thead><tr>';
     if ($canWa) echo '<th style="width:26px"><input type="checkbox" title="Select all" onclick="document.querySelectorAll(\'.agchk\').forEach(c=>{if(!c.disabled)c.checked=this.checked})"></th>';
     // data-w hints give the PDF export a wide party column (name + phone +
@@ -566,7 +566,9 @@ if ($r === 'aging') {
     echo '<div class="aging-legend no-print"><span><i class="ag-dot ag-b1"></i>0-30 Days</span><span><i class="ag-dot ag-b2"></i>31-60 Days</span><span><i class="ag-dot ag-b3"></i>61-90 Days</span><span><i class="ag-dot ag-b4"></i>90+ Days</span></div>';
 
     if ($canWa) {
-        echo '<div class="page-actions no-print mt"><button class="btn btn-wa" type="submit" onclick="return confirm(\'Send a WhatsApp payment reminder to all ticked parties?\')">📲 Send reminder to selected</button></div>';
+        // goes to the preview screen first - who, what and how much it costs -
+        // rather than firing messages straight off a confirm() box
+        echo '<div class="page-actions no-print mt"><button class="btn btn-wa" type="submit">📲 Send reminder to selected</button></div>';
         echo '</form>';
     }
 }

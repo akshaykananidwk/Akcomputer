@@ -44,6 +44,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_general') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_whatsapp') {
     require_perm('settings.edit');
     foreach (['wa_api_url', 'wa_session_id', 'wa_api_key', 'wa_shop_number'] as $k) set_setting($k, post($k));
+    // what one WhatsApp message costs this shop - used to show the bill before
+    // a bulk reminder goes out. Left at 0 it simply shows "not set".
+    if (post('wa_cost_per_msg') !== null) set_setting('wa_cost_per_msg', (string)max(0, round((float)post('wa_cost_per_msg'), 4)));
     set_setting('wa_bot_enabled', post('wa_bot_enabled') ? '1' : '0');
     set_setting('wa_catalog_enabled', post('wa_catalog_enabled') ? '1' : '0');
     if (post('wa_bot_ai_monthly_cap') !== '') set_setting('wa_bot_ai_monthly_cap', (string)max(0, (int)post('wa_bot_ai_monthly_cap')));
@@ -541,6 +544,9 @@ exit;
     <div class="form-row cols-2">
       <div><label>Shop WhatsApp number (for the website catalog's "Order" button)</label>
         <input type="tel" name="wa_shop_number" value="<?= e(setting('wa_shop_number')) ?>" placeholder="91XXXXXXXXXX"></div>
+      <div><label>એક મેસેજનો ખર્ચ (₹)</label>
+        <input type="number" step="0.0001" min="0" name="wa_cost_per_msg" value="<?= e(setting('wa_cost_per_msg', '')) ?>" placeholder="0">
+        <span class="muted" style="font-size:12px">તમારા WhatsApp પ્રોવાઇડરના બિલ પ્રમાણેનો ભાવ ભરો. ઘણા બધા રિમાઇન્ડર એકસાથે મોકલતાં પહેલાં કેટલો ખર્ચ થશે એ બતાવવા માટે વપરાય છે. ખાલી રાખશો તો ખર્ચ નહીં દેખાય.</span></div>
     </div>
     <button class="btn" type="submit">Save</button>
   </form>

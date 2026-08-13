@@ -366,14 +366,14 @@ include __DIR__ . '/includes/header.php';
         // reports.profit fence the Inventory Summary card already uses;
         // the shortage COUNTS are safe for anyone who may see items ?>
   <div class="grid-stats">
-    <a class="stat s-bad" href="reports.php?r=low"><div class="stat-label">ખલાસ</div><div class="stat-value"><?= count($sStock['out']) ?></div></a>
-    <a class="stat s-warn" href="reports.php?r=low"><div class="stat-label">ખૂટવાની તૈયારીમાં</div><div class="stat-value"><?= count($sStock['low']) ?></div></a>
+    <a class="stat s-bad" href="reports.php?r=low"><div class="stat-label">ખલાસ</div><div class="stat-value"><?= dash_n($sStock, 'out') ?></div></a>
+    <a class="stat s-warn" href="reports.php?r=low"><div class="stat-label">ખૂટવાની તૈયારીમાં</div><div class="stat-value"><?= dash_n($sStock, 'low') ?></div></a>
     <?php if ($seeProfit): ?>
     <a class="stat" href="reports.php?r=stockval"><div class="stat-label">સ્ટોકની કિંમત</div><div class="stat-value">₹<?= money($sStock['stock_value']) ?></div></a>
     <a class="stat s-warn" href="reports.php?r=dead_stock"><div class="stat-label">પડી રહેલો માલ</div><div class="stat-value">₹<?= money($sStock['dead_value']) ?></div></a>
     <?php else: ?>
     <a class="stat" href="reports.php?r=low"><div class="stat-label">કુલ પ્રોડક્ટ</div><div class="stat-value"><?= (int)$sStock['items'] ?></div></a>
-    <a class="stat s-warn" href="reports.php?r=low"><div class="stat-label">પડી રહેલી પ્રોડક્ટ</div><div class="stat-value"><?= count($sStock['deadlist']) ?></div></a>
+    <a class="stat s-warn" href="reports.php?r=low"><div class="stat-label">પડી રહેલી પ્રોડક્ટ</div><div class="stat-value"><?= dash_n($sStock, 'deadlist') ?></div></a>
     <?php endif; ?>
   </div>
   <?php if ($seeProfit && $sStock['dead_value'] > 0.009): ?>
@@ -405,6 +405,35 @@ include __DIR__ . '/includes/header.php';
   <p class="mt"><a class="btn btn-sm" href="purchases.php?action=new">🛒 પરચેસ કરો</a>
      <a class="btn btn-sm btn-outline" href="reports.php?r=purchase_reco">સૂચન જુઓ →</a></p>
   <?php endif; ?>
+
+  <?php // fast / slow / dead / high-value, side by side ?>
+  <div class="grid-2">
+    <?php
+      $stockBlocks = [
+        ['🔥 ઝડપથી વેચાય છે', $sStock['fast'], 'sold90', 'nos'],
+        ['🐢 ધીમે વેચાય છે', $sStock['slow'], 'value', 'money'],
+        ['🐌 પડી રહેલો માલ', $sStock['deadlist'], 'value', 'money'],
+      ];
+      if ($seeProfit) $stockBlocks[] = ['💎 સૌથી કિંમતી સ્ટોક', $sStock['high_value'], 'value', 'money'];
+      foreach ($stockBlocks as list($bt, $brows, $bkey, $bfmt)):
+        if (!$brows) continue;
+        if (!$seeProfit && $bfmt === 'money') continue; // cost data stays behind reports.profit
+      ?>
+    <div>
+      <h3><?= $bt ?></h3>
+      <table class="table-sm"><tbody>
+      <?php foreach (array_slice($brows, 0, 5) as $x): ?>
+        <tr>
+          <td><a href="item_view.php?id=<?= (int)$x['id'] ?>"><?= e($x['name']) ?></a>
+            <?php if ($x['idle_days'] !== null && $bkey === 'value'): ?><br><span class="muted" style="font-size:11px"><?= (int)$x['idle_days'] ?> દિવસથી પડ્યું</span><?php endif; ?>
+          </td>
+          <td class="num"><?= $bfmt === 'money' ? '₹' . money($x[$bkey]) : (float)$x[$bkey] . ' ' . e($x['unit']) ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody></table>
+    </div>
+    <?php endforeach; ?>
+  </div>
 </div>
 <?php elseif ($_w === 'smart_sales'): ?>
 <div class="card">

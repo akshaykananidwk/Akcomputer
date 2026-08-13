@@ -17,37 +17,57 @@
 /** Slow-moving cutoff, shared by the dead-stock card and the alerts. */
 function dash_dead_days() { return max(1, (int)setting('dead_stock_days', 90)); }
 
+/** How many items are really in one of dash_stock()'s lists. The lists
+ *  themselves are trimmed to the worst 50 so they fit the result cache, so
+ *  count() on them would under-report a big shop - the exact size travels
+ *  alongside as <list>_count. */
+function dash_n(array $stock, $list) {
+    return (int)($stock[$list . '_count'] ?? count($stock[$list] ?? []));
+}
+
 // ----------------------------------------------------------------- cache ----
 
 /** A tiny result cache for dashboard sections that are expensive to compute
  *  and do not change minute to minute.
  *
  *  Used sparingly and only where profiling said so - the KPIs, collection and
- *  stock figures are computed live on every load, because an owner acting on
- *  a stale collection number is worse than a slower page. The Data Health
- *  sweep is the one section that genuinely does not need to be live: it runs
- *  25 integrity queries and measured 77ms of a ~180ms page, while what it
- *  reports (bad rows in the database) changes over days, not seconds.
+ *  the party ledger are computed live on every load, because an owner acting
+ *  on a stale collection figure is worse than a slower page. Only the Data
+ *  Health sweep (25 integrity queries, and what it reports changes over days)
+ *  and the stock roll-up are cached.
  *
- *  Stored as one JSON settings row, so there is no new table and no migration.
- *  dash_cache_forget() lets a screen force a fresh sweep. */
+ *  Kept in FILES, not in the settings table. The obvious place was a settings
+ *  row, and that is where this started - but setting() loads every setting on
+ *  every request, so parking a 25KB blob there quietly taxed screens that have
+ *  nothing to do with the dashboard. A file is read only by whoever wants it.
+ *  The directory is denied to the web by its own .htaccess.
+ */
+function dash_cache_dir() {
+    $dir = __DIR__ . '/../uploads/cache';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+        @file_put_contents($dir . '/.htaccess', "Require all denied\nDeny from all\n");
+    }
+    return $dir;
+}
+
+function dash_cache_file($key) { return dash_cache_dir() . '/' . preg_replace('/[^a-z0-9_]/i', '', $key) . '.json'; }
+
 function dash_cache($key, $ttl, callable $fn) {
-    $name = 'dashcache_' . $key;
-    $raw = setting($name, '');
-    if ($raw !== '') {
-        $hit = json_decode($raw, true);
-        if (is_array($hit) && isset($hit['at'], $hit['v']) && (time() - (int)$hit['at']) < $ttl) {
-            $hit['v']['cached_at'] = (int)$hit['at'];
-            return $hit['v'];
-        }
+    $f = dash_cache_file($key);
+    if (is_file($f) && (time() - (int)@filemtime($f)) < $ttl) {
+        $hit = json_decode((string)@file_get_contents($f), true);
+        if (is_array($hit)) { $hit['cached_at'] = (int)@filemtime($f); return $hit; }
     }
     $val = $fn();
-    set_setting($name, json_encode(['at' => time(), 'v' => $val]));
+    // write via a temp file + rename so a reader never sees a half-written cache
+    $tmp = $f . '.' . getmypid() . '.tmp';
+    if (@file_put_contents($tmp, json_encode($val)) !== false) @rename($tmp, $f); else @unlink($tmp);
     $val['cached_at'] = time();
     return $val;
 }
 
-function dash_cache_forget($key) { set_setting('dashcache_' . $key, ''); }
+function dash_cache_forget($key) { @unlink(dash_cache_file($key)); }
 
 // ------------------------------------------------------------ date ranges --
 
@@ -285,10 +305,34 @@ function dash_payment_behaviour($bills, $late) {
 
 // ----------------------------------------------------------------- stock ----
 
-/** Stock intelligence in TWO queries: one row per item carrying its stock,
- *  its sales velocity and its last movement dates, then the buckets are
- *  sliced from that in PHP. */
-function dash_stock($locId = 0) {
+/** Stock intelligence, cached briefly.
+ *
+ *  Profiling put this at 127ms of a 417ms page on a 25,000-bill shop - the
+ *  heaviest section, because it walks every product's stock alongside its
+ *  whole sales history. Two minutes of staleness costs the owner nothing (a
+ *  low-stock count does not change meaningfully between two page loads) while
+ *  the money figures beside it stay live. Pass $ttl = 0 for a fresh read. */
+function dash_stock($locId = 0, $ttl = 120) {
+    if ($ttl <= 0) return dash_stock_compute($locId);
+    $s = dash_cache('stock_' . (int)$locId, $ttl, fn() => dash_stock_compute($locId));
+    // JSON turns a whole-number float back into an int, so a cached read would
+    // differ in TYPE from a fresh one even though the value matches. Put the
+    // money fields back to float so the two are indistinguishable.
+    foreach (['dead_value', 'stock_value'] as $k) $s[$k] = (float)($s[$k] ?? 0);
+    foreach (($s['dead_buckets'] ?? []) as $bk => $bv) $s['dead_buckets'][$bk] = (float)$bv;
+    foreach (['out', 'low', 'fast', 'slow', 'deadlist', 'high_value'] as $list) {
+        foreach (($s[$list] ?? []) as $i => $it) {
+            foreach (['qty', 'value', 'min_stock', 'sold90', 'per_day'] as $f) {
+                if (isset($it[$f])) $s[$list][$i][$f] = (float)$it[$f];
+            }
+        }
+    }
+    return $s;
+}
+
+/** One row per item carrying its stock, its sales velocity and its last
+ *  movement dates; the buckets are then sliced from that in PHP. */
+function dash_stock_compute($locId = 0) {
     $dead = dash_dead_days();
     $locJoin = $locId ? ' AND st.location_id = ' . (int)$locId : '';
     $rows = all("SELECT i.id, i.name, i.unit, i.min_stock, i.purchase_price, i.selling_price, i.created_at,
@@ -368,6 +412,18 @@ function dash_stock($locId = 0) {
     usort($out['deadlist'], fn($a, $b) => $b['value'] <=> $a['value']);
     usort($out['high_value'], fn($a, $b) => $b['value'] <=> $a['value']);
     usort($out['low'], fn($a, $b) => ($a['days_left'] ?? 9999) <=> ($b['days_left'] ?? 9999));
+
+    // The true sizes are kept as their own numbers BEFORE the lists are
+    // trimmed, so a shop with 300 low items still reports 300 on the card
+    // while only the worst 20 of each are carried. Untrimmed this was a 297KB
+    // structure, and since the result is cached in the settings table - which
+    // setting() loads in full on EVERY page of the app - a fat payload would
+    // have slowed down screens that have nothing to do with the dashboard.
+    // Nothing renders more than the worst handful, so 20 is generous.
+    foreach (['out', 'low', 'fast', 'slow', 'deadlist', 'high_value'] as $k) {
+        $out[$k . '_count'] = count($out[$k]);
+        $out[$k] = array_slice($out[$k], 0, 20);
+    }
     $out['dead_value'] = round($out['dead_value'], 2);
     $out['stock_value'] = round($out['stock_value'], 2);
     foreach ($out['dead_buckets'] as $k => $v) $out['dead_buckets'][$k] = round($v, 2);
@@ -498,14 +554,14 @@ function dash_actions(array $ctx) {
                 'text' => $col['overdue_customers'] . ' ગ્રાહકોનું પેમેન્ટ મુદત વીતી ગયું છે — ₹' . money($col['overdue']) . ' ઉઘરાવવાનું બાકી',
                 'link' => 'reports.php?r=aging', 'cta' => 'ઉઘરાણી કરો'];
     }
-    if ($stock && count($stock['out'])) {
+    if ($stock && dash_n($stock, 'out')) {
         $a[] = ['icon' => '🚫', 'sev' => 'bad', 'group' => 'Stock',
-                'text' => count($stock['out']) . ' પ્રોડક્ટનો સ્ટોક ખલાસ થઈ ગયો છે',
+                'text' => dash_n($stock, 'out') . ' પ્રોડક્ટનો સ્ટોક ખલાસ થઈ ગયો છે',
                 'link' => 'reports.php?r=low', 'cta' => 'જુઓ'];
     }
-    if ($stock && count($stock['low'])) {
+    if ($stock && dash_n($stock, 'low')) {
         $a[] = ['icon' => '📉', 'sev' => 'warn', 'group' => 'Stock',
-                'text' => count($stock['low']) . ' પ્રોડક્ટ થોડા દિવસમાં ખલાસ થઈ જશે',
+                'text' => dash_n($stock, 'low') . ' પ્રોડક્ટ થોડા દિવસમાં ખલાસ થઈ જશે',
                 'link' => 'reports.php?r=low', 'cta' => 'ઓર્ડર કરો'];
     }
     if ($stock && $stock['dead_value'] > 0.009) {
@@ -558,8 +614,8 @@ function dash_alerts(array $ctx) {
         $al[] = ['sev' => 'warn', 'text' => 'આ સમયગાળાનું માર્જિન ' . $k['margin_pct'] . '% — ટાર્ગેટ કરતાં નીચે', 'link' => 'reports.php?r=profit'];
     if (!empty($ctx['collection']) && $ctx['collection']['overdue'] > 0.009)
         $al[] = ['sev' => 'bad', 'text' => '₹' . money($ctx['collection']['overdue']) . ' ની ઉઘરાણી મુદત વીતી ગઈ છે', 'link' => 'reports.php?r=aging'];
-    if (!empty($ctx['stock']) && count($ctx['stock']['low']) + count($ctx['stock']['out']) > 0)
-        $al[] = ['sev' => 'warn', 'text' => (count($ctx['stock']['low']) + count($ctx['stock']['out'])) . ' પ્રોડક્ટ રીઓર્ડર લેવલથી નીચે', 'link' => 'reports.php?r=low'];
+    if (!empty($ctx['stock']) && dash_n($ctx['stock'], 'low') + dash_n($ctx['stock'], 'out') > 0)
+        $al[] = ['sev' => 'warn', 'text' => (dash_n($ctx['stock'], 'low') + dash_n($ctx['stock'], 'out')) . ' પ્રોડક્ટ રીઓર્ડર લેવલથી નીચે', 'link' => 'reports.php?r=low'];
     if (!empty($ctx['price_up']))
         $al[] = ['sev' => 'warn', 'text' => count($ctx['price_up']) . ' પ્રોડક્ટના ખરીદ ભાવ વધ્યા છે', 'link' => 'reports.php?r=purchase'];
     if (!empty($ctx['health_issues']))
