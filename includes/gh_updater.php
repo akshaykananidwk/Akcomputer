@@ -67,10 +67,100 @@ function gh_check_update() {
 }
 
 /** Downloads + applies the given commit sha: overwrites app files, then re-runs DB migration. */
+/** Safety net taken immediately BEFORE an update overwrites anything:
+ *  a database dump plus a copy of every application file that is about to
+ *  be replaced. Kept in updates/restore/ (web-denied), newest 3 retained,
+ *  so gh_rollback() can put the previous version back with one click. */
+function gh_snapshot_before_update($sha) {
+    $root = dirname(__DIR__);
+    $stamp = date('Ymd_His') . '_' . substr($sha, 0, 7);
+    $dir = $root . '/updates/restore/' . $stamp;
+    if (!is_dir($dir . '/files')) mkdir($dir . '/files', 0755, true);
+
+    // database first - if this fails the update does not proceed
+    $pass = (string)setting('backup_passphrase', '');
+    $sql = db_backup_sql();
+    $dbFile = $dir . ($pass !== '' ? '/db.sql.enc' : '/db.sql.gz');
+    $blob = $pass !== '' ? backup_encrypt($sql, $pass) : gzencode($sql, 6);
+    if ($blob === '' || file_put_contents($dbFile, $blob) === false) return [false, 'Could not write the pre-update database backup.'];
+
+    // then the current application files (skip runtime data + config)
+    $copied = 0;
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
+    foreach ($it as $path) {
+        $rel = str_replace('\\', '/', substr($path->getPathname(), strlen($root) + 1));
+        if ($rel === '' || $rel === 'config.php') continue;
+        if (preg_match('#^(uploads|updates|\.git)(/|$)#', $rel)) continue;
+        if ($path->isDir()) { if (!is_dir($dir . '/files/' . $rel)) @mkdir($dir . '/files/' . $rel, 0755, true); continue; }
+        $to = $dir . '/files/' . $rel;
+        if (!is_dir(dirname($to))) @mkdir(dirname($to), 0755, true);
+        if (@copy($path->getPathname(), $to)) $copied++;
+    }
+    file_put_contents($dir . '/meta.json', json_encode([
+        'taken_at' => date('Y-m-d H:i:s'), 'before_sha' => setting('gh_last_sha', ''), 'updating_to' => $sha,
+        'files' => $copied, 'db' => basename($dbFile), 'db_encrypted' => $pass !== '',
+        'by' => current_user()['name'] ?? 'system', 'app_version' => defined('APP_VERSION') ? APP_VERSION : '',
+    ], JSON_PRETTY_PRINT));
+
+    // keep the newest 3 restore points
+    $all = glob($root . '/updates/restore/*', GLOB_ONLYDIR);
+    rsort($all);
+    foreach (array_slice($all, 3) as $old) gh_rmtree($old);
+    return [true, $stamp . " ($copied files)"];
+}
+
+function gh_rmtree($dir) {
+    if (!is_dir($dir)) return;
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST) as $p) {
+        $p->isDir() ? @rmdir($p->getPathname()) : @unlink($p->getPathname());
+    }
+    @rmdir($dir);
+}
+
+/** Restore points available for the rollback button, newest first. */
+function gh_restore_points() {
+    $out = [];
+    foreach (array_reverse(glob(dirname(__DIR__) . '/updates/restore/*', GLOB_ONLYDIR) ?: []) as $d) {
+        $meta = @json_decode(@file_get_contents($d . '/meta.json'), true) ?: [];
+        $meta['id'] = basename($d);
+        $out[] = $meta;
+    }
+    return $out;
+}
+
+/** Put the application files from a restore point back. The DATABASE is
+ *  deliberately NOT auto-restored: bills entered since the update would be
+ *  lost. The dump sits next to the files if a full restore is really
+ *  wanted, and the message says so. */
+function gh_rollback($id) {
+    $id = basename((string)$id);
+    $root = dirname(__DIR__);
+    $dir = $root . '/updates/restore/' . $id;
+    if ($id === '' || !is_dir($dir . '/files')) return [false, 'That restore point no longer exists.'];
+    $restored = 0;
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir . '/files', FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::SELF_FIRST);
+    foreach ($it as $path) {
+        if ($path->isDir()) continue;
+        $rel = str_replace('\\', '/', substr($path->getPathname(), strlen($dir . '/files') + 1));
+        $to = $root . '/' . $rel;
+        if (!is_dir(dirname($to))) @mkdir(dirname($to), 0755, true);
+        if (@copy($path->getPathname(), $to)) $restored++;
+    }
+    if (function_exists('opcache_reset')) opcache_reset();
+    log_activity('gh_rollback', $id . " ($restored files)");
+    $meta = @json_decode(@file_get_contents($dir . '/meta.json'), true) ?: [];
+    return [true, "Rolled back to $id — $restored files restored. Database was NOT changed "
+        . "(bills added since the update are safe). Its pre-update dump is kept at updates/restore/$id/" . ($meta['db'] ?? 'db.sql.gz') . '.'];
+}
+
 function gh_apply_update($sha) {
     if (!class_exists('ZipArchive')) return [false, 'The server does not have the PHP zip extension - ask your hosting to enable it.'];
     $cfg = gh_settings();
     if (!$cfg['repo'] || !$sha) return [false, 'Missing the repo or commit.'];
+
+    // never overwrite live code without a way back
+    list($snapOk, $snapMsg) = gh_snapshot_before_update($sha);
+    if (!$snapOk) return [false, 'Update stopped before touching anything: ' . $snapMsg];
 
     $url = 'https://api.github.com/repos/' . $cfg['repo'] . '/zipball/' . $sha;
     $headers = ['User-Agent: AKComputer-Updater', 'Accept: application/vnd.github+json'];
@@ -145,7 +235,8 @@ function gh_apply_update($sha) {
               'by' => current_user()['name'] ?? 'system'];
     file_put_contents($hist, json_encode($log, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
-    log_activity('gh_update_applied', substr($sha, 0, 7) . " ($applied files)");
+    log_activity('gh_update_applied', substr($sha, 0, 7) . " ($applied files, restore point $snapMsg)");
     $dbMsg = $migration['totals']['failed'] ? (' — ' . $migration['totals']['failed'] . ' database error(s) (see history)') : ' + database update';
-    return [true, 'Update ' . substr($sha, 0, 7) . ' applied — ' . $applied . ' files' . $dbMsg . '.'];
+    return [true, 'Update ' . substr($sha, 0, 7) . ' applied — ' . $applied . ' files' . $dbMsg
+        . '. 🛟 Backup taken first (' . $snapMsg . ') — use "Undo last update" below if anything looks wrong.'];
 }

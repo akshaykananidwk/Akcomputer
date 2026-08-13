@@ -22,6 +22,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_check') {
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_apply') {
     require_perm('settings.edit');
+    // overwriting every application file is an owner-level action, not a
+    // "can edit settings" one - and it now snapshots files + DB first
+    if (!is_full_admin()) { flash('સોફ્ટવેર અપડેટ ફક્ત એડમિન કરી શકે.', 'error'); redirect('settings.php?cat=backup'); }
     list($ok, $msg) = gh_apply_update(post('sha'));
     flash($msg, $ok ? 'success' : 'error');
     redirect('settings.php?cat=backup');
@@ -312,6 +315,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_backup_auto') 
     flash(post('backup_passphrase') !== ''
         ? '✅ સેવ થયું — હવેથી રોજનું બેકઅપ લોક થઈને (encrypted) બનશે.'
         : '✅ સેવ થયું — પાસફ્રેઝ ખાલી છે, એટલે બેકઅપ ફાઈલ Telegram પર નહીં મોકલાય (સર્વર પર સેવ થશે).');
+    redirect('settings.php?cat=backup');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_rollback') {
+    require_perm('settings.edit');
+    if (!is_full_admin()) { flash('Rollback ફક્ત એડમિન કરી શકે.', 'error'); redirect('settings.php?cat=backup'); }
+    list($ok, $msg) = gh_rollback(post('id'));
+    flash($msg, $ok ? 'success' : 'error');
     redirect('settings.php?cat=backup');
 }
 
@@ -1139,6 +1150,29 @@ exit;
       </form>
     </div>
   <?php endif; endif; ?>
+  <?php $rps = function_exists('gh_restore_points') ? gh_restore_points() : []; if ($rps): ?>
+  <h3 class="mt">🛟 Undo last update</h3>
+  <p class="muted mb">દરેક અપડેટ પહેલાં જૂની ફાઈલો અને ડેટાબેઝની નકલ આપોઆપ લેવાય છે. અપડેટ પછી કંઈ બગડે તો અહીંથી એક ક્લિકમાં જૂનું સોફ્ટવેર પાછું આવી જશે. <strong>ડેટાબેઝ બદલાતો નથી</strong> — વચ્ચે બનેલા બિલ સલામત રહે છે.</p>
+  <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
+    <thead><tr><th>Restore point</th><th>Taken</th><th>Files</th><th>DB backup</th><th></th></tr></thead>
+    <tbody>
+    <?php foreach ($rps as $rp): ?>
+    <tr>
+      <td><code><?= e($rp['id']) ?></code><br><span class="muted" style="font-size:12px">before <?= e(substr($rp['updating_to'] ?? '', 0, 7)) ?></span></td>
+      <td><?= e($rp['taken_at'] ?? '-') ?><br><span class="muted" style="font-size:12px"><?= e($rp['by'] ?? '') ?></span></td>
+      <td class="num"><?= (int)($rp['files'] ?? 0) ?></td>
+      <td><?= !empty($rp['db_encrypted']) ? '🔐 encrypted' : '📦 plain .gz' ?></td>
+      <td class="right">
+        <form method="post" onsubmit="return confirm('જૂનું સોફ્ટવેર પાછું લાવવું છે? બધી application ફાઈલો આ restore point પ્રમાણે થઈ જશે (ડેટાબેઝ એમનો એમ રહેશે).')">
+          <?= csrf_field() ?><input type="hidden" name="do" value="gh_rollback"><input type="hidden" name="id" value="<?= e($rp['id']) ?>">
+          <button class="btn btn-sm btn-outline btn-danger" type="submit">↩ Restore this version</button>
+        </form>
+      </td>
+    </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table></div>
+  <?php endif; ?>
   <?php $hist = update_history(); if ($hist): ?>
   <h3 class="mt">Update history</h3>
   <table class="table-sm">
