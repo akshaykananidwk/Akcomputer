@@ -10,6 +10,7 @@ $_navMenu = [
     ['group', 'parties', 'users', 'Parties', [
         ['parties.php', 'All Parties', 'parties.view', 'parties.php?action=new', 'parties.add'],
         ['payments.php', 'Party Payments', 'payments.view', null, null],
+        ['collection.php', '📮 Collection Queue', 'payments.view', null, null],
     ]],
     ['group', 'items', 'box', 'Items', [
         ['items.php', 'All Items', 'items.view', 'items.php?action=new', 'items.add'],

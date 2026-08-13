@@ -17,6 +17,7 @@ function cron_jobs() {
         'custom_reminders' => ['⏰ Custom Reminders', 'Reminder module - one-time & recurring scheduled messages', 5, null],
         'overdue_reminders' => ['📅 Payment Due Reminders', 'Overdue-bill WhatsApp reminders, sent at the hour set in Settings → Reminders', 60,
             fn() => (int)date('G') >= min(23, max(0, (int)setting('reminder_hour', '10')))],
+        'settle_promises' => ['🤝 Promise-to-Pay Check', 'Marks each promised payment kept or broken once its day arrives', 180, null],
         'amc_renewals' => ['🔄 AMC / Recurring Billing', 'Generates AMC invoices due today and WhatsApps the bill', 60, null],
         'wishes' => ['🎂 Birthday & Anniversary Wishes', 'WhatsApp wishes to parties on their special day', 60, null],
         'report_schedules' => ['📊 Auto Reports', 'Scheduled WhatsApp report digests (daily / weekly / monthly)', 60, null],
@@ -106,13 +107,40 @@ function cron_job_overdue_reminders() {
                     AND s.due_date IS NOT NULL AND s.due_date <= ?
                     AND (s.last_reminder IS NULL OR s.last_reminder <= DATE_SUB(?, INTERVAL ? DAY))
                   ORDER BY s.due_date LIMIT 30", [$today, $today, $gap]);
-    $sent = 0; $covered = 0;
+    // The collection guards apply to the cron exactly as they apply to a human
+    // pressing Send: a customer who opted out, promised to pay on Friday, was
+    // snoozed, or was contacted yesterday must not be messaged automatically
+    // either. Without this the queue would politely hold back while the cron
+    // quietly nagged the same people every night.
+    $partyIds = array_values(array_unique(array_filter(array_map(fn($b) => (int)$b['party_id'], $bills))));
+    $evMap = $partyIds ? coll_event_map($partyIds) : [];
+    $optOut = [];
+    if ($partyIds) {
+        foreach (all("SELECT id, collection_opt_out FROM parties WHERE id IN (" . implode(',', $partyIds) . ")") as $p)
+            $optOut[(int)$p['id']] = (int)$p['collection_opt_out'] === 1;
+    }
+
+    $sent = 0; $covered = 0; $held = 0;
     foreach ($bills as $s) {
         // the message must claim only what is GENUINELY left: the bill's due
         // capped by the party's real ledger (sale_true_due) - a fully covered
         // bill sends nothing at all and stops being re-checked today
         $trueDue = sale_true_due($s);
         if ($trueDue <= 0.009) { q('UPDATE sales SET last_reminder = ? WHERE id = ?', [$today, $s['id']]); $covered++; continue; }
+
+        $pid = (int)$s['party_id'];
+        if ($pid) {
+            $e = $evMap[$pid] ?? [];
+            $guard = coll_can_remind([
+                'mobile' => $s['customer_mobile'],
+                'opt_out' => $optOut[$pid] ?? false,
+                'snoozed_until' => $e['snooze_until'] ?? null,
+                'promise_open' => $e['promise_open'] ?? null,
+                'last_contact' => $e['last_contact'] ?? null,
+                'contacts_30d' => $e['contacts_30d'] ?? 0,
+            ]);
+            if (!$guard['ok']) { $held++; continue; }
+        }
         $lateDays = (int)floor((strtotime($today) - strtotime($s['due_date'])) / 86400);
         $dueLine = $lateDays <= 0 ? "📅 આજે પેમેન્ટની છેલ્લી તારીખ છે!\n"
                  : '📅 Due date: ' . dmy($s['due_date']) . " — ⏰ *$lateDays દિવસ* થઈ ગયા\n";
@@ -122,10 +150,25 @@ function cron_job_overdue_reminders() {
             'due' => money($trueDue),
             'due_date_line' => $dueLine,
         ]));
-        if ($ok) { q('UPDATE sales SET last_reminder = ? WHERE id = ?', [$today, $s['id']]); $sent++; }
+        if ($ok) {
+            q('UPDATE sales SET last_reminder = ? WHERE id = ?', [$today, $s['id']]);
+            $sent++;
+            // recorded in the same history a human's reminder goes into, so
+            // the cooldown and the Customer 360 trail cover both
+            if ($pid) coll_log($pid, 'reminder', ['channel' => 'whatsapp', 'amount' => $trueDue,
+                                                  'note' => 'ઓટોમેટિક રિમાઇન્ડર — ' . $s['invoice_no'], 'status' => 'done']);
+        }
         usleep(400000);
     }
-    return 'checked ' . count($bills) . ', sent ' . $sent . ($covered ? ", already-covered $covered" : '');
+    return 'checked ' . count($bills) . ', sent ' . $sent
+         . ($covered ? ", already-covered $covered" : '') . ($held ? ", held-back $held" : '');
+}
+
+/** Turn promises whose day has come into kept/broken, so the queue and the
+ *  priority score reflect reality without anybody having to tick anything. */
+function cron_job_settle_promises() {
+    list($kept, $broken) = coll_settle_promises();
+    return "promises kept $kept, broken $broken";
 }
 
 /** Custom reminders (Reminder module): fire anything whose time arrived. */

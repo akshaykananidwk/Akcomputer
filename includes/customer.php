@@ -39,6 +39,11 @@ function cust_rules() {
         'credit_months'    => (int)setting('cust_credit_months', 3),        // credit limit ~ this many months of buying
         'reminder_cooldown'=> (int)setting('collection_cooldown_days', 3),  // never message the same customer twice inside this
         'max_reminders'    => (int)setting('collection_max_reminders', 4),  // per customer per month
+        // what counts as "a big debt" and "very late" for THIS shop - the two
+        // reference points the priority score is measured against. A shop
+        // dealing in lakhs should raise these or every row saturates at the top.
+        'big_debt'         => (float)setting('collection_big_debt', 25000),
+        'very_late_days'   => (int)setting('collection_very_late_days', 60),
     ];
 }
 
@@ -216,7 +221,12 @@ function cust_segment_rows($extraWhere = '') {
             }
         }
 
-        if ($bal > MONEY_EPS) {
+        // The money-bearing segments carry rupee amounts in their explanation,
+        // so they are attached only for someone allowed to see what customers
+        // owe. Filtered HERE rather than on each screen: a segment list is a
+        // tempting thing to render, and one forgotten guard would have shown a
+        // sales assistant exactly how much every customer is behind on.
+        if ($bal > MONEY_EPS && can('payments.view')) {
             $risk = cust_credit_risk_level($id, $bal, $x);
             if ($risk['overdue'] > MONEY_EPS) $segs['overdue'] = '₹' . money($risk['overdue']) . ' ની મુદત વીતી ગઈ છે';
             if ($risk['level'] === 'high') $segs['credit_risk'] = $risk['why'];
@@ -411,15 +421,16 @@ function coll_priority(array $c) {
     $why = [];
     $score = 0.0;
 
-    // how much (0-30): 25,000+ is treated as "a lot" for this shop
+    // how much (0-30), measured against what this shop calls a big debt
+    $rules = cust_rules();
     $amt = (float)$c['overdue'];
-    $amtPts = min(30, $amt / 25000 * 30);
+    $amtPts = min(30, $amt / max(1, $rules['big_debt']) * 30);
     $score += $amtPts;
     if ($amt > 0) $why[] = '₹' . money($amt) . ' બાકી';
 
-    // how late (0-30): 60 days is the top of the scale
+    // how late (0-30), measured against what this shop calls very late
     $days = (int)$c['days'];
-    $score += min(30, $days / 60 * 30);
+    $score += min(30, $days / max(1, $rules['very_late_days']) * 30);
     if ($days > 0) $why[] = $days . ' દિવસ મોડું';
 
     // do they usually pay on time (0-20)
@@ -441,7 +452,7 @@ function coll_priority(array $c) {
     }
 
     // a valuable customer is chased sooner, but gently - this only nudges
-    if (($c['year_value'] ?? 0) >= cust_rules()['vip_spend']) {
+    if (($c['year_value'] ?? 0) >= $rules['vip_spend']) {
         $score += 5;
         $why[] = 'મોટા ગ્રાહક';
     }
