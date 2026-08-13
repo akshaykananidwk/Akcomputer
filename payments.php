@@ -70,30 +70,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         // clears the bill it obviously pays, so the Receivables list stays
         // truthful instead of showing already-collected bills forever
         $autoLeft = round($amount + $discount - $allocated, 2);
-        if ($autoLeft > 0.009) {
-            $tblA = $dir === 'in' ? 'sales' : 'purchases';
-            foreach (all("SELECT * FROM $tblA WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0
-                          ORDER BY due_date IS NULL, due_date, id", [$party_id]) as $bill) {
-                if ($autoLeft <= 0.009) break;
-                $due = round($bill['total'] - $bill['paid'], 2);
-                if ($due <= 0.009) continue;
-                $take = min($autoLeft, $due);
-                q("UPDATE $tblA SET paid = paid + ?, status = ? WHERE id = ?", [$take, payment_status($bill['total'], $bill['paid'] + $take), $bill['id']]);
-                $allocNotes[] = ($dir === 'in' ? $bill['invoice_no'] : ($bill['bill_no'] ?: '#' . $bill['id'])) . ': ₹' . money($take);
-                $allocRows[] = ['ref_type' => $dir === 'in' ? 'sale' : 'purchase', 'ref_id' => $bill['id'], 'amount' => $take];
-                $allocated += $take;
-                $autoLeft -= $take;
-            }
+        foreach (money_settle_oldest_first($party_id, $dir, $autoLeft) as $t) {
+            $allocNotes[] = $t['label'] . ': ₹' . money($t['amount']);
+            $allocRows[] = ['ref_type' => $t['ref_type'], 'ref_id' => $t['ref_id'], 'amount' => $t['amount']];
+            $allocated += $t['amount'];
         }
 
         // bills settle from the CASH part first; whatever remains rides the
         // separate discount row so a later delete reverses each correctly
-        $mainAlloc = []; $discAlloc = []; $left = $amount;
-        foreach ($allocRows as $a) {
-            $take = round(min($a['amount'], $left), 2);
-            if ($take > 0.009) { $mainAlloc[] = ['ref_type' => $a['ref_type'], 'ref_id' => $a['ref_id'], 'amount' => $take]; $left -= $take; }
-            if ($a['amount'] - $take > 0.009) $discAlloc[] = ['ref_type' => $a['ref_type'], 'ref_id' => $a['ref_id'], 'amount' => round($a['amount'] - $take, 2)];
-        }
+        list($mainAlloc, $discAlloc) = money_split_cash_discount($allocRows, $amount);
 
         $notes = trim(post('notes'));
         if ($allocNotes) $notes = trim($notes . ' [' . implode(', ', $allocNotes) . ']');
@@ -168,24 +153,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'backfill_alloc') {
                      HAVING p.amount - used > 0.009
                      ORDER BY p.pay_date, p.id");
         foreach ($pays as $pm) {
-            $left = round($pm['amount'] - $pm['used'], 2);
-            $tblA = $pm['direction'] === 'in' ? 'sales' : 'purchases';
-            $did = false;
-            foreach (all("SELECT * FROM $tblA WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0
-                          ORDER BY due_date IS NULL, due_date, id", [$pm['party_id']]) as $bill) {
-                if ($left <= 0.009) break;
-                $due = round($bill['total'] - $bill['paid'], 2);
-                if ($due <= 0.009) continue;
-                $take = min($left, $due);
-                q("UPDATE $tblA SET paid = paid + ?, status = ? WHERE id = ?", [$take, payment_status($bill['total'], $bill['paid'] + $take), $bill['id']]);
+            $takes = money_settle_oldest_first($pm['party_id'], $pm['direction'], round($pm['amount'] - $pm['used'], 2));
+            foreach ($takes as $t) {
                 q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)',
-                  [$pm['id'], $pm['direction'] === 'in' ? 'sale' : 'purchase', $bill['id'], $take]);
-                $left -= $take;
-                $fixedAmt += $take;
+                  [$pm['id'], $t['ref_type'], $t['ref_id'], $t['amount']]);
+                $fixedAmt += $t['amount'];
                 $billsTouched++;
-                $did = true;
             }
-            if ($did) $fixedPays++;
+            if ($takes) $fixedPays++;
         }
         $pdo->commit();
         log_activity('payments_backfill_alloc', "payments=$fixedPays bills=$billsTouched amount=$fixedAmt");
@@ -225,14 +200,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remind') {
 // the "Link to a Bill" allocator or a Contra settlement (payment_allocations
 // rows). Previously the bill's own `paid` figure just stayed inflated
 // forever after a delete, silently drifting from the party's real ledger.
-function reverse_bill_paid($ref_type, $ref_id, $amt) {
-    if ($ref_type === 'opening') return; // opening due derives from the allocation rows themselves - deleting them IS the reversal
-    $table = $ref_type === 'sale' ? 'sales' : 'purchases';
-    $bill = row("SELECT total, paid FROM $table WHERE id = ?", [$ref_id]);
-    if (!$bill) return;
-    $newPaid = max(0, round($bill['paid'] - $amt, 2));
-    q("UPDATE $table SET paid = ?, status = ? WHERE id = ?", [$newPaid, payment_status($bill['total'], $newPaid), $ref_id]);
-}
+// The reversal rule lives in includes/money.php; this keeps the old name so
+// every call site on this page reads the same as it always did.
+function reverse_bill_paid($ref_type, $ref_id, $amt) { money_reverse_bill_paid($ref_type, $ref_id, $amt); }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('payments.delete');
     $pid = (int)post('id');
@@ -307,7 +277,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         // Otherwise the amount goes back to the same bills it settled before.
         $left = $amount;
         if (post('alloc_ui') === '1' && $party_id) {
-            $tblU = $dir === 'in' ? 'sales' : 'purchases';
             $aIds = post('alloc_id', []); $aAmts = post('alloc_amt', []);
             foreach ($aIds as $i => $bid) {
                 if ($left <= 0.009) break;
@@ -320,26 +289,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
                     $left -= $use;
                     continue;
                 }
-                $b = row("SELECT * FROM $tblU WHERE id = ? AND party_id = ? AND is_cancelled = 0", [(int)$bid, $party_id]);
-                if (!$b) continue;
-                $use = min($amt2, round($b['total'] - $b['paid'], 2));
+                $use = money_settle_bill((int)$bid, $party_id, $dir, $amt2);
                 if ($use <= 0.009) continue;
-                q("UPDATE $tblU SET paid = paid + ?, status = ? WHERE id = ?", [$use, payment_status($b['total'], $b['paid'] + $use), $b['id']]);
-                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $dir === 'in' ? 'sale' : 'purchase', $b['id'], $use]);
+                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $dir === 'in' ? 'sale' : 'purchase', (int)$bid, $use]);
                 $left -= $use;
             }
             // whatever the owner left unassigned auto-settles the oldest due
             // bills, same rule as a brand-new payment
-            if ($left > 0.009) {
-                foreach (all("SELECT * FROM $tblU WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0
-                              ORDER BY due_date IS NULL, due_date, id", [$party_id]) as $b) {
-                    if ($left <= 0.009) break;
-                    $use = min($left, round($b['total'] - $b['paid'], 2));
-                    if ($use <= 0.009) continue;
-                    q("UPDATE $tblU SET paid = paid + ?, status = ? WHERE id = ?", [$use, payment_status($b['total'], $b['paid'] + $use), $b['id']]);
-                    q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $dir === 'in' ? 'sale' : 'purchase', $b['id'], $use]);
-                    $left -= $use;
-                }
+            foreach (money_settle_oldest_first($party_id, $dir, $left) as $t) {
+                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $t['ref_type'], $t['ref_id'], $t['amount']]);
+                $left -= $t['amount'];
             }
         } else {
             foreach ($targets as $t) {
@@ -870,33 +829,11 @@ $dueSales = all("SELECT s.*, c.name company_name FROM sales s JOIN companies c O
 $duePurchases = all("SELECT p.*, pt.name party_name FROM purchases p JOIN parties pt ON pt.id = p.party_id
                      WHERE p.status <> 'paid' ORDER BY p.due_date IS NULL, p.due_date, p.id LIMIT 100");
 
-// The party LEDGER is the truth. A bill's own due can overstate reality when
-// something reduced the ledger without touching the bill (an unlinked
-// payment, a sales return, a settlement discount) - so per party, the dues
-// shown here are capped at the party's real receivable/payable, trimming
-// the OLDEST bills first (money always settles oldest-first). Pareshbhai
-// with bills 2,041 + 2,800 but a real balance of 2,041 shows exactly 2,041.
-function cap_bill_dues(array $bills, $dir) {
-    $byParty = [];
-    foreach ($bills as $i => $b) if ($b['party_id']) $byParty[(int)$b['party_id']][] = $i;
-    foreach ($byParty as $pid => $idxs) {
-        $bal = party_balance($pid);
-        $bal = $dir === 'in' ? max(0.0, $bal) : max(0.0, -$bal);
-        $sum = 0.0;
-        foreach ($idxs as $i) $sum += $bills[$i]['total'] - $bills[$i]['paid'];
-        $excess = round($sum - $bal, 2); // covered-but-unlinked portion
-        foreach ($idxs as $i) {
-            if ($excess <= 0.009) break;
-            $d = round($bills[$i]['total'] - $bills[$i]['paid'], 2);
-            $cut = min($d, $excess);
-            $bills[$i]['adj_due'] = round($d - $cut, 2);
-            $excess = round($excess - $cut, 2);
-        }
-    }
-    return array_values(array_filter($bills, fn($b) => round($b['adj_due'] ?? ($b['total'] - $b['paid']), 2) > 0.009));
-}
-$dueSales = cap_bill_dues($dueSales, 'in');
-$duePurchases = cap_bill_dues($duePurchases, 'out');
+// The party LEDGER is the truth: a bill's own due can overstate reality when
+// something reduced the ledger without touching the bill. The capping rule
+// itself lives in includes/money.php, shared with sale_true_due().
+$dueSales = money_cap_bill_dues($dueSales, 'in');
+$duePurchases = money_cap_bill_dues($duePurchases, 'out');
 
 $page_title = 'Payments';
 include __DIR__ . '/includes/header.php';

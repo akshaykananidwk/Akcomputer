@@ -24,6 +24,7 @@ session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax', 'secure' => 
 session_start();
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/money.php'; // the money rules, before anything that uses them
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/errors.php'; // capture + alert (needs setting()/tg from helpers)
 require_once __DIR__ . '/security.php';

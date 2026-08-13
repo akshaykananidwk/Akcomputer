@@ -336,70 +336,11 @@ function amount_in_words($num) {
     return trim($out) . ' Only';
 }
 
-// ---------- Party running-account balance (single source of truth) ----------
-// Positive = party owes shop (You'll Get). Negative = shop owes
-// party (You'll Give) - this also covers customer ADVANCES: a
-// payment received with no bill against it simply pushes the balance
-// negative, exactly like a real khata/ledger book. Used everywhere (party
-// list, party ledger, Payment-In/Out, dashboard) so the numbers never
-// disagree with each other.
-function party_balance_expr($alias = 'p') {
-    return "($alias.opening_balance
-        + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = $alias.id AND is_cancelled = 0), 0)
-        - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = $alias.id), 0)
-        - COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = $alias.id AND is_cancelled = 0), 0)
-        + COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = $alias.id), 0)
-        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'in'), 0)
-        + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'out'), 0))";
-}
-function party_balance($party_id) {
-    return (float)val('SELECT ' . party_balance_expr('p') . ' FROM parties p WHERE p.id = ?', [$party_id]);
-}
+// ---------- Party running-account balance ----------
+// party_balance(), party_balance_expr(), opening_due() and sale_true_due()
+// now live in includes/money.php together with the settlement rules they
+// belong with. They are unchanged; see that file for the full explanation.
 
-/** Unsettled part of a party's OPENING balance for one payment direction:
- *  'in' = old receivable (opening_balance > 0), 'out' = old payable
- *  (opening_balance < 0), minus whatever payments were already linked to it
- *  (payment_allocations ref_type='opening', ref_id=party). Lets the payment
- *  allocator show "જૂનો હિસાબ" as its own linkable line. */
-function opening_due($party_id, $dir) {
-    $ob = (float)val('SELECT opening_balance FROM parties WHERE id = ?', [$party_id]);
-    $base = $dir === 'in' ? max(0.0, $ob) : max(0.0, -$ob);
-    if ($base <= 0.009) return 0.0;
-    $paid = 0.0;
-    try {
-        $paid = (float)val("SELECT COALESCE(SUM(pa.amount),0) FROM payment_allocations pa
-                            JOIN payments p ON p.id = pa.payment_id
-                            WHERE pa.ref_type = 'opening' AND pa.ref_id = ? AND p.direction = ?", [$party_id, $dir]);
-    } catch (Exception $e) { /* pre-v53 */ }
-    return max(0.0, round($base - $paid, 2));
-}
-
-/** TRUE remaining due of one sale bill: the bill's own total-paid, capped by
- *  the party's real LEDGER balance. Unlinked payments, sales returns and
- *  settlement discounts reduce the ledger without touching bills - money
- *  settles oldest bill first, so the older bills absorb that covered-but-
- *  unlinked portion and this bill only claims what is genuinely left.
- *  Walk-in bills (no party) just use total-paid. Used by every customer-
- *  facing due figure: payment reminders (cron + manual), the WhatsApp
- *  portal's bill screens and its Razorpay pay links. */
-function sale_true_due(array $s) {
-    $due = round($s['total'] - $s['paid'], 2);
-    if ($due <= 0.009 || empty($s['party_id'])) return max(0.0, $due);
-    $pid = (int)$s['party_id'];
-    $bills = all("SELECT id, ROUND(total - paid, 2) d FROM sales WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0
-                  ORDER BY due_date IS NULL, due_date, id", [$pid]);
-    $sum = 0.0;
-    foreach ($bills as $b) $sum += (float)$b['d'];
-    $excess = round($sum - max(0.0, party_balance($pid)), 2);
-    if ($excess <= 0.009) return $due;
-    foreach ($bills as $b) {
-        $cut = min((float)$b['d'], $excess);
-        $excess = round($excess - $cut, 2);
-        if ((int)$b['id'] === (int)$s['id']) return max(0.0, round($b['d'] - $cut, 2));
-        if ($excess <= 0.009) break;
-    }
-    return $due;
-}
 // ---------- Staff cash wallets & internal money movements ----------
 /** How much CASH one staff member is holding right now. Every cash payment
  *  row carries created_by, so the shop's cash naturally partitions by who
@@ -782,13 +723,7 @@ function razorpay_payment_link($amount, $description, $customerName = '', $custo
 // ---------- Misc ----------
 function share_token() { return bin2hex(random_bytes(16)); }
 
-function payment_status($total, $paid) {
-    // paid-check first so a zero-total bill (e.g. 100% discount) reads
-    // "paid", not "due" - nothing is owed on it
-    if ($paid + 0.009 >= $total) return 'paid';
-    if ($paid <= 0.009) return 'due';
-    return 'partial';
-}
+// payment_status() moved to includes/money.php (unchanged).
 
 // ---------- AMC / recurring billing ----------
 function amc_advance_date($date, $cycle) {
