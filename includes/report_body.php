@@ -190,7 +190,7 @@ if ($r === 'health' && is_full_admin()) {
             }
             echo '<div class="table-wrap"><table><thead><tr><th>ID</th><th>Doc / Name</th><th>Date</th><th class="num">Amount</th><th class="num">Expected</th></tr></thead><tbody>';
             foreach ($c['rows'] as $x) {
-                echo '<tr><td>' . (int)($x['id'] ?? 0) . '</td><td>' . e($x['no'] ?? $x['who'] ?? '-') . (isset($x['no'], $x['who']) ? ' · ' . e($x['who']) : '') . '</td><td>' . e(isset($x['d']) ? dmy($x['d']) : '-') . '</td><td class="num">' . (isset($x['amount']) ? money($x['amount']) : (isset($x['total']) ? money($x['total']) : '-')) . '</td><td class="num">' . (isset($x['expect']) ? money($x['expect']) : (isset($x['paid']) ? 'paid ' . money($x['paid']) : '-')) . '</td></tr>';
+                echo '<tr><td>' . (isset($x['id']) ? (int)$x['id'] : '—') . '</td><td>' . e($x['no'] ?? $x['who'] ?? '-') . (isset($x['no'], $x['who']) ? ' · ' . e($x['who']) : '') . '</td><td>' . e(isset($x['d']) ? dmy($x['d']) : '-') . '</td><td class="num">' . (isset($x['amount']) ? money($x['amount']) : (isset($x['total']) ? money($x['total']) : '-')) . '</td><td class="num">' . (isset($x['expect']) ? money($x['expect']) : (isset($x['paid']) ? 'paid ' . money($x['paid']) : '-')) . '</td></tr>';
             }
             echo '</tbody></table></div>';
         }

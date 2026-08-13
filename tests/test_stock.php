@@ -16,8 +16,10 @@ t_eq('ledger recorded -2', (float)val('SELECT change_qty FROM stock_ledger WHERE
 
 adjust_stock($it, $loc, 5, 'purchase', 998, 'test purchase');
 t_eq('buying 5 makes 13', stock_qty($it, $loc), 13);
-$ledgerSum = (float)val('SELECT COALESCE(SUM(change_qty),0) FROM stock_ledger WHERE item_id = ?', [$it]);
-t_eq('ledger sum equals the movement since creation', $ledgerSum, 3); // -2 +5
+// the invariant the Data Health Check relies on: stock is always exactly
+// the sum of its own ledger, with nothing unexplained
+$ledgerSum = (float)val('SELECT COALESCE(SUM(change_qty),0) FROM stock_ledger WHERE item_id = ? AND location_id = ?', [$it, $loc]);
+t_eq('stock equals the sum of its ledger', $ledgerSum, 13); // 10 opening -2 +5
 
 t_group('stock is per location, never shared');
 $loc2 = (int)val('SELECT id FROM locations WHERE id <> ? ORDER BY id LIMIT 1', [$loc]);

@@ -70,7 +70,9 @@ function t_item($qty = 0, $locId = null, $price = 100) {
     q("INSERT INTO items (name, selling_price, purchase_price, is_active, item_type) VALUES (?, ?, ?, 1, 'product')",
       ['TESTITEM_' . bin2hex(random_bytes(4)), $price, $price / 2]);
     $id = insert_id();
-    if ($qty != 0) q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,?)', [$id, $locId, $qty]);
+    // go through the real helper, not a direct INSERT, so the fixture leaves
+    // stock and stock_ledger consistent exactly like the application does
+    if ($qty != 0) adjust_stock($id, $locId, $qty, 'opening', null, 'test fixture');
     return $id;
 }
 
