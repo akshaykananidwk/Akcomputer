@@ -124,6 +124,16 @@ if (is_full_admin()) $sHealth = dash_health();
 $repairsReady = can('repairs.view') ? (int)val("SELECT COUNT(*) FROM repairs WHERE status = 'ready'") : 0;
 $newOrders = can('weborders.view') ? (int)val("SELECT COUNT(*) FROM web_orders WHERE status = 'new'") : 0;
 
+// Collection intelligence (Phase 4). Only for someone who may see money, and
+// cached briefly - the queue scores every debtor, which is the one genuinely
+// expensive thing on this page.
+$sCollSum = null;
+$sPromises = ['due' => [], 'broken' => []];
+if ($seeMoney) {
+    $sCollSum = dash_cache('collection', 300, 'coll_summary');
+    $sPromises = coll_promises_due();
+}
+
 // The summary, Action Center and alerts are built from a context that hides
 // figures the reader is not allowed to see. Cost-derived money (profit, stock
 // value, dead-stock value) is behind reports.profit exactly as it is on every
@@ -139,6 +149,9 @@ $dashCtx = [
     'compare_label' => $cLabel, 'low_margin' => $sLowMargin, 'price_up' => $sPriceUp,
     'health_issues' => $sHealth['issues'] ?? [], 'repairs_ready' => $repairsReady, 'new_orders' => $newOrders,
     'reorder' => $sStock ? array_filter($sStock['low'], fn($x) => $x['reorder_qty'] > 0) : [],
+    'collection_sum' => $sCollSum,
+    'promises_due' => count($sPromises['due']),
+    'promises_broken' => count($sPromises['broken']),
 ];
 $sActions = dash_actions($dashCtx);
 $sAlerts  = dash_alerts($dashCtx);
@@ -158,6 +171,7 @@ $aiInsights = can('reports.profit') ? ai_dashboard_insights($saleScope . $locSco
 $topWidgetDefs = [
     'smart_kpis' => (bool)$sKpis,
     'duo' => $canMoney,
+    'smart_queue' => (bool)$sCollSum && $sCollSum['customers'] > 0,
     'smart_collection' => (bool)$sCol && $sCol['total'] > 0.009,
     'smart_stock' => (bool)$sStock,
     'smart_sales' => (bool)$sIntel,
@@ -312,6 +326,20 @@ include __DIR__ . '/includes/header.php';
     <?php if ($seeProfit && $sKpis['discount'] > 0.009): ?>· ડિસ્કાઉન્ટ આપ્યું ₹<?= money($sKpis['discount']) ?><?php endif; ?>
     <?php if ($seeProfit && $sKpis['margin_pct']): ?>· માર્જિન <?= $sKpis['margin_pct'] ?>%<?php endif; ?>
     · <?= (float)$sKpis['units'] ?> નંગ વેચાયા</p>
+</div>
+<?php elseif ($_w === 'smart_queue'): ?>
+<div class="card">
+  <h2>📮 ઉઘરાણીની અગ્રતા <span class="muted" style="font-weight:400;font-size:13px">· કોને પહેલા કહેવું</span></h2>
+  <div class="grid-stats">
+    <a class="stat s-bad" href="collection.php"><div class="stat-label">તાત્કાલિક</div><div class="stat-value"><?= (int)$sCollSum['critical'] ?></div></a>
+    <a class="stat s-warn" href="collection.php"><div class="stat-label">ઊંચી અગ્રતા</div><div class="stat-value"><?= (int)$sCollSum['high'] ?></div></a>
+    <a class="stat" href="collection.php"><div class="stat-label">અત્યારે મેસેજ થઈ શકે</div><div class="stat-value"><?= (int)$sCollSum['contactable'] ?></div></a>
+    <a class="stat <?= $sCollSum['broken'] ? 's-bad' : '' ?>" href="collection.php"><div class="stat-label">વાયદા તૂટ્યા (30 દિ.)</div><div class="stat-value"><?= (int)$sCollSum['broken'] ?></div></a>
+  </div>
+  <?php if ($sCollSum['promises_open']): ?>
+  <p class="muted mb" style="font-size:13px">🤝 <?= (int)$sCollSum['promises_open'] ?> ગ્રાહકે ચૂકવવાનો વાયદો આપ્યો છે<?= $sCollSum['promised_today'] > 0.009 ? ' — આજે ₹' . money($sCollSum['promised_today']) . ' આવવાના છે' : '' ?>.</p>
+  <?php endif; ?>
+  <p class="mt" style="margin:0"><a class="btn btn-sm" href="collection.php">📮 આજની ઉઘરાણી યાદી ખોલો</a></p>
 </div>
 <?php elseif ($_w === 'smart_collection'): ?>
 <div class="card">

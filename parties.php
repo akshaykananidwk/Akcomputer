@@ -327,17 +327,38 @@ $balFilter = get('bal');
 $sortBy = get('sort', 'name');
 if ($balFilter === 'get') $parties = array_values(array_filter($parties, fn($p) => $p['balance'] > 0.009));
 elseif ($balFilter === 'give') $parties = array_values(array_filter($parties, fn($p) => $p['balance'] < -0.009));
+
+// Customer-segment drill-down from the dashboard cards (?seg=vip, at_risk, …).
+// One grouped pass classifies everybody, so this costs a couple of queries
+// rather than one per party. The reason each customer is in the segment is
+// carried through to the row, because "At Risk" means nothing on its own.
+$segFilter = get('seg');
+$segWhy = [];
+$segNames = ['vip' => 'VIP ગ્રાહકો', 'high_value' => 'મોટા ગ્રાહકો', 'regular' => 'નિયમિત ગ્રાહકો',
+             'new' => 'નવા ગ્રાહકો', 'at_risk' => 'છૂટી રહેલા ગ્રાહકો', 'inactive' => 'બંધ થઈ ગયેલા ગ્રાહકો',
+             'overdue' => 'મુદત વીતી ગયેલા ગ્રાહકો', 'credit_risk' => 'ઉધાર જોખમવાળા ગ્રાહકો'];
+if ($segFilter && isset($segNames[$segFilter])) {
+    $segRows = cust_segment_rows();
+    $keep = [];
+    foreach ($segRows as $pid => $r) {
+        if (isset($r['segments'][$segFilter])) { $keep[$pid] = true; $segWhy[$pid] = $r['segments'][$segFilter]; }
+    }
+    $parties = array_values(array_filter($parties, fn($p) => isset($keep[(int)$p['id']])));
+} else {
+    $segFilter = '';
+}
 if ($sortBy === 'amount') usort($parties, fn($a, $b) => abs($b['balance']) <=> abs($a['balance']));
 else usort($parties, fn($a, $b) => strcasecmp($a['name'], $b['name']));
 
-$page_title = $balFilter === 'get' ? 'Parties to Receive From' : ($balFilter === 'give' ? 'Parties to Pay' : 'Parties');
+$page_title = $segFilter ? $segNames[$segFilter]
+            : ($balFilter === 'get' ? 'Parties to Receive From' : ($balFilter === 'give' ? 'Parties to Pay' : 'Parties'));
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="duo-cards">
   <a class="duo-card duo-get" href="parties.php?bal=get"><div class="duo-label">You'll Get</div><div class="duo-value">₹ <?= money($totGet) ?></div></a>
   <a class="duo-card duo-give" href="parties.php?bal=give"><div class="duo-label">You'll Give</div><div class="duo-value">₹ <?= money($totGive) ?></div></a>
 </div>
-<?php if ($balFilter): ?>
+<?php if ($balFilter || $segFilter): ?>
 <div class="page-actions no-print" style="justify-content:space-between">
   <h2 style="margin:0"><?= e($page_title) ?></h2>
   <a class="btn btn-sm btn-outline" href="parties.php">✕ Clear filter</a>
@@ -358,6 +379,9 @@ include __DIR__ . '/includes/header.php';
     <div class="list-row-main">
       <strong><?= e($p['name']) ?></strong><?= !$p['is_active'] ? ' <span class="badge badge-bad">INACTIVE</span>' : '' ?>
       <div class="muted list-row-sub"><?= e(trim($p['mobile'] . ($p['city'] ? ' · ' . $p['city'] : ''))) ?: '&nbsp;' ?></div>
+      <?php if ($segFilter && isset($segWhy[(int)$p['id']])): ?>
+      <div class="muted list-row-sub" style="font-size:11px"><?= e($segWhy[(int)$p['id']]) ?></div>
+      <?php endif; ?>
     </div>
     <div class="list-row-val">
       <?php if ($p['balance'] > 0.009): ?>

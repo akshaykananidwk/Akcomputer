@@ -569,10 +569,29 @@ function dash_actions(array $ctx) {
     $col = $ctx['collection'] ?? null;
     $stock = $ctx['stock'] ?? null;
 
-    if ($col && $col['overdue_customers'] > 0) {
+    // Collection is the first thing the owner should see, and Phase 4 makes it
+    // specific: not "chase everybody" but "these N are worth ringing today,
+    // and these promises just came due or just broke".
+    $cs = $ctx['collection_sum'] ?? null;
+    if (!empty($ctx['promises_broken'])) {
+        $a[] = ['icon' => '❌', 'sev' => 'bad', 'group' => 'Collections',
+                'text' => $ctx['promises_broken'] . ' ગ્રાહકે આપેલો ચૂકવણીનો વાયદો પાળ્યો નથી',
+                'link' => 'collection.php', 'cta' => 'સંપર્ક કરો'];
+    }
+    if (!empty($ctx['promises_due'])) {
+        $a[] = ['icon' => '📅', 'sev' => 'info', 'group' => 'Collections',
+                'text' => $ctx['promises_due'] . ' ગ્રાહકે આજે પૈસા આપવાનું કહ્યું છે',
+                'link' => 'collection.php', 'cta' => 'યાદ કરાવો'];
+    }
+    if ($cs && $cs['critical'] > 0) {
+        $a[] = ['icon' => '🔴', 'sev' => 'bad', 'group' => 'Collections',
+                'text' => $cs['critical'] . ' ગ્રાહક પાસે તાત્કાલિક ઉઘરાણી કરવા જેવી છે — ₹' . money($cs['overdue']) . ' બાકી'
+                          . ($cs['contactable'] < $cs['customers'] ? ' (' . (int)$cs['contactable'] . ' ને અત્યારે મેસેજ કરી શકાય)' : ''),
+                'link' => 'collection.php', 'cta' => 'યાદી ખોલો'];
+    } elseif ($col && $col['overdue_customers'] > 0) {
         $a[] = ['icon' => '💰', 'sev' => 'bad', 'group' => 'Collections',
                 'text' => $col['overdue_customers'] . ' ગ્રાહકોનું પેમેન્ટ મુદત વીતી ગયું છે — ₹' . money($col['overdue']) . ' ઉઘરાવવાનું બાકી',
-                'link' => 'reports.php?r=aging', 'cta' => 'ઉઘરાણી કરો'];
+                'link' => 'collection.php', 'cta' => 'ઉઘરાણી કરો'];
     }
     if ($stock && dash_n($stock, 'out')) {
         $a[] = ['icon' => '🚫', 'sev' => 'bad', 'group' => 'Stock',

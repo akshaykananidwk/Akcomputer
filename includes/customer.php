@@ -136,8 +136,11 @@ function cust_outstanding($partyId, $bal = null) {
 /** How often this customer buys, read from their OWN history rather than a
  *  fixed rule: the median gap between consecutive bills. Median, not average,
  *  so one unusual six-month gap does not distort the picture. */
-function cust_frequency($partyId) {
+function cust_frequency($partyId, $windowDays = 730) {
+    // same two-year window as cust_gap_map(), so the number on Customer 360
+    // and the number behind the At Risk label are always the same number
     $dates = array_column(all("SELECT sale_date FROM sales WHERE party_id = ? AND is_cancelled = 0
+                               AND sale_date >= DATE_SUB(CURDATE(), INTERVAL " . (int)$windowDays . " DAY)
                                ORDER BY sale_date", [$partyId]), 'sale_date');
     if (count($dates) < 2) return ['gap_days' => null, 'bills' => count($dates), 'per_year' => null];
     $gaps = [];
@@ -246,11 +249,19 @@ function cust_segment_rows($extraWhere = '') {
 
 /** Median days between bills for every customer, in one query's worth of
  *  rows. MySQL 5.7-compatible: the medians are worked out in PHP from a flat
- *  ordered list, which is far cheaper than a window function per party. */
-function cust_gap_map($extraWhere = '') {
+ *  ordered list, which is far cheaper than a window function per party.
+ *
+ *  Only the last two years count. That is not just for speed - a rhythm from
+ *  three years ago is not this customer's rhythm today, and "usually buys
+ *  every 30 days" should mean lately. It also stops the query dragging a
+ *  decade of history into PHP: on a 100,000-bill shop the unbounded version
+ *  took 265ms of a 1-second page.
+ */
+function cust_gap_map($extraWhere = '', $windowDays = 730) {
     $rows = all("SELECT s.party_id, s.sale_date FROM sales s
                  JOIN parties p ON p.id = s.party_id
-                 WHERE s.is_cancelled = 0 AND s.party_id IS NOT NULL $extraWhere
+                 WHERE s.is_cancelled = 0 AND s.party_id IS NOT NULL
+                   AND s.sale_date >= DATE_SUB(CURDATE(), INTERVAL " . (int)$windowDays . " DAY) $extraWhere
                  ORDER BY s.party_id, s.sale_date");
     $byParty = [];
     foreach ($rows as $r) $byParty[(int)$r['party_id']][] = $r['sale_date'];
