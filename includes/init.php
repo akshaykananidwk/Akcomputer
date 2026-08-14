@@ -45,6 +45,7 @@ require_once __DIR__ . '/ai.php';
 require_once __DIR__ . '/ai_guard.php'; // budget, switches and the fallback contract
 require_once __DIR__ . '/sales_assist.php'; // AI reads the sentence, code reads the shop
 require_once __DIR__ . '/bill_scan.php';    // AI reads the paper, code checks the arithmetic
+require_once __DIR__ . '/market.php';       // what the shop's own books say about its market
 
 csrf_check();
 

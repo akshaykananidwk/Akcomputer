@@ -73,6 +73,7 @@ $_navMenu = [
     ]],
     ['group', 'reports', 'bar-chart', 'Reports', [
         ['reports.php', 'All Reports', 'reports.view', null, null],
+        ['market.php', '📊 બજારની સમજ (Market Intelligence)', 'reports.view', null, null],
         ['reports.php?r=custom', 'Custom Report Builder', 'reports.builder', null, null],
         ['report_schedules.php', 'Scheduled Reports', 'report_schedules.view', 'report_schedules.php?action=new', 'report_schedules.add'],
         ['cost_analytics.php', 'Cost Analytics (AI + WhatsApp)', '*', null, null],
