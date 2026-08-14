@@ -223,11 +223,17 @@ function pi_suppliers($months = 12) {
         elseif ($d['last'] < $d['first'] * 0.98) $down[$pid] = ($down[$pid] ?? 0) + 1;
     }
 
+    // one ledger sweep for every supplier in the list, not party_balance() per
+    // row - that loop was 50 extra queries on this screen alone
+    $ids = implode(',', array_map(fn($x) => (int)$x['party_id'], $rows));
+    $bals = array_column(all("SELECT p.id, " . party_balance_expr('p') . " bal
+                              FROM parties p WHERE p.id IN ($ids)"), 'bal', 'id');
+
     $t = today();
     $out = [];
     foreach ($rows as $r) {
         $pid = (int)$r['party_id'];
-        $bal = party_balance($pid);
+        $bal = (float)($bals[$pid] ?? 0);
         $out[] = [
             'id' => $pid, 'name' => $r['name'], 'mobile' => $r['mobile'],
             'lead_days' => (int)$r['lead_days'],
