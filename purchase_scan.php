@@ -9,7 +9,7 @@
 require_once __DIR__ . '/includes/init.php';
 require_perm('purchases.add');
 
-$review = null; $scanFile = null;
+$review = null; $scanFile = null; $doc = null; $aiWhy = '';
 // Upload a PDF or a photo (many phones export bills as PDF, and the format
 // varies) - not only a live camera shot.
 $ALLOWED = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tif', 'tiff'];
@@ -32,10 +32,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'scan') {
     $scanFile = uniqid('scan_') . '.' . $ext;
     move_uploaded_file($_FILES['bill_photo']['tmp_name'], $dir . '/' . $scanFile);
 
+    // A vision model reads the bill as a TABLE (qty, rate, amount per line),
+    // which the token-based OCR path below cannot do. Its numbers are then
+    // checked by bs_check() - ordinary arithmetic, no AI - and anything that
+    // does not add up is flagged for a person rather than accepted. If AI is
+    // off, out of budget or unable to read the file, $doc stays null and the
+    // original OCR path runs exactly as before.
+    list($doc, $aiWhy) = bs_extract($dir . '/' . $scanFile);
+    if ($doc) {
+        $doc = bs_check($doc);
+        $review = bs_review_rows($doc);
+        log_activity('purchase_scan_ai', count($doc['lines']) . ' line(s), ' . $doc['bad_lines'] . ' flagged');
+    }
+}
+if ($doc === null && $scanFile !== null) {
+    $dir = __DIR__ . '/uploads/purchase_scans';
     $text = ocr_extract_text($dir . '/' . $scanFile);
     if ($text === null) {
         flash('Could not read this bill. Try a clearer, well-lit photo or a text-based PDF. '
-            . 'The built-in free reader is shared and rate-limited - if it keeps failing, add your own free OCR.space key in Settings > Invoice, then try again.', 'error');
+            . 'The built-in free reader is shared and rate-limited - if it keeps failing, add your own free OCR.space key in Settings > Invoice, then try again.'
+            . ($aiWhy ? ' (AI: ' . $aiWhy . ')' : ''), 'error');
         redirect('purchase_scan.php');
     }
     $tokens = ocr_candidate_tokens($text);
@@ -64,6 +80,30 @@ include __DIR__ . '/includes/header.php';
 </div>
 
 <?php if ($review !== null): ?>
+<?php if ($doc): ?>
+<div class="card">
+  <h2>🧾 બિલનો હિસાબ ચકાસ્યો</h2>
+  <p class="muted" style="margin-top:0;font-size:13px">
+    AI એ બિલ વાંચ્યું, પણ દરેક આંકડો કોડે સરવાળા-ગુણાકારથી ચકાસ્યો છે — નંગ × ભાવ = લાઇન ટોટલ, અને લાઇનોનો સરવાળો = બિલનો ટોટલ.
+    જે બેસતું નથી એ નીચે લાલ નિશાનીથી બતાવ્યું છે અને <b>જાતે ચકાસ્યા વગર ઉમેરાશે નહીં</b>.
+  </p>
+  <div class="grid-stats">
+    <div class="stat"><div class="stat-label">લાઇન</div><div class="stat-value"><?= count($doc['lines']) ?></div></div>
+    <div class="stat <?= $doc['bad_lines'] ? 's-bad' : '' ?>"><div class="stat-label">હિસાબ બેસતો નથી</div><div class="stat-value"><?= (int)$doc['bad_lines'] ?></div></div>
+    <div class="stat"><div class="stat-label">લાઇનોનો સરવાળો</div><div class="stat-value">₹<?= money($doc['line_sum']) ?></div></div>
+    <div class="stat"><div class="stat-label">બિલમાં લખેલો ટોટલ</div><div class="stat-value"><?= $doc['total'] > 0 ? '₹' . money($doc['total']) : '—' ?></div></div>
+  </div>
+  <?php if ($doc['problems']): ?>
+    <div class="flash flash-error" style="margin-top:10px">⚠️ <?= e(implode(' · ', $doc['problems'])) ?>. બિલ સામે રાખીને ચકાસો.</div>
+  <?php elseif ($doc['total'] > 0): ?>
+    <div class="flash flash-success" style="margin-top:10px">✅ બિલનો સરવાળો બરાબર બેસે છે.</div>
+  <?php endif; ?>
+  <p class="muted" style="font-size:12.5px;margin-bottom:0">
+    <?= e(trim(($doc['supplier'] ? $doc['supplier'] . ' · ' : '') . ($doc['bill_no'] ? 'બિલ ' . $doc['bill_no'] . ' · ' : '') . ($doc['bill_date'] ? dmy($doc['bill_date']) : ''), ' ·')) ?>
+  </p>
+</div>
+<?php endif; ?>
+
 <div class="card">
   <h2>Review Matches</h2>
   <?php if (!$review): ?>
@@ -71,11 +111,16 @@ include __DIR__ . '/includes/header.php';
     <a class="btn" href="purchases.php?action=new&bill_photo=<?= e($scanFile) ?>">Continue to New Purchase →</a>
   <?php else: ?>
   <div id="scanRows">
-  <?php foreach ($review as $r): if ($r['matches']): $billPrice = (float)($r['bill_price'] ?? 0); ?>
-    <div class="list-row scan-row" data-token="<?= e($r['token']) ?>" data-billprice="<?= $billPrice ?>" style="cursor:default;flex-wrap:wrap;align-items:flex-start">
+  <?php foreach ($review as $r): if ($r['matches']): $billPrice = (float)($r['bill_price'] ?? 0);
+        $probs = $r['problems'] ?? []; $lineOk = !isset($r['ok']) || $r['ok']; ?>
+    <div class="list-row scan-row<?= $probs ? ' scan-bad' : '' ?>" data-token="<?= e($r['token']) ?>" data-billprice="<?= $billPrice ?>"
+         data-qty="<?= (float)($r['qty'] ?? 0) ?>" data-taxpct="<?= (float)($r['tax_pct'] ?? -1) ?>"
+         style="cursor:default;flex-wrap:wrap;align-items:flex-start<?= $probs ? ';background:var(--bad-soft,#fef2f2)' : '' ?>">
       <div class="list-row-main" style="flex:1 1 100%">
-        <label class="check-inline"><input type="checkbox" class="scan-include" checked> <strong><?= e($r['token']) ?></strong>
-          <?php if ($billPrice > 0): ?><span class="muted" style="font-weight:normal">· read from bill: ₹<?= money($billPrice) ?></span><?php endif; ?></label>
+        <label class="check-inline"><input type="checkbox" class="scan-include" <?= $lineOk ? 'checked' : '' ?>> <strong><?= e($r['token']) ?></strong>
+          <?php if ($billPrice > 0): ?><span class="muted" style="font-weight:normal">· read from bill: ₹<?= money($billPrice) ?><?php if (!empty($r['qty'])): ?> × <?= rtrim(rtrim(number_format((float)$r['qty'], 2), '0'), '.') ?> નંગ = ₹<?= money($r['amount'] ?? 0) ?><?php endif; ?></span><?php endif; ?></label>
+        <?php foreach ($probs as $p): ?><div style="color:var(--bad,#b91c1c);font-size:12.5px">⚠️ <?= e($p) ?> — જાતે ચકાસો</div><?php endforeach; ?>
+        <?php foreach ($r['notes'] ?? [] as $n): ?><div class="muted" style="font-size:12.5px">🧮 <?= e($n) ?></div><?php endforeach; ?>
         <select class="scan-item-select mt" style="width:100%" onchange="scanItemChanged(this)">
           <?php foreach ($r['matches'] as $m): ?>
           <option value="<?= $m['id'] ?>" data-name="<?= e($m['name']) ?>" data-price="<?= (float)$m['purchase_price'] ?>" data-tax="<?= (float)$m['tax_rate'] ?>">
@@ -84,7 +129,7 @@ include __DIR__ . '/includes/header.php';
           <?php endforeach; ?>
         </select>
         <div class="scan-fields" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:flex-end">
-          <div><label style="font-size:12px" class="muted">Qty</label><br><input type="number" class="scan-qty" value="1" min="0.01" step="any" style="width:70px"></div>
+          <div><label style="font-size:12px" class="muted">Qty</label><br><input type="number" class="scan-qty" value="<?= !empty($r['qty']) ? (float)$r['qty'] : 1 ?>" min="0.01" step="any" style="width:70px"></div>
           <div><label style="font-size:12px" class="muted">Price ₹</label><br><input type="number" class="scan-price" value="0" min="0" step="any" style="width:100px" oninput="scanCalc(this)"></div>
           <div><label style="font-size:12px" class="muted">GST %</label><br><input type="number" class="scan-gst" value="0" min="0" step="any" style="width:70px" oninput="scanCalc(this)"></div>
           <label class="check-inline" style="font-size:13px"><input type="checkbox" class="scan-incl" onchange="scanCalc(this)"> Price incl. GST</label>
@@ -93,7 +138,9 @@ include __DIR__ . '/includes/header.php';
       </div>
     </div>
   <?php else: ?>
-    <div class="list-row scan-row scan-unmatched" data-token="<?= e($r['token']) ?>" style="cursor:default;background:var(--warn-soft)">
+    <div class="list-row scan-row scan-unmatched" data-token="<?= e($r['token']) ?>"
+         data-billprice="<?= (float)($r['bill_price'] ?? 0) ?>" data-qty="<?= (float)($r['qty'] ?? 0) ?>"
+         data-taxpct="<?= (float)($r['tax_pct'] ?? -1) ?>" style="cursor:default;background:var(--warn-soft)">
       <div class="list-row-main">
         <strong>"<?= e($r['token']) ?>"</strong> <span class="muted">- not found in your item catalog</span>
         <div class="mt">
@@ -145,7 +192,9 @@ document.getElementById('scanRows').addEventListener('click', function (ev) {
     row.innerHTML = '<div class="list-row-main" style="flex:1 1 100%"><label class="check-inline"><input type="checkbox" class="scan-include" checked> <strong>' + token + '</strong></label>' +
       '<select class="scan-item-select mt" style="width:100%" onchange="scanItemChanged(this)">' + opts + '</select>' +
       '<div class="scan-fields" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:flex-end">' +
-      '<div><label style="font-size:12px" class="muted">Qty</label><br><input type="number" class="scan-qty" value="1" min="0.01" step="any" style="width:70px"></div>' +
+      // the qty the bill actually printed survives an "add the item, re-check"
+      // round trip - retyping it is exactly the work this screen exists to save
+      '<div><label style="font-size:12px" class="muted">Qty</label><br><input type="number" class="scan-qty" value="' + (parseFloat(row.dataset.qty) > 0 ? parseFloat(row.dataset.qty) : 1) + '" min="0.01" step="any" style="width:70px"></div>' +
       '<div><label style="font-size:12px" class="muted">Price ₹</label><br><input type="number" class="scan-price" value="0" min="0" step="any" style="width:100px" oninput="scanCalc(this)"></div>' +
       '<div><label style="font-size:12px" class="muted">GST %</label><br><input type="number" class="scan-gst" value="0" min="0" step="any" style="width:70px" oninput="scanCalc(this)"></div>' +
       '<label class="check-inline" style="font-size:13px"><input type="checkbox" class="scan-incl" onchange="scanCalc(this)"> Price incl. GST</label>' +
@@ -165,9 +214,13 @@ function scanInitRow(row) {
   var priceInp = row.querySelector('.scan-price');
   var gstInp = row.querySelector('.scan-gst');
   priceInp.value = (billPrice > 0 ? billPrice : (parseFloat(opt.dataset.price) || 0));
-  gstInp.value = parseFloat(opt.dataset.tax) || 0;
-  // A price read off the bill is normally the GST-inclusive amount the vendor charged.
-  if (billPrice > 0 && (parseFloat(gstInp.value) || 0) > 0) row.querySelector('.scan-incl').checked = true;
+  var lineTax = parseFloat(row.dataset.taxpct);
+  var fromTable = !isNaN(lineTax) && lineTax >= 0;   // AI read this bill as a table
+  gstInp.value = (fromTable && lineTax > 0) ? lineTax : (parseFloat(opt.dataset.tax) || 0);
+  // A rate printed in a bill's rate COLUMN is the pre-GST rate - the tax sits
+  // in its own row at the bottom. Only the old OCR path, which grabs whatever
+  // number ends the line, is treating an inclusive amount as the price.
+  if (!fromTable && billPrice > 0 && (parseFloat(gstInp.value) || 0) > 0) row.querySelector('.scan-incl').checked = true;
   scanCalc(priceInp);
 }
 // When the user picks a different catalog item, refresh price/GST to that item
@@ -216,6 +269,10 @@ function scanContinue() {
   });
   if (bad) { alert('Every included item needs a quantity greater than 0.'); return; }
   if (!items.length) { alert('Select at least one item to add.'); return; }
+  // a line whose arithmetic did not add up can still be taken - but only
+  // deliberately, and only after the person says they checked it
+  var flagged = document.querySelectorAll('.scan-bad .scan-include:checked').length;
+  if (flagged && !confirm(flagged + ' લાઇનનો હિસાબ બિલ સાથે બેસતો નથી. તમે જાતે ચકાસી લીધું છે?')) return;
   sessionStorage.setItem('reorderItems', JSON.stringify(items));
   location = 'purchases.php?action=new&reorder=1&bill_photo=' + encodeURIComponent(SCAN_FILE);
 }
