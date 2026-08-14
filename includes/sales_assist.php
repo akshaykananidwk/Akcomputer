@@ -142,7 +142,12 @@ function sa_search(array $words, $loc, $limit = null, $all = true) {
     $conds = []; $params = [];
     foreach ($words as $w) {
         $like = '%' . $w . '%';
-        $conds[] = "(i.name LIKE ? OR i.brand LIKE ? OR i.model LIKE ? OR i.barcode LIKE ? OR c.name LIKE ?)";
+        // COALESCE is load-bearing, not decoration. c.name is NULL for an item
+        // with no category, and "FALSE OR NULL" is NULL in SQL - so a single
+        // uncategorised item silently dropped out of the whole search, and the
+        // hits score came back NULL and broke the ordering with it.
+        $conds[] = "(i.name LIKE ? OR COALESCE(i.brand,'') LIKE ? OR COALESCE(i.model,'') LIKE ?"
+                 . " OR COALESCE(i.barcode,'') LIKE ? OR COALESCE(c.name,'') LIKE ?)";
         array_push($params, $like, $like, $like, $like, $like);
     }
     // $all = every word must appear (precise). Otherwise any word will do, and

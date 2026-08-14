@@ -196,7 +196,8 @@ function bs_match_desc($desc) {
     $conds = []; $params = [];
     foreach ($words as $w) {
         $like = '%' . trim($w) . '%';
-        $conds[] = '(name LIKE ? OR brand LIKE ? OR model LIKE ?)';
+        // NULL brand/model would turn the whole AND chain NULL and drop the row
+        $conds[] = "(name LIKE ? OR COALESCE(brand,'') LIKE ? OR COALESCE(model,'') LIKE ?)";
         array_push($params, $like, $like, $like);
     }
     return all('SELECT id, name, model, barcode, purchase_price, tax_rate FROM items
