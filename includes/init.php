@@ -42,6 +42,7 @@ require_once __DIR__ . '/customer.php';  // customer intelligence + collection
 require_once __DIR__ . '/purchase_intel.php'; // smart stock + purchasing
 require_once __DIR__ . '/ocr.php';
 require_once __DIR__ . '/ai.php';
+require_once __DIR__ . '/ai_guard.php'; // budget, switches and the fallback contract
 
 csrf_check();
 

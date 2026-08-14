@@ -26,9 +26,9 @@
 /** The rules behind segmentation and collection, all owner-editable.
  *  Defaults are deliberately conservative for a small computer/CCTV shop. */
 function cust_rules() {
-    static $r = null;
-    if ($r !== null) return $r;
-    return $r = [
+    // not cached in a static: setting() already holds them in memory, and a
+    // static would hand back stale rules to a screen that just saved them
+    return [
         'vip_spend'        => (float)setting('cust_vip_spend', 50000),      // 12-month spend to count as VIP
         'high_value_spend' => (float)setting('cust_high_spend', 20000),
         'regular_bills'    => (int)setting('cust_regular_bills', 3),        // bills in 12 months

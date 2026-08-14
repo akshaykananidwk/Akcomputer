@@ -41,6 +41,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_general') {
     redirect('settings.php?cat=general');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_ai') {
+    require_perm('settings.edit');
+    set_setting('ai_enabled', post('ai_enabled') ? '1' : '0');
+    foreach (array_keys(ai_features()) as $f) set_setting('ai_feat_' . $f, post('feat_' . $f) ? '1' : '0');
+    foreach (['ai_monthly_calls', 'ai_monthly_budget', 'ai_rate_in_per_m', 'ai_rate_out_per_m'] as $k)
+        if (post($k) !== null) set_setting($k, (string)max(0, (float)post($k)));
+    log_activity('settings_save', 'ai');
+    flash('AI settings saved.');
+    redirect('settings.php?cat=ai');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_whatsapp') {
     require_perm('settings.edit');
     foreach (['wa_api_url', 'wa_session_id', 'wa_api_key', 'wa_shop_number'] as $k) set_setting($k, post($k));
@@ -435,6 +446,7 @@ $categories = [
     'accounting' => ['📒', 'Accounting', 'Period lock, Chart of Accounts, Journal Entries'],
     'service'   => ['🔧', 'Service Checklist', 'Repair job checklist items'],
     'inventory' => ['📦', 'Inventory', 'Costing method, dead-stock threshold, audit/transfers'],
+    'ai'        => ['🤖', 'AI', 'On/off per feature, monthly budget and what it has cost'],
     'security'  => ['🛡️', 'Security', 'Password policy, auto-logout, IP restriction, login attempts'],
     'backup'    => ['🔄', 'Backup & Updates', 'Backup download, GitHub update'],
     'about'     => ['📱', 'About', 'Install as app'],
@@ -999,6 +1011,74 @@ exit;
     <div><label>New checklist item</label><input type="text" name="label" required></div>
     <div style="align-self:end"><button class="btn btn-sm" type="submit">+ Add</button></div>
   </form>
+</div>
+<?php endif; ?>
+
+<?php if ($cat === 'ai'): $lim = ai_limits(); $use = ai_month_usage(); ?>
+<div class="card">
+  <h2>🤖 AI</h2>
+  <p class="muted mb" style="font-size:13px">
+    AI અહીં ફક્ત <strong>ભાષા સમજવાનું</strong> કામ કરે છે — વસ્તુ શોધવી, બિલનો ફોટો વાંચવો, કેટેગરી સૂચવવી.
+    <strong>પૈસાનો કોઈ આંકડો AI નક્કી કરતું નથી.</strong> ભાવ, માર્જિન, સ્ટોક અને ખાતાવહી બધું સિસ્ટમનો પોતાનો હિસાબ જ ગણે છે,
+    અને AI જે સૂચવે એ તમે મંજૂર કરો પછી જ કોઈ એન્ટ્રી થાય છે. AI બંધ કરી દો તો પણ બધી સ્ક્રીન ચાલુ રહેશે —
+    ફક્ત શોધવાનું જૂની રીતે (શબ્દ મેળવીને) થશે.
+  </p>
+  <div class="grid-stats">
+    <div class="stat"><div class="stat-label">આ મહિને કૉલ</div><div class="stat-value"><?= (int)$use['calls'] ?><?= $lim['calls_cap'] ? ' / ' . (int)$lim['calls_cap'] : '' ?></div></div>
+    <div class="stat"><div class="stat-label">આ મહિનાનો ખર્ચ</div>
+      <div class="stat-value"><?= ($lim['rate_in'] > 0 || $lim['rate_out'] > 0) ? '₹' . money($use['cost']) : '—' ?></div></div>
+    <div class="stat"><div class="stat-label">બજેટ</div><div class="stat-value"><?= $lim['budget_rs'] > 0 ? '₹' . money($lim['budget_rs']) : 'નથી' ?></div></div>
+    <div class="stat <?= $lim['enabled'] ? 's-ok' : 's-bad' ?>"><div class="stat-label">સ્થિતિ</div>
+      <div class="stat-value" style="font-size:16px"><?= $lim['enabled'] ? 'ચાલુ' : 'બંધ' ?></div></div>
+  </div>
+  <form method="post">
+    <?= csrf_field() ?><input type="hidden" name="do" value="save_ai">
+    <label class="check-inline"><input type="checkbox" name="ai_enabled" value="1" <?= $lim['enabled'] ? 'checked' : '' ?>>
+      <strong>AI ચાલુ રાખો</strong> — બંધ કરશો તો એકેય AI કૉલ નહીં જાય</label>
+    <h3 class="mt">કઈ સુવિધા ચાલુ રાખવી</h3>
+    <?php foreach (ai_features() as $k => $f): ?>
+    <label class="check-inline"><input type="checkbox" name="feat_<?= e($k) ?>" value="1" <?= setting('ai_feat_' . $k, '1') === '1' ? 'checked' : '' ?>>
+      <?= $f[0] ?> — <span class="muted"><?= e($f[1]) ?></span></label>
+    <?php endforeach; ?>
+    <h3 class="mt">મર્યાદા</h3>
+    <div class="form-row cols-2">
+      <div><label>મહિનામાં વધુમાં વધુ કેટલા કૉલ (0 = મર્યાદા નહીં)</label>
+        <input type="number" name="ai_monthly_calls" min="0" value="<?= (int)$lim['calls_cap'] ?>"></div>
+      <div><label>મહિનાનું બજેટ ₹ (0 = મર્યાદા નહીં)</label>
+        <input type="number" step="0.01" name="ai_monthly_budget" min="0" value="<?= 0 + $lim['budget_rs'] ?>"></div>
+    </div>
+    <h3 class="mt">ભાવ (તમારા પોતાના બિલ પ્રમાણે)</h3>
+    <p class="muted mb" style="font-size:12px">
+      દર 10 લાખ ટોકનનો ભાવ. આ આંકડા <strong>તમારા AI પ્રોવાઇડરના બિલમાંથી</strong> ભરવાના છે —
+      સિસ્ટમ કોઈ ભાવ ધારીને મૂકતી નથી. ખાલી રાખશો તો ટોકનની ગણતરી થશે પણ રૂપિયામાં ખર્ચ નહીં દેખાય,
+      અને બજેટને બદલે કૉલની મર્યાદા તમને સાચવશે.
+    </p>
+    <div class="form-row cols-2">
+      <div><label>Input ટોકનનો ભાવ (₹ / 1M)</label>
+        <input type="number" step="0.0001" name="ai_rate_in_per_m" min="0" value="<?= 0 + $lim['rate_in'] ?>"></div>
+      <div><label>Output ટોકનનો ભાવ (₹ / 1M)</label>
+        <input type="number" step="0.0001" name="ai_rate_out_per_m" min="0" value="<?= 0 + $lim['rate_out'] ?>"></div>
+    </div>
+    <button class="btn" type="submit">સાચવો</button>
+  </form>
+  <?php $byFeat = all("SELECT feature, COUNT(*) calls, COALESCE(SUM(units_in),0) tin,
+                              COALESCE(SUM(units_out),0) tout, COALESCE(SUM(cost_paise),0) paise
+                       FROM api_usage WHERE service = 'gemini' AND created_at >= ?
+                       GROUP BY feature ORDER BY calls DESC", [date('Y-m-01 00:00:00')]);
+    if ($byFeat): ?>
+  <h3 class="mt">આ મહિને કઈ સુવિધાએ કેટલું વાપર્યું</h3>
+  <div class="table-wrap"><table class="table-sm">
+    <thead><tr><th>સુવિધા</th><th class="num">કૉલ</th><th class="num">ટોકન (in/out)</th><th class="num">ખર્ચ</th></tr></thead>
+    <tbody>
+    <?php foreach ($byFeat as $b): $fk = $b['feature'] ?: '(જૂના કૉલ)'; ?>
+      <tr><td><?= e(ai_features()[$b['feature']][0] ?? $fk) ?></td>
+          <td class="num"><?= (int)$b['calls'] ?></td>
+          <td class="num"><?= (int)$b['tin'] ?> / <?= (int)$b['tout'] ?></td>
+          <td class="num"><?= ((int)$b['paise']) ? '₹' . money($b['paise'] / 100) : '—' ?></td></tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table></div>
+  <?php endif; ?>
 </div>
 <?php endif; ?>
 

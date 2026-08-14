@@ -31,9 +31,9 @@
 
 /** Reorder settings, all owner-editable. */
 function pi_rules() {
-    static $r = null;
-    if ($r !== null) return $r;
-    return $r = [
+    // not cached in a static: setting() already holds them in memory, and a
+    // static would hand back stale rules to a screen that just saved them
+    return [
         'lead_days'     => max(0, (int)setting('purchase_lead_days', 7)),    // default supplier delivery time
         'safety_days'   => max(0, (int)setting('purchase_safety_days', 7)),  // buffer on top of lead time
         'cover_days'    => max(7, (int)setting('purchase_cover_days', 30)),  // how long one order should last
