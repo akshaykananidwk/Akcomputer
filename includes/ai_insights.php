@@ -137,8 +137,12 @@ function ai_dashboard_insights($saleScope = '', $saleParams = []) {
     $overdue = row("SELECT COUNT(*) c, COALESCE(SUM(total - paid),0) amt FROM sales WHERE status <> 'paid' AND is_cancelled = 0 AND due_date IS NOT NULL AND due_date < ? $saleScope", array_merge([$today], $saleParams));
     if ($overdue && $overdue['c'] > 0) $insights[] = ['icon' => '⏰', 'text' => (int)$overdue['c'] . ' bill(s) overdue, totalling ₹' . money($overdue['amt']) . '.'];
 
+    // This one JOINs, and sale_items has a location_id of its own - so the
+    // caller's scope has to be pointed at the sales table before it goes in,
+    // or MySQL rejects the query as ambiguous and the whole dashboard 500s.
+    $joinScope = scope_for($saleScope, 's');
     $topItem = row("SELECT i.name, SUM(si.qty) q FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
-                    WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $saleScope GROUP BY si.item_id ORDER BY q DESC LIMIT 1", array_merge([$m1Start, $m1End], $saleParams));
+                    WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $joinScope GROUP BY si.item_id ORDER BY q DESC LIMIT 1", array_merge([$m1Start, $m1End], $saleParams));
     if ($topItem) $insights[] = ['icon' => '🏆', 'text' => 'Best-seller last month: ' . $topItem['name'] . ' (' . (float)$topItem['q'] . ' units).'];
 
     return array_slice($insights, 0, 5);

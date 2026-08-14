@@ -919,6 +919,11 @@ function invoice_pdf_design2($sale, $items) {
     // ===== ITEM TABLE =====
     $hasGst = $sale['is_gst'];
     $cNum = $L + 6; $cItem = $L + 34;
+    // Both are only DRAWN when $hasGst, but the closures below capture them by
+    // value in their use() lists, which happens whether the branch ran or not -
+    // so a non-GST invoice printed two "undefined variable" warnings into the
+    // live error log on every download. Declared up front instead.
+    $cHsnR = 0; $cGstR = 0;
     if ($hasGst) { $cHsnR = 316; $cQtyC = 360; $cRateR = 444; $cGstR = 480; $cAmtR = $R - 10; $itemMaxW = $cHsnR - $cItem - 52; }
     else { $cQtyC = 322; $cRateR = 468; $cAmtR = $R - 10; $itemMaxW = ($cQtyC - 24) - $cItem - 10; }
 

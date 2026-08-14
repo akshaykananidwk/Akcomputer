@@ -148,3 +148,19 @@ function own_scope($module, $column = 'created_by') {
     if (can($module . '.all')) return ['', []];
     return [' AND ' . $column . ' = ? ', [current_user()['id']]];
 }
+
+/**
+ * Point an unqualified scope fragment at a table alias.
+ *
+ * A scope reads " AND created_by = ? AND location_id = ?" with no table on it,
+ * which is fine until it lands in a query that JOINs. created_by only exists on
+ * sales, so it never complained - but location_id sits on BOTH sales and
+ * sale_items, and MySQL rejects the whole query as ambiguous. That is exactly
+ * how the dashboard came to throw a 500 for every ?loc=N on the live site.
+ *
+ * So any query that joins must pass its scope through here first.
+ */
+function scope_for($scope, $alias) {
+    if ($scope === '' || $alias === '') return $scope;
+    return str_replace([' created_by', ' location_id'], [' ' . $alias . '.created_by', ' ' . $alias . '.location_id'], $scope);
+}

@@ -49,7 +49,7 @@ if (can('reports.profit')) {
     foreach (all("SELECT DATE_FORMAT(s.sale_date, '%Y-%m') ym, COALESCE(SUM(si.qty * i.purchase_price),0) c
                   FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
                   WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? "
-                . str_replace([' created_by', ' location_id'], [' s.created_by', ' s.location_id'], $saleScope . $locScope)
+                . scope_for($saleScope . $locScope, 's')   // this query JOINs; see scope_for()
                 . " GROUP BY ym", array_merge([$chartFrom, $chartTo], $saleParams, $locParam)) as $r)
         $costByMonth[$r['ym']] = (float)$r['c'];
 }
