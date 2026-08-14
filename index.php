@@ -116,7 +116,10 @@ if ($sBals) {
     $sCol = dash_collection($sBals);
 }
 if ($seeStock) $sStock = dash_stock($dashLoc);
-if ($seeProfit) { $sLowMargin = dash_low_margin($dFrom, $dTo); $sPriceUp = dash_price_increases(); }
+// Phase 5's pi_summary() supersedes these two: it measures margin against the
+// price actually last paid rather than a period's sales, and reports price
+// rises per supplier. They are only computed when purchase intelligence is not
+// available to this user, so the dashboard never works both out.
 if (can('parties.view') && $sBals) $sSeg = dash_segments($sBals, $sCol);
 if (can('sales.view')) { $sIntel = dash_sales_intel($dFrom, $dTo); $sTrend = dash_sales_trend(); }
 if (is_full_admin()) $sHealth = dash_health();
@@ -134,6 +137,15 @@ if ($seeMoney) {
     $sPromises = coll_promises_due();
 }
 
+// Purchase intelligence (Phase 5). Behind the same cost fence the screen
+// itself uses, and cached for five minutes - the reorder sweep reads every
+// item's sales history, which is not something to redo on every page load.
+$sPurch = null;
+if (can('purchases.view') && ($seeProfit || can('items.cost'))) {
+    $sPurch = dash_cache('purchase', 300, 'pi_summary');
+}
+if ($seeProfit && !$sPurch) { $sLowMargin = dash_low_margin($dFrom, $dTo); $sPriceUp = dash_price_increases(); }
+
 // The summary, Action Center and alerts are built from a context that hides
 // figures the reader is not allowed to see. Cost-derived money (profit, stock
 // value, dead-stock value) is behind reports.profit exactly as it is on every
@@ -150,6 +162,7 @@ $dashCtx = [
     'health_issues' => $sHealth['issues'] ?? [], 'repairs_ready' => $repairsReady, 'new_orders' => $newOrders,
     'reorder' => $sStock ? array_filter($sStock['low'], fn($x) => $x['reorder_qty'] > 0) : [],
     'collection_sum' => $sCollSum,
+    'purchase' => $sPurch,
     'promises_due' => count($sPromises['due']),
     'promises_broken' => count($sPromises['broken']),
 ];
@@ -172,6 +185,7 @@ $topWidgetDefs = [
     'smart_kpis' => (bool)$sKpis,
     'duo' => $canMoney,
     'smart_queue' => (bool)$sCollSum && $sCollSum['customers'] > 0,
+    'smart_purchase' => (bool)$sPurch && $sPurch['reorder_items'] > 0,
     'smart_collection' => (bool)$sCol && $sCol['total'] > 0.009,
     'smart_stock' => (bool)$sStock,
     'smart_sales' => (bool)$sIntel,
@@ -340,6 +354,22 @@ include __DIR__ . '/includes/header.php';
   <p class="muted mb" style="font-size:13px">🤝 <?= (int)$sCollSum['promises_open'] ?> ગ્રાહકે ચૂકવવાનો વાયદો આપ્યો છે<?= $sCollSum['promised_today'] > 0.009 ? ' — આજે ₹' . money($sCollSum['promised_today']) . ' આવવાના છે' : '' ?>.</p>
   <?php endif; ?>
   <p class="mt" style="margin:0"><a class="btn btn-sm" href="collection.php">📮 આજની ઉઘરાણી યાદી ખોલો</a></p>
+</div>
+<?php elseif ($_w === 'smart_purchase'): ?>
+<div class="card">
+  <h2>🛒 શું મંગાવવું <span class="muted" style="font-weight:400;font-size:13px">· ડિલિવરી આવે એ પહેલાં ખૂટે એવું</span></h2>
+  <div class="grid-stats">
+    <a class="stat s-bad" href="purchase_intel.php"><div class="stat-label">ખલાસ થઈ ગયું</div><div class="stat-value"><?= (int)$sPurch['out_of_stock'] ?></div></a>
+    <a class="stat s-warn" href="purchase_intel.php"><div class="stat-label">મંગાવવા જેવું</div><div class="stat-value"><?= (int)$sPurch['reorder_items'] ?></div></a>
+    <a class="stat" href="purchase_intel.php"><div class="stat-label">અંદાજિત ખર્ચ</div><div class="stat-value">₹<?= money($sPurch['reorder_cost']) ?></div></a>
+    <a class="stat <?= $sPurch['price_alerts'] ? 's-warn' : '' ?>" href="purchase_intel.php?tab=price"><div class="stat-label">ભાવ વધ્યા</div><div class="stat-value"><?= (int)$sPurch['price_alerts'] ?></div></a>
+  </div>
+  <p class="mt" style="margin:0">
+    <a class="btn btn-sm" href="purchase_intel.php">🛒 મંગાવવાની યાદી ખોલો</a>
+    <?php if ($sPurch['thin_margin']): ?>
+    <a class="btn btn-sm btn-outline" href="purchase_intel.php?tab=margin">🏷️ <?= (int)$sPurch['thin_margin'] ?> વસ્તુનું માર્જિન પાતળું</a>
+    <?php endif; ?>
+  </p>
 </div>
 <?php elseif ($_w === 'smart_collection'): ?>
 <div class="card">

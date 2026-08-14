@@ -112,10 +112,15 @@ function pi_reorder($limit = 100) {
         if (!$needByDemand && !$needByMin) continue;
         if ($perDay <= 0.0001 && !$needByMin) continue; // nothing sells it, do not push stock in
 
-        // how much: enough to cover the order window plus the buffer
-        $target = $perDay > 0.0001
-            ? ceil($perDay * ($r['cover_days'] + $trigger))
-            : max((float)$it['min_stock'], 1);
+        // How much: enough to cover the order window plus the buffer - but
+        // never less than the minimum the owner set by hand. Without that
+        // floor, a slow-moving item sitting below its minimum computed a
+        // demand target smaller than the stock already present, came out at
+        // zero and was dropped from the list entirely - so min_stock silently
+        // stopped working as a trigger at all.
+        $target = $perDay > 0.0001 ? ceil($perDay * ($r['cover_days'] + $trigger)) : 0;
+        $target = max($target, (float)$it['min_stock']);
+        if ($target <= 0) $target = 1;
         $qty = max(0, (int)ceil($target - $stock - $onOrd));
         if ($qty <= 0) continue;
 
@@ -435,4 +440,34 @@ function pi_summary() {
         'thin_margin' => count(pi_margin_watch(500)),
     ];
     return $out;
+}
+
+/** The reorder picture for ONE item, for the item page. Same arithmetic as
+ *  pi_reorder() but without sweeping the whole catalogue. */
+function pi_item_reorder($itemId, $days = 90) {
+    $id = (int)$itemId;
+    $it = row("SELECT i.id, i.unit, i.min_stock, i.purchase_price, COALESCE(SUM(st.qty),0) stock
+               FROM items i LEFT JOIN stock st ON st.item_id = i.id
+               WHERE i.id = ? AND i.item_type <> 'service' GROUP BY i.id", [$id]);
+    if (!$it) return null;
+    $r = pi_rules();
+    $sold = (float)val("SELECT COALESCE(SUM(si.qty),0) FROM sale_items si JOIN sales s ON s.id = si.sale_id
+                        WHERE si.item_id = ? AND s.is_cancelled = 0
+                          AND s.sale_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)", [$id, $days]);
+    $perDay = $sold / $days;
+    $stock = (float)$it['stock'];
+    $sup = pi_item_suppliers($id, 1);
+    $lead = $sup && (int)$sup[0]['lead_days'] ? (int)$sup[0]['lead_days'] : $r['lead_days'];
+    $trigger = $lead + $r['safety_days'];
+    $daysLeft = $perDay > 0.0001 ? (int)floor($stock / $perDay) : null;
+    $target = $perDay > 0.0001 ? ceil($perDay * ($r['cover_days'] + $trigger)) : max((float)$it['min_stock'], 0);
+    $qty = max(0, (int)ceil($target - $stock));
+    return [
+        'stock' => $stock, 'unit' => $it['unit'], 'per_day' => round($perDay, 3),
+        'sold' => $sold, 'window' => $days,
+        'days_left' => $daysLeft, 'lead_days' => $lead, 'trigger_days' => $trigger,
+        'suggest_qty' => $qty,
+        'needed' => ($daysLeft !== null && $daysLeft <= $trigger) || ($it['min_stock'] > 0 && $stock < (float)$it['min_stock']),
+        'best_supplier' => $sup[0] ?? null,
+    ];
 }

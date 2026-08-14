@@ -132,9 +132,32 @@ $suppHist = (!$isService && can('items.cost')) ? all(
      WHERE pi.item_id = ? AND pu.is_cancelled = 0
      GROUP BY pu.party_id, pt.name, pi.item_id ORDER BY last_price ASC", [$id]) : [];
 
+// Should this item be reordered? Same arithmetic the Purchase Intelligence
+// screen uses, for this one product - so the answer on the item page and the
+// answer on the order list can never disagree.
+$reorder = (!$isService && can('purchases.view') && can('items.cost')) ? pi_item_reorder($id) : null;
+
 $page_title = $item['name'];
 include __DIR__ . '/includes/header.php';
 ?>
+<?php if ($reorder && $reorder['needed']): ?>
+<div class="card" style="border-left:4px solid var(--warn)">
+  <h3 style="margin:0 0 6px">🛒 આ વસ્તુ મંગાવવા જેવી છે</h3>
+  <p class="muted" style="margin:0 0 8px;font-size:13px">
+    અત્યારે <strong><?= (float)$reorder['stock'] ?> <?= e($reorder['unit']) ?></strong> છે,
+    રોજ આશરે <strong><?= $reorder['per_day'] ?></strong> વેચાય છે
+    <?php if ($reorder['days_left'] !== null): ?>— એટલે લગભગ <strong><?= (int)$reorder['days_left'] ?> દિવસ</strong> ચાલશે<?php endif; ?>,
+    અને ડિલિવરીમાં <strong><?= (int)$reorder['lead_days'] ?> દિવસ</strong> લાગે છે.
+    સૂચવેલો ઓર્ડર: <strong><?= (int)$reorder['suggest_qty'] ?> <?= e($reorder['unit']) ?></strong>.
+    <?php if ($reorder['best_supplier']): ?>
+      સૌથી સસ્તું <a href="parties.php?action=ledger&id=<?= (int)$reorder['best_supplier']['party_id'] ?>"><?= e($reorder['best_supplier']['name']) ?></a>
+      પાસે ₹<?= money($reorder['best_supplier']['best_price']) ?> માં મળ્યું હતું.
+    <?php endif; ?>
+  </p>
+  <a class="btn btn-sm" href="purchase_intel.php">🛒 મંગાવવાની આખી યાદી</a>
+</div>
+<?php endif; ?>
+
 <div class="page-actions">
   <a class="btn btn-outline" href="items.php">← Back to Items</a>
   <?php if (can('items.edit')): ?><a class="btn btn-outline" href="items.php?action=edit&id=<?= $id ?>">✏️ Edit Item</a><?php endif; ?>

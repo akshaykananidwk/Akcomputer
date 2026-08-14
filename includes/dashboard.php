@@ -593,30 +593,48 @@ function dash_actions(array $ctx) {
                 'text' => $col['overdue_customers'] . ' ગ્રાહકોનું પેમેન્ટ મુદત વીતી ગયું છે — ₹' . money($col['overdue']) . ' ઉઘરાવવાનું બાકી',
                 'link' => 'collection.php', 'cta' => 'ઉઘરાણી કરો'];
     }
+    // Stock actions point at Purchase Intelligence rather than the plain Low
+    // Stock list: an owner opening this wants to ORDER, and that screen
+    // already knows how much, from whom and at what price.
+    $pi = $ctx['purchase'] ?? null;
     if ($stock && dash_n($stock, 'out')) {
         $a[] = ['icon' => '🚫', 'sev' => 'bad', 'group' => 'Stock',
                 'text' => dash_n($stock, 'out') . ' પ્રોડક્ટનો સ્ટોક ખલાસ થઈ ગયો છે',
-                'link' => 'reports.php?r=low', 'cta' => 'જુઓ'];
+                'link' => 'purchase_intel.php', 'cta' => 'મંગાવો'];
     }
-    if ($stock && dash_n($stock, 'low')) {
+    if ($pi && $pi['reorder_items'] > 0) {
+        $a[] = ['icon' => '🛒', 'sev' => 'warn', 'group' => 'Purchases',
+                'text' => $pi['reorder_items'] . ' વસ્તુ ડિલિવરી આવે એ પહેલાં ખલાસ થઈ જશે — અંદાજે ₹' . money($pi['reorder_cost']) . ' નો ઓર્ડર',
+                'link' => 'purchase_intel.php', 'cta' => 'યાદી જુઓ'];
+    } elseif ($stock && dash_n($stock, 'low')) {
         $a[] = ['icon' => '📉', 'sev' => 'warn', 'group' => 'Stock',
                 'text' => dash_n($stock, 'low') . ' પ્રોડક્ટ થોડા દિવસમાં ખલાસ થઈ જશે',
-                'link' => 'reports.php?r=low', 'cta' => 'ઓર્ડર કરો'];
+                'link' => 'purchase_intel.php', 'cta' => 'ઓર્ડર કરો'];
+    }
+    if ($pi && $pi['price_alerts'] > 0) {
+        $a[] = ['icon' => '📈', 'sev' => 'warn', 'group' => 'Purchases',
+                'text' => $pi['price_alerts'] . ' વસ્તુના ખરીદ ભાવ વધ્યા છે',
+                'link' => 'purchase_intel.php?tab=price', 'cta' => 'તપાસો'];
+    }
+    if ($pi && $pi['thin_margin'] > 0) {
+        $a[] = ['icon' => '🏷️', 'sev' => 'warn', 'group' => 'Pricing',
+                'text' => $pi['thin_margin'] . ' વસ્તુ ટાર્ગેટ કરતાં પાતળા માર્જિને વેચાય છે',
+                'link' => 'purchase_intel.php?tab=margin', 'cta' => 'ભાવ સુધારો'];
     }
     if ($stock && $stock['dead_value'] > 0.009) {
         $a[] = ['icon' => '🐌', 'sev' => 'warn', 'group' => 'Dead Stock',
                 'text' => '₹' . money($stock['dead_value']) . ' નો માલ ' . dash_dead_days() . '+ દિવસથી વેચાયો નથી',
                 'link' => 'reports.php?r=dead_stock', 'cta' => 'જુઓ'];
     }
-    if (!empty($ctx['low_margin'])) {
+    // The margin and reorder lines that used to live here have moved above,
+    // where they are driven by pi_summary() - which measures margin against
+    // the price actually last paid rather than a period's sales, and only
+    // counts an item as needing reordering if it will run out before a
+    // delivery could arrive. Both send the owner somewhere they can act.
+    if (!$pi && !empty($ctx['low_margin'])) {
         $a[] = ['icon' => '🏷️', 'sev' => 'warn', 'group' => 'Pricing',
                 'text' => count($ctx['low_margin']) . ' પ્રોડક્ટનું માર્જિન ટાર્ગેટ કરતાં નીચે છે',
                 'link' => 'reports.php?r=profit', 'cta' => 'ભાવ તપાસો'];
-    }
-    if ($stock && !empty($ctx['reorder'])) {
-        $a[] = ['icon' => '🛒', 'sev' => 'info', 'group' => 'Purchases',
-                'text' => count($ctx['reorder']) . ' પ્રોડક્ટ ફરી મંગાવવા જેવી છે',
-                'link' => 'reports.php?r=purchase_reco', 'cta' => 'સૂચન જુઓ'];
     }
     if (!empty($ctx['repairs_ready'])) {
         $a[] = ['icon' => '🛠️', 'sev' => 'info', 'group' => 'Repairs',
@@ -655,7 +673,9 @@ function dash_alerts(array $ctx) {
         $al[] = ['sev' => 'bad', 'text' => '₹' . money($ctx['collection']['overdue']) . ' ની ઉઘરાણી મુદત વીતી ગઈ છે', 'link' => 'reports.php?r=aging'];
     if (!empty($ctx['stock']) && dash_n($ctx['stock'], 'low') + dash_n($ctx['stock'], 'out') > 0)
         $al[] = ['sev' => 'warn', 'text' => (dash_n($ctx['stock'], 'low') + dash_n($ctx['stock'], 'out')) . ' પ્રોડક્ટ રીઓર્ડર લેવલથી નીચે', 'link' => 'reports.php?r=low'];
-    if (!empty($ctx['price_up']))
+    // only when purchase intelligence is not driving the Action Center -
+    // otherwise the owner is told about rising prices twice on one screen
+    if (empty($ctx['purchase']) && !empty($ctx['price_up']))
         $al[] = ['sev' => 'warn', 'text' => count($ctx['price_up']) . ' પ્રોડક્ટના ખરીદ ભાવ વધ્યા છે', 'link' => 'reports.php?r=purchase'];
     if (!empty($ctx['health_issues']))
         $al[] = ['sev' => 'warn', 'text' => 'Data Health Check માં ' . count($ctx['health_issues']) . ' warning', 'link' => 'reports.php?r=health'];
