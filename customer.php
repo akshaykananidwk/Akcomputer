@@ -51,6 +51,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash($v ? 'હવે આ ગ્રાહકને ઉઘરાણીના મેસેજ નહીં જાય.' : 'હવે આ ગ્રાહકને મેસેજ જઈ શકશે.');
         redirect($back);
     }
+    // Marketing consent is its own switch, on purpose. Someone who does not
+    // want offers is still entitled to be told a bill of theirs is due, and
+    // someone who has asked to stop the payment chasing has not thereby agreed
+    // to be advertised to. One flag for both would break one of those promises.
+    if (post('do') === 'mkt_opt_out') {
+        require_perm('parties.edit');
+        $v = post('value') === '1' ? 1 : 0;
+        q('UPDATE parties SET marketing_opt_out = ? WHERE id = ?', [$v, $pid]);
+        log_activity('marketing_opt_out', "party=$pid value=$v");
+        flash($v ? 'હવે આ ગ્રાહકને જાહેરાત/ઓફરના મેસેજ નહીં જાય.' : 'હવે આ ગ્રાહકને ઓફરના મેસેજ જઈ શકશે.');
+        redirect($back);
+    }
 }
 
 $c = cust_360($id);
@@ -360,6 +372,21 @@ include __DIR__ . '/includes/header.php';
     <input type="hidden" name="value" value="<?= $c['opt_out'] ? '0' : '1' ?>">
     <button class="btn btn-sm <?= $c['opt_out'] ? 'btn-success' : 'btn-outline btn-danger' ?>" type="submit">
       <?= $c['opt_out'] ? '🔔 મેસેજ ફરી ચાલુ કરો' : '🔕 મેસેજ બંધ કરો' ?>
+    </button>
+  </form>
+  <hr>
+  <?php $mkt = (int)($p['marketing_opt_out'] ?? 0); ?>
+  <p class="muted mb" style="font-size:13px">
+    <b>જાહેરાત / ઓફરના મેસેજ</b> — આ અલગ પરવાનગી છે.
+    <?= $mkt
+        ? 'આ ગ્રાહકે ઓફરના મેસેજ બંધ કરાવ્યા છે, એટલે કોઈ કેમ્પેન એમને નહીં જાય. બિલ અને પેમેન્ટની જરૂરી જાણ ચાલુ રહેશે.'
+        : 'આ ગ્રાહકને કેમ્પેનના મેસેજ જઈ શકે છે. ગ્રાહક WhatsApp પર "STOP" લખે તો પણ આ આપોઆપ બંધ થઈ જાય છે.' ?>
+  </p>
+  <form method="post" onsubmit="return confirm('<?= $mkt ? 'ફરી ઓફરના મેસેજ ચાલુ કરવા છે?' : 'આ ગ્રાહકને ઓફરના મેસેજ બંધ કરવા છે?' ?>')">
+    <?= csrf_field() ?><input type="hidden" name="do" value="mkt_opt_out"><input type="hidden" name="id" value="<?= $id ?>">
+    <input type="hidden" name="value" value="<?= $mkt ? '0' : '1' ?>">
+    <button class="btn btn-sm <?= $mkt ? 'btn-success' : 'btn-outline btn-danger' ?>" type="submit">
+      <?= $mkt ? '📣 ઓફરના મેસેજ ફરી ચાલુ કરો' : '🚫 ઓફરના મેસેજ બંધ કરો' ?>
     </button>
   </form>
 </div>

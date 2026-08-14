@@ -157,6 +157,16 @@ if (can('reports.view') && ($seeProfit || can('items.cost'))) {
     if ($m['shrinking'] > 0 || $m['change']['dir'] === 'down' || $m['discount_pct'] >= 2) $sMarket = $m;
 }
 
+// A campaign mid-flight (Phase 8). Shown only while one is actually running,
+// because a finished campaign is not news - and the card carries the count of
+// people held back, so the holdout stays visible rather than being a hidden
+// mechanism the owner forgets is there.
+$sCampaign = null;
+if (can('campaigns.view')) {
+    $sCampaign = row("SELECT id, name, status FROM campaigns WHERE status IN ('ready','sending') ORDER BY id LIMIT 1");
+    if ($sCampaign) $sCampaign['counts'] = cam_counts((int)$sCampaign['id']);
+}
+
 // The summary, Action Center and alerts are built from a context that hides
 // figures the reader is not allowed to see. Cost-derived money (profit, stock
 // value, dead-stock value) is behind reports.profit exactly as it is on every
@@ -198,6 +208,7 @@ $topWidgetDefs = [
     'smart_queue' => (bool)$sCollSum && $sCollSum['customers'] > 0,
     'smart_purchase' => (bool)$sPurch && $sPurch['reorder_items'] > 0,
     'smart_market' => (bool)$sMarket,
+    'smart_campaign' => (bool)$sCampaign,
     'smart_collection' => (bool)$sCol && $sCol['total'] > 0.009,
     'smart_stock' => (bool)$sStock,
     'smart_sales' => (bool)$sIntel,
@@ -399,6 +410,20 @@ include __DIR__ . '/includes/header.php';
     <?php if ($sMarket['top_down']): ?>
     <a class="btn btn-sm btn-outline" href="market.php?tab=momentum">▼ સૌથી વધુ ઘટ્યું: <?= e($sMarket['top_down']) ?></a>
     <?php endif; ?>
+  </p>
+</div>
+<?php elseif ($_w === 'smart_campaign'): $kc = $sCampaign['counts']; ?>
+<div class="card">
+  <h2>📣 <?= e($sCampaign['name']) ?> <span class="badge b-warn">ચાલુ છે</span></h2>
+  <div class="grid-stats">
+    <a class="stat s-good" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">મોકલ્યા</div><div class="stat-value"><?= (int)$kc['sent'] ?></div></a>
+    <a class="stat s-warn" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">બાકી</div><div class="stat-value"><?= (int)$kc['queued'] ?></div></a>
+    <a class="stat" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">રોકી રાખેલા</div><div class="stat-value"><?= (int)$kc['holdout'] ?></div></a>
+    <a class="stat <?= $kc['failed'] ? 's-bad' : '' ?>" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">નિષ્ફળ</div><div class="stat-value"><?= (int)$kc['failed'] ?></div></a>
+  </div>
+  <p class="mt muted" style="margin:0;font-size:12.5px">
+    <?= (int)$kc['holdout'] ?> ગ્રાહકોને જાણી જોઈને મેસેજ નથી મોકલ્યો — એમની સામે સરખાવીને ખબર પડશે કે કેમ્પેનથી ખરેખર ફરક પડ્યો કે નહીં.
+    <a href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>">વિગત જુઓ</a>
   </p>
 </div>
 <?php elseif ($_w === 'smart_collection'): ?>
