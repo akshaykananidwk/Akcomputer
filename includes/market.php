@@ -62,13 +62,19 @@ function mk_history() {
     ];
 }
 
-/** The four dates that bound "this year" and "the year before". */
+/** The four dates that bound "this year" and "the year before".
+ *
+ *  Both windows are the SAME number of days, and they touch without
+ *  overlapping. The obvious version (-365 vs -730) is wrong by a day: counting
+ *  inclusively, today back to -365 is 366 days while -730 back to -366 is 365,
+ *  so the current period got a free day and every comparison leaned very
+ *  slightly towards "growing". */
 function mk_windows($days = null) {
     $days = (int)($days ?: mk_rules()['window']);
     return [
         'now_from'  => date('Y-m-d', strtotime("-{$days} days")),
         'now_to'    => today(),
-        'prev_from' => date('Y-m-d', strtotime('-' . ($days * 2) . ' days')),
+        'prev_from' => date('Y-m-d', strtotime('-' . ($days * 2 + 1) . ' days')),
         'prev_to'   => date('Y-m-d', strtotime('-' . ($days + 1) . ' days')),
     ];
 }
@@ -389,11 +395,13 @@ function mk_summary() {
         $down = array_values(array_filter($cats, fn($x) => $x['dir'] === 'down'));
         $disc = mk_discount(13);
         $lastFull = count($disc) >= 2 ? $disc[count($disc) - 2] : ($disc[0] ?? null);
+        // the same two windows the momentum table uses - one definition, so
+        // the headline and the detail can never disagree
+        $w = mk_windows();
         $year = row("SELECT COALESCE(SUM(total),0) amt FROM sales
-                     WHERE is_cancelled = 0 AND sale_date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)");
+                     WHERE is_cancelled = 0 AND sale_date >= ? AND sale_date <= ?", [$w['now_from'], $w['now_to']]);
         $prevYear = row("SELECT COALESCE(SUM(total),0) amt FROM sales
-                         WHERE is_cancelled = 0 AND sale_date >= DATE_SUB(CURDATE(), INTERVAL 730 DAY)
-                           AND sale_date < DATE_SUB(CURDATE(), INTERVAL 365 DAY)");
+                         WHERE is_cancelled = 0 AND sale_date >= ? AND sale_date <= ?", [$w['prev_from'], $w['prev_to']]);
         return [
             'months' => $h['months'], 'years' => $h['years'], 'can_compare_year' => $h['can_compare_year'],
             'sales_year' => money_r($year['amt']), 'sales_prev_year' => money_r($prevYear['amt']),
@@ -406,5 +414,8 @@ function mk_summary() {
         ];
     });
     foreach (['years', 'sales_year', 'sales_prev_year', 'discount_pct', 'discount_given'] as $k) $val[$k] = (float)$val[$k];
+    // the nested percentage too - round() returns a float, and JSON writes
+    // 100.0 as 100, which reads back as an int
+    if ($val['change']['pct'] !== null) $val['change']['pct'] = (float)$val['change']['pct'];
     return $val;
 }

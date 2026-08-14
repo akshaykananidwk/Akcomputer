@@ -146,6 +146,17 @@ if (can('purchases.view') && ($seeProfit || can('items.cost'))) {
 }
 if ($seeProfit && !$sPurch) { $sLowMargin = dash_low_margin($dFrom, $dTo); $sPriceUp = dash_price_increases(); }
 
+// Market intelligence (Phase 7). Same fence as the screen, its own 15-minute
+// cache, and it only appears when the books actually have something to say -
+// a shrinking category, a real fall against last year, or discounting worth
+// looking at. A card that says "nothing changed" every day teaches the owner
+// to stop reading the dashboard.
+$sMarket = null;
+if (can('reports.view') && ($seeProfit || can('items.cost'))) {
+    $m = mk_summary();
+    if ($m['shrinking'] > 0 || $m['change']['dir'] === 'down' || $m['discount_pct'] >= 2) $sMarket = $m;
+}
+
 // The summary, Action Center and alerts are built from a context that hides
 // figures the reader is not allowed to see. Cost-derived money (profit, stock
 // value, dead-stock value) is behind reports.profit exactly as it is on every
@@ -186,6 +197,7 @@ $topWidgetDefs = [
     'duo' => $canMoney,
     'smart_queue' => (bool)$sCollSum && $sCollSum['customers'] > 0,
     'smart_purchase' => (bool)$sPurch && $sPurch['reorder_items'] > 0,
+    'smart_market' => (bool)$sMarket,
     'smart_collection' => (bool)$sCol && $sCol['total'] > 0.009,
     'smart_stock' => (bool)$sStock,
     'smart_sales' => (bool)$sIntel,
@@ -368,6 +380,24 @@ include __DIR__ . '/includes/header.php';
     <a class="btn btn-sm" href="purchase_intel.php">🛒 મંગાવવાની યાદી ખોલો</a>
     <?php if ($sPurch['thin_margin']): ?>
     <a class="btn btn-sm btn-outline" href="purchase_intel.php?tab=margin">🏷️ <?= (int)$sPurch['thin_margin'] ?> વસ્તુનું માર્જિન પાતળું</a>
+    <?php endif; ?>
+  </p>
+</div>
+<?php elseif ($_w === 'smart_market'): ?>
+<div class="card">
+  <h2>📊 બજારની સમજ <span class="muted" style="font-weight:400;font-size:13px">· આખા વર્ષ સામે આગલું આખું વર્ષ</span></h2>
+  <div class="grid-stats">
+    <a class="stat <?= $sMarket['change']['dir'] === 'down' ? 's-bad' : ($sMarket['change']['dir'] === 'up' ? 's-good' : '') ?>" href="market.php">
+      <div class="stat-label">વેચાણ ગયા વર્ષ સામે</div><div class="stat-value"><?= e($sMarket['change']['label']) ?></div></a>
+    <a class="stat s-good" href="market.php?tab=momentum"><div class="stat-label">વધતી કેટેગરી</div><div class="stat-value"><?= (int)$sMarket['growing'] ?></div></a>
+    <a class="stat <?= $sMarket['shrinking'] ? 's-bad' : '' ?>" href="market.php?tab=momentum"><div class="stat-label">ઘટતી કેટેગરી</div><div class="stat-value"><?= (int)$sMarket['shrinking'] ?></div></a>
+    <a class="stat <?= $sMarket['discount_pct'] >= 5 ? 's-warn' : '' ?>" href="market.php?tab=discount">
+      <div class="stat-label">છૂટ (<?= e($sMarket['discount_month']) ?>)</div><div class="stat-value"><?= $sMarket['discount_pct'] ?>%</div></a>
+  </div>
+  <p class="mt" style="margin:0">
+    <a class="btn btn-sm" href="market.php">📊 બજારની સમજ ખોલો</a>
+    <?php if ($sMarket['top_down']): ?>
+    <a class="btn btn-sm btn-outline" href="market.php?tab=momentum">▼ સૌથી વધુ ઘટ્યું: <?= e($sMarket['top_down']) ?></a>
     <?php endif; ?>
   </p>
 </div>
