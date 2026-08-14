@@ -310,7 +310,10 @@ function cam_result($campaignId) {
     $ended = strtotime($to) <= strtotime(today());
 
     // one query for both groups; the group is a column, not a second query
-    $rows = all("SELECT t.is_holdout, COUNT(*) people,
+    // COUNT(DISTINCT t.party_id), not COUNT(*): the LEFT JOIN produces one row
+    // per BILL, so a customer who bought three times would otherwise be
+    // counted as three people and quietly wreck the conversion rate.
+    $rows = all("SELECT t.is_holdout, COUNT(DISTINCT t.party_id) people,
                         COUNT(DISTINCT CASE WHEN s.id IS NOT NULL THEN t.party_id END) buyers,
                         COALESCE(SUM(s.total),0) amt
                  FROM campaign_targets t
@@ -351,15 +354,32 @@ function cam_result($campaignId) {
             'cost' => $cost, 'why' => ''];
 }
 
-/** Counts for the list screen and the dashboard. */
+function cam_zero_counts() {
+    return ['queued' => 0, 'sent' => 0, 'failed' => 0, 'skipped' => 0, 'holdout' => 0, 'total' => 0];
+}
+
+/** Counts for one campaign. */
 function cam_counts($campaignId) {
-    $rows = all("SELECT status, is_holdout, COUNT(*) n FROM campaign_targets WHERE campaign_id = ? GROUP BY status, is_holdout", [$campaignId]);
-    $out = ['queued' => 0, 'sent' => 0, 'failed' => 0, 'skipped' => 0, 'holdout' => 0, 'total' => 0];
+    $m = cam_counts_map([$campaignId]);
+    return $m[(int)$campaignId] ?? cam_zero_counts();
+}
+
+/** ...and for a whole list of them in ONE query, because the list screen shows
+ *  a hundred rows and a hundred queries is how a page gets slow. */
+function cam_counts_map(array $campaignIds) {
+    if (!$campaignIds) return [];
+    $in = implode(',', array_map('intval', $campaignIds));
+    $rows = all("SELECT campaign_id, status, is_holdout, COUNT(*) n
+                 FROM campaign_targets WHERE campaign_id IN ($in)
+                 GROUP BY campaign_id, status, is_holdout");
+    $out = [];
     foreach ($rows as $x) {
+        $cid = (int)$x['campaign_id'];
+        if (!isset($out[$cid])) $out[$cid] = cam_zero_counts();
         $n = (int)$x['n'];
-        $out['total'] += $n;
-        if ((int)$x['is_holdout'] === 1) { $out['holdout'] += $n; continue; }
-        $out[$x['status']] = ($out[$x['status']] ?? 0) + $n;
+        $out[$cid]['total'] += $n;
+        if ((int)$x['is_holdout'] === 1) { $out[$cid]['holdout'] += $n; continue; }
+        $out[$cid][$x['status']] += $n;
     }
     return $out;
 }

@@ -38,6 +38,9 @@ function permission_catalog() {
         'tickets' => ['view', 'add', 'edit', 'delete', 'all'],
         'followups' => ['view', 'add', 'edit', 'delete', 'all'],
         'reminders' => ['view', 'add', 'edit', 'delete'],
+        // 'send' is deliberately separate from 'add': writing a campaign and
+        // actually messaging hundreds of customers are different levels of trust
+        'campaigns' => ['view', 'add', 'send'],
         'stock_audit' => ['view', 'add', 'edit'],
         'reports' => ['view', 'profit', 'gst', 'accounting', 'builder'],
         'report_schedules' => ['view', 'add', 'edit', 'delete'],
@@ -63,6 +66,7 @@ function permission_labels() {
         'sites' => 'Customer Sites / DVR-NVR Vault', 'batches' => 'Batch / Expiry Tracking',
         'leads' => 'Leads (CRM)', 'tickets' => 'Complaints / Support Tickets', 'followups' => 'Follow-ups',
         'stock_audit' => 'Stock Audit / Cycle Counting',
+        'campaigns' => 'Campaigns (bulk customer messaging)',
         'reports' => 'Reports',
         'report_schedules' => 'Scheduled Reports',
         'accounting' => 'Accounting (Journal, Chart of Accounts, Reconciliation)',
