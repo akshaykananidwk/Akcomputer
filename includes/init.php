@@ -39,6 +39,7 @@ require_once __DIR__ . '/xlsx_writer.php';
 require_once __DIR__ . '/ai_insights.php';
 require_once __DIR__ . '/dashboard.php'; // needs money.php + ai_insights' trend_direction()
 require_once __DIR__ . '/customer.php';  // customer intelligence + collection
+require_once __DIR__ . '/purchase_intel.php'; // smart stock + purchasing
 require_once __DIR__ . '/ocr.php';
 require_once __DIR__ . '/ai.php';
 
