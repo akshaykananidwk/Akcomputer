@@ -23,6 +23,7 @@ $_navMenu = [
     ]],
     ['group', 'sale', 'receipt', 'Sale', [
         ['sales.php', 'Sale Invoices', 'sales.view', 'sales.php?action=new', 'sales.add'],
+        ['assistant.php', '🧑‍💼 ગ્રાહક શું માગે છે (Sales Assistant)', 'items.view', null, null],
         ['estimates.php', 'Estimate / Quotation', 'estimates.view', 'estimates.php?action=new', 'estimates.add'],
         ['sales_return.php', 'Sale Return', 'sales_return.view', 'sales_return.php?action=new', 'sales_return.add'],
         ['challans.php', 'Delivery Challan', 'challans.view', 'challans.php?action=new', 'challans.add'],

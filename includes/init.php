@@ -43,6 +43,7 @@ require_once __DIR__ . '/purchase_intel.php'; // smart stock + purchasing
 require_once __DIR__ . '/ocr.php';
 require_once __DIR__ . '/ai.php';
 require_once __DIR__ . '/ai_guard.php'; // budget, switches and the fallback contract
+require_once __DIR__ . '/sales_assist.php'; // AI reads the sentence, code reads the shop
 
 csrf_check();
 

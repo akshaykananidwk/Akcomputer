@@ -601,6 +601,18 @@ if ($action === 'new' || $action === 'edit') {
             $est = ['id' => 0, 'estimate_no' => $chal['challan_no'], 'customer_name' => $chal['customer_name'],
                     'customer_mobile' => $chal['customer_mobile'], 'party_id' => $chal['party_id'], 'discount' => 0];
         }
+    } elseif (!$isEdit && get('pick') !== '') {
+        // Handed over from the Sales Assistant: the ticked items, one each, at
+        // the ordinary retail rate. Nothing is saved until this form is - the
+        // assistant only fills the boxes in.
+        $pickIds = array_slice(array_filter(array_map('intval', explode(',', (string)get('pick')))), 0, 20);
+        $estItems = $pickIds ? all('SELECT id item_id, 1 qty, selling_price price, tax_rate, name FROM items
+                                    WHERE is_active = 1 AND id IN (' . implode(',', $pickIds) . ')') : [];
+        if ($estItems) {
+            $pkParty = row('SELECT id, name, mobile FROM parties WHERE id = ?', [(int)get('party')]);
+            $est = ['id' => 0, 'src' => 'assistant', 'estimate_no' => 'Sales Assistant', 'customer_name' => $pkParty['name'] ?? '',
+                    'customer_mobile' => $pkParty['mobile'] ?? '', 'party_id' => $pkParty['id'] ?? 0, 'discount' => 0];
+        }
     } elseif (!$isEdit && (int)get('copy')) {
         // Duplicate bill: same party + items prefilled as a FRESH bill
         // (today's date, serials re-picked) - "same as last time" in one tap
@@ -614,7 +626,8 @@ if ($action === 'new' || $action === 'edit') {
     $page_title = $isEdit ? 'Edit Bill ' . $editSale['invoice_no'] : 'New Bill';
     include __DIR__ . '/includes/header.php';
     ?>
-    <?php if ($est): ?><div class="flash flash-info">Converting <?= e($est['estimate_no']) ?> — serial-tracked items will need their serial re-selected.</div><?php endif; ?>
+    <?php if ($est && ($est['src'] ?? '') === 'assistant'): ?><div class="flash flash-info">🧑‍💼 Sales Assistant માંથી <?= count($estItems) ?> વસ્તુ ભરી છે — નંગ અને ભાવ ચકાસીને સેવ કરો.</div>
+    <?php elseif ($est): ?><div class="flash flash-info">Converting <?= e($est['estimate_no']) ?> — serial-tracked items will need their serial re-selected.</div><?php endif; ?>
     <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serials'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers will need to be re-selected.</div><?php endif; ?>
     <?php if ($isEdit && !is_full_admin() && strtotime($editSale['created_at']) < time() - 86400): ?><div class="flash flash-info">⏳ આ બિલ 24 કલાકથી જૂનું છે — સેવ કરશો એટલે ફેરફાર સીધો લાગુ નહીં થાય, એડમિનની મંજૂરી માટે જશે.</div><?php endif; ?>
     <form method="post" id="billForm">
