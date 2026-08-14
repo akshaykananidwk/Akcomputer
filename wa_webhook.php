@@ -128,6 +128,21 @@ if (!$isStaffSender && $waTapTitle === '') {
     } catch (Exception $e) { /* telegram optional */ }
 }
 
+// "STOP" has to actually stop it. Every campaign message carries that line,
+// and a way out that does nothing is worse than no way out at all - so this
+// sits ABOVE the bot switch and runs even when the bot is off. It turns off
+// marketing only: a customer who wants no more offers is still told when a
+// bill of theirs falls due, which is a different consent (see campaign.php).
+if ($text !== '' && cam_is_stop_word($text)) {
+    $n = cam_optout($mobile, true);
+    if ($n > 0) {
+        log_activity('campaign_optout', 'STOP from ' . $mobile);
+        send_whatsapp($mobile, 'તમારા નંબર પર જાહેરાતના મેસેજ બંધ કરી દીધા છે. 🙏'
+            . "\nબિલ અને પેમેન્ટની જરૂરી જાણ ચાલુ રહેશે.");
+        die(json_encode(['ok' => true, 'status' => 'marketing-opt-out']));
+    }
+}
+
 if (!$botEnabled) die(json_encode(['ok' => true, 'status' => 'logged-bot-off']));
 $status = wa_bot_handle($mobile, $text, $jpeg);
 echo json_encode(['ok' => true, 'status' => $status]);

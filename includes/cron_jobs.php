@@ -36,6 +36,8 @@ function cron_jobs() {
                 $last = setting('meta_wa_tpl_synced_at', '');
                 return ($hasPending || !$cur) && ($last === '' || strtotime($last) < time() - 6 * 3600);
             }],
+        'campaign_queue' => ['📣 Campaign Sending', 'Sends the next batch of any running campaign, inside the allowed hours only', 15,
+            fn() => cam_quiet_ok()],
         'housekeeping' => ['🧹 Log Cleanup', 'Trims old webhook-delivery and cron-history rows', 1440, null],
     ];
 }
@@ -367,6 +369,22 @@ function cron_job_meta_tpl_sync() {
 }
 
 /** Housekeeping: trim old webhook-delivery + cron-history rows. */
+/** Campaign sending, one batch at a time.
+ *
+ *  The cron does not get its own rules: it calls the same cam_send_batch()
+ *  the Send button calls, so quiet hours, the gap between messages, the
+ *  monthly cap and the opt-out check apply exactly as they do to a human
+ *  pressing send. A second campaign waits its turn rather than doubling the
+ *  night's traffic on one customer. */
+function cron_job_campaign_queue() {
+    $c = row("SELECT id, name FROM campaigns WHERE status IN ('ready','sending') ORDER BY started_at IS NULL, id LIMIT 1");
+    if (!$c) return 'no campaign is waiting';
+    $r = cam_send_batch((int)$c['id']);
+    if (!empty($r['error'])) return $c['name'] . ': ' . $r['error'];
+    return sprintf('%s — sent %d, failed %d, skipped %d, %d left',
+        $c['name'], $r['sent'], $r['failed'], $r['skipped'], $r['left']);
+}
+
 function cron_job_housekeeping() {
     $wh = q('DELETE FROM webhook_deliveries WHERE created_at < DATE_SUB(?, INTERVAL 30 DAY)', [today()])->rowCount();
     $cr = 0;
