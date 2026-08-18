@@ -180,8 +180,39 @@ include __DIR__ . '/includes/header.php';
     <div class="stat-value"><?= $totalQty ?> <?= e($item['unit']) ?></div>
   </div>
   <div class="stat s-ok"><div class="stat-label">Stock Value (at purchase price)</div><div class="stat-value">₹<?= money($stockValue) ?></div></div>
+  <?php $transit = stock_in_transit($item['id']); $transitQty = 0;
+        foreach ($transit as $t) $transitQty += (float)$t['qty'];
+        if ($transitQty > 0): ?>
+  <div class="stat s-warn"><div class="stat-label">રસ્તામાં (સ્વીકારવાનું બાકી)</div>
+    <div class="stat-value"><?= rtrim(rtrim(number_format($transitQty, 2), '0'), '.') ?> <?= e($item['unit']) ?></div></div>
+  <?php endif; ?>
   <?php endif; ?>
 </div>
+
+<?php if (!$isService && !empty($transit)): ?>
+<div class="card">
+  <h3>⏳ રસ્તામાં પડેલો માલ</h3>
+  <p class="muted mb" style="font-size:13px">
+    હેન્ડઓવર બનતાં જ માલ મોકલનારી જગ્યામાંથી <b>ઓછો થઈ જાય છે</b>, અને સામેવાળો OTP થી સ્વીકારે
+    ત્યારે જ એની જગ્યાએ ઉમેરાય છે. વચ્ચેના સમયમાં એ <b>કોઈ પણ જગ્યાના સ્ટોકમાં ગણાતો નથી</b> —
+    એટલે એ ખોવાયો નથી, અહીં નીચે જ છે.
+  </p>
+  <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
+    <thead><tr><th>હેન્ડઓવર</th><th class="num">નંગ</th><th>ક્યાંથી</th><th>કોની પાસે જવાનું</th><th>ક્યારથી</th></tr></thead>
+    <tbody>
+    <?php foreach ($transit as $t): ?>
+      <tr>
+        <td><a href="handover.php?action=view&id=<?= (int)$t['id'] ?>"><?= e($t['handover_no']) ?></a></td>
+        <td class="num"><?= rtrim(rtrim(number_format((float)$t['qty'], 2), '0'), '.') ?></td>
+        <td class="muted"><?= e($t['from_loc']) ?></td>
+        <td><?= e(transit_destination($t)) ?></td>
+        <td class="muted"><?= dmy($t['created_at']) ?> (<?= (int)days_between(date('Y-m-d', strtotime($t['created_at']))) ?> દિવસ)</td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table></div>
+</div>
+<?php endif; ?>
 
 <?php if (!$isService && can('stock.adjust')): ?>
 <div class="card" id="adjustPanel" style="display:none">

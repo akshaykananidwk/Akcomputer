@@ -209,12 +209,17 @@ t_ok('and the code says why the bill discount is left out',
 // -------------------------------------------------------------- lifecycle --
 t_group('new and dead products are facts about dates');
 $catL = tm_cat('TMCAT_L_' . bin2hex(random_bytes(3)));
+// Both lists are capped at 25 rows and sorted by value, so a test item worth a
+// few hundred rupees can be pushed out by real data and the test then fails for
+// a reason that has nothing to do with the rule being checked. These are sold
+// for more than any single item in the database, so ranking cannot interfere.
+$big = 6000000;
 $iNew = tm_item('TMITEM brand new', $catL);
-tm_sell($iNew, $buyer, 1, 500, $d(30));
-tm_sell($iNew, $buyer, 1, 500, $d(10));
+tm_sell($iNew, $buyer, 1, $big, $d(30));
+tm_sell($iNew, $buyer, 1, $big, $d(10));
 $iOld = tm_item('TMITEM gone quiet', $catL);
-tm_sell($iOld, $buyer, 1, 500, $d(400));
-tm_sell($iOld, $buyer, 1, 500, $d(300));
+tm_sell($iOld, $buyer, 1, $big, $d(400));
+tm_sell($iOld, $buyer, 1, $big, $d(300));
 $lc = mk_lifecycle();
 $isNew = false; $isOld = false;
 foreach ($lc['rising'] as $x) if ((int)$x['id'] === $iNew) $isNew = true;

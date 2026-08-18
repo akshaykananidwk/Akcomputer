@@ -196,6 +196,60 @@ function adjust_stock($item_id, $location_id, $delta, $ref_type, $ref_id = null,
     }
 }
 
+/**
+ * Who may accept this handover.
+ *
+ * ONE rule, used by both the POST handler and the screen that draws the OTP
+ * box. They disagreed before: the handler let the staff member accept an
+ * "issue", but the screen only ever drew the box for someone with
+ * handover.accept - so the staff member the stock was issued TO opened the
+ * page, was told "accept this from your My Stock page", and found no way to
+ * type the OTP anywhere on it. Reported from the shop floor as
+ * "OTP enter karva no option j nay avto".
+ *
+ * An issue is still acceptable ONLY by the staff member it is for. That is the
+ * whole point of the OTP - it proves the person physically took the goods -
+ * and no admin permission overrides it.
+ */
+function handover_can_accept(array $h, $u = null) {
+    $u = $u ?: current_user();
+    if (!$u || ($h['status'] ?? '') !== 'pending') return false;
+    if (($h['type'] ?? '') === 'issue') return (int)$h['staff_id'] === (int)$u['id'];
+    return can('handover.accept');   // returns and transfers are accepted at the shop
+}
+
+/**
+ * Stock that has left one place and not yet arrived anywhere - the items on
+ * pending handovers.
+ *
+ * A handover removes stock from the source the moment it is created, and only
+ * adds it to the destination when the OTP is accepted. In between, the goods
+ * count in NEITHER place, which is correct (they cannot be sold twice) but was
+ * completely invisible: the shop showed 0, the godown showed nothing, and the
+ * only honest answer - "it is on HO-00015, waiting to be accepted" - appeared
+ * on no screen at all.
+ */
+function stock_in_transit($item_id = null) {
+    $where = $item_id ? ' AND hi.item_id = ' . (int)$item_id : '';
+    return all("SELECT h.id, h.handover_no, h.type, h.created_at, hi.item_id, hi.qty,
+                       i.name item_name, l.name from_loc, tl.name to_loc, us.name staff_name
+                FROM handover_items hi
+                JOIN handovers h ON h.id = hi.handover_id AND h.status = 'pending'
+                JOIN items i ON i.id = hi.item_id
+                LEFT JOIN locations l ON l.id = h.location_id
+                LEFT JOIN locations tl ON tl.id = h.to_location_id
+                LEFT JOIN users us ON us.id = h.staff_id
+                WHERE 1 $where
+                ORDER BY h.id DESC");
+}
+
+/** Where a transit row is headed, in the owner's words. */
+function transit_destination(array $t) {
+    if ($t['type'] === 'issue') return trim((string)$t['staff_name']) !== '' ? $t['staff_name'] : 'સ્ટાફ';
+    if ($t['type'] === 'transfer') return trim((string)$t['to_loc']) !== '' ? $t['to_loc'] : 'બીજી જગ્યા';
+    return trim((string)$t['from_loc']) !== '' ? $t['from_loc'] : 'દુકાન';
+}
+
 function adjust_staff_stock($user_id, $item_id, $delta, $ref_type, $ref_id = null, $note = '') {
     q('INSERT INTO staff_stock (user_id, item_id, qty) VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty)', [$user_id, $item_id, $delta]);

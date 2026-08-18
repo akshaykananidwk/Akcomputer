@@ -86,6 +86,13 @@ foreach (all('SELECT ss.item_id, SUM(ss.qty) q FROM staff_stock ss GROUP BY ss.i
 $staffDetail = all('SELECT ss.*, u2.name staff_name, i.name item_name, i.unit FROM staff_stock ss
                     JOIN users u2 ON u2.id = ss.user_id JOIN items i ON i.id = ss.item_id
                     WHERE ss.qty > 0 ORDER BY u2.name, i.name');
+// Goods on a pending handover have left the source and not arrived anywhere.
+// Without this column they show in no location, under no staff member, and the
+// Total lies - which is exactly how "main shop shows 0 and the godown does not
+// have it either" got reported from the shop.
+$transitRows = stock_in_transit();
+$transitHeld = [];
+foreach ($transitRows as $t) $transitHeld[(int)$t['item_id']] = ($transitHeld[(int)$t['item_id']] ?? 0) + (float)$t['qty'];
 
 $page_title = 'Stock';
 include __DIR__ . '/includes/header.php';
@@ -99,7 +106,7 @@ include __DIR__ . '/includes/header.php';
 <table id="sTable">
   <thead><tr><th>Item</th>
   <?php foreach ($locations as $l): ?><th class="num"><?= e($l['code']) ?></th><?php endforeach; ?>
-  <th class="num">Staff</th><th class="num">Total</th><th></th></tr></thead>
+  <th class="num">Staff</th><th class="num" title="પેન્ડિંગ હેન્ડઓવરમાં — કોઈ જગ્યાએ નથી ગણાતો">રસ્તામાં</th><th class="num">Total</th><th></th></tr></thead>
   <tbody>
   <?php foreach ($stockRows as $it):
       $rowTotal = 0;
@@ -116,6 +123,8 @@ include __DIR__ . '/includes/header.php';
         <td class="num"<?= $qv < 0 ? ' style="color:var(--bad);font-weight:700"' : '' ?>><?= $qv ?: '·' ?></td>
       <?php endforeach; $sh = $staffHeld[$it['id']] ?? 0; $rowTotal += $sh; ?>
       <td class="num"><?= $sh ?: '·' ?></td>
+      <?php $tr = $transitHeld[(int)$it['id']] ?? 0; $rowTotal += $tr; ?>
+      <td class="num"><?= $tr ? '<a href="item_view.php?id=' . (int)$it['id'] . '" title="પેન્ડિંગ હેન્ડઓવરમાં">' . rtrim(rtrim(number_format($tr, 2), '0'), '.') . '</a>' : '·' ?></td>
       <td class="num" data-total="<?= $rowTotal ?>"><strong><?= $rowTotal ?></strong>
         <?= $it['min_stock'] > 0 && $rowTotal < $it['min_stock'] ? '<span class="badge badge-bad">LOW</span>' : '' ?></td>
       <td style="white-space:nowrap"><a class="btn btn-sm btn-outline" href="stock.php?action=ledger&item_id=<?= $it['id'] ?>">Ledger</a>
@@ -142,6 +151,32 @@ include __DIR__ . '/includes/header.php';
   document.getElementById('onlyNeg').addEventListener('change', apply);
 })();
 </script>
+
+<?php if ($transitRows): ?>
+<div class="card">
+  <h2>⏳ રસ્તામાં પડેલો માલ <span class="muted" style="font-weight:400;font-size:13px">· સ્વીકારવાનું બાકી</span></h2>
+  <p class="muted mb" style="font-size:13px">
+    હેન્ડઓવર બનતાં જ માલ મોકલનારી જગ્યામાંથી ઓછો થઈ જાય છે અને સામેવાળો OTP થી સ્વીકારે ત્યારે જ ઉમેરાય છે.
+    વચ્ચે એ <b>કોઈ જગ્યાના સ્ટોકમાં ગણાતો નથી</b> — એટલે ખોવાયો નથી, અહીં છે.
+  </p>
+  <div class="table-wrap" style="box-shadow:none">
+  <table class="table-sm">
+    <thead><tr><th>હેન્ડઓવર</th><th>વસ્તુ</th><th class="num">નંગ</th><th>ક્યાંથી</th><th>કોની પાસે</th><th class="num">દિવસ</th></tr></thead>
+    <tbody><?php foreach ($transitRows as $t): ?>
+      <tr>
+        <td><a href="handover.php?action=view&id=<?= (int)$t['id'] ?>"><?= e($t['handover_no']) ?></a></td>
+        <td><?= e($t['item_name']) ?></td>
+        <td class="num"><?= rtrim(rtrim(number_format((float)$t['qty'], 2), '0'), '.') ?></td>
+        <td class="muted"><?= e($t['from_loc']) ?></td>
+        <td><?= e(transit_destination($t)) ?></td>
+        <td class="num <?= days_between(date('Y-m-d', strtotime($t['created_at']))) >= 3 ? 'text-bad' : 'muted' ?>">
+          <?= (int)days_between(date('Y-m-d', strtotime($t['created_at']))) ?></td>
+      </tr>
+    <?php endforeach; ?></tbody>
+  </table>
+  </div>
+</div>
+<?php endif; ?>
 
 <?php if ($staffDetail): ?>
 <div class="card">
