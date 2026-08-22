@@ -274,7 +274,37 @@ function fc_cashflow($weeks = null) {
 
 /** Completed calendar months of sales, oldest first. The current month is
  *  excluded everywhere - half a month is not a data point. */
-function fc_month_sales($months = 24, $before = null) {
+/** Every month the shop has ever traded, in one query.
+ *
+ *  The backtest re-forecasts six months, and each of those forecasts wants its
+ *  own slice of history plus five years of seasonal data - which used to be a
+ *  fresh GROUP BY over the sales table every single time. Measured at 45,000
+ *  bills that was 672ms for one screen. Fetching the series ONCE and slicing it
+ *  in PHP is the same arithmetic against the same rows.
+ *
+ *  Deliberately NOT held in a static: a caller that inserts a sale and then
+ *  forecasts in the same request must see it. It is passed down by argument
+ *  instead, so the sharing is visible in the call and cannot go stale. */
+function fc_all_month_sales() {
+    $rows = all("SELECT DATE_FORMAT(sale_date, '%Y-%m') m, COALESCE(SUM(total),0) amt
+                 FROM sales WHERE is_cancelled = 0 GROUP BY m ORDER BY m");
+    $out = [];
+    foreach ($rows as $x) $out[$x['m']] = money_r($x['amt']);
+    return $out;
+}
+
+/** The months in [before - N months, before), from a pre-fetched series when
+ *  one is handed in and from the database when it is not. */
+function fc_slice_months(array $series, $months, $before) {
+    $from = date('Y-m', strtotime($before . ' -' . (int)$months . ' months'));
+    $to = date('Y-m', strtotime($before . ' -1 month'));
+    $out = [];
+    foreach ($series as $ym => $amt) if ($ym >= $from && $ym <= $to) $out[$ym] = $amt;
+    return $out;
+}
+
+function fc_month_sales($months = 24, $before = null, array $series = null) {
+    if ($series !== null) return fc_slice_months($series, $months, $before ?: date('Y-m-01'));
     $before = $before ?: date('Y-m-01');
     $from = date('Y-m-01', strtotime($before . ' -' . (int)$months . ' months'));
     $rows = all("SELECT DATE_FORMAT(sale_date, '%Y-%m') m, COALESCE(SUM(total),0) amt
@@ -288,8 +318,8 @@ function fc_month_sales($months = 24, $before = null) {
 /** The seasonal multiplier for one calendar month, from whole years only.
  *  Returns 1.0 (no adjustment) when there is not enough history to know -
  *  which is honest: an unknown season should change nothing. */
-function fc_season_factor($monthNo, $before = null) {
-    $hist = fc_month_sales(60, $before);
+function fc_season_factor($monthNo, $before = null, array $series = null) {
+    $hist = fc_month_sales(60, $before, $series);
     if (count($hist) < 24) return ['factor' => 1.0, 'years' => 0, 'why' => 'બે વર્ષથી ઓછો ઇતિહાસ — સીઝનનો ગુણાકાર લગાડ્યો નથી.'];
     $byMonth = []; $all = [];
     foreach ($hist as $ym => $amt) {
@@ -306,12 +336,12 @@ function fc_season_factor($monthNo, $before = null) {
  *  month's seasonal factor. Exposed on its own so the backtest can call the
  *  SAME function against the past - a forecast method that is not the one you
  *  tested is not a tested method. */
-function fc_predict_month($targetYm, $before = null) {
+function fc_predict_month($targetYm, $before = null, array $series = null) {
     $r = fc_rules();
-    $hist = fc_month_sales($r['base_months'], $before);
+    $hist = fc_month_sales($r['base_months'], $before, $series);
     if (count($hist) < $r['min_months']) return null;
     $base = weighted_forecast(array_values($hist));
-    $season = fc_season_factor((int)substr($targetYm, 5, 2), $before);
+    $season = fc_season_factor((int)substr($targetYm, 5, 2), $before, $series);
     return ['month' => $targetYm, 'base' => money_r($base),
             'factor' => $season['factor'], 'years' => $season['years'], 'season_why' => $season['why'],
             'value' => money_r($base * $season['factor']), 'from_months' => count($hist)];
@@ -325,14 +355,16 @@ function fc_predict_month($targetYm, $before = null) {
 function fc_backtest($months = null) {
     $r = fc_rules();
     $months = (int)($months ?: $r['backtest']);
+    $series = fc_all_month_sales();          // once, for every month scored below
     $rows = []; $errs = [];
     for ($i = $months; $i >= 1; $i--) {
         $target = date('Y-m-01', strtotime("-$i months"));
         $ym = date('Y-m', strtotime($target));
-        $actualMap = fc_month_sales(1, date('Y-m-01', strtotime($target . ' +1 month')));
-        $actual = $actualMap[$ym] ?? null;
+        $actual = $series[$ym] ?? null;
         if ($actual === null) continue;                 // no trade that month, nothing to score
-        $p = fc_predict_month($ym, $target);            // knows nothing after $target
+        // $target is the cut-off: fc_month_sales() slices strictly before it,
+        // so this forecast still cannot see the month it is being scored on
+        $p = fc_predict_month($ym, $target, $series);   // knows nothing after $target
         if (!$p || $actual <= 0) continue;
         $err = round(abs($p['value'] - $actual) / $actual * 100, 1);
         $errs[] = $err;
@@ -355,10 +387,11 @@ function fc_sales_ahead($ahead = 3) {
     }
     $bt = fc_backtest();
     $band = $bt['mape'];   // null when the method has never been scored
+    $series = fc_all_month_sales();
     $rows = [];
     for ($i = 0; $i < max(1, (int)$ahead); $i++) {
         $ym = date('Y-m', strtotime('+' . $i . ' months'));
-        $p = fc_predict_month($ym);
+        $p = fc_predict_month($ym, null, $series);
         if (!$p) continue;
         $p['low'] = $band === null ? null : money_r($p['value'] * (1 - $band / 100));
         $p['high'] = $band === null ? null : money_r($p['value'] * (1 + $band / 100));
