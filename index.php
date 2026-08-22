@@ -161,6 +161,15 @@ if (can('reports.view') && ($seeProfit || can('items.cost'))) {
 // because a finished campaign is not news - and the card carries the count of
 // people held back, so the holdout stays visible rather than being a hidden
 // mechanism the owner forgets is there.
+// Cash ahead (Phase 9). The card appears ONLY when the projection actually
+// finds a week where the money runs short - a forecast card that says "you are
+// fine" every morning is noise, and the owner stops reading the dashboard.
+$sCash = null;
+if ($seeMoney && can('reports.view')) {
+    $f = fc_summary();
+    if ($f['danger_weeks'] > 0) $sCash = $f;
+}
+
 $sCampaign = null;
 if (can('campaigns.view')) {
     $sCampaign = row("SELECT id, name, status FROM campaigns WHERE status IN ('ready','sending') ORDER BY id LIMIT 1");
@@ -208,6 +217,7 @@ $topWidgetDefs = [
     'smart_queue' => (bool)$sCollSum && $sCollSum['customers'] > 0,
     'smart_purchase' => (bool)$sPurch && $sPurch['reorder_items'] > 0,
     'smart_market' => (bool)$sMarket,
+    'smart_cash' => (bool)$sCash,
     'smart_campaign' => (bool)$sCampaign,
     'smart_collection' => (bool)$sCol && $sCol['total'] > 0.009,
     'smart_stock' => (bool)$sStock,
@@ -392,6 +402,20 @@ include __DIR__ . '/includes/header.php';
     <?php if ($sPurch['thin_margin']): ?>
     <a class="btn btn-sm btn-outline" href="purchase_intel.php?tab=margin">🏷️ <?= (int)$sPurch['thin_margin'] ?> વસ્તુનું માર્જિન પાતળું</a>
     <?php endif; ?>
+  </p>
+</div>
+<?php elseif ($_w === 'smart_cash'): ?>
+<div class="card">
+  <h2>💵 રોકડ ખેંચાવાની છે <span class="muted" style="font-weight:400;font-size:13px">· આગળના અઠવાડિયાં</span></h2>
+  <div class="grid-stats">
+    <a class="stat s-bad" href="forecast.php?tab=cash"><div class="stat-label">ખેંચનાં અઠવાડિયાં</div><div class="stat-value"><?= (int)$sCash['danger_weeks'] ?></div></a>
+    <a class="stat s-bad" href="forecast.php?tab=cash"><div class="stat-label">સૌથી પહેલાં</div><div class="stat-value" style="font-size:15px"><?= e($sCash['danger_label']) ?></div></a>
+    <a class="stat" href="forecast.php?tab=cash"><div class="stat-label">ત્યારે બચશે</div><div class="stat-value">₹<?= money($sCash['danger_balance']) ?></div></a>
+    <a class="stat" href="collection.php"><div class="stat-label">અત્યારે હાથમાં</div><div class="stat-value">₹<?= money($sCash['opening']) ?></div></a>
+  </div>
+  <p class="mt muted" style="margin:0;font-size:12.5px">
+    આ ગણતરીમાં <b>મુદત વીતી ગયેલી ઉઘરાણી ગણી નથી</b> — એ આવશે એમ માની લેવું ખોટું છે.
+    એ ઉઘરાવી લો તો ચિત્ર સુધરે. <a href="collection.php">ઉઘરાણી યાદી</a> · <a href="forecast.php?tab=cash">આખું ચિત્ર</a>
   </p>
 </div>
 <?php elseif ($_w === 'smart_market'): ?>
