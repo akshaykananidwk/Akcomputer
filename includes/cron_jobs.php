@@ -38,7 +38,7 @@ function cron_jobs() {
             }],
         'campaign_queue' => ['📣 Campaign Sending', 'Sends the next batch of any running campaign, inside the allowed hours only', 15,
             fn() => cam_quiet_ok()],
-        'housekeeping' => ['🧹 Log Cleanup', 'Trims old webhook-delivery and cron-history rows', 1440, null],
+        'housekeeping' => ['🧹 Log Cleanup', 'Trims every log table past its keep-for period — never business data (see Scaling)', 1440, null],
     ];
 }
 
@@ -386,13 +386,20 @@ function cron_job_campaign_queue() {
 }
 
 function cron_job_housekeeping() {
-    $wh = q('DELETE FROM webhook_deliveries WHERE created_at < DATE_SUB(?, INTERVAL 30 DAY)', [today()])->rowCount();
-    $cr = 0;
-    try { $cr = q('DELETE FROM cron_runs WHERE started_at < DATE_SUB(NOW(), INTERVAL 30 DAY)')->rowCount(); } catch (Exception $e) {}
+    // Every log table goes through sc_trim(), which checks the allow-list
+    // ITSELF - so the cron cannot reach a business table even by mistake, and
+    // adding a log table in one place adds it here too. It used to name two
+    // tables inline and the rest grew unbounded for ever.
+    $trimmed = 0;
+    foreach (array_keys(sc_log_tables()) as $t) {
+        $r = sc_trim($t);
+        if (!empty($r['ok'])) $trimmed += (int)$r['deleted'];
+    }
     // safety net: encrypt any secret that reached the settings table as
     // plaintext (e.g. an install that updated code but never hit Migrate)
     $sec = function_exists('secrets_encrypt_existing') ? secrets_encrypt_existing() : 0;
     // error log rotation - keep the file bounded on shared hosting
     $rot = function_exists('error_log_rotate') ? error_log_rotate() : 0;
-    return "trimmed $wh webhook + $cr cron rows" . ($sec ? ", encrypted $sec secret(s)" : '') . ($rot ? ', rotated error log' : '');
+    return "trimmed $trimmed old log row(s) across " . count(sc_log_tables()) . " table(s)"
+        . ($sec ? ", encrypted $sec secret(s)" : '') . ($rot ? ', rotated error log' : '');
 }

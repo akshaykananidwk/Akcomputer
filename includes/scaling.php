@@ -39,8 +39,8 @@ function sc_log_tables() {
     return [
         'activity_log'       => ['📋 કોણે શું કર્યું', 'created_at', 365],
         'login_history'      => ['🔑 લોગિન નોંધ', 'created_at', 180],
-        'login_throttle'     => ['🚧 લોગિન અટકાવ', 'created_at', 30],
-        'site_visits'        => ['👣 વેબસાઇટ મુલાકાત', 'created_at', 180],
+        'login_throttle'     => ['🚧 લોગિન અટકાવ', 'window_start', 30],
+        'site_visits'        => ['👣 વેબસાઇટ મુલાકાત', 'visit_date', 180],
         'webhook_deliveries' => ['🔌 વેબહૂક ડિલિવરી', 'created_at', 30],
         'cron_runs'          => ['⏱ ક્રોન ઇતિહાસ', 'started_at', 60],
         'wa_bot_log'         => ['🤖 બોટની નોંધ', 'created_at', 90],
@@ -198,7 +198,13 @@ function sc_trim($table, $days = null) {
     }
     list($label, $col, $keep) = $logs[$table];
     $days = max(7, (int)($days ?: $keep));   // never allow "delete everything from today"
-    $n = q("DELETE FROM `$table` WHERE `$col` < DATE_SUB(NOW(), INTERVAL ? DAY)", [$days])->rowCount();
+    // An install that has not reached the migration adding this table - or a
+    // column renamed since - must not take the whole cron down with it.
+    try {
+        $n = q("DELETE FROM `$table` WHERE `$col` < DATE_SUB(NOW(), INTERVAL ? DAY)", [$days])->rowCount();
+    } catch (Exception $e) {
+        return ['ok' => false, 'deleted' => 0, 'why' => $table . ': ' . $e->getMessage()];
+    }
     log_activity('scaling_trim', "$table older than $days days: $n rows");
     return ['ok' => true, 'deleted' => $n, 'table' => $table, 'days' => $days, 'why' => ''];
 }
