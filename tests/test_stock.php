@@ -78,6 +78,12 @@ t_eq('a service item has no stock row', stock_qty($sv, $loc), 0);
 // ---------------------------------------------------------------------------
 
 t_group('a handover is acceptable by exactly the right person');
+// This suite runs with no session user, and half of this rule is a permission
+// check that only answers for the logged-in one - so it has to be set here or
+// the assertions below quietly test nothing.
+$_SESSION['user_id'] = (int)val("SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id
+                                 WHERE r.permissions LIKE '%*%' AND u.is_active = 1 ORDER BY u.id LIMIT 1");
+t_ok('(the suite is running as an admin for this group)', (bool)current_user() && can('handover.accept'));
 $hoLoc = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
 $hoRole = null;
 q("INSERT INTO roles (name, permissions, is_system) VALUES (?, ?, 0)",
@@ -93,23 +99,52 @@ $hoOther = insert_id();
 $issue = ['id' => 1, 'type' => 'issue', 'status' => 'pending', 'staff_id' => $hoStaff];
 t_ok('the staff member an issue is FOR can accept it',
      handover_can_accept($issue, ['id' => $hoStaff]));
-// This is the bug: the screen only ever drew the OTP box for handover.accept
-// holders, so this person - the only one allowed to accept - had nowhere to
-// type it.
+// The screen used to draw the OTP box only for handover.accept holders, so
+// this person - the one the goods were issued to - had nowhere to type the
+// code they had just been sent.
 t_ok('another member of staff cannot', !handover_can_accept($issue, ['id' => $hoOther]));
+
+// The owner asked twice for this: whoever holds handover.accept may also type
+// the OTP in, because the staff member could not open their own screen and the
+// stock sat counting nowhere. It is not a bypass - the code still only ever
+// went to the staff member's phone, so it has to be read out.
+t_ok('the logged-in admin may accept on the staff member\'s behalf',
+     handover_can_accept($issue));
+t_ok('...and that is flagged as being on someone else\'s behalf',
+     handover_accepting_for_other($issue));
+t_ok('the staff member accepting for themselves is not flagged',
+     !handover_accepting_for_other($issue, ['id' => $hoStaff]));
+// can() only ever answers for the session user, so asking about someone else
+// must fall back to identity alone rather than lending them a permission.
+t_ok('a permission is never granted to a user we did not verify',
+     !handover_can_accept($issue, ['id' => $hoOther]));
+t_ok('...even for a return, where the permission is the whole rule',
+     !handover_can_accept(['type' => 'return', 'status' => 'pending', 'staff_id' => $hoStaff], ['id' => $hoOther]));
 t_ok('an accepted handover cannot be accepted again',
      !handover_can_accept(['type' => 'issue', 'status' => 'accepted', 'staff_id' => $hoStaff], ['id' => $hoStaff]));
 t_ok('nor a cancelled one',
      !handover_can_accept(['type' => 'issue', 'status' => 'cancelled', 'staff_id' => $hoStaff], ['id' => $hoStaff]));
-t_ok('a return is accepted at the shop, not by the staff member',
-     handover_can_accept(['type' => 'return', 'status' => 'pending', 'staff_id' => $hoStaff], ['id' => $hoStaff])
-     === can('handover.accept'));
+// A return comes back INTO the shop, so being the staff member grants nothing
+// there - the permission is the whole rule.
+$ret = ['type' => 'return', 'status' => 'pending', 'staff_id' => $hoStaff];
+t_ok('a return is accepted at the shop, by the permission', handover_can_accept($ret));
+t_ok('...and being the staff member does not by itself allow it',
+     !handover_can_accept($ret, ['id' => $hoStaff]));
 
 $page = file_get_contents(dirname(__DIR__) . '/handover.php');
 t_ok('the screen and the POST handler now share one rule',
      substr_count($page, 'handover_can_accept(') >= 2);
 t_ok('the OTP box is drawn from that rule, not from a permission',
      strpos($page, '$canAcceptThis = handover_can_accept') !== false);
+$hv = file_get_contents(dirname(__DIR__) . '/handover.php');
+t_ok('accepting for someone else is written into the activity log',
+     strpos($hv, 'accepted on behalf of staff #') !== false);
+t_ok('...and the screen says so before you press the button',
+     strpos($hv, 'નોંધમાં લખાશે કે <b>તમે</b> સ્વીકાર્યું છે') !== false);
+t_ok('...and tells you whose phone the OTP went to',
+     strpos($hv, 'ના WhatsApp પર ગયો છે') !== false);
+t_ok('the OTP is still required by the POST handler',
+     strpos($hv, "hash_equals(\$h['otp'], trim(post('otp')))") !== false);
 t_ok('My Stock still offers its own OTP box',
      strpos(file_get_contents(dirname(__DIR__) . '/my_stock.php'), 'name="otp"') !== false);
 

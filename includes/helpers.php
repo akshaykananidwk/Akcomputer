@@ -212,10 +212,35 @@ function adjust_stock($item_id, $location_id, $delta, $ref_type, $ref_id = null,
  * and no admin permission overrides it.
  */
 function handover_can_accept(array $h, $u = null) {
-    $u = $u ?: current_user();
+    $cur = current_user();
+    $u = $u ?: $cur;
     if (!$u || ($h['status'] ?? '') !== 'pending') return false;
-    if (($h['type'] ?? '') === 'issue') return (int)$h['staff_id'] === (int)$u['id'];
-    return can('handover.accept');   // returns and transfers are accepted at the shop
+    // can() always answers for the LOGGED-IN user, so a permission may only be
+    // granted when $u IS that user. Asked about somebody else, this falls back
+    // to the identity check alone rather than handing them a permission nobody
+    // verified - conservative on purpose.
+    $isCurrent = $cur && (int)$cur['id'] === (int)$u['id'];
+    if (($h['type'] ?? '') === 'issue') {
+        // The staff member it was issued to, obviously. And ALSO whoever holds
+        // handover.accept - the owner asked for this twice from the shop floor:
+        // the staff member had the OTP on WhatsApp and could not, or would not,
+        // open their own screen, and the stock sat in limbo counting nowhere.
+        //
+        // This is not a bypass. The correct OTP is still required, and it only
+        // ever went to the staff member's phone - so the owner has to have it
+        // read out to them, which is exactly the proof the OTP exists to give.
+        // What changes is only WHO may type it in. accepted_by records the
+        // person who did, so the trail still says what really happened.
+        return (int)$h['staff_id'] === (int)$u['id'] || ($isCurrent && can('handover.accept'));
+    }
+    return $isCurrent && can('handover.accept');   // returns and transfers are accepted at the shop
+}
+
+/** Is this person accepting on someone else's behalf? Used to say so on the
+ *  screen and to mark it in the activity log. */
+function handover_accepting_for_other(array $h, $u = null) {
+    $u = $u ?: current_user();
+    return $u && ($h['type'] ?? '') === 'issue' && (int)$h['staff_id'] !== (int)$u['id'];
 }
 
 /**

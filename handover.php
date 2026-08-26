@@ -115,7 +115,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'accept') {
     }
     q("UPDATE handovers SET status='accepted', accepted_at=NOW(), accepted_by=? WHERE id=?", [$u['id'], $h['id']]);
     $pdo->commit();
-    log_activity('handover_accept', $h['handover_no']);
+    // If somebody accepted on the staff member's behalf, the log has to say so
+    // - accepted_by alone would read as if that person was the one who took
+    // the goods, and the stock actually went to the staff member's name.
+    log_activity('handover_accept', $h['handover_no']
+        . (handover_accepting_for_other($h, $u) ? ' (accepted on behalf of staff #' . (int)$h['staff_id'] . ')' : ''));
     flash('Handover ' . $h['handover_no'] . ' accepted ✔');
     redirect($h['type'] === 'issue' ? 'my_stock.php' : 'handover.php');
 }
@@ -275,14 +279,23 @@ if ($action === 'view') {
           <?= e(transit_destination(['type' => $h['type'], 'staff_name' => $h['staff_name'] ?? '', 'to_loc' => $h['to_loc_name'] ?? '', 'from_loc' => $h['loc_name'] ?? ''])) ?>
           સુધી પહોંચ્યો નથી. OTP થી સ્વીકારાય એટલે ઉમેરાઈ જશે.
         </p>
-        <?php if ($canAcceptThis): ?>
-          <?php if ($h['type'] !== 'issue'): ?>
+        <?php if ($canAcceptThis): $forOther = handover_accepting_for_other($h, $u); ?>
+          <?php if ($forOther): ?>
+            <p class="muted mb" style="font-size:13px">
+              OTP <b><?= e($h['staff_name']) ?></b> ના WhatsApp પર ગયો છે. એમની પાસેથી નંબર પૂછીને અહીં નાખો.
+              માલ <b><?= e($h['staff_name']) ?></b> ના નામે જ ચડશે, અને નોંધમાં લખાશે કે <b>તમે</b> સ્વીકાર્યું છે.
+            </p>
+          <?php else: ?>
           <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="otp_me"><input type="hidden" name="id" value="<?= $h['id'] ?>">
             <button class="btn btn-outline btn-sm" type="submit">Send OTP to my WhatsApp</button></form>
           <?php endif; ?>
           <form method="post" class="filterbar mt"><?= csrf_field() ?><input type="hidden" name="do" value="accept"><input type="hidden" name="id" value="<?= $h['id'] ?>">
-            <div><input type="text" name="otp" placeholder="Enter OTP" inputmode="numeric" maxlength="6" required></div>
+            <div><input type="text" name="otp" placeholder="OTP અહીં નાખો" inputmode="numeric" maxlength="6" required autocomplete="one-time-code"></div>
             <button class="btn btn-success btn-sm" type="submit">✔ Accept</button></form>
+          <?php if ($h['type'] === 'issue'): ?>
+          <form method="post" class="mt" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="otp_resend"><input type="hidden" name="id" value="<?= $h['id'] ?>">
+            <button class="btn btn-outline btn-sm" type="submit">Re-send OTP</button></form>
+          <?php endif; ?>
         <?php elseif ($h['type'] === 'issue'): ?>
           <p class="muted mb">Staff (<?= e($h['staff_name']) ?>) will accept this with the OTP sent on WhatsApp — from this page, or from their "My Stock" page.</p>
           <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="otp_resend"><input type="hidden" name="id" value="<?= $h['id'] ?>">
