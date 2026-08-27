@@ -113,3 +113,107 @@ if (!$noGst) {
     }
     set_setting('invoice_design', '1');
 }
+
+
+// ---------------------------------------------------------------------------
+// Reported from the shop: on bills of about a dozen lines the QR code and the
+// bottom of the invoice were simply missing from the PDF.
+// ---------------------------------------------------------------------------
+
+t_group('an invoice never runs off the bottom of the paper');
+require_once dirname(__DIR__) . '/includes/pdf.php';
+
+/** How far below the sheet anything is drawn (0 = nothing is). Read out of the
+ *  generated PDF itself: text is placed with "x y Td" and boxes with
+ *  "x y w h re", both measured from the BOTTOM, so anything off the paper has
+ *  a negative y. This measures what the customer actually receives. */
+function t_pdf_overflow($bytes) {
+    $worst = 0.0;
+    $off = 0;
+    while (($s = strpos($bytes, "stream\n", $off)) !== false) {
+        $e = strpos($bytes, 'endstream', $s);
+        if ($e === false) break;
+        $raw = substr($bytes, $s + 7, $e - $s - 7);
+        $body = @gzuncompress($raw);
+        if ($body === false) $body = $raw;
+        if (preg_match_all('/([\d.-]+) ([\d.-]+) Td/', $body, $m))
+            foreach ($m[2] as $y) $worst = min($worst, (float)$y);
+        if (preg_match_all('/([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+) re/', $body, $m))
+            foreach ($m[2] as $i => $y) $worst = min($worst, (float)$y, (float)$y + (float)$m[4][$i]);
+        $off = $e + 9;
+    }
+    return -$worst;   // points past the bottom edge; 0 when nothing is
+}
+
+$hCo = row('SELECT * FROM companies LIMIT 1');
+$hLoc = row('SELECT * FROM locations LIMIT 1');
+$hParty = row('SELECT * FROM parties LIMIT 1');
+
+function t_fake_invoice($co, $loc, $party, $n, $gst = 1) {
+    $sale = [
+        'id' => 1, 'invoice_no' => 'T-1', 'sale_date' => today(), 'due_date' => today(),
+        'company_name' => $co['name'], 'gstin' => $co['gstin'] ?? '', 'is_gst' => $gst,
+        'c_address' => $co['address'] ?? '', 'c_phone' => $co['phone'] ?? '', 'c_terms' => $co['terms'] ?? '',
+        'loc_name' => $loc['name'], 'loc_city' => $loc['city'] ?? '',
+        'party_name' => $party['name'], 'party_gstin' => $party['gstin'] ?? '',
+        'customer_name' => $party['name'], 'customer_mobile' => $party['mobile'] ?? '',
+        'subtotal' => 0, 'discount' => 0, 'discount_type' => 'amount', 'discount_pct' => 0,
+        'tax_amount' => 0, 'shipping' => 0, 'adjustment' => 0, 'round_off' => 0,
+        'total' => 0, 'paid' => 0, 'payment_mode' => 'cash', 'notes' => '',
+        'share_token' => 'x', 'party_id' => $party['id'], 'loyalty_points_used' => 0, 'loyalty_discount' => 0,
+    ];
+    $items = []; $sub = 0;
+    for ($i = 0; $i < $n; $i++) {
+        $items[] = ['item_id' => 1, 'name' => 'D-Link RJ45 8P8C Cat6 UTP Modular Plug (100 Pack) NPG-5E1TRA031-100',
+                    'unit' => 'PCS', 'qty' => 2, 'price' => 1250, 'total' => 2500, 'tax_rate' => 18,
+                    'hsn' => '84733099', 'serials' => '', 'description' => '', 'cost_price' => 0,
+                    'custom_data' => null, 'free_qty' => 0, 'line_disc' => 0];
+        $sub += 2500;
+    }
+    $sale['subtotal'] = $sub;
+    $sale['tax_amount'] = $gst ? round($sub * 0.18, 2) : 0;
+    $sale['total'] = round($sub + $sale['tax_amount'], 2);
+    return [$sale, $items];
+}
+
+$oldDesign = setting('invoice_design', '1');
+// The exact counts that were reported broken, plus the neighbours around each
+// break so a future change cannot quietly move the problem one line along.
+$breakers = ['1' => [11, 12, 13, 14, 15, 29, 30, 31], '2' => [10, 11, 12, 28, 29, 30, 31, 47]];
+foreach ($breakers as $design => $counts) {
+    set_setting('invoice_design', $design);
+    foreach ($counts as $n) {
+        list($sale, $items) = t_fake_invoice($hCo, $hLoc, $hParty, $n);
+        $over = t_pdf_overflow(invoice_pdf($sale, $items));
+        t_ok("design $design, $n items: nothing below the page", $over <= 0.01, 'over by ' . round($over) . 'pt');
+    }
+}
+// Without GST the totals box is shorter, which used to leave the QR card as the
+// tall side and overflow by a few points instead of fifty.
+set_setting('invoice_design', '2');
+foreach ([12, 30] as $n) {
+    list($sale, $items) = t_fake_invoice($hCo, $hLoc, $hParty, $n, 0);
+    $over = t_pdf_overflow(invoice_pdf($sale, $items));
+    t_ok("design 2, $n items, no GST: nothing below the page", $over <= 0.01, 'over by ' . round($over) . 'pt');
+}
+
+t_group('a short bill still fits on one sheet');
+// The fix must not send every bill to two pages "to be safe" - that wastes
+// paper and looks broken to the customer.
+foreach (['1', '2'] as $design) {
+    set_setting('invoice_design', $design);
+    foreach ([1, 5, 8] as $n) {
+        list($sale, $items) = t_fake_invoice($hCo, $hLoc, $hParty, $n);
+        $bytes = invoice_pdf($sale, $items);
+        t_ok("design $design, $n items is a single page", substr_count($bytes, '/Type /Page ') === 1);
+    }
+}
+set_setting('invoice_design', $oldDesign);
+
+t_group('the block under the items is measured, not guessed');
+$pdfSrc = file_get_contents(dirname(__DIR__) . '/includes/pdf.php');
+t_ok('there is one shared "does it fit" helper', strpos($pdfSrc, 'function pdf_room_for(') !== false);
+t_ok('...and one shared height for the block', strpos($pdfSrc, 'function pdf_footer_height(') !== false);
+t_ok('both designs use it', substr_count($pdfSrc, 'pdf_room_for($pdf, $y, pdf_footer_height(') === 2);
+t_ok('the height follows the rows that will actually be drawn',
+     strpos($pdfSrc, "\$hasGst ? 48 : 0") !== false);

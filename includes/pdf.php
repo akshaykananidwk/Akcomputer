@@ -447,6 +447,40 @@ function pdf_item_extras($it) {
     return implode('  |  ', $parts);
 }
 
+/**
+ * How much vertical room the block under the item table needs.
+ *
+ * Counted from the same conditions that draw it - the totals rows that will
+ * actually appear, the bank panel, the QR card - plus the footer band,
+ * signature line and stamp that always follow. Deliberately a little generous:
+ * being wrong by twenty points and starting a new page costs a sheet of paper,
+ * being wrong the other way loses the customer's QR code.
+ */
+function pdf_footer_height($sale, $hasGst, $bank, $qrId, $extra = 0) {
+    $totals = 126                                   // subtotal, discount, TOTAL, PAID, balance
+        + ($hasGst ? 48 : 0)                        // CGST + SGST
+        + (!empty($sale['shipping']) && $sale['shipping'] > 0 ? 24 : 0)
+        + (!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009 ? 24 : 0)
+        + (!empty($sale['round_off']) && abs($sale['round_off']) > 0.004 ? 24 : 0);
+    $left = ($bank ? 104 : 0) + ($qrId ? 96 : 0);   // bank panel + "Scan & Pay" card
+    // The footer band, signature line and stamp are PINNED near the bottom of
+    // the sheet rather than stacked under this block, so they are not counted
+    // here - only the room the block itself takes, plus a little slack.
+    // $extra is the design's own additions below the block - design 2 carries a
+    // "thank you" medallion and a taller QR card, measured at 34 points more.
+    return max($totals, $left) + 10 + $extra;
+}
+
+/** Start a new page unless $need points still fit below $y. Returns the y to
+ *  carry on drawing at. One rule, used by both invoice designs. */
+function pdf_room_for($pdf, $y, $need, &$paginated = null, $bottom = null) {
+    $bottom = $bottom === null ? MiniPDF::H - 18 : $bottom;
+    if ($y + $need <= $bottom) return $y;
+    $pdf->new_page();
+    if ($paginated !== null) $paginated = true;
+    return 44;
+}
+
 /** Build the invoice PDF bytes for a sale row + items. Dispatches to the
  *  design chosen in Settings (invoice_design: 1 = teal/orange default,
  *  2 = purple). Both produce genuine selectable-text PDFs. */
@@ -617,6 +651,16 @@ function invoice_pdf_design1($sale, $items) {
     $pdf->line($L, $bodyTop, $L, $y, 0.5, [0.88, 0.9, 0.93]);
     $pdf->line($R, $bodyTop, $R, $y, 0.5, [0.88, 0.9, 0.93]);
     $y += 16;
+
+    // The block below - totals, bank details, QR code, signature - cannot be
+    // split across pages, so if what is left of this sheet will not hold it,
+    // it moves to a fresh page whole.
+    //
+    // Without this the items paginated but the block under them did not: a
+    // bill of about a dozen lines filled the page, and the QR code and the
+    // balance were then drawn 50 points BELOW the paper and simply vanished.
+    // Reported from the shop with the bottom of the invoice missing.
+    $y = pdf_room_for($pdf, $y, pdf_footer_height($sale, $hasGst, $bank, $qrId), $paginated);
 
     // ================= PAY BLOCK (left) + TOTALS (right) =================
     $blockTop = $y;
@@ -975,6 +1019,10 @@ function invoice_pdf_design2($sale, $items) {
     $pdf->line($L, $bodyTop, $L, $y, 0.5, [0.85, 0.82, 0.92]);
     $pdf->line($R, $bodyTop, $R, $y, 0.5, [0.85, 0.82, 0.92]);
     $y += 14;
+
+    // Same guard as design 1: the block below cannot be split, so it moves to
+    // a new page whole rather than running off the bottom of the paper.
+    $y = pdf_room_for($pdf, $y, pdf_footer_height($sale, $hasGst, $bank, $qrId, 34), $paginated);
 
     // ===== BANK (left) + TOTALS (right) =====
     $blockTop = $y;
