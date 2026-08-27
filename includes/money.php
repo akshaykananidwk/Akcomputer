@@ -184,6 +184,109 @@ function profit_cost_sql() {
     return "si.qty * IF(i.item_type = 'service', si.cost_price, IF(si.cost_price > 0, si.cost_price, i.purchase_price))";
 }
 
+/**
+ * Party-wise margin contribution over a date range.
+ *
+ * The owner's question is "which customer actually made me money this year",
+ * so he knows who to look after at Diwali. Three deliberate decisions:
+ *
+ *  1. Cost comes from profit_cost_sql() - the same expression the product
+ *     profit report, the P&L and the dashboard use. There is no second
+ *     definition of what a thing cost.
+ *  2. The bill-level discount is a SEPARATE column, not folded into revenue.
+ *     A customer who is given 10% off every bill is a different customer from
+ *     one who is not, and hiding that inside one number would make this report
+ *     silently disagree with the product-wise one. Loyalty points spent as
+ *     money count the same way.
+ *  3. Sales returns are subtracted at their own cost and revenue, because
+ *     goods that came back were never profit.
+ *
+ * What it is NOT: net profit. Rent, salary, electricity and every other shop
+ * cost are not in here and cannot be split per customer honestly. This is what
+ * the goods earned before the shop's own bills - which is why every screen
+ * showing it calls it CONTRIBUTION, not profit.
+ */
+function party_profit($from, $to, $extraWhere = '', array $extraParams = [], $limit = 300) {
+    $limit = max(1, (int)$limit);
+    $cost = profit_cost_sql();
+    $rows = all("SELECT COALESCE(CONCAT('p', s.party_id), s.customer_name) k, s.party_id,
+                        COALESCE(p.name, CONCAT(NULLIF(s.customer_name, ''), ' (છૂટક)'), 'છૂટક ગ્રાહક') pname,
+                        p.mobile, p.city,
+                        COUNT(DISTINCT s.id) bills,
+                        COALESCE(SUM(si.total), 0) revenue,
+                        COALESCE(SUM($cost), 0) cost,
+                        MAX(s.sale_date) last_buy
+                 FROM sales s
+                 JOIN sale_items si ON si.sale_id = s.id
+                 JOIN items i ON i.id = si.item_id
+                 LEFT JOIN parties p ON p.id = s.party_id
+                 WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $extraWhere
+                 GROUP BY k",
+        array_merge([$from, $to], $extraParams));
+
+    // Bill-level giveaways, counted once per BILL - joining them above would
+    // multiply them by the number of lines on the bill.
+    $disc = [];
+    foreach (all("SELECT COALESCE(CONCAT('p', s.party_id), s.customer_name) k,
+                         COALESCE(SUM(s.discount), 0) + COALESCE(SUM(s.loyalty_discount), 0) given
+                  FROM sales s
+                  WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $extraWhere
+                  GROUP BY k", array_merge([$from, $to], $extraParams)) as $d)
+        $disc[(string)$d['k']] = (float)$d['given'];
+
+    // Returns: revenue that came back, and the cost that came back with it.
+    $ret = [];
+    try {
+        foreach (all("SELECT COALESCE(CONCAT('p', sr.party_id), sr.customer_name) k,
+                             COALESCE(SUM(ri.total), 0) amt,
+                             COALESCE(SUM(ri.qty * IF(i.item_type = 'service', 0, i.purchase_price)), 0) cost
+                      FROM sales_returns sr
+                      JOIN sales_return_items ri ON ri.return_id = sr.id
+                      JOIN items i ON i.id = ri.item_id
+                      WHERE sr.return_date BETWEEN ? AND ?
+                      GROUP BY k", [$from, $to]) as $x)
+            $ret[(string)$x['k']] = ['amt' => (float)$x['amt'], 'cost' => (float)$x['cost']];
+    } catch (Exception $e) { /* older installs may not have the tables */ }
+
+    $out = [];
+    foreach ($rows as $x) {
+        // all three sweeps group by the SAME key expression, so they line up
+        // without any name matching - a walk-in keyed by the typed name and a
+        // real party keyed by "p<id>" both find their own row or nothing.
+        $key = (string)$x['k'];
+        $given = $disc[$key] ?? 0.0;
+        $r = $ret[$key] ?? ['amt' => 0.0, 'cost' => 0.0];
+        $revenue = money_r((float)$x['revenue'] - $r['amt']);
+        $cogs = money_r((float)$x['cost'] - $r['cost']);
+        $gross = money_r($revenue - $cogs);
+        $contribution = money_r($gross - $given);
+        $out[] = [
+            'party_id' => $x['party_id'] === null ? 0 : (int)$x['party_id'],
+            'name' => $x['pname'], 'mobile' => $x['mobile'], 'city' => $x['city'],
+            'bills' => (int)$x['bills'], 'last_buy' => $x['last_buy'],
+            'revenue' => $revenue, 'cost' => $cogs, 'gross' => $gross,
+            'discount' => money_r($given), 'returned' => money_r($r['amt']),
+            'contribution' => $contribution,
+            'pct' => $revenue > 0 ? round($contribution / $revenue * 100, 1) : 0.0,
+        ];
+    }
+    usort($out, fn($a, $b) => $b['contribution'] <=> $a['contribution']);
+    return array_slice($out, 0, $limit);
+}
+
+/** A suggested Diwali/festival gift budget for one customer: a share of what
+ *  they actually contributed. A SUGGESTION - the shop decides. Returns 0 when
+ *  the customer made no money for the shop, because a gift is a thank-you, not
+ *  an apology. */
+function party_gift_budget($contribution, $pct = null, $cap = null) {
+    $pct = $pct === null ? (float)setting('gift_pct', 2) : (float)$pct;
+    $cap = $cap === null ? (float)setting('gift_cap', 0) : (float)$cap;
+    if ($contribution <= 0 || $pct <= 0) return 0.0;
+    $b = money_r($contribution * $pct / 100);
+    if ($cap > 0 && $b > $cap) $b = money_r($cap);
+    return $b;
+}
+
 // ------------------------------------------------------------ settlement ---
 
 /** Applies $amount to a party's unpaid bills, OLDEST FIRST, updating each

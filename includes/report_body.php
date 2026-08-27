@@ -372,6 +372,74 @@ if ($r === 'branch_staff' && can('reports.profit')) {
 }
 
 // ---------------- party-wise sales ----------------
+// ---------------- party-wise profit ----------------
+// "Which customer actually made me money this year" - so the owner knows who
+// to look after at Diwali, and roughly how much is worth spending on them.
+if ($r === 'party_profit' && can('reports.profit')) {
+    list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus, $fUser);
+    $rows = party_profit($from, $to, $ew, $ep, 500);
+    $giftPct = (float)setting('gift_pct', 2);
+
+    $tRev = array_sum(array_column($rows, 'revenue'));
+    $tCon = array_sum(array_column($rows, 'contribution'));
+    $tDisc = array_sum(array_column($rows, 'discount'));
+    $tGift = 0.0;
+    foreach ($rows as $x) $tGift += party_gift_budget($x['contribution']);
+
+    echo '<div class="flash flash-info" style="margin-bottom:10px">'
+       . '<b>આ "માર્જિન યોગદાન" છે, ચોખ્ખો નફો નહીં.</b> વેચાણ ભાવ માંથી <b>વસ્તુની પડતર</b> બાદ કરી છે, '
+       . 'અને બિલ પર આપેલો વટાવ પણ બાદ કર્યો છે. પણ <b>ભાડું, પગાર, લાઇટબિલ જેવા દુકાનના ખર્ચ આમાં બાદ થયા નથી</b> — '
+       . 'એ ખર્ચ ગ્રાહકવાર વહેંચી શકાય એમ નથી, અને ધારીને વહેંચવા એ ખોટું થાત.</div>';
+
+    echo '<div class="grid-stats">';
+    echo '<div class="stat"><div class="stat-label">ગ્રાહક</div><div class="stat-value">' . count($rows) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">વેચાણ</div><div class="stat-value">₹' . money($tRev) . '</div></div>';
+    echo '<div class="stat s-ok"><div class="stat-label">માર્જિન યોગદાન</div><div class="stat-value">₹' . money($tCon) . '</div></div>';
+    echo '<div class="stat' . ($tDisc > 0 ? ' s-warn' : '') . '"><div class="stat-label">વટાવમાં આપ્યા</div><div class="stat-value">₹' . money($tDisc) . '</div></div>';
+    echo '</div>';
+
+    if ($rows) {
+        echo '<div class="card"><h3>🏅 સૌથી વધુ કમાવી આપનારા 10 ગ્રાહક</h3>';
+        echo svg_bar_chart(array_map(fn($x) => ['label' => $x['name'], 'val' => (float)$x['contribution']],
+                                     array_slice($rows, 0, 10)), '#16a34a');
+        echo '</div>';
+    }
+
+    echo '<div class="card"><h3>🎁 તહેવારની ભેટનું સૂચન</h3>'
+       . '<p class="muted" style="margin-top:0;font-size:13px">દરેક ગ્રાહકે કમાવી આપેલા <b>' . $giftPct . '%</b> '
+       . 'પ્રમાણે સૂચવેલું બજેટ (Settings → Invoice માં ટકા બદલી શકાય). '
+       . 'જેણે નફો કરાવ્યો જ નથી એને ભેટ સૂચવાતી નથી — ભેટ આભાર છે, માફી નહીં.<br>'
+       . 'કુલ સૂચવેલું બજેટ: <b>₹' . money($tGift) . '</b>. '
+       . '<b>કઈ વસ્તુ આપવી</b> એ માટે ગ્રાહકનું નામ ખોલો — ત્યાં એ સૌથી વધુ શું ખરીદે છે એ લખેલું છે.</p></div>';
+
+    echo '<div class="table-wrap"><table><thead><tr>'
+       . '<th>#</th><th>ગ્રાહક</th><th class="num">બિલ</th><th class="num">વેચાણ ₹</th>'
+       . '<th class="num">વસ્તુની પડતર ₹</th><th class="num">વટાવ ₹</th>'
+       . '<th class="num">માર્જિન યોગદાન ₹</th><th class="num">%</th><th class="num">🎁 ભેટ બજેટ ₹</th>'
+       . '</tr></thead><tbody>';
+    $n = 0;
+    foreach ($rows as $x) {
+        $n++;
+        $gift = party_gift_budget($x['contribution']);
+        $nm = e($x['name']);
+        if ($x['party_id']) $nm = '<a href="customer.php?id=' . (int)$x['party_id'] . '">' . $nm . '</a>';
+        $medal = $n <= 3 ? ['🥇', '🥈', '🥉'][$n - 1] . ' ' : '';
+        echo '<tr>'
+           . '<td class="num muted">' . $medal . $n . '</td>'
+           . '<td>' . $nm . ($x['city'] ? ' <span class="muted" style="font-size:12px">' . e($x['city']) . '</span>' : '') . '</td>'
+           . '<td class="num muted">' . (int)$x['bills'] . '</td>'
+           . '<td class="num">' . money($x['revenue']) . '</td>'
+           . '<td class="num muted">' . money($x['cost']) . '</td>'
+           . '<td class="num' . ($x['discount'] > 0 ? '" style="color:var(--warn,#b45309)' : ' muted') . '">' . ($x['discount'] > 0 ? money($x['discount']) : '·') . '</td>'
+           . '<td class="num"><b style="color:' . ($x['contribution'] >= 0 ? 'var(--good,#15803d)' : 'var(--bad,#b91c1c)') . '">' . money($x['contribution']) . '</b></td>'
+           . '<td class="num">' . $x['pct'] . '%</td>'
+           . '<td class="num">' . ($gift > 0 ? '₹' . money($gift) : '<span class="muted">·</span>') . '</td>'
+           . '</tr>';
+    }
+    echo '</tbody></table></div>';
+    if (!$rows) echo '<p class="muted">આ ગાળામાં કોઈ વેચાણ નથી.</p>';
+}
+
 if ($r === 'party_sales') {
     list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus, $fUser);
     $rows = all("SELECT COALESCE(p.name, CONCAT(s.customer_name, ' (walk-in)'), 'Walk-in') pname,

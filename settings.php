@@ -232,6 +232,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'apply_margin_all') 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_invoice') {
     require_perm('settings.edit');
     foreach (['google_review_link', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret', 'ocr_api_key', 'gemini_api_key', 'gemini_api_key_paid', 'gcs_api_key', 'gcs_cx'] as $k) set_setting($k, post($k));
+    set_setting('gift_pct', (string)max(0, min(100, (float)post('gift_pct'))));
+    set_setting('gift_cap', (string)max(0, (float)post('gift_cap')));
     log_activity('settings_save');
     flash('Invoice settings saved.');
     redirect('settings.php?cat=invoice');
@@ -877,6 +879,14 @@ exit;
     <div class="form-row cols-2">
       <div><label>Google Review Link <span class="muted" style="font-weight:normal">(pressing "Review Invite" on a bill sends this link straight to WhatsApp)</span></label>
         <input type="text" name="google_review_link" value="<?= e(setting('google_review_link')) ?>" placeholder="https://g.page/r/xxxxxxx/review"></div>
+    </div>
+    <div class="form-row cols-2">
+      <div><label>🎁 તહેવારની ભેટનું બજેટ — નફાના કેટલા %</label>
+        <input type="number" name="gift_pct" step="0.1" min="0" max="100" value="<?= (float)setting('gift_pct', 2) ?>">
+        <p class="muted" style="font-size:12.5px">Reports → 🏅 Party-wise Profit માં દરેક ગ્રાહક સામે સૂચવેલું બજેટ. 0 કરો તો સૂચન બંધ.</p></div>
+      <div><label>એક ગ્રાહક પર વધુમાં વધુ (₹)</label>
+        <input type="number" name="gift_cap" step="any" min="0" value="<?= (float)setting('gift_cap', 0) ?>">
+        <p class="muted" style="font-size:12.5px">0 = કોઈ મર્યાદા નહીં.</p></div>
     </div>
     <div class="form-row cols-2">
       <div><label>Razorpay Key ID <span class="muted" style="font-weight:normal">(for the online payment link on bills, optional)</span></label><input type="text" name="razorpay_key_id" value="<?= e(setting('razorpay_key_id')) ?>" placeholder="rzp_live_..."></div>

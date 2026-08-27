@@ -166,6 +166,7 @@ $tabs = [
     'purchase' => '📦 Purchase', 'payables' => '📆 Purchase Dues Calendar', 'vendor_perf' => '🚚 Vendor Performance', 'stockval' => '📊 Stock Report', 'cashbook' => '💵 Cashbook',
     'bank_ledger' => '🏦 Bank Ledger',
     'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Product-wise Profit',
+    'party_profit' => '🏅 Party-wise Profit',
     'bill_profit' => '🧮 Bill Profit', 'branch_staff' => '📊 Branch / Staff Comparison', 'staff' => '🎒 Staff Stock',
     'web_visits' => '🌐 Website Visitors',
     'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'tech_sla' => '⏱️ Technician SLA',
@@ -180,7 +181,7 @@ $tabs = [
 if (!is_full_admin()) unset($tabs['health']);
 if (!can('reports.gst')) unset($tabs['gst']);
 if (!can('purchases.view')) unset($tabs['payables']);
-if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); unset($tabs['dead_stock']); unset($tabs['branch_staff']); }
+if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['party_profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); unset($tabs['dead_stock']); unset($tabs['branch_staff']); }
 if (!can('expenses.view')) unset($tabs['expense']);
 if (!can('users.view')) { unset($tabs['activity']); unset($tabs['login_history']); unset($tabs['photo_log']); }
 if (!can('payments.view')) unset($tabs['bank_ledger']);
@@ -207,7 +208,7 @@ $tabCategories = [
     'Party Reports' => ['party_sales', 'aging', 'vendor_perf'],
     'GST' => ['gst'],
     'Item / Stock Reports' => ['stockval', 'low', 'purchase_reco', 'dead_stock', 'forecast'],
-    'Business Status' => ['cashbook', 'bank_ledger', 'profit', 'bill_profit', 'branch_staff', 'web_visits'],
+    'Business Status' => ['cashbook', 'bank_ledger', 'profit', 'party_profit', 'bill_profit', 'branch_staff', 'web_visits'],
     'Accounting' => ['general_ledger', 'trial_balance', 'balance_sheet', 'profit_loss'],
     'Expense Reports' => ['expense'],
     'Staff & Service Reports' => ['staff', 'photo_log', 'repair_tat', 'warranty_tat', 'tech_sla'],
@@ -217,7 +218,7 @@ $tabCategories = [
 ?>
 <?php
 $filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&f_user=' . $fUser . '&bank_id=' . $bankId . '&gl_account=' . $glAccount . '&stock_loc=' . $stockLoc . '&types=' . e(get('types'));
-$filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchase', 'vendor_perf', 'gst', 'profit', 'bill_profit'], true);
+$filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchase', 'vendor_perf', 'gst', 'profit', 'party_profit', 'bill_profit'], true);
 $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
 ?>
 <div class="page-actions no-print" style="flex-wrap:wrap;align-items:center">
