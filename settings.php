@@ -423,6 +423,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_store') {
     require_perm('settings.edit');
     foreach (['store_announce', 'store_banners', 'store_faqs', 'store_testimonials', 'store_deal_ends'] as $k) set_setting($k, trim(post($k)));
     set_setting('store_deal_item', (string)(int)post('store_deal_item'));
+    set_setting('store_show_qty', post('store_show_qty') ? '1' : '0');
     log_activity('settings_save', 'store design');
     flash('Store design saved — વેબસાઇટ પર તરત લાગુ.');
     redirect('settings.php?cat=store');
@@ -815,6 +816,17 @@ exit;
   <form method="post" class="mt">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save_store">
+    <div class="field">
+      <label class="check-inline">
+        <input type="checkbox" name="store_show_qty" value="1" <?= setting('store_show_qty', '1') === '1' ? 'checked' : '' ?>>
+        📦 વેબસાઇટ પર <b>સ્ટોકની સંખ્યા</b> બતાવવી
+      </label>
+      <p class="muted" style="font-size:12.5px">
+        ચાલુ હોય તો દરેક વસ્તુ પર "✔ 12 નંગ સ્ટોકમાં" લખાય. બંધ કરો તો ફક્ત "✔ In stock" લખાશે.<br>
+        ⚠️ ધ્યાન રાખજો: આ <b>જાહેર વેબસાઇટ</b> છે — હરીફ પણ જોઈ શકે કે તમારી પાસે કેટલો માલ પડ્યો છે.
+        <b>ખલાસ થઈ ગયેલી વસ્તુ "ખલાસ" જ લખાશે</b>, આ સ્વિચ ચાલુ હોય કે બંધ.
+      </p>
+    </div>
     <div class="field"><label>📣 Announcement Bar (હેડરની નીચેની લાઈન)</label>
       <input type="text" name="store_announce" value="<?= e(setting('store_announce')) ?>" placeholder="🚚 Dwarka-માં ઝડપી ડિલિવરી · ✅ Genuine Products..."></div>
     <div class="field"><label>🖼️ Hero Banners <span class="muted" style="font-weight:normal">(એક લાઈન = એક બેનર · ફોર્મેટ: ટાઈટલ|સબટાઈટલ|ઇમોજી|કલર1|કલર2|લિંક)</span></label>

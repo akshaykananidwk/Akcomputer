@@ -71,7 +71,11 @@ $waPct = $webAcct ? (float)$webAcct['discount_pct'] : 0;
 $dp = dealer_price($it['selling_price'], $waPct);
 $label = trim($it['name'] . ($it['brand'] ? ' - ' . trim($it['brand'] . ' ' . $it['model']) : ''));
 $desc = $it['description'] ?: ($label . ' available at ' . $app_name . ', Dwarka Gujarat. Best price, genuine product, warranty & service. કિંમત ₹' . money($dp) . ' - WhatsApp પર ઓર્ડર કરો.');
-$inStock = $it['item_type'] === 'service' || (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$it['id']]) > 0;
+$webQty = (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$it['id']]);
+$inStock = $it['item_type'] === 'service' || $webQty > 0;
+// The SAME rule the catalogue cards use, so the two pages can never disagree
+// about what the customer is told.
+list($stkClass, $stkText, $stkNote) = web_stock_line($it, [(int)$it['id'] => $webQty], web_show_qty());
 $related = all('SELECT i.* FROM items i WHERE i.is_active = 1 AND i.show_on_website = 1 AND i.id <> ? AND i.category_id <=> ? ORDER BY RAND() LIMIT 4',
                [$it['id'], $it['category_id']]);
 $purl = seo_product_url($it);
@@ -181,7 +185,10 @@ body { background: var(--bg); }
     <h1><?= e($it['name']) ?></h1>
     <?php if ($it['brand'] || $it['model']): ?><div class="pbrand"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></div><?php endif; ?>
     <div class="pprice">₹<?= money($dp) ?><?php if ($webAcct): ?> <span style="font-size:13px;color:#059669;font-weight:700">👷 તમારો ભાવ</span><?php endif; ?></div>
-    <div class="pstock" style="color:<?= $inStock ? '#059669' : '#dc2626' ?>"><?= $inStock ? '✅ In stock — આજે જ મળે' : '📦 Order પર મળશે — WhatsApp કરો' ?></div>
+    <div class="pstock" style="color:<?= $inStock ? '#059669' : '#dc2626' ?>">
+      <?= e($stkText) ?><?= $stkClass === 'in' ? ' — આજે જ મળે' : '' ?>
+      <?php if ($stkNote): ?><div class="muted" style="font-weight:500;font-size:12.5px"><?= e($stkNote) ?> — WhatsApp કરો</div><?php endif; ?>
+    </div>
     <?php if ($rvN > 0): ?>
     <a href="#reviews" style="display:inline-block;margin-top:6px;text-decoration:none;color:var(--text);font-weight:700;font-size:14px">
       <span style="color:#f59e0b">★</span> <?= $rvAvg ?> <span class="muted" style="font-weight:500">(<?= $rvN ?> review<?= $rvN > 1 ? 's' : '' ?>)</span></a>

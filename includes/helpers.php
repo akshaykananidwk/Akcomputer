@@ -244,6 +244,41 @@ function handover_accepting_for_other(array $h, $u = null) {
 }
 
 /**
+ * What the PUBLIC website should say about one product's availability.
+ *
+ * Every product card used to read "✔ In stock" whatever the shelf held,
+ * including items that ran out months ago - so a customer who came in for one
+ * was told something untrue by our own website. This is the one place that
+ * decides, so the catalogue grid and the product page can never disagree.
+ *
+ * Returns [class, text, note]. Services have no shelf and never claim a
+ * quantity. An item that is OUT says so whether or not quantities are shown -
+ * that half is honesty, not a display preference.
+ */
+function web_stock_line($it, array $stockMap, $showQty = true) {
+    if (($it['item_type'] ?? '') === 'service') return ['svc', '🛠️ સેવા', ''];
+    $q = (float)($stockMap[(int)$it['id']] ?? 0);
+    if ($q <= 0) return ['out', '✖ અત્યારે ખલાસ', 'ઓર્ડર પર મંગાવી આપીશું'];
+    $n = rtrim(rtrim(number_format($q, 2), '0'), '.');
+    $unit = trim((string)($it['unit'] ?? ''));
+    return ['in', $showQty ? '✔ ' . $n . ' ' . ($unit !== '' ? $unit : 'નંગ') . ' સ્ટોકમાં' : '✔ In stock', ''];
+}
+
+/** Stock for every item in ONE query - the website lists hundreds of products
+ *  and must never ask per card. */
+function web_stock_map() {
+    $out = [];
+    foreach (all('SELECT item_id, SUM(qty) q FROM stock GROUP BY item_id') as $s)
+        $out[(int)$s['item_id']] = (float)$s['q'];
+    return $out;
+}
+
+/** Does the shop want exact quantities on its public pages? The owner asked
+ *  for them, so this defaults ON - but it is a public page, competitors
+ *  included, so it can be turned off in Settings without touching code. */
+function web_show_qty() { return setting('store_show_qty', '1') === '1'; }
+
+/**
  * Stock that has left one place and not yet arrived anywhere - the items on
  * pending handovers.
  *

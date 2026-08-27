@@ -124,6 +124,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'order') {
 $items = all('SELECT i.*, c.name cat_name FROM items i
               LEFT JOIN categories c ON c.id = i.category_id
               WHERE i.is_active = 1 AND i.show_on_website = 1 ORDER BY c.name, i.name');
+
+// Real stock for every listed product, in ONE query.
+//
+// Until now every card said "✔ In stock" whatever the shelf actually held -
+// including items that ran out months ago. A customer who came in for one of
+// those was told something untrue by our own website, so this is a correction
+// as much as a new feature.
+//
+// Quantities on a PUBLIC page are the owner's call: anyone, competitors
+// included, can read exactly how many pieces are lying here. He asked for it,
+// so it is on - and store_show_qty turns it off again without touching code,
+// leaving the honest in-stock / out-of-stock line behind.
+$webStock = web_stock_map();
+$showQty = web_show_qty();
+
 $cats = [];
 foreach ($items as $it) { $cn = $it['cat_name'] ?: ''; if ($cn !== '') $cats[$cn] = ($cats[$cn] ?? 0) + 1; }
 ksort($cats);
@@ -189,8 +204,12 @@ arsort($brandCnt);
 $brandTop = array_slice(array_keys($brandCnt), 0, 12);
 
 /** One product card (used by the main grid AND the horizontal section rows,
- *  so every card everywhere has the same buttons and behaviour). */
-function pcard($it, $waPct) {
+ *  so every card everywhere has the same buttons and behaviour).
+ *
+ *  The stock map is passed IN rather than read from an outer variable: this is
+ *  a plain function, so a global would simply have been null here and the
+ *  availability line would have been wrong on every card. */
+function pcard($it, $waPct, array $stockMap = [], $showQty = true) {
     $dp = dealer_price($it['selling_price'], $waPct);
     $purl = seo_product_url($it); ?>
       <div class="cat-card" data-cat="<?= e($it['cat_name'] ?? '') ?>" data-price="<?= $dp ?>" data-name="<?= e(mb_strtolower($it['name'])) ?>" data-newid="<?= (int)$it['id'] ?>">
@@ -203,7 +222,9 @@ function pcard($it, $waPct) {
           <?php if ($it['cat_name']): ?><div class="ctag"><?= e($it['cat_name']) ?></div><?php endif; ?>
           <div class="cname"><a href="<?= e($purl) ?>"><?= e($it['name']) ?></a></div>
           <?php if ($it['brand']): ?><div class="muted" style="font-size:12px"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></div><?php endif; ?>
-          <div class="cprice">₹<?= money($dp) ?> <span class="instk">✔ In stock</span></div>
+          <?php list($stkClass, $stkText, $stkNote) = web_stock_line($it, $stockMap, $showQty); ?>
+          <div class="cprice">₹<?= money($dp) ?> <span class="instk stk-<?= $stkClass ?>"><?= e($stkText) ?></span></div>
+          <?php if ($stkNote): ?><div class="stknote"><?= e($stkNote) ?></div><?php endif; ?>
           <div class="btnrow">
             <button type="button" class="btn btn-sm addbtn" data-id="<?= $it['id'] ?>" data-name="<?= e($it['name']) ?>" data-price="<?= $dp ?>">🛒 Add</button>
             <button type="button" class="btn btn-sm buybtn" data-id="<?= $it['id'] ?>">⚡ Buy Now</button>
@@ -349,6 +370,9 @@ body { padding-bottom: 90px; background: var(--bg); }
 .wishbtn:hover { transform: scale(1.12); }
 .wishbtn.on { background: #e11d48; color: #fff; }
 .instk { font-size: 11px; color: #059669; font-weight: 700; margin-left: 6px; }
+.instk.stk-out { color: #dc2626; }
+.instk.stk-svc { color: #2563eb; }
+.stknote { font-size: 11px; color: #6b7280; margin-top: 2px; }
 .btnrow { display: flex; gap: 6px; margin-top: 8px; }
 .btnrow .addbtn { flex: 1; margin-top: 0; }
 .btnrow .buybtn { flex: 1; background: linear-gradient(100deg, #059669, #10b981); border: 0; color: #fff; }
@@ -525,12 +549,12 @@ body { padding-bottom: 90px; background: var(--bg); }
 
 <?php if ($bestList): ?>
 <section class="secWrap"><h2 class="sec-h"><span>🔥</span> Best Sellers</h2>
-  <div class="hrow"><?php foreach ($bestList as $it) pcard($it, $waPct); ?></div>
+  <div class="hrow"><?php foreach ($bestList as $it) pcard($it, $waPct, $webStock, $showQty); ?></div>
 </section>
 <?php endif; ?>
 
 <section class="secWrap"><h2 class="sec-h"><span>🆕</span> New Arrivals</h2>
-  <div class="hrow"><?php foreach ($newList as $it) pcard($it, $waPct); ?></div>
+  <div class="hrow"><?php foreach ($newList as $it) pcard($it, $waPct, $webStock, $showQty); ?></div>
 </section>
 
 <?php if ($brandTop): ?>
@@ -631,7 +655,7 @@ if (!isset($catGroups)) {
     <button type="button" class="btn btn-sm btn-outline catsBtn" id="catsBtn">☰ Categories</button>
     <h2 class="sec-h" id="allProducts"><span>🏪</span> All Products</h2>
     <div class="cat-grid" id="cGrid">
-    <?php foreach ($items as $it) pcard($it, $waPct); ?>
+    <?php foreach ($items as $it) pcard($it, $waPct, $webStock, $showQty); ?>
     <?php if (!$items): ?><p class="muted">No products listed yet.</p><?php endif; ?>
     </div>
   </main>

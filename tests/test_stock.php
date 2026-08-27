@@ -179,3 +179,63 @@ $itemPage = file_get_contents(dirname(__DIR__) . '/item_view.php');
 t_ok('the item page shows what is in transit', strpos($itemPage, 'stock_in_transit(') !== false);
 t_ok('...and explains that it counts nowhere meanwhile',
      strpos($itemPage, 'કોઈ પણ જગ્યાના સ્ટોકમાં ગણાતો નથી') !== false);
+
+// ---------------------------------------------------------------------------
+// The public website used to tell customers "In stock" on every product,
+// whatever the shelf actually held. Reported by the owner, who also asked for
+// the real quantity to be shown.
+// ---------------------------------------------------------------------------
+
+t_group('the website tells the truth about stock');
+$wLoc = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+$wIn = t_item(12, $wLoc);
+q("UPDATE items SET unit = 'pcs' WHERE id = ?", [$wIn]);
+$wOut = t_item(0, $wLoc);
+q("INSERT INTO items (name, selling_price, is_active, item_type) VALUES ('WEBSERVICE', 500, 1, 'service')");
+$wSvc = insert_id();
+
+$map = web_stock_map();
+t_eq('the stock sweep finds the real quantity', $map[$wIn] ?? 0, 12);
+t_ok('an item with no stock row is simply absent', !isset($map[$wOut]) || $map[$wOut] == 0);
+
+$in = web_stock_line(['id' => $wIn, 'item_type' => 'product', 'unit' => 'pcs'], $map, true);
+t_ok('an item in stock is marked in stock', $in[0] === 'in');
+t_ok('...and says how many, in its own unit', strpos($in[1], '12 pcs') !== false, $in[1]);
+
+$noUnit = web_stock_line(['id' => $wIn, 'item_type' => 'product', 'unit' => ''], $map, true);
+t_ok('an item with no unit still reads sensibly', strpos($noUnit[1], 'નંગ') !== false, $noUnit[1]);
+
+$hidden = web_stock_line(['id' => $wIn, 'item_type' => 'product', 'unit' => 'pcs'], $map, false);
+t_ok('with quantities switched off it just says in stock', $hidden[0] === 'in' && strpos($hidden[1], '12') === false);
+
+$out = web_stock_line(['id' => $wOut, 'item_type' => 'product', 'unit' => 'pcs'], $map, true);
+t_ok('an item with nothing on the shelf is NOT called in stock', $out[0] === 'out');
+t_ok('...it says so plainly', strpos($out[1], 'ખલાસ') !== false);
+t_ok('...and offers to order it in', $out[2] !== '');
+// This is the honesty half: hiding quantities is a display preference, but
+// claiming stock that does not exist is a lie to a customer either way.
+$outHidden = web_stock_line(['id' => $wOut, 'item_type' => 'product'], $map, false);
+t_ok('switching quantities off never turns "out" into "in stock"', $outHidden[0] === 'out');
+
+$svc = web_stock_line(['id' => $wSvc, 'item_type' => 'service'], $map, true);
+t_ok('a service is neither in nor out of stock', $svc[0] === 'svc');
+t_ok('...and never claims a quantity', strpos($svc[1], 'સ્ટોકમાં') === false);
+
+$unknown = web_stock_line(['id' => 99999999, 'item_type' => 'product'], $map, true);
+t_ok('an item the map has never heard of is out, not in', $unknown[0] === 'out');
+
+t_group('both public pages use the one rule');
+$cat = file_get_contents(dirname(__DIR__) . '/catalog.php');
+$prd = file_get_contents(dirname(__DIR__) . '/product.php');
+t_ok('the catalogue asks web_stock_line()', strpos($cat, 'web_stock_line(') !== false);
+t_ok('the product page asks it too', strpos($prd, 'web_stock_line(') !== false);
+t_ok('neither still hard-codes "In stock" on every card', strpos($cat, ">✔ In stock<") === false);
+t_ok('the catalogue fetches stock in one sweep, not per card',
+     strpos($cat, 'web_stock_map()') !== false);
+t_ok('...and passes it INTO the card function rather than relying on a global',
+     strpos($cat, 'array $stockMap = []') !== false);
+t_ok('the switch is one setting, read in one place',
+     substr_count($cat, 'web_show_qty()') + substr_count($prd, 'web_show_qty()') === 2);
+$set = file_get_contents(dirname(__DIR__) . '/settings.php');
+t_ok('the owner can turn quantities off in Settings', strpos($set, "name=\"store_show_qty\"") !== false);
+t_ok('...and is warned it is a public page', strpos($set, 'હરીફ પણ જોઈ શકે') !== false);
