@@ -915,7 +915,9 @@ function report_schedule_build_message($s) {
             $mStart = date('Y-m-01');
             $rev = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?$locJoin", [$mStart, $today]);
             $exp = (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE exp_date BETWEEN ? AND ?" . ($s['location_id'] ? ' AND location_id = ' . (int)$s['location_id'] : ''), [$mStart, $today]);
-            $cost = (float)val("SELECT COALESCE(SUM(si.qty * i.purchase_price),0) FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
+            // same cost rule as the on-screen Business Report, so the digest
+            // that lands on WhatsApp cannot quote a different profit
+            $cost = (float)val("SELECT COALESCE(SUM(" . profit_cost_sql() . "),0) FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
                                  WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?$locJoin", [$mStart, $today]);
             return "*$shop* - Business Report (month to date)\nRevenue: ₹" . money($rev) . "\nExpenses: ₹" . money($exp) . "\nEst. Gross Profit: *₹" . money($rev - $cost - $exp) . "*";
         case 'branch_staff':

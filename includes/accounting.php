@@ -99,10 +99,27 @@ function coa_sales_revenue($from, $to) {
     $ret = (float)val("SELECT COALESCE(SUM(total),0) FROM sales_returns WHERE return_date BETWEEN ? AND ?", [$from, $to]);
     return $gross - $ret;
 }
-/** Cost of goods sold in a date range - qty x current purchase price for
- *  every item line sold (same formula the existing Profit report uses). */
+/** Cost of goods sold in a date range.
+ *
+ *  This used to be "qty x the item's CURRENT purchase price", which was wrong
+ *  in two ways and made the Profit & Loss disagree with every other profit
+ *  screen in the app - reported from the shop, where the two reports showed
+ *  the same month as a ₹57,000 loss and a ₹14,000 profit at the same time.
+ *
+ *    · A SERVICE line consumes no stock, but its item row still carries a
+ *      purchase_price, so every service sold was charged a cost it never had.
+ *    · A product's purchase price changes over time. Using today's price
+ *      retroactively rewrote the profit on bills raised months ago - last
+ *      year's profit moved every time a supplier put their rate up.
+ *
+ *  profit_cost_sql() answers both: it uses the cost CAPTURED ON THE BILL when
+ *  there is one, falls back to the item's purchase price when there is not,
+ *  and gives a service line its own cost. It is the same expression the
+ *  Business Report, Product-wise Profit, Party-wise Profit and the dashboard
+ *  already used - so now all of them genuinely agree, which is what the
+ *  comment on profit_cost_sql() always claimed. */
 function coa_cogs($from, $to) {
-    return (float)val("SELECT COALESCE(SUM(si.qty * i.purchase_price),0)
+    return (float)val("SELECT COALESCE(SUM(" . profit_cost_sql() . "),0)
                         FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
                         WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?", [$from, $to]);
 }
@@ -229,8 +246,10 @@ function coa_gl_rows($account, $from, $to) {
                 $rows[] = ['date' => $sr['return_date'], 'desc' => 'Sales Return ' . $sr['return_no'], 'debit' => (float)$sr['total'], 'credit' => 0, 'link' => null];
             }
             break;
-        case '5000': // Cost of Goods Sold - one row per sale (sum of qty x purchase price for that bill)
-            foreach (all("SELECT s.id, s.invoice_no, s.sale_date, SUM(si.qty * i.purchase_price) cost
+        case '5000': // Cost of Goods Sold - one row per sale, on the shared rule
+            // so this ledger account adds up to exactly the COGS line the
+            // Profit & Loss shows for the same period
+            foreach (all("SELECT s.id, s.invoice_no, s.sale_date, SUM(" . profit_cost_sql() . ") cost
                           FROM sales s JOIN sale_items si ON si.sale_id = s.id JOIN items i ON i.id = si.item_id
                           WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? GROUP BY s.id ORDER BY s.sale_date, s.id", [$from, $to]) as $s) {
                 if ((float)$s['cost'] <= 0) continue;
@@ -242,7 +261,7 @@ function coa_gl_rows($account, $from, $to) {
                           WHERE pu.is_cancelled = 0 AND pu.purchase_date BETWEEN ? AND ? ORDER BY pu.purchase_date, pu.id", [$from, $to]) as $pu) {
                 $rows[] = ['date' => $pu['purchase_date'], 'desc' => 'Purchase ' . ($pu['bill_no'] ?: '#' . $pu['id']) . ' - ' . $pu['party_name'], 'debit' => (float)$pu['total'], 'credit' => 0, 'link' => 'purchase_view.php?id=' . $pu['id']];
             }
-            foreach (all("SELECT s.id, s.invoice_no, s.sale_date, SUM(si.qty * i.purchase_price) cost
+            foreach (all("SELECT s.id, s.invoice_no, s.sale_date, SUM(" . profit_cost_sql() . ") cost
                           FROM sales s JOIN sale_items si ON si.sale_id = s.id JOIN items i ON i.id = si.item_id
                           WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? GROUP BY s.id ORDER BY s.sale_date, s.id", [$from, $to]) as $s) {
                 if ((float)$s['cost'] <= 0) continue;

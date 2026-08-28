@@ -46,7 +46,9 @@ foreach (all("SELECT DATE_FORMAT(sale_date, '%Y-%m') ym, COALESCE(SUM(total),0) 
     $byMonth[$r['ym']] = (float)$r['t'];
 $costByMonth = [];
 if (can('reports.profit')) {
-    foreach (all("SELECT DATE_FORMAT(s.sale_date, '%Y-%m') ym, COALESCE(SUM(si.qty * i.purchase_price),0) c
+    // the shared cost rule, so the trend line agrees with the profit KPI above
+    // it and with every profit report (see profit_cost_sql() in money.php)
+    foreach (all("SELECT DATE_FORMAT(s.sale_date, '%Y-%m') ym, COALESCE(SUM(" . profit_cost_sql() . "),0) c
                   FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
                   WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? "
                 . scope_for($saleScope . $locScope, 's')   // this query JOINs; see scope_for()
