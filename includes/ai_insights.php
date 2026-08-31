@@ -40,8 +40,8 @@ function trend_direction(array $values) {
  *  at least one sale in the window are returned. */
 function demand_prediction($months = 6) {
     $monthKeys = [];
-    for ($i = $months; $i >= 1; $i--) $monthKeys[] = date('Y-m', strtotime("-$i months"));
-    $from = date('Y-m-01', strtotime("-$months months"));
+    for ($i = $months; $i >= 1; $i--) $monthKeys[] = month_key($i);
+    $from = month_start($months);
     $to = date('Y-m-01');
     $rows = all("SELECT si.item_id, DATE_FORMAT(s.sale_date, '%Y-%m') ym, SUM(si.qty) qty
                  FROM sale_items si JOIN sales s ON s.id = si.sale_id
@@ -110,8 +110,10 @@ function suggest_expense_category($text) {
  *  because the current month isn't over yet). */
 function ai_dashboard_insights($saleScope = '', $saleParams = []) {
     $today = today();
-    $m1Start = date('Y-m-01', strtotime('-1 month')); $m1End = date('Y-m-t', strtotime('-1 month'));
-    $m2Start = date('Y-m-01', strtotime('-2 months')); $m2End = date('Y-m-t', strtotime('-2 months'));
+    // anchored months: on the 31st the plain '-1 month' / '-2 months' both
+    // landed in July and this compared a month with itself, always 0%
+    $m1Start = month_start(1); $m1End = month_end(1);
+    $m2Start = month_start(2); $m2End = month_end(2);
     $insights = [];
 
     $m1 = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ? $saleScope", array_merge([$m1Start, $m1End], $saleParams));

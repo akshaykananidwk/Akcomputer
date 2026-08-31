@@ -1011,7 +1011,7 @@ if ($r === 'forecast') {
     $byItem = [];
     foreach ($monthly as $m) $byItem[$m['item_id']][$m['ym']] = (float)$m['qty'];
     $months = [];
-    for ($i = 3; $i >= 1; $i--) $months[] = date('Y-m', strtotime("-$i months"));
+    for ($i = 3; $i >= 1; $i--) $months[] = month_key($i);
 
     $items = all('SELECT i.*, COALESCE((SELECT SUM(qty) FROM stock WHERE item_id = i.id),0) stock
                   FROM items i WHERE i.is_active = 1 AND i.item_type = "product" ORDER BY i.name');

@@ -21,6 +21,54 @@ function dmyt($dt) {
     return date('d-m-Y h:i A', strtotime($dt));
 }
 
+/**
+ * Month arithmetic that survives the 29th, 30th and 31st.
+ *
+ * PHP's strtotime('-1 month') means "the same day number, one month back", so
+ * on 31 August it lands on 31 July, and '-2 months' lands on 1 July, because
+ * 31 June does not exist and rolls forward. Ask for six months that way and on
+ * a month-end day you get "Mar, May, May, Jul, Jul, Aug" - two months counted
+ * twice and two missing entirely.
+ *
+ * That was live on four days of every month: the dashboard's six-month trend
+ * lost April and June, and "sales last month vs the month before" compared
+ * July with July and always reported no change.
+ *
+ * Anchoring to the FIRST of the month first makes the arithmetic exact,
+ * because the 1st exists in every month.
+ *
+ * month_start(0) = this month's 1st, month_start(1) = last month's 1st.
+ */
+function month_start($back = 0, $from = null) {
+    $base = $from ? date('Y-m-01', strtotime($from)) : date('Y-m-01');
+    $back = (int)$back;
+    return $back === 0 ? $base : date('Y-m-01', strtotime($base . ' -' . $back . ' months'));
+}
+/** Last day of that month. */
+function month_end($back = 0, $from = null) { return date('Y-m-t', strtotime(month_start($back, $from))); }
+/** Its "YYYY-MM" key. */
+function month_key($back = 0, $from = null) { return date('Y-m', strtotime(month_start($back, $from))); }
+
+/**
+ * Move a real date forward or back by whole months, CLAMPING the day instead
+ * of letting it roll over into the next month.
+ *
+ * Same trap as above, and it costs money here: an AMC billed monthly from the
+ * 31st advanced to "31 February", which PHP turns into 3 March - so February
+ * was never billed at all and every later bill drifted a day or two further.
+ * Clamping gives 31 Jan -> 28 Feb -> 28 Mar: no month is ever skipped. The
+ * day settles a few days earlier once and then stays put, which is the right
+ * trade - a bill two days early beats a month never billed at all.
+ */
+function month_add($date, $months) {
+    $t = strtotime($date);
+    if ($t === false) return $date;
+    $day = (int)date('d', $t);
+    $firstOfTarget = date('Y-m-01', strtotime(date('Y-m-01', $t) . ' ' . ($months >= 0 ? '+' : '-') . abs((int)$months) . ' months'));
+    $lastDay = (int)date('t', strtotime($firstOfTarget));
+    return date('Y-m-', strtotime($firstOfTarget)) . str_pad((string)min($day, $lastDay), 2, '0', STR_PAD_LEFT);
+}
+
 function days_between($from, $to = null) {
     if (!$from) return null;
     $to = $to ?: today();
@@ -557,7 +605,8 @@ function reminder_next_at($current, $freq) {
     $t = strtotime($current);
     if ($freq === 'daily') return date('Y-m-d H:i:s', strtotime('+1 day', $t));
     if ($freq === 'weekly') return date('Y-m-d H:i:s', strtotime('+7 days', $t));
-    if ($freq === 'monthly') return date('Y-m-d H:i:s', strtotime('+1 month', $t));
+    // month_add() so a reminder set for the 31st does not skip February
+    if ($freq === 'monthly') return month_add(date('Y-m-d', $t), 1) . date(' H:i:s', $t);
     return null;
 }
 
@@ -846,8 +895,10 @@ function share_token() { return bin2hex(random_bytes(16)); }
 
 // ---------- AMC / recurring billing ----------
 function amc_advance_date($date, $cycle) {
-    $map = ['monthly' => '+1 month', 'quarterly' => '+3 months', 'half_yearly' => '+6 months', 'yearly' => '+1 year'];
-    return date('Y-m-d', strtotime($date . ' ' . ($map[$cycle] ?? '+1 year')));
+    // whole months, with the day clamped - see month_add(). A contract billed
+    // monthly from the 31st used to jump 31 Jan -> 3 Mar and skip February.
+    $map = ['monthly' => 1, 'quarterly' => 3, 'half_yearly' => 6, 'yearly' => 12];
+    return month_add($date, $map[$cycle] ?? 12);
 }
 
 /** Auto-create a sale invoice for one AMC billing cycle. Returns

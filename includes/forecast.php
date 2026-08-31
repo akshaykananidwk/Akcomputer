@@ -358,7 +358,7 @@ function fc_backtest($months = null) {
     $series = fc_all_month_sales();          // once, for every month scored below
     $rows = []; $errs = [];
     for ($i = $months; $i >= 1; $i--) {
-        $target = date('Y-m-01', strtotime("-$i months"));
+        $target = month_start($i);
         $ym = date('Y-m', strtotime($target));
         $actual = $series[$ym] ?? null;
         if ($actual === null) continue;                 // no trade that month, nothing to score

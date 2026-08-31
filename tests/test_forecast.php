@@ -133,9 +133,9 @@ $cat = 'TFRENT_' . bin2hex(random_bytes(3));
 // 25000 and would inflate every future week
 foreach ([1, 2, 3, 4, 5] as $m)
     q("INSERT INTO expenses (exp_date, category, amount, mode, location_id, created_by) VALUES (?, ?, 10000, 'cash', ?, 1)",
-      [date('Y-m-08', strtotime("-$m months")), $cat, $fLoc]);
+      [date('Y-m-08', strtotime(month_start($m))), $cat, $fLoc]);
 q("INSERT INTO expenses (exp_date, category, amount, mode, location_id, created_by) VALUES (?, ?, 100000, 'cash', ?, 1)",
-  [date('Y-m-08', strtotime('-6 months')), $cat, $fLoc]);
+  [date('Y-m-08', strtotime(month_start(6))), $cat, $fLoc]);
 $recur = fc_recurring();
 $mine = null;
 foreach ($recur as $e) if ($e['category'] === $cat) $mine = $e;
@@ -146,7 +146,7 @@ t_eq('...on the day it usually falls', $mine['day'], 8);
 t_group('a one-off expense is not treated as recurring');
 $once = 'TFONCE_' . bin2hex(random_bytes(3));
 q("INSERT INTO expenses (exp_date, category, amount, mode, location_id, created_by) VALUES (?, ?, 50000, 'cash', ?, 1)",
-  [date('Y-m-05', strtotime('-2 months')), $once, $fLoc]);
+  [date('Y-m-05', strtotime(month_start(2))), $once, $fLoc]);
 $found2 = false;
 foreach (fc_recurring() as $e) if ($e['category'] === $once) $found2 = true;
 t_ok('one month out of six is not a pattern', !$found2);
@@ -201,10 +201,10 @@ if ($bt['n'] > 0) {
 // The whole point: a forecast tested against data it already knew would be
 // meaninglessly good. fc_predict_month() is given a cut-off date and
 // fc_month_sales() only ever reads BEFORE it.
-$hist = fc_month_sales(24, date('Y-m-01', strtotime('-3 months')));
+$hist = fc_month_sales(24, month_start(3));
 $latest = $hist ? max(array_keys($hist)) : '';
 t_ok('history before a cut-off stops before that month',
-     $latest === '' || $latest < date('Y-m', strtotime('-3 months')), 'latest = ' . $latest);
+     $latest === '' || $latest < month_key(3), 'latest = ' . $latest);
 t_ok('the current month is never in the history',
      !array_key_exists(date('Y-m'), fc_month_sales(24)));
 
@@ -230,7 +230,7 @@ t_group('too little history is a refusal, not a guess');
 $src = file_get_contents($_ROOT . '/includes/forecast.php');
 t_ok('the minimum is checked before forecasting', strpos($src, "count(\$hist) < \$r['min_months']") !== false);
 t_ok('...and the refusal says how many months there are', strpos($src, 'પૂરા મહિનાનો ઇતિહાસ જોઈએ') !== false);
-$season = fc_season_factor(1, date('Y-m-01', strtotime('-100 months')));
+$season = fc_season_factor(1, month_start(100));
 t_eq('an unknown season multiplies by one, changing nothing', $season['factor'], 1.0);
 t_ok('...and says why', $season['why'] !== '');
 

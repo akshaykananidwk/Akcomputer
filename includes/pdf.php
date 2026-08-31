@@ -31,11 +31,44 @@ function pdf_wrap($text, $size, $bold, $maxWidth) {
     $words = preg_split('/\s+/', trim((string)$text));
     $lines = []; $cur = '';
     foreach ($words as $w) {
-        $try = $cur === '' ? $w : "$cur $w";
-        if (pdf_text_width($try, $size, $bold) > $maxWidth && $cur !== '') { $lines[] = $cur; $cur = $w; } else { $cur = $try; }
+        // A serial list is one enormous "word" - "202401154621,202401154645,..."
+        // has no spaces in it at all, so plain word wrapping could never break
+        // it and the invoice truncated the customer's serial numbers instead.
+        // Split it after commas and slashes, then, if a single piece is still
+        // too wide, break it by character rather than lose any of it.
+        // Pieces of ONE split word rejoin with no space (they were never
+        // separated); separate words keep their space.
+        foreach (pdf_split_long($w, $size, $bold, $maxWidth) as $k => $piece) {
+            $glue = $cur === '' ? '' : ($k === 0 ? ' ' : '');
+            $try = $cur . $glue . $piece;
+            if (pdf_text_width($try, $size, $bold) > $maxWidth && $cur !== '') { $lines[] = $cur; $cur = $piece; }
+            else { $cur = $try; }
+        }
     }
     if ($cur !== '') $lines[] = $cur;
     return $lines ?: [''];
+}
+
+/** Cut one unbreakable run into pieces that each fit. Commas and slashes are
+ *  natural break points in a serial list or a part number; anything still too
+ *  wide after that is broken by character, because losing a digit off a serial
+ *  number is worse than an ugly break. */
+function pdf_split_long($word, $size, $bold, $maxWidth) {
+    if (pdf_text_width($word, $size, $bold) <= $maxWidth) return [$word];
+    $out = [];
+    foreach (preg_split('/(?<=[,;\/])/', $word) as $chunk) {
+        if ($chunk === '') continue;
+        if (pdf_text_width($chunk, $size, $bold) <= $maxWidth) { $out[] = $chunk; continue; }
+        $buf = '';
+        $len = mb_strlen($chunk);
+        for ($i = 0; $i < $len; $i++) {
+            $ch = mb_substr($chunk, $i, 1);
+            if ($buf !== '' && pdf_text_width($buf . $ch, $size, $bold) > $maxWidth) { $out[] = $buf; $buf = $ch; }
+            else { $buf .= $ch; }
+        }
+        if ($buf !== '') $out[] = $buf;
+    }
+    return $out ?: [$word];
 }
 function pdf_text_width($str, $size, $bold = false) {
     $w = pdf_helvetica_widths($bold);
@@ -448,6 +481,28 @@ function pdf_item_extras($it) {
 }
 
 /**
+ * The sub-lines that go under an item's name: its serial numbers and its
+ * description / custom fields, each WRAPPED rather than cut short.
+ *
+ * These used to be squeezed onto one line with fit(), which put an ellipsis in
+ * the middle of a customer's serial numbers and chopped the shop's own service
+ * description in half - reported from the shop with a bill showing
+ * "SN: 202401154621,202401154645,202401154661,20240115466...". A serial list
+ * on an invoice is the warranty record; it cannot be abbreviated.
+ */
+function pdf_item_sublines($it, $size, $maxWidth) {
+    $out = [];
+    if (!empty($it['serials'])) {
+        foreach (pdf_wrap('SN: ' . $it['serials'], $size, false, $maxWidth) as $l) $out[] = $l;
+    }
+    $extras = pdf_item_extras($it);
+    if ($extras !== '') {
+        foreach (pdf_wrap($extras, $size, false, $maxWidth) as $l) $out[] = $l;
+    }
+    return $out;
+}
+
+/**
  * How much vertical room the block under the item table needs.
  *
  * Counted from the same conditions that draw it - the totals rows that will
@@ -598,11 +653,13 @@ function invoice_pdf_design1($sale, $items) {
     $paginated = false;
 
     foreach ($items as $n => $it) {
-        // wrap the item name onto extra lines instead of cutting it off
-        $nameLines = array_slice(pdf_wrap($it['name'], 9.5, false, $itemMaxW), 0, 4);
+        // Wrap the name, the serials and the description - none of them is cut
+        // short any more, so the row is as tall as its content needs. The cap
+        // of 8 name lines is a runaway guard, not a trim: nothing real reaches it.
+        $nameLines = array_slice(pdf_wrap($it['name'], 9.5, false, $itemMaxW), 0, 8);
         $nLines = count($nameLines);
-        $extras = pdf_item_extras($it);
-        $rowNeed = $rowH + ($nLines - 1) * 12 + ($it['serials'] ? 10 : 0) + ($extras !== '' ? 10 : 0);
+        $subLines = pdf_item_sublines($it, 7.3, $itemMaxW);
+        $rowNeed = $rowH + ($nLines - 1) * 12 + count($subLines) * 10;
         // page break for very long bills
         if ($y + $rowNeed > 706) {
             $pdf->new_page();
@@ -630,11 +687,7 @@ function invoice_pdf_design1($sale, $items) {
         if ($hasGst) $pdf->text_right($cGstR, $ty, 9, (float)$it['tax_rate'] . '%', '', $C['gray']);
         $pdf->text_right($cAmtR, $ty, 9.5, money($it['total']), '', [0.15, 0.2, 0.28]);
         $suby = $ty + $nLines * 12 - 2;
-        if ($it['serials']) {
-            $pdf->text($cItem, $suby, 7.3, $pdf->fit('SN: ' . $it['serials'], $itemMaxW, 7.3), '', $C['gray']);
-            $suby += 10;
-        }
-        if ($extras !== '') $pdf->text($cItem, $suby, 7.3, $pdf->fit($extras, $itemMaxW, 7.3), '', $C['gray']);
+        foreach ($subLines as $sl) { $pdf->text($cItem, $suby, 7.3, $sl, '', $C['gray']); $suby += 10; }
         $y += $rowNeed;
         $pdf->line($L, $y, $R, $y, 0.5, [0.9, 0.92, 0.94]);
         $rowIdx++;
@@ -990,10 +1043,10 @@ function invoice_pdf_design2($sale, $items) {
     $y += $headH;
     $bodyTop = $y; $paginated = false; $targetBodyBottom = 470;
     foreach ($items as $n => $it) {
-        $nameLines = array_slice(pdf_wrap($it['name'], 9.5, false, $itemMaxW), 0, 4);
+        $nameLines = array_slice(pdf_wrap($it['name'], 9.5, false, $itemMaxW), 0, 8);
         $nLines = count($nameLines);
-        $extras = pdf_item_extras($it);
-        $rowNeed = $rowH + ($nLines - 1) * 12 + ($it['serials'] ? 10 : 0) + ($extras !== '' ? 10 : 0);
+        $subLines = pdf_item_sublines($it, 7.3, $itemMaxW);
+        $rowNeed = $rowH + ($nLines - 1) * 12 + count($subLines) * 10;
         if ($y + $rowNeed > 690) {
             $pdf->new_page(); $paginated = true; $y = 44; $drawHead($y); $y += $headH; $bodyTop = $y;
         }
@@ -1010,8 +1063,7 @@ function invoice_pdf_design2($sale, $items) {
         if ($hasGst) $pdf->text_right($cGstR, $ty, 9, (float)$it['tax_rate'] . '%', '', $C['gray']);
         $pdf->text_right($cAmtR, $ty, 9.5, money($it['total']), '', [0.15, 0.15, 0.22]);
         $suby = $ty + $nLines * 12 - 2;
-        if ($it['serials']) { $pdf->text($cItem, $suby, 7.3, $pdf->fit('SN: ' . $it['serials'], $itemMaxW, 7.3), '', $C['gray']); $suby += 10; }
-        if ($extras !== '') $pdf->text($cItem, $suby, 7.3, $pdf->fit($extras, $itemMaxW, 7.3), '', $C['gray']);
+        foreach ($subLines as $sl) { $pdf->text($cItem, $suby, 7.3, $sl, '', $C['gray']); $suby += 10; }
         $y += $rowNeed;
         $pdf->line($L, $y, $R, $y, 0.5, [0.9, 0.88, 0.95]);
     }

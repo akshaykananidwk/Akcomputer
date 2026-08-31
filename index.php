@@ -37,7 +37,7 @@ $recv = 0; $paybl = 0; $walkinDue = 0;
 // the whole window - this used to be three queries per month inside a loop,
 // which is the N+1 shape the dashboard must not have.
 $chart = []; $profitChart = [];
-$chartFrom = date('Y-m-01', strtotime('-5 months'));
+$chartFrom = month_start(5);   // anchored, or a month-end day loses months
 $chartTo = date('Y-m-t');
 $byMonth = [];
 foreach (all("SELECT DATE_FORMAT(sale_date, '%Y-%m') ym, COALESCE(SUM(total),0) t
@@ -56,7 +56,7 @@ if (can('reports.profit')) {
         $costByMonth[$r['ym']] = (float)$r['c'];
 }
 for ($i = 5; $i >= 0; $i--) {
-    $mStart = date('Y-m-01', strtotime("-$i months"));
+    $mStart = month_start($i);
     $ym = date('Y-m', strtotime($mStart));
     $label = date('M', strtotime($mStart));
     $rev = $byMonth[$ym] ?? 0.0;

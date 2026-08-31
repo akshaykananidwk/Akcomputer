@@ -77,7 +77,7 @@ try {
     all("SELECT DATE_FORMAT(s.sale_date, '%Y-%m') ym, COALESCE(SUM(si.qty * i.purchase_price),0) c
          FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
          WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? $scope GROUP BY ym",
-        [date('Y-m-01', strtotime('-2 months')), today(), 1, $loc]);
+        [month_start(2), today(), 1, $loc]);
 } catch (Throwable $e) { $crashed = true; }
 t_ok('the joined dashboard cost query runs with a location filter', !$crashed);
 
@@ -217,3 +217,114 @@ t_ok('...and one shared height for the block', strpos($pdfSrc, 'function pdf_foo
 t_ok('both designs use it', substr_count($pdfSrc, 'pdf_room_for($pdf, $y, pdf_footer_height(') === 2);
 t_ok('the height follows the rows that will actually be drawn',
      strpos($pdfSrc, "\$hasGst ? 48 : 0") !== false);
+
+
+t_group('nothing on an invoice is ever abbreviated');
+// Reported with the bill: serial numbers came out as
+// "SN: 202401154621,202401154645,202401154661,20240115466..." and the shop's
+// own service description was chopped in half. A serial list on an invoice is
+// the warranty record - it cannot carry an ellipsis.
+
+/** Every piece of text in a generated PDF, in one string. */
+function t_pdf_text($bytes) {
+    $out = ''; $off = 0;
+    while (($s = strpos($bytes, "stream\n", $off)) !== false) {
+        $e = strpos($bytes, 'endstream', $s);
+        if ($e === false) break;
+        $b = @gzuncompress(substr($bytes, $s + 7, $e - $s - 7));
+        if ($b === false) $b = substr($bytes, $s + 7, $e - $s - 7);
+        if (preg_match_all('/\((.*?)\)\s*Tj/', $b, $m))
+            foreach ($m[1] as $t) $out .= str_replace(['\(', '\)', '\\\\'], ['(', ')', '\\'], $t) . "\n";
+        $off = $e + 9;
+    }
+    return $out;
+}
+
+$hSN   = '202401154621,202401154645,202401154661,202401154662,202401154663,202401154664';
+$hDesc = 'Power Supply, Rack Box, Connectors & Hardware SMPS, NVR rack, BNC connectors, power cable and all fitting hardware';
+$hName = 'Coreprix 4MP IP Dual Light Dome Network Camera (3.6mm Lens, Built-in Mic, PoE, 20m IR) (CPI-4M-DL-36)';
+
+$hItems = [
+    ['item_id' => 1, 'name' => $hName, 'unit' => 'PCS', 'qty' => 6, 'price' => 2100, 'total' => 12600,
+     'tax_rate' => 18, 'hsn' => '85258900', 'serials' => $hSN, 'description' => '',
+     'cost_price' => 0, 'custom_data' => null, 'free_qty' => 0, 'line_disc' => 0],
+    ['item_id' => 2, 'name' => 'Service Charge', 'unit' => 'PCS', 'qty' => 1, 'price' => 4500, 'total' => 4500,
+     'tax_rate' => 18, 'hsn' => '', 'serials' => '', 'description' => $hDesc,
+     'cost_price' => 0, 'custom_data' => null, 'free_qty' => 0, 'line_disc' => 0],
+];
+list($hSale, ) = t_fake_invoice($hCo, $hLoc, $hParty, 0);
+$hSale['subtotal'] = 17100; $hSale['tax_amount'] = 3078; $hSale['total'] = 20178;
+
+$oldD = setting('invoice_design', '1');
+foreach (['1', '2'] as $design) {
+    set_setting('invoice_design', $design);
+    $txt = t_pdf_text(invoice_pdf($hSale, $hItems));
+    $flat = preg_replace('/\s+/', '', $txt);
+    $has = fn($needle) => strpos($flat, preg_replace('/\s+/', '', $needle)) !== false;
+    t_ok("design $design prints every serial number in full", $has($hSN));
+    t_ok("design $design prints the whole service description", $has($hDesc));
+    t_ok("design $design prints the whole item name", $has($hName));
+    t_ok("design $design puts no ellipsis anywhere on the bill",
+         strpos($txt, '...') === false && strpos($txt, "\xe2\x80\xa6") === false);
+}
+set_setting('invoice_design', $oldD);
+
+t_group('a long serial list can be broken at all');
+// The list is one enormous "word" with no spaces, so plain word wrapping could
+// never split it - which is exactly why it used to be truncated instead.
+require_once dirname(__DIR__) . '/includes/pdf.php';
+$wrapped = pdf_wrap('SN: ' . $hSN, 7.3, false, 230);
+t_ok('it wraps onto more than one line', count($wrapped) > 1);
+t_eq('every character survives the wrap',
+     preg_replace('/\s+/', '', implode('', $wrapped)), preg_replace('/\s+/', '', 'SN: ' . $hSN));
+foreach ($wrapped as $i => $l)
+    t_ok('line ' . ($i + 1) . ' fits the column', pdf_text_width($l, 7.3, false) <= 231);
+
+$desc = pdf_wrap($hDesc, 7.3, false, 230);
+t_eq('a wrapped description keeps its words and spacing',
+     preg_replace('/\s+/', ' ', trim(implode(' ', $desc))), preg_replace('/\s+/', ' ', $hDesc));
+t_ok('a short line is left alone', pdf_wrap('SN: KI9ZI78XJ480IT1D', 7.3, false, 230) === ['SN: KI9ZI78XJ480IT1D']);
+t_ok('empty text is safe', pdf_wrap('', 7.3, false, 230) === ['']);
+// A single unbroken run with no commas at all must still be split rather than lost.
+$runOn = str_repeat('A', 400);
+$hard = pdf_wrap($runOn, 7.3, false, 230);
+t_ok('an unbroken run is broken by character rather than dropped', count($hard) > 1);
+t_eq('...and still keeps every character', implode('', $hard), $runOn);
+
+// -------------------------------------------------------- month arithmetic --
+// This is the bug that made the dashboard's six-month trend show "Mar May May
+// Jul Jul Aug" on 31 August, and made "last month vs the month before" compare
+// July with July. Every assertion below is pinned to a fixed month-end date so
+// the test does not quietly pass on the other 27 days of the month.
+t_group('month arithmetic survives the 29th, 30th and 31st');
+foreach (['2026-08-31', '2026-05-31', '2026-03-30', '2026-01-29', '2024-03-31'] as $anchor) {
+    $six = [];
+    for ($i = 5; $i >= 0; $i--) $six[] = month_key($i, $anchor);
+    t_eq('six months from ' . $anchor . ' are six DIFFERENT months', count(array_unique($six)), 6);
+    $consec = true;
+    for ($k = 1; $k < 6; $k++)
+        if ($six[$k] !== date('Y-m', strtotime($six[$k - 1] . '-01 +1 month'))) $consec = false;
+    t_ok('...and they run consecutively (' . implode(' ', $six) . ')', $consec);
+    t_eq('...ending on the anchor\'s own month', $six[5], date('Y-m', strtotime($anchor)));
+}
+t_eq('last month, from 31 Aug 2026', month_key(1, '2026-08-31'), '2026-07');
+t_eq('the month before that', month_key(2, '2026-08-31'), '2026-06');
+t_eq('a month start is always the 1st', month_start(2, '2026-08-31'), '2026-06-01');
+t_eq('a month end is that month\'s own last day', month_end(1, '2026-08-31'), '2026-07-31');
+t_eq('February is not given 31 days', month_end(6, '2026-08-31'), '2026-02-28');
+t_eq('a leap February is', month_end(1, '2024-03-31'), '2024-02-29');
+t_eq('a negative step goes forward', month_start(-1, '2026-01-31'), '2026-02-01');
+
+// month_add() is the money one: an AMC billed monthly from the 31st used to
+// jump to 3 March and never bill February at all.
+$d = '2026-01-31'; $seen = [];
+for ($k = 0; $k < 14; $k++) { $d = amc_advance_date($d, 'monthly'); $seen[] = date('Y-m', strtotime($d)); }
+t_eq('14 monthly cycles from the 31st are 14 different months', count(array_unique($seen)), 14);
+t_ok('...with no month skipped (' . implode(' ', array_slice($seen, 0, 4)) . ')',
+     $seen[0] === '2026-02' && $seen[1] === '2026-03' && $seen[2] === '2026-04');
+t_eq('...and February is clamped to its last day', amc_advance_date('2026-01-31', 'monthly'), '2026-02-28');
+t_eq('a quarterly cycle from the 31st lands on a real date', amc_advance_date('2026-01-31', 'quarterly'), '2026-04-30');
+t_eq('29 February advances a year to 28 February', amc_advance_date('2024-02-29', 'yearly'), '2025-02-28');
+t_eq('an ordinary date is untouched', amc_advance_date('2026-03-15', 'monthly'), '2026-04-15');
+t_eq('a monthly reminder from the 31st keeps its time and skips no month',
+     reminder_next_at('2026-01-31 09:30:00', 'monthly'), '2026-02-28 09:30:00');

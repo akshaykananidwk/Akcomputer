@@ -293,8 +293,8 @@ function mk_season() {
     // that month look like a slump - August read as index 68 purely because
     // trading began on the 13th. So the window starts on the 1st of the month
     // after the first sale and ends on the last day of the month before this one.
-    $from = date('Y-m-01', strtotime($h['first_sale'] . ' +1 month'));
-    $to = date('Y-m-t', strtotime('-1 month'));
+    $from = month_start(-1, $h['first_sale']);   // 1st of the month AFTER the first sale
+    $to = month_end(1);   // last whole month; month_end() survives the 31st
     if ($from > $to) return ['ok' => false, 'months' => [], 'years' => $h['years'],
                              'why' => 'આખા મહિનાનો પૂરતો ઇતિહાસ નથી.'];
     $rows = all("SELECT MONTH(sale_date) mno, COUNT(DISTINCT YEAR(sale_date)) years,

@@ -98,7 +98,7 @@ function dash_range($key, $customFrom = '', $customTo = '') {
         case 'yesterday':  $d = date('Y-m-d', strtotime('-1 day', strtotime($t))); return [$d, $d, 'Yesterday'];
         case 'week':       return [date('Y-m-d', strtotime('monday this week', strtotime($t))), $t, 'This Week'];
         case 'month':      return [date('Y-m-01', strtotime($t)), $t, 'This Month'];
-        case 'prev_month': $s = date('Y-m-01', strtotime('-1 month', strtotime($t)));
+        case 'prev_month': $s = month_start(1, $t);   // anchored: on the 31st '-1 month' skipped a month
                            return [$s, date('Y-m-t', strtotime($s)), 'Previous Month'];
         case 'custom':
             $f = preg_match('/^\d{4}-\d{2}-\d{2}$/', $customFrom) ? $customFrom : $t;
@@ -118,7 +118,7 @@ function dash_range($key, $customFrom = '', $customTo = '') {
  *  calendar month with the previous calendar month. */
 function dash_compare_range($from, $to, $key = 'today') {
     if ($key === 'month' || $key === 'prev_month') {
-        $s = date('Y-m-01', strtotime('-1 month', strtotime($from)));
+        $s = month_start(1, $from);   // anchored, same reason
         // this month is only partly over, so compare like-for-like: the same
         // number of days into the previous month
         $end = $key === 'month'

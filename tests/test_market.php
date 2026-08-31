@@ -239,8 +239,8 @@ $h = mk_history();
 $se = mk_season();
 if ($h['can_season']) {
     t_ok('with two years of history the months are shown', $se['ok']);
-    t_ok('...only whole months are counted', $se['from'] === date('Y-m-01', strtotime($h['first_sale'] . ' +1 month')));
-    t_ok('...ending before this incomplete month', $se['to'] === date('Y-m-t', strtotime('-1 month')));
+    t_ok('...only whole months are counted', $se['from'] === month_start(-1, $h['first_sale']));
+    t_ok('...ending before this incomplete month', $se['to'] === month_end(1));
     t_ok('twelve months are always listed', count($se['months']) === 12);
     $sumIdx = 0; $n = 0;
     foreach ($se['months'] as $m) { if ($m['index'] > 0) { $sumIdx += $m['index']; $n++; } }

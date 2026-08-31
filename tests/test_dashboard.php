@@ -17,7 +17,7 @@ list($f, $to) = dash_range('month');
 t_eq('this month starts on the 1st', $f, date('Y-m-01', strtotime($t)));
 t_eq('…and ends today', $to, $t);
 list($f, $to) = dash_range('prev_month');
-t_eq('previous month starts on its 1st', $f, date('Y-m-01', strtotime('-1 month', strtotime($t))));
+t_eq('previous month starts on its 1st', $f, month_start(1, $t));
 t_eq('…and ends on its last day', $to, date('Y-m-t', strtotime($f)));
 list($f, $to) = dash_range('custom', '2026-03-10', '2026-03-01');
 t_eq('a backwards custom range is swapped, not left broken', $f, '2026-03-01');

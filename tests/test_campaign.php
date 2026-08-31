@@ -164,7 +164,7 @@ $bday = tc_party();
 q('UPDATE parties SET dob = ? WHERE id = ?', [date('Y-m-15', strtotime('-30 years')), $bday]);
 $bIds = array_map('strval', array_column(cam_build('birthday'), 'id'));
 t_ok('this month\'s birthday is found', in_array((string)$bday, $bIds, true));
-q('UPDATE parties SET dob = ? WHERE id = ?', [date('Y-m-15', strtotime('-30 years +5 months')), $bday]);
+q('UPDATE parties SET dob = ? WHERE id = ?', [date('Y-m-15', strtotime(month_add(date('Y-m-d', strtotime('-30 years')), 5))), $bday]);
 $bIds2 = array_map('strval', array_column(cam_build('birthday'), 'id'));
 t_ok('...a birthday five months away is not', !in_array((string)$bday, $bIds2, true));
 
