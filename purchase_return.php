@@ -53,9 +53,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         // party_balance_expr() already counts the return itself and a payment
         // would count it twice.
         $creditedTo = [];
-        if ($refundMode === 'adjust') $creditedTo = money_apply_return_credit($rid, $party_id, $total);
+        if ($refundMode === 'adjust')
+            $creditedTo = money_apply_return_credit('purchase', $rid, $party_id, $total, (int)post('credit_bill_id'));
         if (in_array($refundMode, ['cash', 'bank'], true)) {
-            $refBank = $refundMode === 'cash' ? null : ((int)val('SELECT id FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1') ?: null);
+            // the owner picks the account the money landed in; the default one
+            // is only the fallback when they did not (resolve_payment_target)
+            list(, $refBank) = resolve_payment_target($refundMode, (int)post('bank_account_id'));
             q("INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, ref_type, ref_id, pay_date, notes, created_by)
                VALUES (?,?,?,?,?,?,?,?,?,?)",
               [$party_id, 'in', $total, $refundMode, $refBank, 'purchase_return', $rid,
@@ -83,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 if ($action === 'new') {
     require_perm('purchase_return.add');
     $suppliers = all("SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name");
+    $banks = all('SELECT id, account_name, bank_name, is_default FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
     $locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
     $page_title = 'New Purchase Return';
     include __DIR__ . '/includes/header.php';
@@ -102,12 +106,21 @@ if ($action === 'new') {
             </select></div>
           <div><label>Date</label><input type="date" name="return_date" value="<?= today() ?>"></div>
         </div>
-        <div class="field"><label>Refund</label>
-          <select name="refund_mode">
-            <option value="adjust">Adjust against supplier account (credit)</option>
-            <option value="cash">Supplier refunded CASH</option>
-            <option value="bank">Supplier refunded to BANK</option>
-          </select></div>
+        <div class="form-row cols-2">
+          <div><label>Refund</label>
+            <select name="refund_mode" id="refundMode">
+              <option value="adjust">Adjust against supplier account (credit)</option>
+              <option value="cash">Supplier refunded CASH</option>
+              <option value="bank">Supplier refunded to BANK</option>
+            </select></div>
+          <div id="bankWrap" style="display:none"><label>Which bank account?</label>
+            <select name="bank_account_id">
+              <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"<?= $b['is_default'] ? ' selected' : '' ?>><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
+            </select></div>
+          <div id="creditWrap"><label>Credit it to which bill?</label>
+            <select name="credit_bill_id" id="creditBill"><option value="0">Automatic - oldest bill first</option></select>
+            <small class="muted" id="creditHint">Pick a supplier to see their unpaid bills.</small></div>
+        </div>
         <div class="field"><label>Serial numbers being returned (comma / new line, optional)</label>
           <textarea name="return_serials" rows="2"></textarea></div>
         <div class="field"><label>Notes / reason</label><input type="text" name="notes"></div>
@@ -123,7 +136,8 @@ if ($action === 'new') {
         <button class="btn btn-block mt" type="submit">Save Return</button>
       </div>
     </form>
-    <script>Bill.init({mode: 'purchase', serials: false, locSel: 'location_id', gst: false});</script>
+    <script>Bill.init({mode: 'purchase', serials: false, locSel: 'location_id', gst: false});
+    ReturnMoney.init({dir: 'out', partySel: 'select[name=party_id]'});</script>
     <?php
     include __DIR__ . '/includes/footer.php';
     exit;
@@ -152,7 +166,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         // reverse any refund this return posted to the ledger
         q("DELETE FROM payments WHERE ref_type = 'purchase_return' AND ref_id = ?", [$rid]);
         // ...and put back exactly what its credit took off each purchase bill
-        money_reverse_return_credit($rid);
+        money_reverse_return_credit('purchase', $rid);
         q('DELETE FROM purchase_return_items WHERE return_id = ?', [$rid]);
         q('DELETE FROM purchase_returns WHERE id = ?', [$rid]);
         $pdo->commit();

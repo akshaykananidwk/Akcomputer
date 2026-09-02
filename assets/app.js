@@ -880,3 +880,63 @@ var SignaturePad = {
     });
   }
 };
+
+// ---------------------------------------------------------------------------
+// ReturnMoney - the money half of a return screen (sales and purchase alike).
+//
+// Three questions the shop has to be able to answer when goods come back:
+// how is the refund given, out of which bank account, and against which bill.
+// Only the relevant boxes are shown: a bank account is meaningless for a cash
+// refund, and there is no bill to pick when the money is being handed over.
+//
+// The bill list is the SAME endpoint the payment allocator uses, so "which
+// bills are open" is answered in one place. Picking nothing is a real answer,
+// not a missing one - the server then applies the oldest bill first.
+// ---------------------------------------------------------------------------
+var ReturnMoney = {
+  init: function (cfg) {
+    var mode = document.getElementById('refundMode');
+    var bankWrap = document.getElementById('bankWrap');
+    var creditWrap = document.getElementById('creditWrap');
+    var bill = document.getElementById('creditBill');
+    var hint = document.getElementById('creditHint');
+    var party = cfg.partySel ? document.querySelector(cfg.partySel) : null;
+    if (!mode) return;
+
+    function show() {
+      var m = mode.value;
+      if (bankWrap) bankWrap.style.display = (m === 'bank') ? '' : 'none';
+      if (creditWrap) creditWrap.style.display = (m === 'adjust') ? '' : 'none';
+    }
+    mode.addEventListener('change', show);
+    show();
+
+    function loadBills() {
+      if (!bill) return;
+      var pid = party ? party.value : (cfg.partyId || '');
+      bill.innerHTML = '<option value="0">Automatic - oldest bill first</option>';
+      if (!pid) { if (hint) hint.textContent = 'Pick a party to see their unpaid bills.'; return; }
+      if (hint) hint.textContent = 'Loading…';
+      fetch('ajax.php?a=party_bills&dir=' + cfg.dir + '&party_id=' + encodeURIComponent(pid))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var n = 0;
+          (d.bills || []).forEach(function (b) {
+            // the opening-balance line is not a bill and cannot be credited here
+            if (b.id === 'op') return;
+            var o = document.createElement('option');
+            o.value = b.id;
+            o.textContent = b.no + ' · ' + b.date + ' · ₹' + b.due;
+            bill.appendChild(o);
+            n++;
+          });
+          if (hint) hint.textContent = n
+            ? n + ' unpaid bill(s). Leave it on Automatic to settle the oldest first.'
+            : 'Nothing unpaid — the credit will sit on their account.';
+        })
+        .catch(function () { if (hint) hint.textContent = 'Could not load the bills; Automatic still works.'; });
+    }
+    if (party) party.addEventListener('change', loadBills);
+    loadBills();
+  }
+};

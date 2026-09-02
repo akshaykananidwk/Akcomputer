@@ -23,9 +23,9 @@
 CREATE TABLE IF NOT EXISTS purchase_return_credits (
   id INT AUTO_INCREMENT PRIMARY KEY,
   return_id INT NOT NULL,
-  purchase_id INT NOT NULL,
+  bill_id INT NOT NULL,
   amount DECIMAL(12,2) NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_prc_return (return_id),
-  INDEX idx_prc_purchase (purchase_id)
+  INDEX idx_prc_bill (bill_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

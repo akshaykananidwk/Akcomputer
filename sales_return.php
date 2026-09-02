@@ -10,6 +10,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     if (is_period_locked(post('return_date', today()))) { flash(period_lock_message(), 'error'); redirect('sales_return.php?action=new'); }
     $sale = row('SELECT * FROM sales WHERE invoice_no = ? OR id = ?', [post('invoice_ref'), (int)post('invoice_ref')]);
     $loc_id = $sale ? (int)$sale['location_id'] : (int)$u['location_id'];
+    // The original bill names the customer when there is one; otherwise the
+    // owner picks them. Without a customer an "adjust" has no account to
+    // credit, which is why the party can now be chosen on its own.
+    $party_id = $sale ? (int)$sale['party_id'] : (int)post('party_id');
     $item_ids = post('item_id', []);
     $qtys = post('qty', []);
     $prices = post('price', []);
@@ -30,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     try {
         q('INSERT INTO sales_returns (sale_id, party_id, customer_name, customer_mobile, location_id, return_date, total, refund_mode, notes, created_by)
            VALUES (?,?,?,?,?,?,?,?,?,?)',
-          [$sale['id'] ?? null, $sale['party_id'] ?? null, post('customer_name') ?: ($sale['customer_name'] ?? ''),
+          [$sale['id'] ?? null, $party_id ?: null, post('customer_name') ?: ($sale['customer_name'] ?? ''),
            post('customer_mobile'), $loc_id, post('return_date', today()), $total, post('refund_mode', 'cash'), post('notes'), $u['id']]);
         $rid = insert_id();
         q('UPDATE sales_returns SET return_no = ? WHERE id = ?', [doc_no('SR', $rid), $rid]);
@@ -45,35 +49,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             }
         }
         // Money side of the return - without this the books drifted:
-        // - cash/upi refund: the money handed back is posted to the payments
+        // - cash/bank refund: the money handed back is posted to the payments
         //   ledger (direction 'out'), so the party balance stays right (a paid
         //   bill + cash refund used to show a fake "advance") and the cashbook
-        //   shows the cash leaving.
-        // - adjust: the return credit knocks down the ORIGINAL bill's
-        //   outstanding, so bill-level dues (Aging etc.) agree with the party
-        //   ledger. The applied amount is remembered for a clean delete.
+        //   shows the cash leaving. The owner says WHICH bank account it left.
+        // - adjust: the credit lands on the customer's bills. It used to reach
+        //   only the ONE original invoice, so if that invoice was already paid
+        //   - or no invoice number was typed in - the credit went nowhere and
+        //   the customer's other unpaid bills never saw it. Now the owner can
+        //   name a bill, and whatever is left over runs down the rest oldest
+        //   first, the same rule every payment follows.
         $refundMode = post('refund_mode', 'cash');
+        $creditedTo = [];
         if (in_array($refundMode, ['cash', 'bank', 'upi'], true)) {
-            // bank refunds carry the default bank account so the bank ledger
-            // knows exactly which account the money left ('upi' only lingers
-            // from very old forms and is treated as bank)
-            $refBank = $refundMode === 'cash' ? null : ((int)val('SELECT id FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1') ?: null);
+            // 'upi' only lingers from very old forms and is treated as bank
+            $modeCode = $refundMode === 'cash' ? 'cash' : 'bank';
+            list(, $refBank) = resolve_payment_target($modeCode, (int)post('bank_account_id'));
             q("INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, ref_type, ref_id, pay_date, notes, created_by)
                VALUES (?,?,?,?,?,?,?,?,?,?)",
-              [$sale['party_id'] ?? null, 'out', $total, $refundMode === 'cash' ? 'cash' : 'bank', $refBank, 'sales_return', $rid,
+              [$party_id ?: null, 'out', $total, $modeCode, $refBank, 'sales_return', $rid,
                post('return_date', today()), 'Refund for return ' . doc_no('SR', $rid) . ($sale ? ' (bill ' . $sale['invoice_no'] . ')' : ''), $u['id']]);
-        } elseif ($refundMode === 'adjust' && $sale) {
-            $due = round((float)$sale['total'] - (float)$sale['paid'], 2);
-            $apply = min($total, max(0, $due));
-            if ($apply > 0.009) {
-                q('UPDATE sales SET paid = paid + ?, status = ? WHERE id = ?',
-                  [$apply, payment_status($sale['total'], $sale['paid'] + $apply), $sale['id']]);
-                q('UPDATE sales_returns SET adjusted_amount = ? WHERE id = ?', [$apply, $rid]);
-            }
+        } elseif ($refundMode === 'adjust') {
+            // the bill the owner picked, or failing that the original invoice
+            $prefer = (int)post('credit_bill_id') ?: (int)($sale['id'] ?? 0);
+            $creditedTo = money_apply_return_credit('sale', $rid, $party_id, $total, $prefer);
+            $applied = array_sum(array_column($creditedTo, 'amount'));
+            if ($applied > 0.009) q('UPDATE sales_returns SET adjusted_amount = ? WHERE id = ?', [$applied, $rid]);
         }
         $pdo->commit();
         log_activity('sales_return', doc_no('SR', $rid));
-        flash('Sales return saved, stock restored.');
+        $msg = 'Sales return saved, stock restored.';
+        if ($creditedTo) {
+            $bits = [];
+            foreach ($creditedTo as $t) $bits[] = $t['label'] . ' ₹' . money($t['amount']);
+            $msg .= ' Credit applied to: ' . implode(', ', $bits) . '.';
+        } elseif ($refundMode === 'adjust') {
+            $msg .= $party_id
+                ? ' Held as credit on the customer — they have no bill due right now.'
+                : ' No customer was given, so there was no account to credit.';
+        }
+        flash($msg);
         redirect('sales_return.php');
     } catch (Exception $ex) {
         $pdo->rollBack();
@@ -84,6 +99,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 
 if ($action === 'new') {
     require_perm('sales_return.add');
+    $parties = all('SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name');
+    $banks = all('SELECT id, account_name, bank_name, is_default FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
     $page_title = 'New Sales Return';
     include __DIR__ . '/includes/header.php';
     ?>
@@ -99,8 +116,27 @@ if ($action === 'new') {
           <div><label>Date</label><input type="date" name="return_date" value="<?= today() ?>"></div>
         </div>
         <div class="form-row cols-2">
-          <div><label>Refund mode</label><select name="refund_mode"><option value="cash">cash</option><option value="bank">bank</option><option value="adjust">adjust</option></select></div>
+          <div><label>Customer account (for a credit)</label>
+            <select name="party_id"><option value="">-- walk-in / none --</option>
+            <?php foreach ($parties as $pt): ?><option value="<?= $pt['id'] ?>"><?= e($pt['name']) ?></option><?php endforeach; ?>
+            </select>
+            <small class="muted">If the original invoice is filled in above, that bill's customer is used instead.</small></div>
           <div><label>Notes / reason</label><input type="text" name="notes"></div>
+        </div>
+        <div class="form-row cols-3">
+          <div><label>Refund mode</label>
+            <select name="refund_mode" id="refundMode">
+              <option value="cash">Cash handed back</option>
+              <option value="bank">Paid back to BANK</option>
+              <option value="adjust">Adjust against their bills (credit)</option>
+            </select></div>
+          <div id="bankWrap" style="display:none"><label>Which bank account?</label>
+            <select name="bank_account_id">
+              <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"<?= $b['is_default'] ? ' selected' : '' ?>><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
+            </select></div>
+          <div id="creditWrap" style="display:none"><label>Credit it to which bill?</label>
+            <select name="credit_bill_id" id="creditBill"><option value="0">Automatic - oldest bill first</option></select>
+            <small class="muted" id="creditHint">Pick a customer to see their unpaid bills.</small></div>
         </div>
       </div>
       <div class="card">
@@ -117,7 +153,8 @@ if ($action === 'new') {
         <button class="btn btn-block mt" type="submit">Save Return</button>
       </div>
     </form>
-    <script>Bill.init({mode: 'sale', serials: false, locSel: 'location_id', gst: false});</script>
+    <script>Bill.init({mode: 'sale', serials: false, locSel: 'location_id', gst: false});
+    ReturnMoney.init({dir: 'in', partySel: 'select[name=party_id]'});</script>
     <?php
     include __DIR__ . '/includes/footer.php';
     exit;
@@ -154,7 +191,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         // reverse the money side too: drop any refund payment this return
         // posted, and un-apply an 'adjust' credit from the original bill
         q("DELETE FROM payments WHERE ref_type = 'sales_return' AND ref_id = ?", [$rid]);
-        if ((float)($ret['adjusted_amount'] ?? 0) > 0.009 && $ret['sale_id']) {
+        // put back exactly what the credit took off each bill. Returns saved
+        // before v61 have no per-bill rows - they only ever touched the one
+        // original invoice - so that older shape is still honoured below.
+        $reversed = money_reverse_return_credit('sale', $rid);
+        if (!$reversed && (float)($ret['adjusted_amount'] ?? 0) > 0.009 && $ret['sale_id']) {
             $bill = row('SELECT total, paid FROM sales WHERE id = ?', [$ret['sale_id']]);
             if ($bill) {
                 $newPaid = max(0, round($bill['paid'] - (float)$ret['adjusted_amount'], 2));

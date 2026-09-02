@@ -354,38 +354,70 @@ function money_reverse_bill_paid($ref_type, $ref_id, $amt) {
     q("UPDATE $table SET paid = ?, status = ? WHERE id = ?", [$newPaid, payment_status($bill['total'], $newPaid), $ref_id]);
 }
 
-/** A purchase return that is ADJUSTED (not refunded in cash) leaves a credit
- *  with the supplier. This settles that credit against their oldest due
- *  purchase bills - the same oldest-first rule every payment already follows -
- *  and records which bill got what, so deleting the return can put back
- *  exactly what it took.
+/** Where a return's bill-by-bill credit is recorded, per side. */
+function return_credit_table($side) { return $side === 'sale' ? 'sales_return_credits' : 'purchase_return_credits'; }
+
+/** A return that is ADJUSTED (not refunded in cash) leaves a credit with the
+ *  other party. This settles that credit against their due bills and records
+ *  which bill got what, so deleting the return can put back exactly what it
+ *  took.
+ *
+ *  $side is 'purchase' (goods back to a supplier — settles purchase bills) or
+ *  'sale' (goods back from a customer — settles their sale bills).
+ *
+ *  If the owner names a bill, that bill is settled FIRST and the remainder
+ *  spills onto the oldest others — the same two-step the payment allocator
+ *  uses, so "pick a bill" never means "and lose the rest".
  *
  *  It writes NO payments row on purpose. party_balance_expr() already counts
- *  purchase_returns as a credit; adding a payment would count it twice and
- *  halve what the supplier is owed. The bills move, the ledger does not.
+ *  sales_returns and purchase_returns as ledger movements; adding a payment
+ *  would count the credit twice. The bills move, the ledger does not.
  *
- *  Anything left over once every bill is settled stays as a plain credit
- *  balance on the supplier, which is what it is - there is no bill to put it
- *  against yet. Returns the list of bills settled. */
-function money_apply_return_credit($return_id, $party_id, $amount) {
+ *  Anything left once every bill is settled stays as a plain credit balance on
+ *  the party, which is what it is — there is no bill to put it against yet.
+ *  Returns the list of bills settled. */
+function money_apply_return_credit($side, $return_id, $party_id, $amount, $preferBillId = 0) {
     $party_id = (int)$party_id;
-    $amount = money_r($amount);
-    if (!$party_id || $amount <= MONEY_EPS) return [];
-    $done = money_settle_oldest_first($party_id, 'out', $amount);
+    $left = money_r($amount);
+    if (!$party_id || $left <= MONEY_EPS) return [];
+    $dir  = $side === 'sale' ? 'in' : 'out';
+    $tbl  = $side === 'sale' ? 'sales' : 'purchases';
+    $refT = $side === 'sale' ? 'sale' : 'purchase';
+    $done = [];
+
+    $preferBillId = (int)$preferBillId;
+    if ($preferBillId) {
+        $use = money_settle_bill($preferBillId, $party_id, $dir, $left);
+        if ($use > MONEY_EPS) {
+            $b = row("SELECT * FROM $tbl WHERE id = ?", [$preferBillId]);
+            $done[] = ['ref_type' => $refT, 'ref_id' => $preferBillId, 'amount' => $use, 'bill' => $b,
+                       'label' => $side === 'sale' ? $b['invoice_no'] : ($b['bill_no'] ?: '#' . $preferBillId)];
+            $left -= $use;
+        }
+    }
+    foreach (money_settle_oldest_first($party_id, $dir, $left, $preferBillId ? [$preferBillId] : []) as $t) {
+        $done[] = $t;
+        $left -= $t['amount'];
+    }
+
+    $table = return_credit_table($side);
     foreach ($done as $t)
-        q('INSERT INTO purchase_return_credits (return_id, purchase_id, amount) VALUES (?,?,?)',
-          [(int)$return_id, $t['ref_id'], $t['amount']]);
+        q("INSERT INTO $table (return_id, bill_id, amount) VALUES (?,?,?)", [(int)$return_id, $t['ref_id'], $t['amount']]);
     return $done;
 }
 
-/** Undoes the above, bill by bill, using the amounts actually applied. */
-function money_reverse_return_credit($return_id) {
+/** Undoes the above, bill by bill, using the amounts actually applied.
+ *  Recalculating instead would guess wrong the moment a later payment has
+ *  touched the same bill. */
+function money_reverse_return_credit($side, $return_id) {
+    $table = return_credit_table($side);
+    $refT = $side === 'sale' ? 'sale' : 'purchase';
     $n = 0;
-    foreach (all('SELECT purchase_id, amount FROM purchase_return_credits WHERE return_id = ?', [(int)$return_id]) as $c) {
-        money_reverse_bill_paid('purchase', (int)$c['purchase_id'], (float)$c['amount']);
+    foreach (all("SELECT bill_id, amount FROM $table WHERE return_id = ?", [(int)$return_id]) as $c) {
+        money_reverse_bill_paid($refT, (int)$c['bill_id'], (float)$c['amount']);
         $n++;
     }
-    q('DELETE FROM purchase_return_credits WHERE return_id = ?', [(int)$return_id]);
+    q("DELETE FROM $table WHERE return_id = ?", [(int)$return_id]);
     return $n;
 }
 
