@@ -43,8 +43,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         }
         // Money side: when the supplier actually hands cash/UPI back, post it
         // to the payments ledger (money IN) so the party balance and cashbook
-        // stay right. 'adjust' (the default, old behaviour) leaves it as a
-        // credit against the supplier's account via the returns total.
+        // stay right.
+        //
+        // 'adjust' means the supplier keeps the money and we hold a credit.
+        // The ledger has always counted that credit; what it did not do was
+        // put it against anything, so every purchase bill still read as fully
+        // outstanding. Now it settles the OLDEST due bill first - the rule
+        // every payment follows - and no payments row is written, because
+        // party_balance_expr() already counts the return itself and a payment
+        // would count it twice.
+        $creditedTo = [];
+        if ($refundMode === 'adjust') $creditedTo = money_apply_return_credit($rid, $party_id, $total);
         if (in_array($refundMode, ['cash', 'bank'], true)) {
             $refBank = $refundMode === 'cash' ? null : ((int)val('SELECT id FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1') ?: null);
             q("INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, ref_type, ref_id, pay_date, notes, created_by)
@@ -54,7 +63,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         }
         $pdo->commit();
         log_activity('purchase_return', doc_no('PR', $rid));
-        flash('Purchase return saved, stock deducted.');
+        $msg = 'Purchase return saved, stock deducted.';
+        if ($creditedTo) {
+            $bits = [];
+            foreach ($creditedTo as $t) $bits[] = $t['label'] . ' ₹' . money($t['amount']);
+            $msg .= ' Credit applied to the oldest bill(s): ' . implode(', ', $bits) . '.';
+        } elseif ($refundMode === 'adjust') {
+            $msg .= ' Held as credit on the supplier — they have no bill due right now.';
+        }
+        flash($msg);
         redirect('purchase_return.php');
     } catch (Exception $ex) {
         $pdo->rollBack();
@@ -134,6 +151,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         foreach ($ritems as $ri) adjust_stock($ri['item_id'], $ret['location_id'], (float)$ri['qty'], 'purchase_return_delete', $rid);
         // reverse any refund this return posted to the ledger
         q("DELETE FROM payments WHERE ref_type = 'purchase_return' AND ref_id = ?", [$rid]);
+        // ...and put back exactly what its credit took off each purchase bill
+        money_reverse_return_credit($rid);
         q('DELETE FROM purchase_return_items WHERE return_id = ?', [$rid]);
         q('DELETE FROM purchase_returns WHERE id = ?', [$rid]);
         $pdo->commit();

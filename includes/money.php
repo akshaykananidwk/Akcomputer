@@ -354,6 +354,41 @@ function money_reverse_bill_paid($ref_type, $ref_id, $amt) {
     q("UPDATE $table SET paid = ?, status = ? WHERE id = ?", [$newPaid, payment_status($bill['total'], $newPaid), $ref_id]);
 }
 
+/** A purchase return that is ADJUSTED (not refunded in cash) leaves a credit
+ *  with the supplier. This settles that credit against their oldest due
+ *  purchase bills - the same oldest-first rule every payment already follows -
+ *  and records which bill got what, so deleting the return can put back
+ *  exactly what it took.
+ *
+ *  It writes NO payments row on purpose. party_balance_expr() already counts
+ *  purchase_returns as a credit; adding a payment would count it twice and
+ *  halve what the supplier is owed. The bills move, the ledger does not.
+ *
+ *  Anything left over once every bill is settled stays as a plain credit
+ *  balance on the supplier, which is what it is - there is no bill to put it
+ *  against yet. Returns the list of bills settled. */
+function money_apply_return_credit($return_id, $party_id, $amount) {
+    $party_id = (int)$party_id;
+    $amount = money_r($amount);
+    if (!$party_id || $amount <= MONEY_EPS) return [];
+    $done = money_settle_oldest_first($party_id, 'out', $amount);
+    foreach ($done as $t)
+        q('INSERT INTO purchase_return_credits (return_id, purchase_id, amount) VALUES (?,?,?)',
+          [(int)$return_id, $t['ref_id'], $t['amount']]);
+    return $done;
+}
+
+/** Undoes the above, bill by bill, using the amounts actually applied. */
+function money_reverse_return_credit($return_id) {
+    $n = 0;
+    foreach (all('SELECT purchase_id, amount FROM purchase_return_credits WHERE return_id = ?', [(int)$return_id]) as $c) {
+        money_reverse_bill_paid('purchase', (int)$c['purchase_id'], (float)$c['amount']);
+        $n++;
+    }
+    q('DELETE FROM purchase_return_credits WHERE return_id = ?', [(int)$return_id]);
+    return $n;
+}
+
 /** Splits a settled list between the CASH part of a payment and its
  *  settlement-DISCOUNT part. Bills settle from the cash first; whatever is
  *  left rides the separate discount row, so deleting either later reverses
