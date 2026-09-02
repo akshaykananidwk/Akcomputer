@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'add_serials') {
     $iid = (int)post('item_id');
     $locId = serial_fix_loc($iid);
     $n = 0;
-    foreach (array_filter(array_map('trim', preg_split('/[\r\n,]+/', post('serials')))) as $sn) {
+    foreach (array_filter(array_map('trim', preg_split('/[\r\n,]+/', (string)post('serials')))) as $sn) {
         $dupe = val("SELECT id FROM item_serials WHERE item_id = ? AND serial_no = ? AND status = 'in_stock'", [$iid, $sn]);
         if ($dupe) continue; // already in stock - never create a double
         q('INSERT INTO item_serials (item_id, serial_no, location_id, status, warranty_months) VALUES (?,?,?,\'in_stock\', COALESCE((SELECT warranty_months FROM items WHERE id = ?),0))', [$iid, $sn, $locId, $iid]);

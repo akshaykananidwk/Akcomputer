@@ -328,3 +328,45 @@ t_eq('29 February advances a year to 28 February', amc_advance_date('2024-02-29'
 t_eq('an ordinary date is untouched', amc_advance_date('2026-03-15', 'monthly'), '2026-04-15');
 t_eq('a monthly reminder from the 31st keeps its time and skips no month',
      reminder_next_at('2026-01-31 09:30:00', 'monthly'), '2026-02-28 09:30:00');
+
+// ------------------------------------------------- form field name clashes --
+// Purchase Return crashed on EVERY save since the day it was written, and the
+// serial numbers typed into it were thrown away before the server ever saw
+// them. Cause: the shared bill script injects a hidden <input name="serials[]">
+// per item row in purchase mode, and the page had its own <textarea
+// name="serials">. PHP merges the two into an array, so preg_split() on it
+// raised a TypeError.
+//
+// Two invariants keep that from coming back.
+t_group('a scalar form field never shares its name with an array one');
+$_ROOT = dirname(__DIR__);
+$appJs = file_get_contents($_ROOT . '/assets/app.js');
+t_ok('the per-row serials placeholder is only injected where serials are collected',
+     strpos($appJs, "this.cfg.mode === 'purchase' && this.cfg.serials") !== false);
+
+$pages = glob($_ROOT . '/*.php');
+// "serials" is a name the shared bill script OWNS: in purchase mode it emits
+// one hidden serials[] per item row. Any page that loads that script and also
+// declares a plain name="serials" of its own is handing PHP two different
+// shapes for one key, and whichever loses is silently discarded.
+$clashes = [];
+foreach ($pages as $pf) {
+    $src = file_get_contents($pf);
+    if (strpos($src, 'Bill.init(') === false) continue;
+    if (preg_match('/name="serials"/', $src)) $clashes[] = basename($pf);
+}
+t_eq('no bill screen declares its own scalar name="serials"', implode(', ', $clashes), '');
+
+// Any preg_split() over user input must survive being handed an array, because
+// one stray name="x[]" anywhere in the form makes post('x') an array.
+t_group('splitting user input can never fatal on an array');
+$bad = [];
+foreach (array_merge($pages, glob($_ROOT . '/includes/*.php')) as $pf) {
+    foreach (file($pf) as $ln => $line) {
+        if (strpos($line, 'preg_split(') === false) continue;
+        if (!preg_match("/(post|get)\\(/", $line)) continue;
+        if (preg_match("/\\(string\\)\\s*(post|get)\\(/", $line)) continue;
+        $bad[] = basename($pf) . ':' . ($ln + 1);
+    }
+}
+t_eq('every preg_split on post()/get() casts to string first', implode(', ', $bad), '');

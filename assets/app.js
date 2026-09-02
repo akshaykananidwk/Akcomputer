@@ -692,8 +692,16 @@ var Bill = {
       }
     }
     if (!div.dataset.hasSerialBox) {
-      // keep hidden empty serials placeholder aligned with rows for purchase mode
-      if (this.cfg.mode === 'purchase') {
+      // Keep the hidden empty serials[] placeholder aligned with the rows, so
+      // the server can match serials to items by position.
+      //
+      // ONLY when this screen actually collects per-row serials. Without that
+      // check the placeholder was injected on every purchase-mode screen, and
+      // on Purchase Return - which has one plain "serials" textarea of its own
+      // - PHP merged the two names into an array. That page crashed on every
+      // save (preg_split on an array) and the typed serial numbers were thrown
+      // away before they ever reached the server.
+      if (this.cfg.mode === 'purchase' && this.cfg.serials) {
         extra.innerHTML = '<input type="hidden" name="serials[]" value="">';
       }
     }

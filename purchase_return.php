@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             adjust_stock($r['item_id'], $loc_id, -$r['qty'], 'purchase_return', $rid);
         }
         // serial-tracked units returned to supplier are updated on the serial itself
-        foreach (array_filter(array_map('trim', preg_split('/[\r\n,]+/', post('serials')))) as $sn) {
+        foreach (array_filter(array_map('trim', preg_split('/[\r\n,]+/', (string)post('return_serials')))) as $sn) {
             q("UPDATE item_serials SET status='returned_supplier', location_id=NULL WHERE serial_no=? AND status='in_stock'", [$sn]);
         }
         // Money side: when the supplier actually hands cash/UPI back, post it
@@ -92,7 +92,7 @@ if ($action === 'new') {
             <option value="bank">Supplier refunded to BANK</option>
           </select></div>
         <div class="field"><label>Serial numbers being returned (comma / new line, optional)</label>
-          <textarea name="serials" rows="2"></textarea></div>
+          <textarea name="return_serials" rows="2"></textarea></div>
         <div class="field"><label>Notes / reason</label><input type="text" name="notes"></div>
       </div>
       <div class="card">
