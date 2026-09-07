@@ -33,15 +33,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remove_serials') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'add_serials') {
     $iid = (int)post('item_id');
     $locId = serial_fix_loc($iid);
-    $n = 0;
+    $n = 0; $already = 0; $restored = []; $liveBack = [];
     foreach (array_filter(array_map('trim', preg_split('/[\r\n,]+/', (string)post('serials')))) as $sn) {
-        $dupe = val("SELECT id FROM item_serials WHERE item_id = ? AND serial_no = ? AND status = 'in_stock'", [$iid, $sn]);
-        if ($dupe) continue; // already in stock - never create a double
-        q('INSERT INTO item_serials (item_id, serial_no, location_id, status, warranty_months) VALUES (?,?,?,\'in_stock\', COALESCE((SELECT warranty_months FROM items WHERE id = ?),0))', [$iid, $sn, $locId, $iid]);
-        $n++;
+        // serial_put_in_stock() looks the row up WITHOUT a status filter. The
+        // old code here checked only for 'in_stock', so a serial already on
+        // record as sold (or adjusted out, or with staff) got an INSERT and
+        // broke uk_serial - the whole page died with a duplicate-entry error.
+        $r = serial_put_in_stock($iid, $sn, $locId);
+        if ($r['result'] === 'added') $n++;
+        elseif ($r['result'] === 'already') $already++;
+        elseif ($r['result'] === 'restored') {
+            $restored[] = $sn;
+            // it was somewhere real a moment ago - say so instead of quietly
+            // detaching a customer's unit from their bill
+            if (in_array($r['from'], serial_live_statuses(), true)) $liveBack[] = $sn . ' (' . $r['from'] . ')';
+        }
     }
-    log_activity('serial_fix_add', "item=$iid added=$n");
-    flash($n ? "$n સિરિયલ સ્ટોકમાં ઉમેર્યા — સ્ટોકનો આંકડો બદલાયો નથી." : 'કોઈ નવો સિરિયલ નહોતો.', $n ? 'success' : 'error');
+    log_activity('serial_fix_add', "item=$iid added=$n restored=" . count($restored) . ($liveBack ? ' live=' . implode('|', $liveBack) : ''));
+    $bits = [];
+    if ($n) $bits[] = "$n નવા સિરિયલ ઉમેર્યા";
+    if ($restored) $bits[] = count($restored) . ' સિરિયલ પાછા સ્ટોકમાં લીધા';
+    if ($already) $bits[] = "$already પહેલેથી સ્ટોકમાં જ હતા";
+    $msg = $bits ? implode(', ', $bits) . ' — સ્ટોકનો આંકડો બદલાયો નથી.' : 'કોઈ નવો સિરિયલ નહોતો.';
+    if ($liveBack) $msg .= ' ⚠️ આ સિરિયલ બીજે નોંધાયેલા હતા અને હવે સ્ટોકમાં લીધા છે: ' . implode(', ', $liveBack) . '. બિલ સાથેની કડી કપાઈ ગઈ છે — ખાતરી કરી લેજો.';
+    flash($msg, $bits ? 'success' : 'error');
     redirect('serial_fix.php');
 }
 

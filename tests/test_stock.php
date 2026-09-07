@@ -239,3 +239,88 @@ t_ok('the switch is one setting, read in one place',
 $set = file_get_contents(dirname(__DIR__) . '/settings.php');
 t_ok('the owner can turn quantities off in Settings', strpos($set, "name=\"store_show_qty\"") !== false);
 t_ok('...and is warned it is a public page', strpos($set, 'હરીફ પણ જોઈ શકે') !== false);
+
+// ------------------------------------------------- putting a serial back in --
+// uk_serial is UNIQUE on (item_id, serial_no) with NO status in it. The repair
+// screen used to look only for a row with status='in_stock' and then INSERT,
+// so any serial already on record in another state — sold, adjusted out, out
+// with staff — hit that key and killed the whole page with a duplicate-entry
+// error. Every case below would have crashed before.
+t_group('a serial can be put back in stock from any state');
+$sItem = t_item(0, $loc);
+$sLoc  = $loc;
+function ts_serial($itemId, $sn, $status, $saleId = null, $userId = null) {
+    q("INSERT INTO item_serials (item_id, serial_no, status, sale_id, user_id, warranty_months, created_at)
+       VALUES (?,?,?,?,?,0,NOW())", [$itemId, $sn, $status, $saleId, $userId]);
+    return insert_id();
+}
+function ts_serial_row($itemId, $sn) {
+    return row('SELECT status, location_id, sale_id, user_id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$itemId, $sn]);
+}
+
+$r = serial_put_in_stock($sItem, 'TSS-BRANDNEW', $sLoc);
+t_eq('a serial nobody has seen is added', $r['result'], 'added');
+t_eq('...in stock', ts_serial_row($sItem, 'TSS-BRANDNEW')['status'], 'in_stock');
+t_eq('...at the location asked for', (int)ts_serial_row($sItem, 'TSS-BRANDNEW')['location_id'], $sLoc);
+
+t_eq('adding it a second time changes nothing', serial_put_in_stock($sItem, 'TSS-BRANDNEW', $sLoc)['result'], 'already');
+t_eq('...and never makes a second row',
+     (int)val('SELECT COUNT(*) FROM item_serials WHERE item_id = ? AND serial_no = ?', [$sItem, 'TSS-BRANDNEW']), 1);
+
+// the exact shape of the reported crash: a SOLD serial typed into the repair box
+ts_serial($sItem, 'TSS-SOLD', 'sold', 4242, null);
+$r = serial_put_in_stock($sItem, 'TSS-SOLD', $sLoc);
+t_eq('a sold serial is restored, not inserted', $r['result'], 'restored');
+t_eq('...and reports where it came from', $r['from'], 'sold');
+t_eq('...leaving exactly one row',
+     (int)val('SELECT COUNT(*) FROM item_serials WHERE item_id = ? AND serial_no = ?', [$sItem, 'TSS-SOLD']), 1);
+$row = ts_serial_row($sItem, 'TSS-SOLD');
+t_eq('...now in stock', $row['status'], 'in_stock');
+t_eq('...detached from the bill it was sold on', $row['sale_id'], null);
+
+ts_serial($sItem, 'TSS-STAFF', 'with_staff', null, 1);
+$r = serial_put_in_stock($sItem, 'TSS-STAFF', $sLoc);
+t_eq('a serial out with staff comes back', $r['from'], 'with_staff');
+t_eq('...and is no longer against that staff member', ts_serial_row($sItem, 'TSS-STAFF')['user_id'], null);
+
+foreach (['adjusted_out', 'returned_supplier', 'replaced', 'claim'] as $st) {
+    ts_serial($sItem, 'TSS-' . $st, $st);
+    t_eq('a ' . $st . ' serial is restored', serial_put_in_stock($sItem, 'TSS-' . $st, $sLoc)['result'], 'restored');
+    t_eq('...and ends up in stock', ts_serial_row($sItem, 'TSS-' . $st)['status'], 'in_stock');
+}
+
+t_eq('a blank serial is ignored, not inserted', serial_put_in_stock($sItem, '   ', $sLoc)['result'], 'skipped');
+t_eq('...and no item means no row either', serial_put_in_stock(0, 'TSS-NOITEM', $sLoc)['result'], 'skipped');
+t_eq('nothing blank was written', (int)val("SELECT COUNT(*) FROM item_serials WHERE serial_no IN ('', '   ', 'TSS-NOITEM')"), 0);
+
+// the same serial on a DIFFERENT item is a different piece and must be allowed
+$sItem2 = t_item(0, $loc);
+t_eq('the same number on another item is its own serial',
+     serial_put_in_stock($sItem2, 'TSS-SOLD', $sLoc)['result'], 'added');
+t_eq('...so both exist', (int)val("SELECT COUNT(*) FROM item_serials WHERE serial_no = 'TSS-SOLD'"), 2);
+
+t_group('the repair screen goes through that one rule');
+$sf = file_get_contents(dirname(__DIR__) . '/serial_fix.php');
+t_ok('it calls the shared helper', strpos($sf, 'serial_put_in_stock($iid, $sn, $locId)') !== false);
+t_ok('it no longer checks only for in_stock before inserting',
+     strpos($sf, "AND status = 'in_stock'\", [\$iid, \$sn]") === false);
+t_ok('it never inserts a serial by hand any more', strpos($sf, 'INSERT INTO item_serials') === false);
+t_ok('it warns when a serial was taken back from a customer or staff member',
+     strpos($sf, 'serial_live_statuses()') !== false && strpos($sf, 'બિલ સાથેની કડી કપાઈ ગઈ છે') !== false);
+
+// Why the old code could not work, pinned to the schema rather than to the
+// code that got it wrong: the unique key carries no status, so "is there one
+// in stock?" can never answer "may I insert?".
+$idx = all("SHOW INDEX FROM item_serials WHERE Key_name = 'uk_serial'");
+$cols = array_column($idx, 'Column_name');
+t_eq('uk_serial is (item_id, serial_no)', implode(',', $cols), 'item_id,serial_no');
+t_ok('...with no status in it, so status can never gate an insert', !in_array('status', $cols, true));
+// and the failure really does happen: same item, same number, other status
+$dupItem = t_item(0, $loc);
+ts_serial($dupItem, 'TSS-DUPE', 'sold');
+$threw = '';
+try { q("INSERT INTO item_serials (item_id, serial_no, status, warranty_months) VALUES (?,?,'in_stock',0)", [$dupItem, 'TSS-DUPE']); }
+catch (PDOException $e) { $threw = (string)($e->errorInfo[1] ?? ''); }
+t_eq('inserting over a sold serial is a duplicate-key error', $threw, '1062');
+t_eq('...which the shared helper avoids entirely',
+     serial_put_in_stock($dupItem, 'TSS-DUPE', $loc)['result'], 'restored');

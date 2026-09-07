@@ -888,6 +888,46 @@ function razorpay_payment_link($amount, $description, $customerName = '', $custo
     return $data['short_url'] ?? null;
 }
 
+// ---------- Serial numbers ----------
+
+/** Serial statuses a piece can be in while it is genuinely somewhere else:
+ *  sold to a customer, out with a staff member, or away on a warranty claim.
+ *  Putting one of these back on the shelf is a real correction, not a tidy-up,
+ *  so callers report it rather than doing it quietly. */
+function serial_live_statuses() { return ['sold', 'with_staff', 'claim']; }
+
+/** Puts ONE serial number into stock, whatever state it is in now.
+ *
+ *  uk_serial is UNIQUE on (item_id, serial_no) with no status in it, so a
+ *  serial that exists in ANY status already has a row. Checking only for
+ *  status='in_stock' and then inserting - which the repair screen used to do -
+ *  hit that key and crashed the whole page with a duplicate-entry error.
+ *  Every other screen that takes serials looks the row up without a status
+ *  filter and revives it; this is that same rule, in one place.
+ *
+ *  Returns 'added' (there was no such serial), 'already' (nothing to do) or
+ *  'restored' (a row existed in another state and was brought back), with the
+ *  state it came from. */
+function serial_put_in_stock($itemId, $serialNo, $locId, $warrantyMonths = null) {
+    $itemId = (int)$itemId;
+    $serialNo = trim((string)$serialNo);
+    if ($itemId <= 0 || $serialNo === '') return ['result' => 'skipped', 'from' => ''];
+    $srow = row('SELECT id, status FROM item_serials WHERE item_id = ? AND serial_no = ?', [$itemId, $serialNo]);
+    if ($srow && $srow['status'] === 'in_stock') return ['result' => 'already', 'from' => 'in_stock'];
+    if ($srow) {
+        // sale_id and user_id are cleared: the piece is on our shelf now, so it
+        // is not with a customer and not with a staff member
+        q("UPDATE item_serials SET status = 'in_stock', location_id = ?, sale_id = NULL, user_id = NULL WHERE id = ?",
+          [$locId, $srow['id']]);
+        return ['result' => 'restored', 'from' => $srow['status']];
+    }
+    if ($warrantyMonths === null)
+        $warrantyMonths = (int)val('SELECT warranty_months FROM items WHERE id = ?', [$itemId]);
+    q("INSERT INTO item_serials (item_id, serial_no, location_id, status, warranty_months) VALUES (?,?,?,'in_stock',?)",
+      [$itemId, $serialNo, $locId, (int)$warrantyMonths]);
+    return ['result' => 'added', 'from' => ''];
+}
+
 // ---------- Misc ----------
 function share_token() { return bin2hex(random_bytes(16)); }
 
