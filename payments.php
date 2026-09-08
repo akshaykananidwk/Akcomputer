@@ -422,11 +422,16 @@ if ($action === 'new') {
     // parties are included too when they still carry a balance - a party
     // deactivated with money outstanding must stay collectible.
     $balExpr = party_balance_expr('p');
-    $pendingFirst = $dir === 'in' ? "($balExpr > 0.009) DESC, $balExpr DESC" : "($balExpr < -0.009) DESC, $balExpr ASC";
-    $parties = all("SELECT p.id, p.name, p.mobile, $balExpr AS balance FROM parties p
+    // "pending" is decided on THIS side only. On the netted balance a party we
+    // both sell to and buy from never looked pending on the smaller side - a
+    // supplier we owe 3,000 who also owes us 5,000 was simply absent from
+    // Payment-Out's pending list.
+    $sideExpr = party_balance_side_expr('p', $dir);
+    $pendingFirst = "($sideExpr > 0.009) DESC, $sideExpr DESC";
+    $parties = all("SELECT p.id, p.name, p.mobile, $balExpr AS balance, $sideExpr AS side_due FROM parties p
                     WHERE (p.is_active = 1 OR ABS($balExpr) > 0.009)
                     ORDER BY $pendingFirst, p.name");
-    $pendingCount = count(array_filter($parties, fn($p) => $dir === 'in' ? $p['balance'] > 0.009 : $p['balance'] < -0.009));
+    $pendingCount = count(array_filter($parties, fn($p) => $p['side_due'] > 0.009));
     $wDue = $dir === 'in' ? walkin_due() : 0;
     $pms = active_payment_methods();
     $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
@@ -450,9 +455,16 @@ if ($action === 'new') {
               <option value="">-- select party --</option>
               <?php if ($pendingCount): ?><optgroup label="<?= $dir === 'in' ? 'Receivable' : 'Payable' ?>"><?php endif; ?>
               <?php $inGroup = true; foreach ($parties as $p):
-                $pending = $dir === 'in' ? $p['balance'] > 0.009 : $p['balance'] < -0.009;
-                if ($inGroup && $pendingCount && !$pending) { echo '</optgroup><optgroup label="All other parties">'; $inGroup = false; } ?>
-              <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?><?= abs($p['balance']) > 0.009 ? ' (₹' . money(abs($p['balance'])) . ($p['balance'] > 0 ? ' receivable' : ' payable') . ')' : '' ?></option>
+                $pending = $p['side_due'] > 0.009;
+                if ($inGroup && $pendingCount && !$pending) { echo '</optgroup><optgroup label="All other parties">'; $inGroup = false; }
+                // this side's own figure, not the netted one - on Payment-Out a
+                // party who also owes US money must still show what WE owe THEM
+                $lbl = $pending ? ' (₹' . money($p['side_due']) . ($dir === 'in' ? ' receivable' : ' payable') . ')' : '';
+                // ...and say so when the other side is live too, so the owner
+                // knows a contra settlement is available instead of cash
+                if ($pending && abs($p['balance']) < $p['side_due'] - 0.009)
+                    $lbl .= ' ↔ ' . ($dir === 'in' ? 'also payable' : 'also receivable'); ?>
+              <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) . $lbl ?></option>
               <?php endforeach; ?>
               <?php if ($pendingCount): ?></optgroup><?php endif; ?>
             </select>

@@ -114,8 +114,9 @@ function cust_360($partyId) {
 /** What this customer really owes, capped by the ledger, plus how late the
  *  oldest unpaid bill is. Shared by the 360 page and the collection queue. */
 function cust_outstanding($partyId, $bal = null) {
-    $bal = $bal === null ? party_balance($partyId) : $bal;
-    $cap = max(0.0, (float)$bal);
+    // the SALE side, not max(0, netted balance): a customer the shop also buys
+    // from had their own unpaid bills quietly written down by what WE owe THEM
+    $cap = party_balance_side($partyId, 'in');
     $bills = money_due_bills($partyId, 'in', 'id, invoice_no, sale_date, due_date, ROUND(total - paid, 2) d');
     $adj = money_trim_dues(array_column($bills, 'd'), $cap);
     $t = today();
@@ -175,6 +176,7 @@ function cust_segment_rows($extraWhere = '') {
     $t = today();
     $rows = all("SELECT p.id, p.name, p.mobile, p.city, p.created_at, p.credit_days, p.collection_opt_out,
                         " . party_balance_expr('p') . " bal,
+                        " . party_balance_side_expr('p', 'in') . " recv_due,
                         COUNT(s.id) bills,
                         COALESCE(SUM(s.total),0) lifetime,
                         COALESCE(SUM(CASE WHEN s.sale_date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY) THEN s.total ELSE 0 END),0) year_value,
@@ -195,6 +197,7 @@ function cust_segment_rows($extraWhere = '') {
         $last = $x['last_sale'];
         $idle = $last ? days_between_dates($last, $t) : null;
         $bal = (float)$x['bal'];
+        $owed = (float)$x['recv_due'];   // what their SALE bills still owe
         $segs = [];
 
         if ($x['created_at'] && days_between_dates(substr($x['created_at'], 0, 10), $t) <= $r['new_days'])
@@ -229,8 +232,8 @@ function cust_segment_rows($extraWhere = '') {
         // owe. Filtered HERE rather than on each screen: a segment list is a
         // tempting thing to render, and one forgotten guard would have shown a
         // sales assistant exactly how much every customer is behind on.
-        if ($bal > MONEY_EPS && can('payments.view')) {
-            $risk = cust_credit_risk_level($id, $bal, $x);
+        if ($owed > MONEY_EPS && can('payments.view')) {
+            $risk = cust_credit_risk_level($id, $owed, $x);
             if ($risk['overdue'] > MONEY_EPS) $segs['overdue'] = '₹' . money($risk['overdue']) . ' ની મુદત વીતી ગઈ છે';
             if ($risk['level'] === 'high') $segs['credit_risk'] = $risk['why'];
         }
@@ -296,10 +299,11 @@ function cust_credit($partyId, $bal = null) {
     // a reliable payer is trusted with the full window, a poor payer with half
     $factor = ['excellent' => 1.0, 'good' => 0.85, 'new' => 0.6, 'slow' => 0.5, 'poor' => 0.25][$rel['rating']] ?? 0.6;
     $suggested = round($monthly * $r['credit_months'] * $factor, -2); // to the nearest 100
+    $owed = party_balance_side($partyId, 'in');   // sale side only
     return [
         'suggested' => max(0.0, (float)$suggested),
-        'outstanding' => max(0.0, (float)$bal),
-        'over_limit' => $bal > $suggested + MONEY_EPS,
+        'outstanding' => $owed,
+        'over_limit' => $owed > $suggested + MONEY_EPS,
         'reliability' => $rel,
         'monthly_buy' => round($monthly, 2),
     ];
@@ -501,11 +505,12 @@ function coll_queue($limit = 200, $includeSnoozed = false) {
     // are always among those considered.
     $scan = max((int)$limit, (int)setting('collection_scan_limit', 2000));
     $parties = all("SELECT p.id, p.name, p.mobile, p.city, p.collection_opt_out, p.credit_days,
-                           " . party_balance_expr('p') . " bal
+                           " . party_balance_expr('p') . " bal,
+                           " . party_balance_side_expr('p', 'in') . " recv_due
                     FROM parties p
                     WHERE p.type <> 'supplier'
-                    HAVING bal > 0.009
-                    ORDER BY bal DESC LIMIT " . $scan);
+                    HAVING recv_due > 0.009
+                    ORDER BY recv_due DESC LIMIT " . $scan);
     if (!$parties) return [];
     $ids = array_map(fn($x) => (int)$x['id'], $parties);
     $in = implode(',', $ids);
@@ -540,7 +545,7 @@ function coll_queue($limit = 200, $includeSnoozed = false) {
         if (!$bills) continue;
 
         // the ledger cap, exactly as everywhere else
-        $adj = money_trim_dues(array_column($bills, 'd'), max(0.0, (float)$p['bal']));
+        $adj = money_trim_dues(array_column($bills, 'd'), (float)$p['recv_due']);
         $total = 0.0; $overdue = 0.0; $oldest = null; $n = 0; $lastRem = null;
         foreach ($bills as $i => $b) {
             $d = $adj[$i];

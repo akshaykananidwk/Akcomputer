@@ -314,3 +314,98 @@ t_ok('...and the invoice still wins when one is given',
      strpos($sr_src, '$party_id = $sale ? (int)$sale[\'party_id\'] : (int)post(\'party_id\');') !== false);
 t_ok('a return with no customer says so rather than swallowing the credit',
      strpos($sr_src, 'No customer was given, so there was no account to credit.') !== false);
+
+// ------------------------------- a party the shop both sells to and buys from --
+// The ledger netted the two sides into one number, and every cap then read
+// that one number. Owed ₹5,000 on a sale and owing ₹3,000 on a purchase nets
+// to ₹2,000, so the customer's bill was written down to ₹2,000 (reminders and
+// pay links would have asked them for that) and the supplier side read as
+// fully settled. Both wrong at once, and only for these parties.
+t_group('a party who is both customer and supplier owes and is owed at once');
+
+function ts_both_party($saleTotal, $purchTotal, $opening = 0) {
+    global $co, $loc;
+    $p = t_party('TS Both ' . bin2hex(random_bytes(3)), $opening);
+    $s = $saleTotal > 0 ? t_sale($p, $saleTotal, 0, '2026-01-01') : null;
+    $b = null;
+    if ($purchTotal > 0) {
+        q("INSERT INTO purchases (company_id, location_id, party_id, bill_no, purchase_date, subtotal, total, paid, status, created_by)
+           VALUES (?,?,?,?, '2026-01-05', ?, ?, 0, 'due', 1)",
+          [$co, $loc, $p, 'TSB-' . bin2hex(random_bytes(4)), $purchTotal, $purchTotal]);
+        $b = insert_id();
+    }
+    return [$p, $s, $b];
+}
+
+$co  = (int)val('SELECT id FROM companies ORDER BY id LIMIT 1');
+$loc = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+
+list($bp, $bs, $bb) = ts_both_party(5000, 3000);
+t_eq('the net balance is still the net balance', party_balance($bp), 2000.0);
+t_eq('what they owe us is the sale, in full', party_balance_side($bp, 'in'), 5000.0);
+t_eq('what we owe them is the purchase, in full', party_balance_side($bp, 'out'), 3000.0);
+t_eq('their bill claims its whole amount', sale_true_due(row('SELECT * FROM sales WHERE id = ?', [$bs])), 5000.0);
+$pb = money_due_bills($bp, 'out', 'id, ROUND(total - paid, 2) d');
+t_eq('...and so does ours', money_trim_dues(array_column($pb, 'd'), party_balance_side($bp, 'out')), [3000.0]);
+
+// the two sides only cancel when the owner records a contra - a decision, not
+// a subtraction the ledger makes on its own
+q("INSERT INTO payments (party_id, direction, amount, mode, pay_date, notes, created_by) VALUES (?, 'in', 3000, 'contra', '2026-02-01', 't', 1)", [$bp]);
+q("INSERT INTO payments (party_id, direction, amount, mode, pay_date, notes, created_by) VALUES (?, 'out', 3000, 'contra', '2026-02-01', 't', 1)", [$bp]);
+q("UPDATE sales SET paid = 3000, status = 'partial' WHERE id = ?", [$bs]);
+q("UPDATE purchases SET paid = 3000, status = 'paid' WHERE id = ?", [$bb]);
+t_eq('after a contra they owe us the remainder', party_balance_side($bp, 'in'), 2000.0);
+t_eq('...and we owe them nothing', party_balance_side($bp, 'out'), 0.0);
+t_eq('...with the net unchanged throughout', party_balance($bp), 2000.0);
+
+t_group('which side a payment belongs to is its ref_type, not its direction');
+// refunding a customer for returned goods is money OUT, but it is sale-side
+// money out: it puts their bill's due back, it does not reduce a supplier debt
+list($rp, $rs, ) = ts_both_party(5000, 0);
+q("INSERT INTO sales_returns (party_id, customer_name, location_id, return_date, total, refund_mode, notes, created_by)
+   VALUES (?, 't', ?, '2026-02-01', 1000, 'cash', 't', 1)", [$rp, $loc]);
+$srid = insert_id();
+q("INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
+   VALUES (?, 'out', 1000, 'cash', 'sales_return', ?, '2026-02-01', 't', 1)", [$rp, $srid]);
+t_eq('goods back plus cash back leaves the sale due untouched', party_balance_side($rp, 'in'), 5000.0);
+t_eq('...and creates no supplier debt', party_balance_side($rp, 'out'), 0.0);
+t_eq('...and the net agrees', party_balance($rp), 5000.0);
+
+t_group('over-settling one side shows up on the other');
+$adv = t_party('TS Advance ' . bin2hex(random_bytes(3)));
+t_sale($adv, 1000, 1500, '2026-01-01');   // paid 1500 against a 1000 bill
+q("INSERT INTO payments (party_id, direction, amount, mode, pay_date, notes, created_by) VALUES (?, 'in', 1500, 'cash', '2026-01-01', 't', 1)", [$adv]);
+t_eq('a customer in credit owes nothing', party_balance_side($adv, 'in'), 0.0);
+t_eq('...and the money we hold is a payable', party_balance_side($adv, 'out'), 500.0);
+t_eq('...matching the net', party_balance($adv), -500.0);
+
+t_group('the two sides always subtract to the ledger balance');
+// the invariant the whole design rests on, checked against EVERY party in the
+// database rather than a fixture - if any screen's figures ever drift apart,
+// they drift apart here first
+$rows = all('SELECT p.id, p.name, ' . party_balance_expr('p') . ' bal, '
+          . party_balance_side_expr('p', 'in') . ' r, '
+          . party_balance_side_expr('p', 'out') . ' y, '
+          . party_side_terms_expr('p', 'in') . ' it, '
+          . party_side_terms_expr('p', 'out') . ' ot FROM parties p');
+$mismatch = []; $phpDiff = [];
+foreach ($rows as $x) {
+    if (abs(((float)$x['r'] - (float)$x['y']) - (float)$x['bal']) > 0.009) $mismatch[] = $x['name'];
+    // and the PHP path a list screen uses must give the SQL path's answer
+    $s = money_sides_from_terms($x['it'], $x['ot']);
+    if (abs($s['recv_due'] - (float)$x['r']) > 0.009 || abs($s['pay_due'] - (float)$x['y']) > 0.009
+        || abs($s['bal'] - (float)$x['bal']) > 0.009) $phpDiff[] = $x['name'];
+}
+t_ok('receivable - payable = balance, for all ' . count($rows) . ' parties', !$mismatch, implode(', ', array_slice($mismatch, 0, 3)));
+t_ok('...and the PHP and SQL paths agree on every one', !$phpDiff, implode(', ', array_slice($phpDiff, 0, 3)));
+t_ok('neither side is ever negative',
+     !array_filter($rows, fn($x) => (float)$x['r'] < -0.009 || (float)$x['y'] < -0.009));
+
+t_group('the screens all cap on the side they are about');
+foreach ([['includes/customer.php', 3], ['includes/dashboard.php', 1], ['parties.php', 1], ['payments.php', 1], ['includes/forecast.php', 1]] as $f) {
+    $src = file_get_contents(dirname(__DIR__) . '/' . $f[0]);
+    t_ok($f[0] . ' uses a side expression', substr_count($src, 'party_balance_side_expr(') + substr_count($src, 'party_balance_side(') + substr_count($src, 'party_side_terms_expr(') >= $f[1]);
+}
+$cust = file_get_contents(dirname(__DIR__) . '/includes/customer.php');
+t_ok('no collection cap is taken from the netted balance any more',
+     strpos($cust, "max(0.0, (float)\$bal)") === false && strpos($cust, "max(0.0, (float)\$p['bal'])") === false);

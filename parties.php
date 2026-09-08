@@ -312,12 +312,22 @@ if ($action === 'ledger' && $id) {
 // deactivated while money was still due/payable must never quietly
 // disappear from view (that money would then show nowhere at all).
 $balExprList = party_balance_expr('p');
-$parties = all("SELECT p.*, $balExprList AS balance
-    FROM parties p WHERE p.is_active = 1 OR ABS($balExprList) > 0.009 ORDER BY p.name");
+// Each side on its own as well as the net. A party the shop both sells to and
+// buys from owes and is owed at the same time: netting them showed one figure
+// and hid the other, and the To Receive / To Pay totals then disagreed with
+// the bills underneath them. They only cancel once a contra is recorded.
+// the two raw term totals, combined per row by money_sides_from_terms() - the
+// same rule the dashboard uses, and far cheaper than asking for both sides and
+// the net as three separate correlated expressions
+$parties = all("SELECT p.*, " . party_side_terms_expr('p', 'in') . " AS in_terms,
+    " . party_side_terms_expr('p', 'out') . " AS out_terms
+    FROM parties p HAVING p.is_active = 1 OR ABS(in_terms - out_terms) > 0.009 ORDER BY p.name");
+foreach ($parties as &$pRow) $pRow = array_merge($pRow, money_sides_from_terms($pRow['in_terms'], $pRow['out_terms']), ['balance' => money_r($pRow['in_terms'] - $pRow['out_terms'])]);
+unset($pRow);
 $totGet = 0; $totGive = 0;
 foreach ($parties as $p) {
-    if ($p['balance'] > 0.009) $totGet += $p['balance'];
-    elseif ($p['balance'] < -0.009) $totGive += -$p['balance'];
+    if ($p['recv_due'] > 0.009) $totGet += $p['recv_due'];
+    if ($p['pay_due'] > 0.009) $totGive += $p['pay_due'];
 }
 
 // Dashboard "To Receive" / "To Pay" drill-down: ?bal=get shows only parties
@@ -325,8 +335,9 @@ foreach ($parties as $p) {
 // biggest amount can be found first instead of scrolling the whole list.
 $balFilter = get('bal');
 $sortBy = get('sort', 'name');
-if ($balFilter === 'get') $parties = array_values(array_filter($parties, fn($p) => $p['balance'] > 0.009));
-elseif ($balFilter === 'give') $parties = array_values(array_filter($parties, fn($p) => $p['balance'] < -0.009));
+// a party live on both sides belongs in BOTH drill-downs, not just the bigger one
+if ($balFilter === 'get') $parties = array_values(array_filter($parties, fn($p) => $p['recv_due'] > 0.009));
+elseif ($balFilter === 'give') $parties = array_values(array_filter($parties, fn($p) => $p['pay_due'] > 0.009));
 
 // Customer-segment drill-down from the dashboard cards (?seg=vip, at_risk, …).
 // One grouped pass classifies everybody, so this costs a couple of queries
@@ -347,7 +358,7 @@ if ($segFilter && isset($segNames[$segFilter])) {
 } else {
     $segFilter = '';
 }
-if ($sortBy === 'amount') usort($parties, fn($a, $b) => abs($b['balance']) <=> abs($a['balance']));
+if ($sortBy === 'amount') usort($parties, fn($a, $b) => max($b['recv_due'], $b['pay_due']) <=> max($a['recv_due'], $a['pay_due']));
 else usort($parties, fn($a, $b) => strcasecmp($a['name'], $b['name']));
 
 $page_title = $segFilter ? $segNames[$segFilter]
@@ -384,11 +395,15 @@ include __DIR__ . '/includes/header.php';
       <?php endif; ?>
     </div>
     <div class="list-row-val">
-      <?php if ($p['balance'] > 0.009): ?>
-        <span class="bal-get">₹<?= money($p['balance']) ?><span class="bal-sub">You'll Get</span></span>
-      <?php elseif ($p['balance'] < -0.009): ?>
-        <span class="bal-give">₹<?= money(-$p['balance']) ?><span class="bal-sub">You'll Give</span></span>
-      <?php else: ?>
+      <?php // both sides are shown when both are live - the net alone would
+            // hide a real debt in one direction behind a bigger one in the other
+      if ($p['recv_due'] > 0.009): ?>
+        <span class="bal-get">₹<?= money($p['recv_due']) ?><span class="bal-sub">You'll Get</span></span>
+      <?php endif; ?>
+      <?php if ($p['pay_due'] > 0.009): ?>
+        <span class="bal-give">₹<?= money($p['pay_due']) ?><span class="bal-sub">You'll Give</span></span>
+      <?php endif; ?>
+      <?php if ($p['recv_due'] <= 0.009 && $p['pay_due'] <= 0.009): ?>
         <span class="muted">₹0.00</span>
       <?php endif; ?>
     </div>

@@ -91,10 +91,22 @@ t_eq('…and from the bill count', $k2['bills'], $k['bills']);
 
 t_group('outstanding totals reconcile with the party ledger');
 $b = dash_balances();
-$direct = 0.0;
-foreach (all('SELECT ' . party_balance_expr('p') . ' bal FROM parties p WHERE p.is_active = 1 OR ABS(' . party_balance_expr('p') . ') > 0.009') as $r)
-    if ($r['bal'] > 0.009) $direct += (float)$r['bal'];
-t_eq('receivable equals the Parties-list expression', $b['receivable'], round($direct, 2));
+// The Parties list totals the SAME two side expressions, so the dashboard card
+// and the list you land on when you tap it must agree to the paisa. Netting
+// them here (the old rule) understated both sides for any party the shop both
+// sells to and buys from.
+$directGet = 0.0; $directGive = 0.0; $net = 0.0;
+foreach (all('SELECT ' . party_balance_expr('p') . ' bal, '
+           . party_balance_side_expr('p', 'in') . ' recv_due, '
+           . party_balance_side_expr('p', 'out') . ' pay_due
+             FROM parties p WHERE p.is_active = 1 OR ABS(' . party_balance_expr('p') . ') > 0.009') as $r) {
+    if ($r['recv_due'] > 0.009) $directGet += (float)$r['recv_due'];
+    if ($r['pay_due'] > 0.009) $directGive += (float)$r['pay_due'];
+    $net += (float)$r['bal'];
+}
+t_eq('receivable equals the Parties-list expression', $b['receivable'], round($directGet, 2));
+t_eq('payable equals it too', $b['payable'], round($directGive, 2));
+t_eq('the two sides still net to the ledger', round($b['receivable'] - $b['payable'], 2), round($net, 2));
 t_ok('receivable is never negative', $b['receivable'] >= 0);
 t_ok('payable is never negative', $b['payable'] >= 0);
 

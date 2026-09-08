@@ -65,11 +65,76 @@ function party_balance($party_id) {
     return (float)val('SELECT ' . party_balance_expr('p') . ' FROM parties p WHERE p.id = ?', [$party_id]);
 }
 
-/** The party's balance as a positive number on the side the caller cares
- *  about: 'in' = what they owe us, 'out' = what we owe them. */
+/** ONE SIDE of a party's ledger, as a positive number: 'in' = what their sale
+ *  bills still owe us, 'out' = what our purchase bills still owe them.
+ *
+ *  This used to be max(0, balance) and max(0, -balance) off the NETTED figure,
+ *  which is wrong for a party the shop both sells to and buys from. Owed
+ *  ₹5,000 on a sale and owing ₹3,000 on a purchase nets to ₹2,000, and the
+ *  netted answer then said the customer owed ₹2,000 (reminders and pay links
+ *  would have asked them for that) and the supplier was owed nothing at all.
+ *  Both sides were wrong at once, and only for the parties where it matters.
+ *
+ *  Netting the two is a real bookkeeping act - the contra entry on the
+ *  Payments screen - and until it is recorded the two debts are separate.
+ *
+ *  Which side a PAYMENT belongs to is its ref_type, not merely its direction:
+ *  refunding a customer for returned goods is money out, but it is sale-side
+ *  money out, and it puts their bill's due back rather than reducing what we
+ *  owe a supplier. Same for a supplier's cash refund coming in.
+ *
+ *  The two sides always subtract to party_balance() exactly - there is a test
+ *  that checks that identity against every party in the database. */
+/** One side's RAW running total, which may be negative when that side has been
+ *  over-settled (a customer who paid more than they bought, a supplier we
+ *  advanced money to). Receivable-side terms minus payable-side terms is
+ *  party_balance_expr() exactly, term for term. */
+function party_side_terms_expr($alias = 'p', $dir = 'in') {
+    if ($dir === 'in') {
+        return "(GREATEST($alias.opening_balance, 0)
+            + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = $alias.id AND is_cancelled = 0), 0)
+            - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = $alias.id), 0)
+            - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'in' AND COALESCE(ref_type,'') <> 'purchase_return'), 0)
+            + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'out' AND COALESCE(ref_type,'') = 'sales_return'), 0))";
+    }
+    return "(GREATEST(-$alias.opening_balance, 0)
+        + COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = $alias.id AND is_cancelled = 0), 0)
+        - COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = $alias.id), 0)
+        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'out' AND COALESCE(ref_type,'') <> 'sales_return'), 0)
+        + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'in' AND COALESCE(ref_type,'') = 'purchase_return'), 0))";
+}
+
+/** ...and the side as a POSITIVE amount, which is what every caller wants.
+ *
+ *  An over-settled side lands on the other one, because that is what it is: a
+ *  customer who has paid more than they owe is money the shop is holding, and
+ *  it must keep showing up under "You'll Give". That also makes the two sides
+ *  subtract to party_balance() exactly, in every case - there is a test that
+ *  checks the identity against every party in the database. */
+function party_balance_side_expr($alias = 'p', $dir = 'in') {
+    $in = party_side_terms_expr($alias, 'in');
+    $out = party_side_terms_expr($alias, 'out');
+    return $dir === 'in'
+        ? "(GREATEST($in, 0) + GREATEST(-$out, 0))"
+        : "(GREATEST($out, 0) + GREATEST(-$in, 0))";
+}
+
+/** The same rule as party_balance_side_expr(), applied in PHP to the two raw
+ *  term totals. A list screen selects the two term expressions ONCE and calls
+ *  this per row, instead of asking MySQL for both sides (which evaluates the
+ *  terms four times) plus the net (a third full expression). Same numbers - a
+ *  test compares the two paths row for row. */
+function money_sides_from_terms($inTerms, $outTerms) {
+    $R = (float)$inTerms; $P = (float)$outTerms;
+    return [
+        'recv_due' => money_r(max(0.0, $R) + max(0.0, -$P)),
+        'pay_due'  => money_r(max(0.0, $P) + max(0.0, -$R)),
+        'bal'      => money_r($R - $P),
+    ];
+}
+
 function party_balance_side($party_id, $dir) {
-    $bal = party_balance($party_id);
-    return $dir === 'in' ? max(0.0, $bal) : max(0.0, -$bal);
+    return (float)val('SELECT ' . party_balance_side_expr('p', $dir) . ' FROM parties p WHERE p.id = ?', [$party_id]);
 }
 
 /** Unsettled part of a party's OPENING balance for one payment direction:

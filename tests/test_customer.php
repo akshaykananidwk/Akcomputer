@@ -290,7 +290,7 @@ t_group('money figures stay behind the permissions that own them');
 // do it - a runtime flip is impossible here because current_user() caches.
 $src = file_get_contents(dirname(__DIR__) . '/includes/customer.php');
 t_ok('the money-bearing segments are gated on payments.view',
-     (bool)preg_match('/\$bal > MONEY_EPS && can\(\'payments\.view\'\)/', $src));
+     (bool)preg_match('/\$owed > MONEY_EPS && can\(\'payments\.view\'\)/', $src));
 t_ok('margin contribution is gated on reports.profit',
      (bool)preg_match('/if \(can\(\'reports\.profit\'\)\)\s*\{\s*\$m = row/', $src));
 $page = file_get_contents(dirname(__DIR__) . '/customer.php');

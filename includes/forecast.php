@@ -85,10 +85,10 @@ function fc_balance_map(array $partyIds, $dir) {
     if (!$partyIds) return [];
     $in = implode(',', array_map('intval', array_unique($partyIds)));
     $out = [];
-    foreach (all('SELECT p.id, ' . party_balance_expr('p') . ' bal FROM parties p WHERE p.id IN (' . $in . ')') as $x) {
-        $bal = (float)$x['bal'];
-        $out[(int)$x['id']] = $dir === 'in' ? max(0.0, $bal) : max(0.0, -$bal);
-    }
+    // the SAME side-specific rule the screens cap with - netting the two sides
+    // here would have the projection expect money from a party we actually owe
+    foreach (all('SELECT p.id, ' . party_balance_side_expr('p', $dir) . ' bal FROM parties p WHERE p.id IN (' . $in . ')') as $x)
+        $out[(int)$x['id']] = (float)$x['bal'];
     return $out;
 }
 

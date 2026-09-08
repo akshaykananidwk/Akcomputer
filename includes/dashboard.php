@@ -227,14 +227,26 @@ function dash_kpis($from, $to, $ownerId = null, $locId = 0) {
  *  ONE query for every party, then summed in PHP. Deliberately not a
  *  party_balance() call per party, which is the N+1 this replaces. */
 function dash_balances() {
-    $expr = party_balance_expr('p');
-    $rows = all("SELECT p.id, p.name, p.mobile, p.credit_days, $expr bal
-                 FROM parties p WHERE p.is_active = 1 OR ABS($expr) > 0.009");
+    // Each side on its own, not the net. A party the shop both sells to and
+    // buys from owes and is owed at the same time, and netting them here made
+    // To Pay understate what the shop actually owes - the two only cancel once
+    // a contra settlement is recorded, which is a decision, not a subtraction.
+    //
+    // The two sides subtract to party_balance_expr() exactly (see money.php),
+    // so `bal` is derived here rather than selected: running that seven-
+    // subquery expression a third time cost 25ms on this shop's data for a
+    // number already implied by the other two.
+    $inT  = party_side_terms_expr('p', 'in');
+    $outT = party_side_terms_expr('p', 'out');
+    $rows = all("SELECT p.id, p.name, p.mobile, p.credit_days, p.is_active,
+                        $inT in_terms, $outT out_terms
+                 FROM parties p HAVING is_active = 1 OR ABS(in_terms - out_terms) > 0.009");
+    foreach ($rows as &$r) $r += money_sides_from_terms($r['in_terms'], $r['out_terms']);
+    unset($r);
     $recv = 0.0; $pay = 0.0; $recvCount = 0; $payCount = 0;
     foreach ($rows as $r) {
-        $b = (float)$r['bal'];
-        if ($b > 0.009) { $recv += $b; $recvCount++; }
-        elseif ($b < -0.009) { $pay += -$b; $payCount++; }
+        if ((float)$r['recv_due'] > 0.009) { $recv += (float)$r['recv_due']; $recvCount++; }
+        if ((float)$r['pay_due'] > 0.009)  { $pay  += (float)$r['pay_due'];  $payCount++; }
     }
     return ['rows' => $rows, 'receivable' => round($recv, 2), 'payable' => round($pay, 2),
             'receivable_parties' => $recvCount, 'payable_parties' => $payCount,
@@ -280,7 +292,7 @@ function dash_collection(array $bals = null) {
             'oldest_days' => 0, 'oldest_party' => '', 'customers' => [], 'overdue_customers' => 0];
 
     foreach ($byParty as $pid => $list) {
-        $cap = isset($ledger[$pid]) ? max(0.0, (float)$ledger[$pid]['bal']) : 0.0;
+        $cap = isset($ledger[$pid]) ? (float)$ledger[$pid]['recv_due'] : 0.0;   // this party's SALE side
         $adj = money_trim_dues(array_column($list, 'due'), $cap);
         $owed = 0.0; $od = 0.0; $dToday = 0.0; $dWeek = 0.0; $oldest = null;
         foreach ($list as $i => $b) {
@@ -484,7 +496,7 @@ function dash_segments(array $bals = null, array $collection = null) {
         $segs[$k] = ['count' => 0, 'sales' => 0.0, 'outstanding' => 0.0, 'last_purchase' => null, 'ids' => []];
 
     $ledger = [];
-    foreach ($bals['rows'] as $r) $ledger[(int)$r['id']] = (float)$r['bal'];
+    foreach ($bals['rows'] as $r) $ledger[(int)$r['id']] = (float)$r['recv_due'];   // sale side
     $t = today();
 
     foreach ($rows as $r) {
@@ -493,7 +505,7 @@ function dash_segments(array $bals = null, array $collection = null) {
         $billsY = (int)$r['bills_year'];
         $last = $r['last_sale'];
         $idle = $last ? days_between_dates($last, $t) : null;
-        $due = max(0.0, $ledger[$id] ?? 0.0);
+        $due = $ledger[$id] ?? 0.0;
         $mine = [];
 
         if ($last !== null) {
