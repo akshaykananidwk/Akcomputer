@@ -85,23 +85,43 @@ function party_balance($party_id) {
  *
  *  The two sides always subtract to party_balance() exactly - there is a test
  *  that checks that identity against every party in the database. */
+/** Which side of the ledger a PAYMENT row belongs to.
+ *
+ *  Not its direction. A payment carries the bill it was made against in
+ *  ref_type, and that is what decides the side: refunding a customer for
+ *  returned goods is money OUT but sale-side money out, and correcting the
+ *  paid figure on a purchase bill downwards is money IN but purchase-side
+ *  money in (purchases.php and sales.php both write those). Only a payment
+ *  with no bill behind it - a plain receipt, an advance, a contra leg - falls
+ *  back to its direction.
+ *
+ *  Returns the SQL condition that selects this side's payments. */
+function payment_side_sql($dir, $alias = '') {
+    $a = $alias ? $alias . '.' : '';
+    $rt = "COALESCE({$a}ref_type,'')";
+    return $dir === 'in'
+        ? "($rt IN ('sale','sales_return') OR ($rt NOT IN ('purchase','purchase_return') AND {$a}direction = 'in'))"
+        : "($rt IN ('purchase','purchase_return') OR ($rt NOT IN ('sale','sales_return') AND {$a}direction = 'out'))";
+}
+
 /** One side's RAW running total, which may be negative when that side has been
  *  over-settled (a customer who paid more than they bought, a supplier we
  *  advanced money to). Receivable-side terms minus payable-side terms is
- *  party_balance_expr() exactly, term for term. */
+ *  party_balance_expr() exactly, term for term: every payment lands on exactly
+ *  one side, reducing it when it settles that side and adding to it when it
+ *  gives money back. */
 function party_side_terms_expr($alias = 'p', $dir = 'in') {
+    $mine = payment_side_sql($dir);
     if ($dir === 'in') {
         return "(GREATEST($alias.opening_balance, 0)
             + COALESCE((SELECT SUM(total) FROM sales WHERE party_id = $alias.id AND is_cancelled = 0), 0)
             - COALESCE((SELECT SUM(total) FROM sales_returns WHERE party_id = $alias.id), 0)
-            - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'in' AND COALESCE(ref_type,'') <> 'purchase_return'), 0)
-            + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'out' AND COALESCE(ref_type,'') = 'sales_return'), 0))";
+            - COALESCE((SELECT SUM(IF(direction = 'in', amount, -amount)) FROM payments WHERE party_id = $alias.id AND $mine), 0))";
     }
     return "(GREATEST(-$alias.opening_balance, 0)
         + COALESCE((SELECT SUM(total) FROM purchases WHERE party_id = $alias.id AND is_cancelled = 0), 0)
         - COALESCE((SELECT SUM(total) FROM purchase_returns WHERE party_id = $alias.id), 0)
-        - COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'out' AND COALESCE(ref_type,'') <> 'sales_return'), 0)
-        + COALESCE((SELECT SUM(amount) FROM payments WHERE party_id = $alias.id AND direction = 'in' AND COALESCE(ref_type,'') = 'purchase_return'), 0))";
+        - COALESCE((SELECT SUM(IF(direction = 'out', amount, -amount)) FROM payments WHERE party_id = $alias.id AND $mine), 0))";
 }
 
 /** ...and the side as a POSITIVE amount, which is what every caller wants.

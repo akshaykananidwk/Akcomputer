@@ -324,10 +324,16 @@ $parties = all("SELECT p.*, " . party_side_terms_expr('p', 'in') . " AS in_terms
     FROM parties p HAVING p.is_active = 1 OR ABS(in_terms - out_terms) > 0.009 ORDER BY p.name");
 foreach ($parties as &$pRow) $pRow = array_merge($pRow, money_sides_from_terms($pRow['in_terms'], $pRow['out_terms']), ['balance' => money_r($pRow['in_terms'] - $pRow['out_terms'])]);
 unset($pRow);
+// The row shows the party's NET position, because that is the one number the
+// owner acts on. Showing both sides put two big figures on one line and, when
+// they cancelled exactly, a red "You'll Give" against a party who is square -
+// a debt on screen that does not exist. The two sides are still computed (the
+// bill-level caps need them, and a party live on both gets a marker below),
+// they are just not the headline.
 $totGet = 0; $totGive = 0;
 foreach ($parties as $p) {
-    if ($p['recv_due'] > 0.009) $totGet += $p['recv_due'];
-    if ($p['pay_due'] > 0.009) $totGive += $p['pay_due'];
+    if ($p['balance'] > 0.009) $totGet += $p['balance'];
+    elseif ($p['balance'] < -0.009) $totGive += -$p['balance'];
 }
 
 // Dashboard "To Receive" / "To Pay" drill-down: ?bal=get shows only parties
@@ -335,9 +341,8 @@ foreach ($parties as $p) {
 // biggest amount can be found first instead of scrolling the whole list.
 $balFilter = get('bal');
 $sortBy = get('sort', 'name');
-// a party live on both sides belongs in BOTH drill-downs, not just the bigger one
-if ($balFilter === 'get') $parties = array_values(array_filter($parties, fn($p) => $p['recv_due'] > 0.009));
-elseif ($balFilter === 'give') $parties = array_values(array_filter($parties, fn($p) => $p['pay_due'] > 0.009));
+if ($balFilter === 'get') $parties = array_values(array_filter($parties, fn($p) => $p['balance'] > 0.009));
+elseif ($balFilter === 'give') $parties = array_values(array_filter($parties, fn($p) => $p['balance'] < -0.009));
 
 // Customer-segment drill-down from the dashboard cards (?seg=vip, at_risk, …).
 // One grouped pass classifies everybody, so this costs a couple of queries
@@ -358,7 +363,7 @@ if ($segFilter && isset($segNames[$segFilter])) {
 } else {
     $segFilter = '';
 }
-if ($sortBy === 'amount') usort($parties, fn($a, $b) => max($b['recv_due'], $b['pay_due']) <=> max($a['recv_due'], $a['pay_due']));
+if ($sortBy === 'amount') usort($parties, fn($a, $b) => abs($b['balance']) <=> abs($a['balance']));
 else usort($parties, fn($a, $b) => strcasecmp($a['name'], $b['name']));
 
 $page_title = $segFilter ? $segNames[$segFilter]
@@ -395,16 +400,18 @@ include __DIR__ . '/includes/header.php';
       <?php endif; ?>
     </div>
     <div class="list-row-val">
-      <?php // both sides are shown when both are live - the net alone would
-            // hide a real debt in one direction behind a bigger one in the other
-      if ($p['recv_due'] > 0.009): ?>
-        <span class="bal-get">₹<?= money($p['recv_due']) ?><span class="bal-sub">You'll Get</span></span>
-      <?php endif; ?>
-      <?php if ($p['pay_due'] > 0.009): ?>
-        <span class="bal-give">₹<?= money($p['pay_due']) ?><span class="bal-sub">You'll Give</span></span>
-      <?php endif; ?>
-      <?php if ($p['recv_due'] <= 0.009 && $p['pay_due'] <= 0.009): ?>
+      <?php if ($p['balance'] > 0.009): ?>
+        <span class="bal-get">₹<?= money($p['balance']) ?><span class="bal-sub">You'll Get</span></span>
+      <?php elseif ($p['balance'] < -0.009): ?>
+        <span class="bal-give">₹<?= money(-$p['balance']) ?><span class="bal-sub">You'll Give</span></span>
+      <?php else: ?>
         <span class="muted">₹0.00</span>
+      <?php endif; ?>
+      <?php // a party with bills running on BOTH sides is worth flagging - the
+            // net hides that there is something to settle - but as a quiet
+            // marker, not a second amount competing with the first
+      if ($p['recv_due'] > 0.009 && $p['pay_due'] > 0.009): ?>
+        <span class="bal-sub" title="Sale side ₹<?= money($p['recv_due']) ?> · Purchase side ₹<?= money($p['pay_due']) ?>">↔ બંને બાજુ</span>
       <?php endif; ?>
     </div>
   </a>

@@ -227,10 +227,11 @@ function dash_kpis($from, $to, $ownerId = null, $locId = 0) {
  *  ONE query for every party, then summed in PHP. Deliberately not a
  *  party_balance() call per party, which is the N+1 this replaces. */
 function dash_balances() {
-    // Each side on its own, not the net. A party the shop both sells to and
-    // buys from owes and is owed at the same time, and netting them here made
-    // To Pay understate what the shop actually owes - the two only cancel once
-    // a contra settlement is recorded, which is a decision, not a subtraction.
+    // The CARD totals are the net position per party, matching the Parties list
+    // you land on when you tap them. Each party's two sides are carried on the
+    // row as well, because the collection queue and the segments cap bills on
+    // the SALE side alone - netting there was what wrote a customer's own bill
+    // down by what the shop happened to owe them.
     //
     // The two sides subtract to party_balance_expr() exactly (see money.php),
     // so `bal` is derived here rather than selected: running that seven-
@@ -245,8 +246,9 @@ function dash_balances() {
     unset($r);
     $recv = 0.0; $pay = 0.0; $recvCount = 0; $payCount = 0;
     foreach ($rows as $r) {
-        if ((float)$r['recv_due'] > 0.009) { $recv += (float)$r['recv_due']; $recvCount++; }
-        if ((float)$r['pay_due'] > 0.009)  { $pay  += (float)$r['pay_due'];  $payCount++; }
+        $b = (float)$r['bal'];
+        if ($b > 0.009) { $recv += $b; $recvCount++; }
+        elseif ($b < -0.009) { $pay += -$b; $payCount++; }
     }
     return ['rows' => $rows, 'receivable' => round($recv, 2), 'payable' => round($pay, 2),
             'receivable_parties' => $recvCount, 'payable_parties' => $payCount,

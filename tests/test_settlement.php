@@ -409,3 +409,57 @@ foreach ([['includes/customer.php', 3], ['includes/dashboard.php', 1], ['parties
 $cust = file_get_contents(dirname(__DIR__) . '/includes/customer.php');
 t_ok('no collection cap is taken from the netted balance any more',
      strpos($cust, "max(0.0, (float)\$bal)") === false && strpos($cust, "max(0.0, (float)\$p['bal'])") === false);
+
+t_group('a payment lands on the side of the bill it was made against');
+// purchases.php and sales.php both write a payment in the OPPOSITE direction
+// when the owner corrects a bill's paid figure downwards: a sale correction is
+// direction 'out' with ref_type 'sale', a purchase correction is 'in' with
+// ref_type 'purchase'. Reading only the direction put those on the wrong side.
+list($ep, $es, $eb) = ts_both_party(2000, 3000);
+q("INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
+   VALUES (?, 'in', 2000, 'cash', 'sale', ?, '2026-01-01', 'billed', 1)", [$ep, $es]);
+q("INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
+   VALUES (?, 'out', 2000, 'cash', 'sale', ?, '2026-01-02', 'paid corrected down', 1)", [$ep, $es]);
+t_eq('the correction cancels on the SALE side', party_balance_side($ep, 'in'), 2000.0);
+t_eq('...and never touches the purchase side', party_balance_side($ep, 'out'), 3000.0);
+t_eq('...with the net agreeing', party_balance($ep), -1000.0);
+
+// the mirror: a purchase paid figure corrected down is direction 'in'
+list($ep2, $es2, $eb2) = ts_both_party(2000, 3000);
+q("INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
+   VALUES (?, 'out', 3000, 'cash', 'purchase', ?, '2026-01-05', 'paid', 1)", [$ep2, $eb2]);
+q("INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
+   VALUES (?, 'in', 3000, 'cash', 'purchase', ?, '2026-01-06', 'paid corrected down', 1)", [$ep2, $eb2]);
+t_eq('the correction cancels on the PURCHASE side', party_balance_side($ep2, 'out'), 3000.0);
+t_eq('...and never touches the sale side', party_balance_side($ep2, 'in'), 2000.0);
+
+// a payment with no bill behind it still falls back to its direction
+list($ep3, , ) = ts_both_party(2000, 3000);
+q("INSERT INTO payments (party_id, direction, amount, mode, pay_date, notes, created_by)
+   VALUES (?, 'in', 500, 'cash', '2026-01-09', 'plain receipt', 1)", [$ep3]);
+t_eq('a plain receipt reduces what they owe us', party_balance_side($ep3, 'in'), 1500.0);
+t_eq('...and leaves what we owe them alone', party_balance_side($ep3, 'out'), 3000.0);
+$srcM = file_get_contents(dirname(__DIR__) . '/includes/money.php');
+t_ok('the side rule is written once', substr_count($srcM, 'function payment_side_sql') === 1);
+t_ok('...and both term expressions use it', substr_count($srcM, 'payment_side_sql($dir)') === 1
+     && substr_count($srcM, '$mine = payment_side_sql') === 1);
+
+t_group('the Parties row shows one figure, not two');
+// Two big amounts on one line - and a red "You'll Give" against a party whose
+// two sides cancel exactly - reads as a debt that does not exist. The row is
+// the NET position; the two sides are a quiet marker and a tooltip.
+$pl = file_get_contents(dirname(__DIR__) . '/parties.php');
+t_ok('the amount shown is the net balance', substr_count($pl, "money(\$p['balance'])") === 1
+     && substr_count($pl, "money(-\$p['balance'])") === 1);
+t_ok('neither side is printed as its own headline amount',
+     strpos($pl, "bal-get\">₹<?= money(\$p['recv_due'])") === false
+     && strpos($pl, "bal-give\">₹<?= money(\$p['pay_due'])") === false);
+t_ok('a two-way party is still flagged', strpos($pl, 'બંને બાજુ') !== false);
+t_ok('...with both figures in the tooltip, not on the row',
+     strpos($pl, "title=\"Sale side ₹<?= money(\$p['recv_due']) ?> · Purchase side ₹<?= money(\$p['pay_due']) ?>\"") !== false);
+t_ok('the drill-downs follow the same net rule',
+     substr_count($pl, "fn(\$p) => \$p['balance'] > 0.009") === 1
+     && substr_count($pl, "fn(\$p) => \$p['balance'] < -0.009") === 1);
+// ...while the bill-level caps stay on their own side, which was the money fix
+$mny = file_get_contents(dirname(__DIR__) . '/includes/money.php');
+t_ok('bill dues are still capped per side', strpos($mny, 'party_balance_side($pid, $dir)') !== false);
