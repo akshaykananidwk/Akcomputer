@@ -940,3 +940,132 @@ var ReturnMoney = {
     loadBills();
   }
 };
+
+// ---------------------------------------------------------------------------
+// PartyPick - type-to-search over a party <select>.
+//
+// The shop has hundreds of parties now and scrolling a native dropdown to find
+// one while a customer waits is the slowest part of writing a bill. This turns
+// the existing select into a search box that matches on NAME or MOBILE, the
+// same way the item box already works.
+//
+// The <select> stays the source of truth: it keeps its id, its options and its
+// data-* attributes, it is what the form posts, and picking a result sets its
+// value and fires 'change'. So every script that reads party_id - credit days,
+// loyalty points, the customer's last price on the item search, quick-add -
+// keeps working untouched. If this script never runs, the plain dropdown is
+// still sitting there and the screen works exactly as before.
+// ---------------------------------------------------------------------------
+var PartyPick = {
+  init: function (selectId, placeholder) {
+    var sel = document.getElementById(selectId);
+    if (!sel || sel.dataset.pickReady) return;
+    sel.dataset.pickReady = '1';
+
+    var wrap = document.createElement('div');
+    wrap.className = 'isearch-wrap';
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.autocomplete = 'off';
+    inp.placeholder = placeholder || 'નામ કે મોબાઇલ ટાઇપ કરો…';
+    var res = document.createElement('div');
+    res.className = 'isearch-results';
+    wrap.appendChild(inp);
+    wrap.appendChild(res);
+    sel.parentNode.insertBefore(wrap, sel);
+    sel.style.display = 'none';
+
+    var cur = -1;   // highlighted row
+
+    function label() {
+      var o = sel.options[sel.selectedIndex];
+      return o ? o.textContent.trim() : '';
+    }
+    function showSelection() { inp.value = label(); }
+
+    function matches(qy) {
+      qy = qy.trim().toLowerCase();
+      var out = [];
+      for (var i = 0; i < sel.options.length; i++) {
+        var o = sel.options[i];
+        var name = o.textContent.trim();
+        var mob = (o.dataset.mobile || '');
+        // The blank row ("walk-in" / "-- select --") is offered only on an
+        // EMPTY box. Keeping it in the filtered list put it above the party
+        // just typed, so Enter picked walk-in instead - the one keystroke a
+        // bill screen must never get wrong. Clearing the box brings it back.
+        if (!o.value) { if (qy === '') out.push({ i: i, name: name, mob: mob, blank: true }); continue; }
+        if (qy === '' || name.toLowerCase().indexOf(qy) !== -1 || mob.indexOf(qy) !== -1)
+          out.push({ i: i, name: name, mob: mob, blank: false });
+        if (out.length >= 60) break;
+      }
+      return out;
+    }
+
+    function render(qy) {
+      var list = matches(qy);
+      res.innerHTML = '';
+      cur = -1;
+      if (!list.length) {
+        var none = document.createElement('div');
+        none.className = 'ir';
+        none.innerHTML = '<small>કોઈ પાર્ટી મળી નહીં</small>';
+        res.appendChild(none);
+      }
+      list.forEach(function (m, k) {
+        var d = document.createElement('div');
+        d.className = 'ir';
+        d.innerHTML = m.blank
+          ? '<strong>' + m.name + '</strong>'
+          : '<strong>' + m.name + '</strong>' + (m.mob ? '<small>' + m.mob + '</small>' : '');
+        d.addEventListener('mousedown', function (ev) { ev.preventDefault(); pick(m.i); });
+        d.dataset.k = k;
+        res.appendChild(d);
+      });
+      res.classList.add('show');
+    }
+
+    function pick(optIndex) {
+      sel.selectedIndex = optIndex;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      showSelection();
+      res.classList.remove('show');
+    }
+
+    function move(step) {
+      var rows = res.querySelectorAll('.ir[data-k]');
+      if (!rows.length) return;
+      if (cur >= 0 && rows[cur]) rows[cur].style.background = '';
+      cur += step;
+      if (cur < 0) cur = rows.length - 1;
+      if (cur >= rows.length) cur = 0;
+      rows[cur].style.background = '#eff6ff';
+      rows[cur].scrollIntoView({ block: 'nearest' });
+    }
+
+    inp.addEventListener('focus', function () { inp.select(); render(''); });
+    inp.addEventListener('input', function () { render(inp.value); });
+    inp.addEventListener('keydown', function (ev) {
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); move(1); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); move(-1); }
+      else if (ev.key === 'Enter') {
+        // never submit the bill from this box - Enter picks a party
+        ev.preventDefault();
+        var rows = res.querySelectorAll('.ir[data-k]');
+        var row = cur >= 0 ? rows[cur] : rows[0];
+        if (row) { var m = matches(inp.value)[parseInt(row.dataset.k, 10)]; if (m) pick(m.i); }
+      } else if (ev.key === 'Escape') { res.classList.remove('show'); showSelection(); inp.blur(); }
+    });
+    inp.addEventListener('blur', function () {
+      // typing something that was never picked must not look like a selection
+      setTimeout(function () { res.classList.remove('show'); showSelection(); }, 120);
+    });
+    document.addEventListener('click', function (ev) {
+      if (!wrap.contains(ev.target)) res.classList.remove('show');
+    });
+    // something else changed the party (quick-add, edit mode, a preset link)
+    sel.addEventListener('change', showSelection);
+
+    showSelection();
+  }
+};

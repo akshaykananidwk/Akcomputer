@@ -1058,6 +1058,9 @@ if ($action === 'new' || $action === 'edit') {
           if (p) { p.value = grand.toFixed(2); if (due) due.textContent = '0.00'; }
         }
       };
+      // type-to-search over the party list (hundreds of them now) - the select
+      // itself is untouched, so everything below still reads it the same way
+      PartyPick.init('party_id', 'ગ્રાહકનું નામ કે મોબાઇલ ટાઇપ કરો…');
       document.getElementById('party_id').addEventListener('change', function () {
         var o = this.options[this.selectedIndex];
         if (this.value) {

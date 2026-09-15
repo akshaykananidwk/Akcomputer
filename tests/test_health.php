@@ -370,3 +370,36 @@ foreach (array_merge($pages, glob($_ROOT . '/includes/*.php')) as $pf) {
     }
 }
 t_eq('every preg_split on post()/get() casts to string first', implode(', ', $bad), '');
+
+// --------------------------------------------- searching for a party by name --
+// The shop has hundreds of parties, so scrolling a native dropdown to find one
+// while a customer waits was the slowest part of writing a bill. Both bill
+// screens now search by name or mobile.
+t_group('the bill screens can search the party list');
+$_ROOT = dirname(__DIR__);
+$appJs2 = file_get_contents($_ROOT . '/assets/app.js');
+t_ok('the search widget exists', strpos($appJs2, 'var PartyPick = {') !== false);
+t_ok('it matches on the mobile number too', strpos($appJs2, "mob.indexOf(qy) !== -1") !== false);
+// the blank row above a typed match is how Enter picked "walk-in" instead of
+// the party just searched for - the one keystroke a bill screen must not fumble
+t_ok('the blank row is offered only on an empty box',
+     strpos($appJs2, "if (!o.value) { if (qy === '') out.push(") !== false);
+t_ok('picking fires change, so everything reading the party still works',
+     strpos($appJs2, "sel.dispatchEvent(new Event('change', { bubbles: true }))") !== false);
+t_ok('an outside change (quick-add, edit mode) refreshes the box',
+     strpos($appJs2, "sel.addEventListener('change', showSelection)") !== false);
+
+foreach (['sales.php' => 'party_id', 'purchases.php' => 'party_id'] as $f => $id) {
+    $src = file_get_contents($_ROOT . '/' . $f);
+    t_ok($f . ' turns its party list into a search box', strpos($src, "PartyPick.init('" . $id . "'") !== false);
+    // the <select> must survive untouched - it is what the form posts and what
+    // every other script on the page reads
+    t_ok($f . ' still posts a real <select name="party_id">', strpos($src, 'name="party_id" id="party_id"') !== false);
+    t_ok($f . ' keeps the mobile on each option, so it is searchable',
+         strpos($src, 'data-mobile="<?= e($p[\'mobile\']) ?>"') !== false);
+}
+// ...and purchases.php has to actually SELECT the mobile for that to work
+t_ok('the purchase screen fetches the mobile it renders',
+     strpos(file_get_contents($_ROOT . '/purchases.php'), "SELECT id, name, mobile, credit_days FROM parties") !== false);
+t_ok('a quick-added supplier reaches the search box',
+     strpos(file_get_contents($_ROOT . '/purchases.php'), "sel.dispatchEvent(new Event('change'));") !== false);

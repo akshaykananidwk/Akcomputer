@@ -340,7 +340,7 @@ if ($action === 'new' || $action === 'edit') {
         }
         unset($_ei);
     }
-    $parties = all("SELECT id, name, credit_days FROM parties WHERE is_active = 1 ORDER BY name");
+    $parties = all("SELECT id, name, mobile, credit_days FROM parties WHERE is_active = 1 ORDER BY name");
     $page_title = $isEdit ? 'Edit Purchase #' . $editPurchase['id'] : 'New Purchase';
     include __DIR__ . '/includes/header.php';
     ?>
@@ -360,7 +360,7 @@ if ($action === 'new' || $action === 'edit') {
             <select name="party_id" id="party_id" required>
               <option value="">-- select --</option>
               <?php foreach ($parties as $p): ?>
-              <option value="<?= $p['id'] ?>" data-credit="<?= $p['credit_days'] ?>"><?= e($p['name']) ?></option>
+              <option value="<?= $p['id'] ?>" data-credit="<?= $p['credit_days'] ?>" data-mobile="<?= e($p['mobile']) ?>"><?= e($p['name']) ?></option>
               <?php endforeach; ?>
             </select>
             <p class="muted mt"><a href="#" onclick="document.getElementById('qpModal').style.display='block';return false">+ Add new party</a></p>
@@ -545,10 +545,14 @@ if ($action === 'new' || $action === 'edit') {
             var sel = document.getElementById('party_id');
             var o = document.createElement('option');
             o.value = d.id; o.textContent = d.name; o.selected = true;
+            o.dataset.mobile = document.getElementById('qp_mobile').value; o.dataset.credit = 0;
             sel.appendChild(o);
+            sel.dispatchEvent(new Event('change'));   // so the search box shows the new party
             document.getElementById('qpModal').style.display = 'none';
           });
       }
+      // type-to-search over the supplier list; the select stays as it was
+      PartyPick.init('party_id', 'સપ્લાયરનું નામ કે મોબાઇલ ટાઇપ કરો…');
     </script>
     <?php
     include __DIR__ . '/includes/footer.php';
