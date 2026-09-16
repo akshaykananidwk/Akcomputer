@@ -324,3 +324,95 @@ catch (PDOException $e) { $threw = (string)($e->errorInfo[1] ?? ''); }
 t_eq('inserting over a sold serial is a duplicate-key error', $threw, '1062');
 t_eq('...which the shared helper avoids entirely',
      serial_put_in_stock($dupItem, 'TSS-DUPE', $loc)['result'], 'restored');
+
+// ------------------------------- a warranty replacement reaches BOTH books --
+// The replacement serial used to be written into item_serials with no location
+// and no stock movement at all: a unit physically arrived, the serial book said
+// "in stock", and the quantity book never heard about it. That is the mismatch
+// the shop kept having to clean up by hand on the Serial Repair screen.
+t_group('a warranty replacement moves the stock, not just the serial book');
+
+function tw_claim($itemId, $sn, $customer = '', $locId = null) {
+    global $loc;
+    q("INSERT INTO warranty_claims (claim_no, item_id, serial_no, customer_name, status, received_date, location_id, created_by)
+       VALUES (?,?,?,?, 'received_back', CURDATE(), ?, 1)",
+      ['TWC-' . bin2hex(random_bytes(3)), $itemId, $sn, $customer, $locId ?: $loc]);
+    return row('SELECT * FROM warranty_claims WHERE id = ?', [insert_id()]);
+}
+function tw_ser($itemId, $sn) { return row('SELECT status, location_id, sale_id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$itemId, $sn]); }
+
+// the shop's own piece, still counted on the shelf: one good unit before,
+// one good unit after, so the COUNT must not move - but the serials must
+$wi = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,10) ON DUPLICATE KEY UPDATE qty = 10', [$wi, $loc]);
+ts_serial($wi, 'TW-OLD1', 'in_stock');
+q("UPDATE item_serials SET location_id = ? WHERE item_id = ? AND serial_no = 'TW-OLD1'", [$loc, $wi]);
+$msg = warranty_apply_replacement(tw_claim($wi, 'TW-OLD1'), 'TW-OLD1', 'TW-NEW1', $loc);
+t_eq('the shelf count is unchanged', stock_qty($wi, $loc), 10.0);
+t_eq('the faulty serial is marked replaced', tw_ser($wi, 'TW-OLD1')['status'], 'replaced');
+t_eq('the replacement is in stock', tw_ser($wi, 'TW-NEW1')['status'], 'in_stock');
+t_eq('...at a real location, not nowhere', (int)tw_ser($wi, 'TW-NEW1')['location_id'], $loc);
+t_ok('...and the screen says so', strpos($msg, 'TW-NEW1') !== false);
+
+// the faulty one had already been taken off the shelf by hand, so the
+// replacement is a unit the shop genuinely did not have: +1
+$wi2 = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,10) ON DUPLICATE KEY UPDATE qty = 10', [$wi2, $loc]);
+ts_serial($wi2, 'TW-OLD2', 'adjusted_out');
+warranty_apply_replacement(tw_claim($wi2, 'TW-OLD2'), 'TW-OLD2', 'TW-NEW2', $loc);
+t_eq('the replacement is added to the count', stock_qty($wi2, $loc), 11.0);
+t_eq('...and is in stock', tw_ser($wi2, 'TW-NEW2')['status'], 'in_stock');
+// the movement is traceable, not a silent edit of the number
+t_ok('a stock-ledger line records it',
+     (int)val("SELECT COUNT(*) FROM stock_ledger WHERE item_id = ? AND ref_type = 'warranty_replace' AND change_qty > 0", [$wi2]) >= 1);
+
+// a CUSTOMER's piece: the replacement belongs to them and must NOT become
+// sellable stock, or it can be sold to somebody else while they wait for it
+$wi3 = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,10) ON DUPLICATE KEY UPDATE qty = 10', [$wi3, $loc]);
+ts_serial($wi3, 'TW-OLD3', 'sold', 4242);
+$msg3 = warranty_apply_replacement(tw_claim($wi3, 'TW-OLD3', 'Ramesh'), 'TW-OLD3', 'TW-NEW3', $loc);
+t_eq('the count does not move for a customer replacement', stock_qty($wi3, $loc), 10.0);
+t_eq('the replacement is recorded as sold', tw_ser($wi3, 'TW-NEW3')['status'], 'sold');
+t_eq('...against the same bill, so the warranty history stays joined', (int)tw_ser($wi3, 'TW-NEW3')['sale_id'], 4242);
+t_ok('...and the screen explains why it is not in stock', strpos($msg3, 'સ્ટોકમાં ઉમેર્યો નથી') !== false);
+
+// a claim that names a customer is theirs even when the old serial was never
+// registered - there is no serial row to read a status from
+$wi4 = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,10) ON DUPLICATE KEY UPDATE qty = 10', [$wi4, $loc]);
+warranty_apply_replacement(tw_claim($wi4, 'TW-GONE', 'Suresh'), 'TW-GONE', 'TW-NEW4', $loc);
+t_eq('an unregistered customer unit still does not touch stock', stock_qty($wi4, $loc), 10.0);
+t_eq('...and the replacement is theirs', tw_ser($wi4, 'TW-NEW4')['status'], 'sold');
+
+t_group('saving the same claim twice does not add the unit twice');
+$wi5 = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,10) ON DUPLICATE KEY UPDATE qty = 10', [$wi5, $loc]);
+ts_serial($wi5, 'TW-OLD5', 'adjusted_out');
+$c5 = tw_claim($wi5, 'TW-OLD5');
+warranty_apply_replacement($c5, 'TW-OLD5', 'TW-NEW5', $loc);
+$after = stock_qty($wi5, $loc);
+t_eq('the first save adds it', $after, 11.0);
+t_eq('the second save is a no-op', warranty_apply_replacement($c5, 'TW-OLD5', 'TW-NEW5', $loc), '');
+t_eq('...and the count stays put', stock_qty($wi5, $loc), 11.0);
+t_eq('...with one serial row, not two',
+     (int)val('SELECT COUNT(*) FROM item_serials WHERE item_id = ? AND serial_no = ?', [$wi5, 'TW-NEW5']), 1);
+t_eq('no replacement serial at all does nothing', warranty_apply_replacement($c5, 'TW-OLD5', '', $loc), '');
+t_eq('the same serial back again does nothing', warranty_apply_replacement($c5, 'TW-X', 'TW-X', $loc), '');
+
+t_group('a stock adjustment can carry serial numbers for any item');
+$st = file_get_contents(dirname(__DIR__) . '/stock.php');
+t_ok('the serial box is no longer hidden for untracked items',
+     strpos($st, 'id="adjSnBox" style="flex-basis:100%"') !== false);
+t_ok('the label says whether it is required or optional',
+     strpos($st, 'required for this item') !== false && strpos($st, 'optional') !== false);
+t_ok('a flagged item still cannot be adjusted without them',
+     strpos($st, "\$item['serial_tracked'] && !\$sns") !== false);
+t_ok('a mismatched count is refused for ANY item',
+     strpos($st, '$sns && count($sns) != abs($delta)') !== false);
+t_ok('putting a serial back goes through the one shared rule',
+     strpos($st, 'serial_put_in_stock($item_id, $sn, $loc_id') !== false);
+$wa = file_get_contents(dirname(__DIR__) . '/warranty.php');
+t_ok('the warranty screen goes through the one replacement rule',
+     strpos($wa, 'warranty_apply_replacement($claimRow') !== false);
+t_ok('...and no longer writes the serial by hand', strpos($wa, 'INSERT INTO item_serials') === false);

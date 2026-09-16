@@ -21,21 +21,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
            back_tracking=?, delivered_date=?, replacement_serial=?, notes=? WHERE id=?', array_merge($data, [$id]));
         flash('Claim updated.');
 
-        // replacement serial chain: old serial -> 'replaced', new serial added
-        // to the database keeping the same sale/warranty so history stays linked
-        $repl = trim(post('replacement_serial'));
-        $origSn = trim(post('serial_no'));
-        if ($repl !== '' && $origSn !== '' && $repl !== $origSn) {
-            $old = row('SELECT * FROM item_serials WHERE serial_no = ? ORDER BY id DESC LIMIT 1', [$origSn]);
-            if ($old && !row('SELECT id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$old['item_id'], $repl])) {
-                q("INSERT INTO item_serials (item_id, serial_no, status, purchase_id, sale_id, warranty_months, warranty_expiry)
-                   VALUES (?,?,?,?,?,?,?)",
-                  [$old['item_id'], $repl, $old['status'] === 'sold' || $old['status'] === 'claim' ? 'sold' : 'in_stock',
-                   $old['purchase_id'], $old['sale_id'], $old['warranty_months'], $old['warranty_expiry']]);
-                q("UPDATE item_serials SET status = 'replaced' WHERE id = ?", [$old['id']]);
-                flash("Replacement serial $repl added to the database (old $origSn marked 'replaced').", 'info');
-            }
-        }
+        // The company sent a replacement back. warranty_apply_replacement()
+        // moves BOTH books - the serial and the quantity - because writing the
+        // serial alone (what this used to do) left the shop with a unit on the
+        // shelf that the stock figure had never heard of.
+        $claimRow = row('SELECT * FROM warranty_claims WHERE id = ?', [$id]);
+        $msg = warranty_apply_replacement($claimRow, post('serial_no'), post('replacement_serial'), $u['location_id']);
+        if ($msg !== '') flash($msg, 'info');
 
         if (post('notify') && post('customer_mobile')) {
             $stMsg = ['sent' => 'has been sent to the company for warranty.',

@@ -928,6 +928,78 @@ function serial_put_in_stock($itemId, $serialNo, $locId, $warrantyMonths = null)
     return ['result' => 'added', 'from' => ''];
 }
 
+/** A warranty claim came back with a REPLACEMENT serial. Put the books right.
+ *
+ *  What was broken: the replacement serial was written into item_serials with
+ *  no location and no stock movement at all. So a unit physically arrived in
+ *  the shop, the serial book said "in stock", and the quantity book never
+ *  heard about it - exactly the mismatch the Serial Repair screen exists to
+ *  clean up afterwards.
+ *
+ *  Whose unit it was decides everything, and there are only two answers:
+ *
+ *  - THE CUSTOMER'S. The claim names a customer, or the old serial is already
+ *    sold. The replacement belongs to them and they are coming to collect it,
+ *    so it is recorded as sold against the same bill and does NOT enter
+ *    sellable stock. Putting it there would let it be sold to somebody else
+ *    while the owner is still holding it for the first customer.
+ *
+ *  - THE SHOP'S OWN. No customer on the claim and the old serial was not sold.
+ *    The replacement is ours, so it goes into stock properly: the serial at a
+ *    real location AND the quantity.
+ *
+ *  For a shop unit the faulty one leaves at the same time, so a piece that was
+ *  still counted on the shelf is taken off it. One good unit before, one good
+ *  unit after - and if the faulty one had already been taken out by hand, only
+ *  the replacement is added. Either way the count ends up right, which is the
+ *  whole point.
+ *
+ *  Returns a plain-language line for the screen, or '' when there was nothing
+ *  to do. */
+function warranty_apply_replacement(array $claim, $origSn, $repl, $fallbackLoc = null) {
+    $repl = trim((string)$repl);
+    $origSn = trim((string)$origSn);
+    if ($repl === '' || $repl === $origSn) return '';
+
+    $old = $origSn === '' ? null
+        : row('SELECT * FROM item_serials WHERE serial_no = ? ORDER BY id DESC LIMIT 1', [$origSn]);
+    $itemId = (int)($old['item_id'] ?? $claim['item_id'] ?? 0);
+    if (!$itemId) return '';   // nothing to attach the replacement to
+
+    // already recorded (the claim was saved twice) - never write it again
+    if (row('SELECT id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$itemId, $repl])) return '';
+
+    $hasCustomer = !empty($claim['party_id']) || trim((string)($claim['customer_name'] ?? '')) !== '';
+    $wasSold = $old && in_array($old['status'], ['sold', 'claim'], true);
+    $forCustomer = $hasCustomer || $wasSold;
+
+    $locId = (int)($old['location_id'] ?? 0) ?: (int)($claim['location_id'] ?? 0) ?: (int)$fallbackLoc;
+
+    if ($forCustomer) {
+        q("INSERT INTO item_serials (item_id, serial_no, status, purchase_id, sale_id, warranty_months, warranty_expiry)
+           VALUES (?,?,'sold',?,?,?,?)",
+          [$itemId, $repl, $old['purchase_id'] ?? null, $old['sale_id'] ?? null,
+           $old['warranty_months'] ?? 0, $old['warranty_expiry'] ?? null]);
+        if ($old) q("UPDATE item_serials SET status = 'replaced' WHERE id = ?", [$old['id']]);
+        return 'સિરિયલ ' . $repl . ' ગ્રાહકના નામે નોંધ્યો (જૂનો ' . $origSn . ' replaced). '
+             . 'આ ગ્રાહકનો માલ છે એટલે સ્ટોકમાં ઉમેર્યો નથી.';
+    }
+
+    // the shop's own piece: the faulty one leaves the shelf, the good one lands
+    if ($old && $old['status'] === 'in_stock') {
+        adjust_stock($itemId, (int)$old['location_id'] ?: $locId, -1, 'warranty_replace', $claim['id'] ?? null,
+                     'Faulty ' . $origSn . ' sent for warranty replacement');
+    }
+    if ($old) q("UPDATE item_serials SET status = 'replaced' WHERE id = ?", [$old['id']]);
+
+    $r = serial_put_in_stock($itemId, $repl, $locId, $old['warranty_months'] ?? null);
+    if ($r['result'] !== 'already')
+        adjust_stock($itemId, $locId, 1, 'warranty_replace', $claim['id'] ?? null,
+                     'Replacement ' . $repl . ' received from the company');
+    return 'સિરિયલ ' . $repl . ' સ્ટોકમાં ઉમેરી દીધો'
+         . ($origSn !== '' ? ' (જૂનો ' . $origSn . ' replaced)' : '') . '.';
+}
+
 // ---------- Misc ----------
 function share_token() { return bin2hex(random_bytes(16)); }
 

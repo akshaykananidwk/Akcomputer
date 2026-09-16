@@ -16,22 +16,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'adjust') {
         // so the serial book always matches the quantity book. Adding stock
         // registers the serials as in_stock; reducing marks them adjusted_out.
         $sns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', (string)post('serials')))));
-        if ($item && $item['serial_tracked']) {
-            if (count($sns) != abs($delta)) {
-                flash('This item is serial-tracked: enter exactly ' . abs($delta) . ' serial number(s) for the adjustment.', 'error');
-                redirect('stock.php');
-            }
-            foreach ($sns as $sn) {
-                $srow = row('SELECT id, status FROM item_serials WHERE item_id=? AND serial_no=?', [$item_id, $sn]);
-                if ($delta > 0) {
-                    if ($srow && $srow['status'] === 'in_stock') { flash("Serial $sn is already in stock.", 'error'); redirect('stock.php'); }
-                    if ($srow) q("UPDATE item_serials SET status='in_stock', location_id=?, sale_id=NULL WHERE id=?", [$loc_id, $srow['id']]);
-                    else q("INSERT INTO item_serials (item_id, serial_no, location_id, status, warranty_months) VALUES (?,?,?,'in_stock',?)",
-                           [$item_id, $sn, $loc_id, (int)$item['warranty_months']]);
-                } else {
-                    if (!$srow || $srow['status'] !== 'in_stock') { flash("Serial $sn is not in stock, so it can't be adjusted out.", 'error'); redirect('stock.php'); }
-                    q("UPDATE item_serials SET status='adjusted_out', location_id=NULL WHERE id=?", [$srow['id']]);
-                }
+        // Serial numbers may be given for ANY item, not only one flagged
+        // serial-tracked in the item master. Plenty of goods arrive with a
+        // serial on the box while the flag was never ticked, and refusing to
+        // record it just meant the number was lost. A flagged item still MUST
+        // have them (that is what the flag is for); for anything else the box
+        // is optional - but if it is used, the count still has to match, or a
+        // silent mismatch is exactly what gets created.
+        if ($sns && count($sns) != abs($delta)) {
+            flash('You entered ' . count($sns) . ' serial number(s) for a quantity of ' . abs($delta)
+                . ' — they must match, otherwise the serial list and the stock figure stop agreeing.', 'error');
+            redirect('stock.php');
+        }
+        if ($item && $item['serial_tracked'] && !$sns) {
+            flash('This item is serial-tracked: enter exactly ' . abs($delta) . ' serial number(s) for the adjustment.', 'error');
+            redirect('stock.php');
+        }
+        foreach ($sns as $sn) {
+            $srow = row('SELECT id, status FROM item_serials WHERE item_id=? AND serial_no=?', [$item_id, $sn]);
+            if ($delta > 0) {
+                if ($srow && $srow['status'] === 'in_stock') { flash("Serial $sn is already in stock.", 'error'); redirect('stock.php'); }
+                // one shared rule for putting a serial back on the shelf, whatever
+                // state it was in - see serial_put_in_stock() in helpers.php
+                serial_put_in_stock($item_id, $sn, $loc_id, (int)($item['warranty_months'] ?? 0));
+            } else {
+                if (!$srow || $srow['status'] !== 'in_stock') { flash("Serial $sn is not in stock, so it can't be adjusted out.", 'error'); redirect('stock.php'); }
+                q("UPDATE item_serials SET status='adjusted_out', location_id=NULL WHERE id=?", [$srow['id']]);
             }
         }
         adjust_stock($item_id, $loc_id, $delta, 'manual_adjust', null, post('reason'));
@@ -204,14 +214,20 @@ include __DIR__ . '/includes/header.php';
       <select name="location_id"><?php foreach ($locations as $l): ?><option value="<?= $l['id'] ?>"><?= e($l['name']) ?></option><?php endforeach; ?></select></div>
     <div><label>+/- Qty</label><input type="number" step="any" name="delta" required placeholder="-2 or 5"></div>
     <div><label>Reason</label><input type="text" name="reason" required placeholder="opening / damage / count fix"></div>
-    <div id="adjSnBox" style="display:none;flex-basis:100%"><label>Serial numbers (one per line — must match the qty)</label>
+    <div id="adjSnBox" style="flex-basis:100%"><label id="adjSnLbl">Serial numbers (one per line — must match the qty)</label>
       <textarea name="serials" rows="2" placeholder="SN001&#10;SN002"></textarea></div>
     <button class="btn btn-sm" type="submit">Adjust</button>
   </form>
   <script>
+    // The box is always there now - goods often carry a serial even when the
+    // item master was never flagged, and hiding it meant that number was lost.
+    // The label says whether it is required or just available.
     function adjSN() {
       var sel = document.getElementById('adjItem');
-      document.getElementById('adjSnBox').style.display = sel.options[sel.selectedIndex].dataset.sn === '1' ? '' : 'none';
+      var tracked = sel.options[sel.selectedIndex].dataset.sn === '1';
+      document.getElementById('adjSnLbl').textContent = tracked
+        ? 'Serial numbers — required for this item (one per line, must match the qty)'
+        : 'Serial numbers (optional — one per line, must match the qty if used)';
     }
     adjSN();
   </script>
