@@ -928,6 +928,106 @@ function serial_put_in_stock($itemId, $serialNo, $locId, $warrantyMonths = null)
     return ['result' => 'added', 'from' => ''];
 }
 
+/** The whole life of one piece of hardware, oldest first.
+ *
+ *  A serial that has been replaced twice is three rows in item_serials with
+ *  nothing obvious joining them. This walks the chain from its root, so a
+ *  lookup on the NEWEST serial can still show the original purchase, the
+ *  original bill, and the date the warranty actually started - the one fact
+ *  that decides whether a claim is still good.
+ *
+ *  It follows root_serial_id when it is set and falls back to walking
+ *  replaced_by_id, so serials replaced before v62 still join up. */
+function serial_chain($serialNo) {
+    $start = row('SELECT * FROM item_serials WHERE serial_no = ? ORDER BY id DESC LIMIT 1', [$serialNo]);
+    if (!$start) return [];
+
+    // find the root: the stored one, else walk backwards through replaced_by
+    $root = null;
+    if (!empty($start['root_serial_id'])) $root = row('SELECT * FROM item_serials WHERE id = ?', [$start['root_serial_id']]);
+    if (!$root) {
+        $root = $start;
+        for ($i = 0; $i < 20; $i++) {   // a bounded walk: a chain is never long, and a cycle must not hang the page
+            $prev = row('SELECT * FROM item_serials WHERE replaced_by_id = ?', [$root['id']]);
+            if (!$prev || (int)$prev['id'] === (int)$root['id']) break;
+            $root = $prev;
+        }
+    }
+
+    $chain = []; $seen = [];
+    $node = $root;
+    for ($i = 0; $i < 20 && $node; $i++) {
+        if (isset($seen[$node['id']])) break;
+        $seen[$node['id']] = true;
+        // the claim that ENDED this link (the one where it was sent and replaced)
+        $node['claim'] = row("SELECT claim_no, status, sent_date, back_date, warranty_mode, replacement_serial
+                              FROM warranty_claims WHERE serial_no = ? ORDER BY id DESC LIMIT 1", [$node['serial_no']]);
+        $node['item_name'] = val('SELECT name FROM items WHERE id = ?', [$node['item_id']]);
+        $chain[] = $node;
+        $node = empty($node['replaced_by_id']) ? null : row('SELECT * FROM item_serials WHERE id = ?', [$node['replaced_by_id']]);
+    }
+    return $chain;
+}
+
+/** The date this piece's warranty really started - the ROOT serial's sale (or
+ *  purchase) date, not the replacement's. A replacement usually carries on the
+ *  original warranty, so the original date is what has to be quoted. */
+function serial_warranty_origin($serialNo) {
+    $chain = serial_chain($serialNo);
+    if (!$chain) return null;
+    $root = $chain[0];
+    $sale = $root['sale_id'] ? row('SELECT invoice_no, sale_date, customer_name FROM sales WHERE id = ?', [$root['sale_id']]) : null;
+    return [
+        'root_serial'  => $root['serial_no'],
+        'links'        => count($chain),
+        'sale_date'    => $sale['sale_date'] ?? null,
+        'invoice_no'   => $sale['invoice_no'] ?? null,
+        'customer'     => $sale['customer_name'] ?? null,
+        'expiry'       => $chain[count($chain) - 1]['warranty_expiry'] ?: ($root['warranty_expiry'] ?: null),
+        'months'       => (int)($root['warranty_months'] ?? 0),
+    ];
+}
+
+/** The shop's OWN unit is going to the company. Take it off the shelf.
+ *
+ *  A piece sitting at the company is not sellable, and leaving it counted is
+ *  what the trade calls phantom inventory: the screen says one is available,
+ *  the shelf is empty, and somebody promises it to a customer. The standard
+ *  handling is "in transit, not available" until it comes back, which is what
+ *  the 'claim' status is for.
+ *
+ *  A customer's unit is not touched - it was never the shop's stock. */
+function warranty_send_out(array $claim) {
+    if (!empty($claim['stock_out'])) return '';            // already off the shelf
+    $sn = trim((string)($claim['serial_no'] ?? ''));
+    if ($sn === '') return '';
+    $s = row('SELECT * FROM item_serials WHERE serial_no = ? ORDER BY id DESC LIMIT 1', [$sn]);
+    if (!$s || $s['status'] !== 'in_stock') return '';      // sold, or not ours - nothing to remove
+    $loc = (int)$s['location_id'] ?: (int)($claim['location_id'] ?? 0);
+    q("UPDATE item_serials SET status = 'claim', claim_id = ? WHERE id = ?", [$claim['id'] ?? null, $s['id']]);
+    adjust_stock((int)$s['item_id'], $loc, -1, 'warranty_out', $claim['id'] ?? null,
+                 'Sent to the company on claim ' . ($claim['claim_no'] ?? ''));
+    q('UPDATE warranty_claims SET stock_out = 1 WHERE id = ?', [$claim['id'] ?? 0]);
+    return 'સિરિયલ ' . $sn . ' કંપનીમાં ગયો — વેચાણના સ્ટોકમાંથી કાઢ્યો.';
+}
+
+/** The SAME piece came back repaired (no replacement). Put it back on the
+ *  shelf - but only if this claim is what took it off. */
+function warranty_take_back(array $claim) {
+    if (empty($claim['stock_out'])) return '';
+    $sn = trim((string)($claim['serial_no'] ?? ''));
+    if ($sn === '') return '';
+    $s = row('SELECT * FROM item_serials WHERE serial_no = ? ORDER BY id DESC LIMIT 1', [$sn]);
+    if (!$s || $s['status'] !== 'claim') return '';
+    $loc = (int)$s['location_id'] ?: (int)($claim['location_id'] ?? 0);
+    serial_put_in_stock((int)$s['item_id'], $sn, $loc);
+    q("UPDATE item_serials SET claim_id = NULL WHERE id = ?", [$s['id']]);
+    adjust_stock((int)$s['item_id'], $loc, 1, 'warranty_back', $claim['id'] ?? null,
+                 'Repaired and returned on claim ' . ($claim['claim_no'] ?? ''));
+    q('UPDATE warranty_claims SET stock_out = 0 WHERE id = ?', [$claim['id'] ?? 0]);
+    return 'સિરિયલ ' . $sn . ' રિપેર થઈને પાછો સ્ટોકમાં આવ્યો.';
+}
+
 /** A warranty claim came back with a REPLACEMENT serial. Put the books right.
  *
  *  What was broken: the replacement serial was written into item_serials with
@@ -950,9 +1050,19 @@ function serial_put_in_stock($itemId, $serialNo, $locId, $warrantyMonths = null)
  *
  *  For a shop unit the faulty one leaves at the same time, so a piece that was
  *  still counted on the shelf is taken off it. One good unit before, one good
- *  unit after - and if the faulty one had already been taken out by hand, only
- *  the replacement is added. Either way the count ends up right, which is the
- *  whole point.
+ *  unit after - and if the faulty one had already been taken out by hand, or
+ *  by warranty_send_out() when the claim was posted, only the replacement is
+ *  added. Either way the count ends up right, which is the whole point.
+ *
+ *  THE CHAIN. The new serial records which one it replaced and which serial
+ *  the chain started from, so a lookup on a replacement still reaches the
+ *  original purchase and the original bill however many times it is replaced.
+ *
+ *  THE WARRANTY DATE. Both practices exist in the trade, so the claim says
+ *  which one was used: 'continue' (the default) carries the ORIGINAL expiry
+ *  across - the warranty runs from the first purchase, not from the swap -
+ *  and 'fresh' gives the replacement its own period from the day it came
+ *  back. Guessing either way silently is how a valid claim gets refused.
  *
  *  Returns a plain-language line for the screen, or '' when there was nothing
  *  to do. */
@@ -969,35 +1079,65 @@ function warranty_apply_replacement(array $claim, $origSn, $repl, $fallbackLoc =
     // already recorded (the claim was saved twice) - never write it again
     if (row('SELECT id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$itemId, $repl])) return '';
 
+    // Whose piece is it? The claim naming a customer, or the serial carrying a
+    // sale_id, is what says so. NOT the 'claim' status - warranty_send_out()
+    // puts the shop's OWN stock into 'claim' while it is at the company, so
+    // reading that as "sold" would hand the shop's own replacement to a
+    // customer who does not exist and quietly keep it out of stock.
     $hasCustomer = !empty($claim['party_id']) || trim((string)($claim['customer_name'] ?? '')) !== '';
-    $wasSold = $old && in_array($old['status'], ['sold', 'claim'], true);
+    $wasSold = $old && ($old['status'] === 'sold' || !empty($old['sale_id']));
     $forCustomer = $hasCustomer || $wasSold;
 
     $locId = (int)($old['location_id'] ?? 0) ?: (int)($claim['location_id'] ?? 0) ?: (int)$fallbackLoc;
 
+    // which warranty date the replacement carries - see the note above
+    list($months, $expiry) = warranty_replacement_dates($claim, $old);
+    $rootId = $old ? ((int)($old['root_serial_id'] ?? 0) ?: (int)$old['id']) : null;
+
     if ($forCustomer) {
-        q("INSERT INTO item_serials (item_id, serial_no, status, purchase_id, sale_id, warranty_months, warranty_expiry)
-           VALUES (?,?,'sold',?,?,?,?)",
-          [$itemId, $repl, $old['purchase_id'] ?? null, $old['sale_id'] ?? null,
-           $old['warranty_months'] ?? 0, $old['warranty_expiry'] ?? null]);
-        if ($old) q("UPDATE item_serials SET status = 'replaced' WHERE id = ?", [$old['id']]);
+        q("INSERT INTO item_serials (item_id, serial_no, status, purchase_id, sale_id, warranty_months, warranty_expiry, root_serial_id)
+           VALUES (?,?,'sold',?,?,?,?,?)",
+          [$itemId, $repl, $old['purchase_id'] ?? null, $old['sale_id'] ?? null, $months, $expiry, $rootId]);
+        $newId = insert_id();
+        if ($old) q("UPDATE item_serials SET status = 'replaced', replaced_by_id = ?, claim_id = NULL WHERE id = ?", [$newId, $old['id']]);
         return 'સિરિયલ ' . $repl . ' ગ્રાહકના નામે નોંધ્યો (જૂનો ' . $origSn . ' replaced). '
-             . 'આ ગ્રાહકનો માલ છે એટલે સ્ટોકમાં ઉમેર્યો નથી.';
+             . 'આ ગ્રાહકનો માલ છે એટલે સ્ટોકમાં ઉમેર્યો નથી.'
+             . ($expiry ? ' વોરંટી ' . dmy($expiry) . ' સુધી.' : '');
     }
 
-    // the shop's own piece: the faulty one leaves the shelf, the good one lands
-    if ($old && $old['status'] === 'in_stock') {
+    // the shop's own piece: the faulty one leaves the shelf, the good one lands.
+    // If the claim already took it off when it was SENT, do not take it twice.
+    if ($old && $old['status'] === 'in_stock' && empty($claim['stock_out'])) {
         adjust_stock($itemId, (int)$old['location_id'] ?: $locId, -1, 'warranty_replace', $claim['id'] ?? null,
                      'Faulty ' . $origSn . ' sent for warranty replacement');
     }
-    if ($old) q("UPDATE item_serials SET status = 'replaced' WHERE id = ?", [$old['id']]);
 
-    $r = serial_put_in_stock($itemId, $repl, $locId, $old['warranty_months'] ?? null);
+    $r = serial_put_in_stock($itemId, $repl, $locId, $months);
+    $newId = (int)val('SELECT id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$itemId, $repl]);
+    q('UPDATE item_serials SET warranty_months = ?, warranty_expiry = ?, root_serial_id = ? WHERE id = ?',
+      [$months, $expiry, $rootId, $newId]);
+    if ($old) q("UPDATE item_serials SET status = 'replaced', replaced_by_id = ?, claim_id = NULL WHERE id = ?", [$newId, $old['id']]);
     if ($r['result'] !== 'already')
         adjust_stock($itemId, $locId, 1, 'warranty_replace', $claim['id'] ?? null,
                      'Replacement ' . $repl . ' received from the company');
+    if (!empty($claim['id'])) q('UPDATE warranty_claims SET stock_out = 0 WHERE id = ?', [$claim['id']]);
     return 'સિરિયલ ' . $repl . ' સ્ટોકમાં ઉમેરી દીધો'
-         . ($origSn !== '' ? ' (જૂનો ' . $origSn . ' replaced)' : '') . '.';
+         . ($origSn !== '' ? ' (જૂનો ' . $origSn . ' replaced)' : '') . '.'
+         . ($expiry ? ' વોરંટી ' . dmy($expiry) . ' સુધી.' : '');
+}
+
+/** How long the replacement is covered for. 'continue' (the default) keeps the
+ *  ORIGINAL expiry so the warranty still runs from the first purchase;
+ *  'fresh' starts a new period from the day the piece came back. Returns
+ *  [months, expiry-date-or-null]. */
+function warranty_replacement_dates(array $claim, $old) {
+    $mode = ($claim['warranty_mode'] ?? 'continue') === 'fresh' ? 'fresh' : 'continue';
+    if ($mode === 'fresh') {
+        $months = (int)($claim['fresh_months'] ?? 0);
+        $from = $claim['back_date'] ?: today();
+        return [$months, $months > 0 ? month_add($from, $months) : null];
+    }
+    return [(int)($old['warranty_months'] ?? 0), $old['warranty_expiry'] ?? null];
 }
 
 // ---------- Misc ----------

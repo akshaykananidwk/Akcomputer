@@ -416,3 +416,141 @@ $wa = file_get_contents(dirname(__DIR__) . '/warranty.php');
 t_ok('the warranty screen goes through the one replacement rule',
      strpos($wa, 'warranty_apply_replacement($claimRow') !== false);
 t_ok('...and no longer writes the serial by hand', strpos($wa, 'INSERT INTO item_serials') === false);
+
+// ----------------------------------------- the warranty chain, by serial no --
+// A piece goes to the company and a DIFFERENT one comes back. Three things
+// were being lost at that moment: the link between the two serials, the fact
+// that the piece was not on the shelf while it was away, and the date the
+// warranty actually started.
+t_group('a replaced serial stays joined to the one it replaced');
+
+function tw_send($claimId) { return warranty_send_out(row('SELECT * FROM warranty_claims WHERE id = ?', [$claimId])); }
+function tw_back($claimId) { return warranty_take_back(row('SELECT * FROM warranty_claims WHERE id = ?', [$claimId])); }
+function tw_replace($claimId, $old, $new, $locId) {
+    return warranty_apply_replacement(row('SELECT * FROM warranty_claims WHERE id = ?', [$claimId]), $old, $new, $locId);
+}
+
+$ci = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,10) ON DUPLICATE KEY UPDATE qty = 10', [$ci, $loc]);
+ts_serial($ci, 'TC-1', 'in_stock');
+q("UPDATE item_serials SET location_id = ?, warranty_months = 24, warranty_expiry = '2027-06-30' WHERE item_id = ? AND serial_no = 'TC-1'", [$loc, $ci]);
+$cl1 = tw_claim($ci, 'TC-1');
+q("UPDATE warranty_claims SET status = 'sent', sent_date = '2026-09-02' WHERE id = ?", [$cl1['id']]);
+
+// SENT: a piece sitting at the company is not sellable here
+t_ok('sending it says so', tw_send($cl1['id']) !== '');
+t_eq('the shelf count drops', stock_qty($ci, $loc), 9.0);
+t_eq("...and the serial reads 'claim', not 'in stock'", tw_ser($ci, 'TC-1')['status'], 'claim');
+t_eq('the claim remembers it took one off', (int)val('SELECT stock_out FROM warranty_claims WHERE id = ?', [$cl1['id']]), 1);
+t_eq('sending twice does not take two', tw_send($cl1['id']), '');
+t_eq('...and the count stays put', stock_qty($ci, $loc), 9.0);
+
+// BACK, REPLACED: the replacement lands and the two serials are joined
+q("UPDATE warranty_claims SET status = 'received_back', back_date = '2026-09-15', replacement_serial = 'TC-2', warranty_mode = 'continue' WHERE id = ?", [$cl1['id']]);
+tw_replace($cl1['id'], 'TC-1', 'TC-2', $loc);
+t_eq('the replacement is back on the shelf', stock_qty($ci, $loc), 10.0);
+t_eq('...and in stock', tw_ser($ci, 'TC-2')['status'], 'in_stock');
+t_eq('the old one is marked replaced', tw_ser($ci, 'TC-1')['status'], 'replaced');
+t_eq('the old one points at the new one',
+     (int)val('SELECT replaced_by_id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$ci, 'TC-1']),
+     (int)val('SELECT id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$ci, 'TC-2']));
+// THE POINT: the warranty runs from the first purchase, not from the swap
+t_eq('the replacement carries the ORIGINAL expiry',
+     val('SELECT warranty_expiry FROM item_serials WHERE item_id = ? AND serial_no = ?', [$ci, 'TC-2']), '2027-06-30');
+
+// replaced a SECOND time - the trail must not break
+$cl2 = tw_claim($ci, 'TC-2');
+q("UPDATE warranty_claims SET status = 'sent', sent_date = '2026-10-02' WHERE id = ?", [$cl2['id']]);
+tw_send($cl2['id']);
+t_eq('the second one comes off the shelf too', stock_qty($ci, $loc), 9.0);
+q("UPDATE warranty_claims SET status = 'received_back', back_date = '2026-10-20', replacement_serial = 'TC-3' WHERE id = ?", [$cl2['id']]);
+tw_replace($cl2['id'], 'TC-2', 'TC-3', $loc);
+t_eq('and the third one lands', stock_qty($ci, $loc), 10.0);
+
+$chain = serial_chain('TC-3');
+t_eq('the chain is three links long', count($chain), 3);
+t_eq('...starting at the serial first bought', $chain[0]['serial_no'], 'TC-1');
+t_eq('...and ending at the one in hand', $chain[2]['serial_no'], 'TC-3');
+$origin = serial_warranty_origin('TC-3');
+t_eq('looking up the NEWEST serial still finds the first', $origin['root_serial'], 'TC-1');
+t_eq('...and the warranty date that came with it', $origin['expiry'], '2027-06-30');
+// walking from the middle, or from the oldest, gives the same chain
+t_eq('the chain reads the same from any link', array_column(serial_chain('TC-1'), 'serial_no'), ['TC-1', 'TC-2', 'TC-3']);
+t_eq('...including from the middle', array_column(serial_chain('TC-2'), 'serial_no'), ['TC-1', 'TC-2', 'TC-3']);
+
+t_group('a customer\'s piece never touches the shop\'s stock');
+$cu = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,10) ON DUPLICATE KEY UPDATE qty = 10', [$cu, $loc]);
+ts_serial($cu, 'TCU-1', 'sold', 5151);
+$cc = tw_claim($cu, 'TCU-1', 'Ramesh');
+q("UPDATE warranty_claims SET status = 'sent' WHERE id = ?", [$cc['id']]);
+t_eq('sending a sold piece takes nothing off the shelf', tw_send($cc['id']), '');
+t_eq('...the count is untouched', stock_qty($cu, $loc), 10.0);
+q("UPDATE warranty_claims SET status = 'received_back', back_date = '2026-09-20', replacement_serial = 'TCU-2' WHERE id = ?", [$cc['id']]);
+tw_replace($cc['id'], 'TCU-1', 'TCU-2', $loc);
+t_eq('the replacement does not become sellable stock', stock_qty($cu, $loc), 10.0);
+t_eq('...it belongs to the customer', tw_ser($cu, 'TCU-2')['status'], 'sold');
+t_eq('...on the same bill', (int)tw_ser($cu, 'TCU-2')['sale_id'], 5151);
+
+// the trap this walked into once: warranty_send_out() puts the SHOP's own
+// stock into 'claim', and reading that status as "sold" handed the shop's own
+// replacement to a customer who did not exist
+t_group("'out at the company' does not mean 'sold'");
+$cx = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,10) ON DUPLICATE KEY UPDATE qty = 10', [$cx, $loc]);
+ts_serial($cx, 'TCX-1', 'in_stock');
+q("UPDATE item_serials SET location_id = ? WHERE item_id = ? AND serial_no = 'TCX-1'", [$loc, $cx]);
+$cxc = tw_claim($cx, 'TCX-1');
+q("UPDATE warranty_claims SET status = 'sent' WHERE id = ?", [$cxc['id']]);
+tw_send($cxc['id']);
+t_eq("the serial is 'claim' while it is away", tw_ser($cx, 'TCX-1')['status'], 'claim');
+q("UPDATE warranty_claims SET status = 'received_back', replacement_serial = 'TCX-2' WHERE id = ?", [$cxc['id']]);
+tw_replace($cxc['id'], 'TCX-1', 'TCX-2', $loc);
+t_eq('the replacement is still the SHOP\'s, so it is in stock', tw_ser($cx, 'TCX-2')['status'], 'in_stock');
+t_eq('...and back in the count', stock_qty($cx, $loc), 10.0);
+
+t_group('a piece repaired and returned goes back on the shelf');
+$cp = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,10) ON DUPLICATE KEY UPDATE qty = 10', [$cp, $loc]);
+ts_serial($cp, 'TCP-1', 'in_stock');
+q("UPDATE item_serials SET location_id = ? WHERE item_id = ? AND serial_no = 'TCP-1'", [$loc, $cp]);
+$cpc = tw_claim($cp, 'TCP-1');
+q("UPDATE warranty_claims SET status = 'sent' WHERE id = ?", [$cpc['id']]);
+tw_send($cpc['id']);
+t_eq('it is off the shelf while away', stock_qty($cp, $loc), 9.0);
+q("UPDATE warranty_claims SET status = 'received_back', back_date = '2026-09-25' WHERE id = ?", [$cpc['id']]);
+t_ok('bringing it back says so', tw_back($cpc['id']) !== '');
+t_eq('...and it is countable again', stock_qty($cp, $loc), 10.0);
+t_eq('...and in stock', tw_ser($cp, 'TCP-1')['status'], 'in_stock');
+t_eq('saving the claim again adds nothing', tw_back($cpc['id']), '');
+t_eq('...so the count holds', stock_qty($cp, $loc), 10.0);
+
+t_group('the warranty date is recorded, never guessed');
+$cf = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,10) ON DUPLICATE KEY UPDATE qty = 10', [$cf, $loc]);
+ts_serial($cf, 'TCF-1', 'in_stock');
+q("UPDATE item_serials SET location_id = ?, warranty_months = 24, warranty_expiry = '2027-06-30' WHERE item_id = ? AND serial_no = 'TCF-1'", [$loc, $cf]);
+$cfc = tw_claim($cf, 'TCF-1');
+q("UPDATE warranty_claims SET status = 'received_back', back_date = '2026-10-20', replacement_serial = 'TCF-2',
+   warranty_mode = 'fresh', fresh_months = 6 WHERE id = ?", [$cfc['id']]);
+tw_replace($cfc['id'], 'TCF-1', 'TCF-2', $loc);
+t_eq('a FRESH warranty runs from the day it came back',
+     val('SELECT warranty_expiry FROM item_serials WHERE item_id = ? AND serial_no = ?', [$cf, 'TCF-2']), '2027-04-20');
+t_ok('...which is not the original date',
+     val('SELECT warranty_expiry FROM item_serials WHERE item_id = ? AND serial_no = ?', [$cf, 'TCF-2']) !== '2027-06-30');
+// and the default really is "carry the original on"
+t_eq('the default mode is to continue the original',
+     warranty_replacement_dates(['warranty_mode' => null], ['warranty_months' => 24, 'warranty_expiry' => '2027-06-30'])[1],
+     '2027-06-30');
+t_eq('fresh with no months given sets no expiry rather than inventing one',
+     warranty_replacement_dates(['warranty_mode' => 'fresh', 'fresh_months' => 0, 'back_date' => '2026-10-20'], null)[1], null);
+
+t_group('the warranty screen and the serial lookup use these rules');
+$wa2 = file_get_contents(dirname(__DIR__) . '/warranty.php');
+t_ok('sending a claim takes the piece out of stock', strpos($wa2, 'warranty_send_out($claimRow)') !== false);
+t_ok('a repaired return puts it back', strpos($wa2, 'warranty_take_back(') !== false);
+t_ok('the screen asks which warranty rule applied', strpos($wa2, 'name="warranty_mode"') !== false);
+t_ok('...and shows the whole chain', strpos($wa2, 'serial_chain($c[\'serial_no\'])') !== false);
+$aj = file_get_contents(dirname(__DIR__) . '/ajax.php');
+t_ok('a serial lookup returns the chain', strpos($aj, "\$r['chain'] = array_map") !== false);
+t_ok('...and where the warranty started', strpos($aj, "\$r['origin'] = serial_warranty_origin(\$sn)") !== false);

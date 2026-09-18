@@ -15,11 +15,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         post('back_date') ?: null, post('back_courier'), post('back_tracking'),
         post('delivered_date') ?: null, post('replacement_serial'), post('notes'),
     ];
+    // which warranty rule this claim used - recorded, never guessed silently
+    $wMode = post('warranty_mode') === 'fresh' ? 'fresh' : 'continue';
+    $wFresh = max(0, (int)post('fresh_months'));
     if ($id) {
         q('UPDATE warranty_claims SET item_id=?, serial_no=?, party_id=?, customer_name=?, customer_mobile=?, issue=?,
            status=?, received_date=?, sent_date=?, sent_courier=?, sent_tracking=?, back_date=?, back_courier=?,
-           back_tracking=?, delivered_date=?, replacement_serial=?, notes=? WHERE id=?', array_merge($data, [$id]));
+           back_tracking=?, delivered_date=?, replacement_serial=?, notes=?, warranty_mode=?, fresh_months=? WHERE id=?',
+          array_merge($data, [$wMode, $wFresh, $id]));
         flash('Claim updated.');
+
+        // The piece is AT THE COMPANY once the claim is sent, so it stops being
+        // sellable stock here - otherwise the screen offers a unit that is not
+        // on the shelf. It comes back when the claim does.
+        $claimRow = row('SELECT * FROM warranty_claims WHERE id = ?', [$id]);
+        if (in_array($claimRow['status'], ['sent'], true)) {
+            $m = warranty_send_out($claimRow);
+            if ($m !== '') flash($m, 'info');
+        }
 
         // The company sent a replacement back. warranty_apply_replacement()
         // moves BOTH books - the serial and the quantity - because writing the
@@ -28,6 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $claimRow = row('SELECT * FROM warranty_claims WHERE id = ?', [$id]);
         $msg = warranty_apply_replacement($claimRow, post('serial_no'), post('replacement_serial'), $u['location_id']);
         if ($msg !== '') flash($msg, 'info');
+        // ...and when the SAME piece comes back repaired, it goes back on the shelf
+        if ($msg === '' && in_array($claimRow['status'], ['received_back', 'delivered'], true)) {
+            $m2 = warranty_take_back(row('SELECT * FROM warranty_claims WHERE id = ?', [$id]));
+            if ($m2 !== '') flash($m2, 'info');
+        }
 
         if (post('notify') && post('customer_mobile')) {
             $stMsg = ['sent' => 'has been sent to the company for warranty.',
@@ -130,6 +148,48 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Replacement serial (if any)</label><input type="text" name="replacement_serial" value="<?= e($c['replacement_serial'] ?? '') ?>"></div>
         </div>
         <div class="form-row cols-2">
+          <div><label>રિપ્લેસમેન્ટની વોરંટી</label>
+            <select name="warranty_mode" id="warrantyMode" onchange="wmChange()">
+              <option value="continue"<?= ($c['warranty_mode'] ?? 'continue') !== 'fresh' ? ' selected' : '' ?>>જૂની વોરંટી ચાલુ રહે (પહેલી ખરીદીથી)</option>
+              <option value="fresh"<?= ($c['warranty_mode'] ?? '') === 'fresh' ? ' selected' : '' ?>>નવી વોરંટી મળી છે (પાછું આવ્યું એ દિવસથી)</option>
+            </select>
+            <small class="muted">મોટાભાગે જૂની જ ચાલુ રહે છે. કંપનીએ નવી આપી હોય તો જ બીજો વિકલ્પ.</small></div>
+          <div id="freshBox" style="display:none"><label>નવી વોરંટી કેટલા મહિના?</label>
+            <input type="number" name="fresh_months" min="0" value="<?= (int)($c['fresh_months'] ?? 0) ?>"></div>
+        </div>
+        <?php
+        // The full life of this piece of hardware. A serial replaced twice is
+        // three rows that look unrelated; this is what joins them, so the
+        // original purchase date - the one that decides the warranty - is
+        // never more than a glance away.
+        $chain = !empty($c['serial_no']) ? serial_chain($c['serial_no']) : [];
+        if (count($chain) > 1):
+            $origin = serial_warranty_origin($c['serial_no']); ?>
+        <div class="card" style="margin-top:10px">
+          <h4 style="margin:0 0 6px">🔗 આ સિરિયલની આખી સાંકળ</h4>
+          <?php if ($origin && $origin['sale_date']): ?>
+          <p class="muted" style="margin:0 0 8px">વોરંટી શરૂ થઈ <strong><?= dmy($origin['sale_date']) ?></strong>
+            <?= $origin['invoice_no'] ? ' · બિલ ' . e($origin['invoice_no']) : '' ?>
+            <?= $origin['customer'] ? ' · ' . e($origin['customer']) : '' ?>
+            <?= $origin['expiry'] ? ' · વોરંટી ' . dmy($origin['expiry']) . ' સુધી' : '' ?></p>
+          <?php endif; ?>
+          <div class="sp-list">
+          <?php foreach ($chain as $k => $lnk): ?>
+            <div class="sp-row">
+              <strong><?= $k + 1 ?>. <?= e($lnk['serial_no']) ?></strong>
+              <span class="badge <?= $lnk['status'] === 'replaced' ? 'badge-bad' : 'badge-info' ?>"><?= e($lnk['status']) ?></span>
+              <?php if (!empty($lnk['claim'])): ?>
+                <span class="muted"> · <?= e($lnk['claim']['claim_no']) ?>
+                <?= $lnk['claim']['sent_date'] ? ' મોકલ્યો ' . dmy($lnk['claim']['sent_date']) : '' ?>
+                <?= $lnk['claim']['back_date'] ? ' · પાછો ' . dmy($lnk['claim']['back_date']) : '' ?></span>
+              <?php endif; ?>
+              <?php if ($lnk['warranty_expiry']): ?><span class="muted"> · વોરંટી <?= dmy($lnk['warranty_expiry']) ?></span><?php endif; ?>
+            </div>
+          <?php endforeach; ?>
+          </div>
+        </div>
+        <?php endif; ?>
+        <div class="form-row cols-2">
           <div><label>Delivered to customer on</label><input type="date" name="delivered_date" value="<?= e($c['delivered_date'] ?? '') ?>"></div>
           <div><label>Notes</label><input type="text" name="notes" value="<?= e($c['notes'] ?? '') ?>"></div>
         </div>
@@ -166,6 +226,13 @@ if ($action === 'new' || $action === 'edit') {
           });
       }
       <?php if (get('sn')): ?>snLookup();<?php endif; ?>
+      // the "how many months" box only matters when a FRESH warranty was given
+      function wmChange() {
+        var m = document.getElementById('warrantyMode');
+        var b = document.getElementById('freshBox');
+        if (m && b) b.style.display = m.value === 'fresh' ? '' : 'none';
+      }
+      wmChange();
     </script>
     <?php
     include __DIR__ . '/includes/footer.php';

@@ -144,6 +144,16 @@ if ($a === 'serial_lookup' && (can('warranty.view') || can('sales.view'))) {
     $r['history'] = all("SELECT w.claim_no, w.status, w.serial_no, w.replacement_serial, w.sent_date, w.back_date,
                          pt.name company FROM warranty_claims w LEFT JOIN parties pt ON pt.id = w.party_id
                          WHERE w.serial_no = ? OR w.replacement_serial = ? ORDER BY w.id", [$sn, $sn]);
+    // ...and the whole chain this piece belongs to. Looking up a REPLACEMENT
+    // used to show only its own claim - not the original purchase or the bill
+    // it was first sold on, which is what actually decides the warranty.
+    $r['chain'] = array_map(fn($l) => [
+        'serial_no' => $l['serial_no'], 'status' => $l['status'],
+        'expiry' => $l['warranty_expiry'], 'claim_no' => $l['claim']['claim_no'] ?? null,
+        'sent_date' => $l['claim']['sent_date'] ?? null, 'back_date' => $l['claim']['back_date'] ?? null,
+        'is_this' => $l['serial_no'] === $sn,
+    ], serial_chain($sn));
+    $r['origin'] = serial_warranty_origin($sn);
     echo json_encode($r);
     exit;
 }
