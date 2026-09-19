@@ -17,15 +17,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $item_ids = post('item_id', []);
     $qtys = post('qty', []);
     $prices = post('price', []);
-    $serials_in = post('serials_txt', []);
+    // Which PIECE is coming back. The screen now asks (it used to say "write
+    // the serial in Notes", so serials_txt below was posted by nothing at all
+    // and every return left the serial still marked sold while the quantity
+    // came back - the serial book and the stock book drifting apart again).
+    // serial_sel is keyed by the row's own id, the same pairing sales.php uses,
+    // so deleting a row cannot hand one item another item's serials.
+    $serialSel = post('serial_sel', []);
+    $rowNs = post('row_n', []);
 
     $rows = [];
     foreach ($item_ids as $i => $iid) {
         $iid = (int)$iid; $qty = (float)($qtys[$i] ?? 0);
-        if ($iid && $qty > 0) $rows[] = ['item_id' => $iid, 'qty' => $qty, 'price' => (float)($prices[$i] ?? 0),
-            'serials' => trim((string)($serials_in[$i] ?? ''))];
+        if (!$iid || $qty <= 0) continue;
+        $n = $rowNs[$i] ?? null;
+        $sns = ($n !== null && isset($serialSel[$n])) ? array_values(array_filter(array_map('trim', (array)$serialSel[$n]))) : [];
+        $rows[] = ['item_id' => $iid, 'qty' => $qty, 'price' => (float)($prices[$i] ?? 0), 'sns' => $sns];
     }
     if (!$rows) { flash('Add items to return.', 'error'); redirect('sales_return.php?action=new'); }
+
+    // Check every serial BEFORE anything is written: it must exist, it must
+    // belong to this item, and it must actually be out with a customer. A
+    // serial that is already on the shelf coming "back" would add a unit that
+    // never left, which is how a count silently gains stock.
+    foreach ($rows as $r) {
+        $item = row('SELECT name, serial_tracked FROM items WHERE id = ?', [$r['item_id']]);
+        if ($r['sns'] && count($r['sns']) != (int)$r['qty']) {
+            flash(($item['name'] ?? '#' . $r['item_id']) . ': ' . count($r['sns']) . ' સિરિયલ પસંદ કર્યા છે પણ જથ્થો '
+                . (0 + $r['qty']) . ' છે — બંને સરખા હોવા જોઈએ.', 'error');
+            redirect('sales_return.php?action=new');
+        }
+        if (!empty($item['serial_tracked']) && !$r['sns']) {
+            flash(($item['name'] ?? '#' . $r['item_id']) . ': આ આઇટમ સિરિયલવાળી છે — કયો સિરિયલ પાછો આવ્યો એ પસંદ કરો.', 'error');
+            redirect('sales_return.php?action=new');
+        }
+        foreach ($r['sns'] as $sn) {
+            $srow = row('SELECT status FROM item_serials WHERE item_id = ? AND serial_no = ?', [$r['item_id'], $sn]);
+            if (!$srow) {
+                flash('સિરિયલ ' . $sn . ' આ આઇટમનો નથી (નોંધાયેલો જ નથી).', 'error');
+                redirect('sales_return.php?action=new');
+            }
+            if ($srow['status'] !== 'sold') {
+                flash('સિરિયલ ' . $sn . ' વેચાયેલો નથી (અત્યારે: ' . $srow['status'] . ') — એટલે પાછો લઈ શકાય નહીં.', 'error');
+                redirect('sales_return.php?action=new');
+            }
+        }
+    }
     $total = 0;
     foreach ($rows as $r) $total += $r['qty'] * $r['price'];
 
@@ -38,15 +75,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
            post('customer_mobile'), $loc_id, post('return_date', today()), $total, post('refund_mode', 'cash'), post('notes'), $u['id']]);
         $rid = insert_id();
         q('UPDATE sales_returns SET return_no = ? WHERE id = ?', [doc_no('SR', $rid), $rid]);
+        $backSns = [];
         foreach ($rows as $r) {
-            $sns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $r['serials']))));
+            $sns = $r['sns'];
             q('INSERT INTO sales_return_items (return_id, item_id, qty, price, total, serials) VALUES (?,?,?,?,?,?)',
               [$rid, $r['item_id'], $r['qty'], $r['price'], $r['qty'] * $r['price'], $sns ? implode(',', $sns) : null]);
             adjust_stock($r['item_id'], $loc_id, $r['qty'], 'sales_return', $rid);
-            foreach ($sns as $sn) {
-                q("UPDATE item_serials SET status='in_stock', location_id=?, sale_id=NULL WHERE item_id=? AND serial_no=?",
-                  [$loc_id, $r['item_id'], $sn]);
-            }
+            // the one shared rule for putting a serial back on the shelf, so a
+            // returned piece is revived rather than duplicated
+            foreach ($sns as $sn) { serial_put_in_stock($r['item_id'], $sn, $loc_id); $backSns[] = $sn; }
         }
         // Money side of the return - without this the books drifted:
         // - cash/bank refund: the money handed back is posted to the payments
@@ -79,6 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $pdo->commit();
         log_activity('sales_return', doc_no('SR', $rid));
         $msg = 'Sales return saved, stock restored.';
+        if ($backSns) $msg .= ' સિરિયલ પાછા સ્ટોકમાં: ' . implode(', ', $backSns) . '.';
         if ($creditedTo) {
             $bits = [];
             foreach ($creditedTo as $t) $bits[] = $t['label'] . ' ₹' . money($t['amount']);
@@ -143,7 +181,7 @@ if ($action === 'new') {
         <h3>Returned items</h3>
         <div class="bill-items" id="billItems"></div>
         <button type="button" class="btn btn-outline btn-sm" id="addRowBtn">+ Add item</button>
-        <p class="muted mt">If a serial-tracked item is returned, write the serial number in "Notes" — serial status is handled from the warranty page.</p>
+        <p class="muted mt">સિરિયલવાળી આઇટમ ઉમેરશો એટલે નીચે એની વેચાયેલી સિરિયલ યાદી આવશે — કયો પીસ પાછો આવ્યો એ ટિક કરો. દરેક સિરિયલ સાથે એ કયા બિલમાં ગયો હતો એ પણ દેખાશે.</p>
       </div>
       <div class="card">
         <div class="bill-totals">
@@ -153,7 +191,7 @@ if ($action === 'new') {
         <button class="btn btn-block mt" type="submit">Save Return</button>
       </div>
     </form>
-    <script>Bill.init({mode: 'sale', serials: false, locSel: 'location_id', gst: false});
+    <script>Bill.init({mode: 'sale', serials: true, returnMode: true, locSel: 'location_id', gst: false});
     ReturnMoney.init({dir: 'in', partySel: 'select[name=party_id]'});</script>
     <?php
     include __DIR__ . '/includes/footer.php';

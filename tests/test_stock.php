@@ -554,3 +554,59 @@ t_ok('...and shows the whole chain', strpos($wa2, 'serial_chain($c[\'serial_no\'
 $aj = file_get_contents(dirname(__DIR__) . '/ajax.php');
 t_ok('a serial lookup returns the chain', strpos($aj, "\$r['chain'] = array_map") !== false);
 t_ok('...and where the warranty started', strpos($aj, "\$r['origin'] = serial_warranty_origin(\$sn)") !== false);
+
+// ------------------------------- a sales return asks WHICH piece came back --
+// The screen used to say "write the serial number in Notes". Nothing posted
+// serials_txt, so the handler that restored serials was dead code: every
+// return brought the quantity back and left the serial still marked sold. The
+// serial book and the stock book drifted apart on every single return.
+t_group('a sales return records the serial that came back');
+$sr_src = file_get_contents(dirname(__DIR__) . '/sales_return.php');
+t_ok('the screen offers a serial picker', strpos($sr_src, "serials: true, returnMode: true") !== false);
+t_ok('...and no longer tells the owner to use the Notes box',
+     strpos($sr_src, 'write the serial number in "Notes"') === false);
+t_ok('the picked serials are read, keyed by the row', strpos($sr_src, "post('serial_sel', [])") !== false
+     && strpos($sr_src, "post('row_n', [])") !== false);
+t_ok('the dead serials_txt field is no longer read', strpos($sr_src, "post('serials_txt'") === false);
+t_ok('putting one back goes through the one shared rule',
+     strpos($sr_src, 'serial_put_in_stock($r[\'item_id\'], $sn, $loc_id)') !== false);
+$aj2 = file_get_contents(dirname(__DIR__) . '/ajax.php');
+t_ok('the list a return shows is of SOLD serials, not stock',
+     strpos($aj2, "get('mode') === 'return'") !== false && strpos($aj2, "isr.status = 'sold'") !== false);
+t_ok('...each with the bill it went out on', strpos($aj2, "s.invoice_no") !== false);
+$js2 = file_get_contents(dirname(__DIR__) . '/assets/app.js');
+t_ok('the picker asks the return question', strpos($js2, 'કયો સિરિયલ પાછો આવ્યો?') !== false);
+t_ok('...and fetches in return mode', strpos($js2, "(isRet ? '&mode=return' : '')") !== false);
+
+// the refusals, checked as rules rather than through the screen: a return must
+// never invent stock out of a serial that never left
+t_group('a serial that did not go out cannot come back');
+$ri = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,0) ON DUPLICATE KEY UPDATE qty = 0', [$ri, $loc]);
+ts_serial($ri, 'TSR-SOLD', 'sold', 7777);
+ts_serial($ri, 'TSR-SHELF', 'in_stock');
+q("UPDATE item_serials SET location_id = ? WHERE item_id = ? AND serial_no = 'TSR-SHELF'", [$loc, $ri]);
+t_eq('a sold serial is the one that can return', tw_ser($ri, 'TSR-SOLD')['status'], 'sold');
+t_eq('a serial already on the shelf is not', tw_ser($ri, 'TSR-SHELF')['status'], 'in_stock');
+// the guard the screen applies, asserted on the source so it cannot be dropped
+t_ok('the screen refuses a serial that is not sold',
+     strpos($sr_src, "\$srow['status'] !== 'sold'") !== false);
+t_ok('...refuses one that is not this item\'s', strpos($sr_src, 'આ આઇટમનો નથી') !== false);
+t_ok('...refuses a serial-tracked item with nothing picked',
+     strpos($sr_src, "!empty(\$item['serial_tracked']) && !\$r['sns']") !== false);
+t_ok('...and refuses a count that does not match the quantity',
+     strpos($sr_src, "count(\$r['sns']) != (int)\$r['qty']") !== false);
+// every one of those checks runs BEFORE the first write, so a refusal leaves
+// nothing behind - the guards sit above $pdo->beginTransaction()
+$guardAt = strpos($sr_src, 'વેચાયેલો નથી');
+$txnAt = strpos($sr_src, '$pdo->beginTransaction()');
+t_ok('every serial is checked before anything is written', $guardAt !== false && $txnAt !== false && $guardAt < $txnAt);
+
+t_group('returning a serial puts it back where it belongs');
+serial_put_in_stock($ri, 'TSR-SOLD', $loc);
+$back = tw_ser($ri, 'TSR-SOLD');
+t_eq('it is in stock again', $back['status'], 'in_stock');
+t_eq('...at the shop\'s location', (int)$back['location_id'], $loc);
+t_eq('...and no longer tied to the bill it was sold on', $back['sale_id'], null);
+t_eq('...with one row, not a duplicate',
+     (int)val('SELECT COUNT(*) FROM item_serials WHERE item_id = ? AND serial_no = ?', [$ri, 'TSR-SOLD']), 1);

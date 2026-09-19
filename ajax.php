@@ -72,6 +72,24 @@ if ($a === 'serials' && can('items.view')) {
     $item_id = (int)get('item_id');
     $loc = (int)get('loc');
     $saleId = (int)get('sale_id');
+    // A RETURN asks the opposite question: not "what can I sell" but "which
+    // piece is coming back", so it lists the serials that were SOLD. Each one
+    // carries the bill it went out on, because handing back the wrong unit -
+    // one that belongs to another customer - is the mistake worth preventing.
+    if (get('mode') === 'return') {
+        $sql = "SELECT isr.serial_no, s.invoice_no, s.sale_date, s.customer_name
+                FROM item_serials isr LEFT JOIN sales s ON s.id = isr.sale_id
+                WHERE isr.item_id = ? AND isr.status = 'sold'";
+        $args = [$item_id];
+        if ($saleId) { $sql .= ' AND isr.sale_id = ?'; $args[] = $saleId; }
+        $sql .= ' ORDER BY s.sale_date DESC, isr.serial_no LIMIT 300';
+        echo json_encode(array_map(fn($x) => [
+            'serial_no' => $x['serial_no'],
+            'note' => trim(($x['invoice_no'] ? $x['invoice_no'] : '') . ($x['sale_date'] ? ' · ' . dmy($x['sale_date']) : '')
+                     . ($x['customer_name'] ? ' · ' . $x['customer_name'] : '')),
+        ], all($sql, $args)));
+        exit;
+    }
     if ($saleId) {
         $sns = all("SELECT serial_no FROM item_serials WHERE item_id = ? AND
                     ((location_id = ? AND status = 'in_stock') OR (status = 'sold' AND sale_id = ?))

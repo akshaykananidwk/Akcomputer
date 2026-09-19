@@ -607,20 +607,30 @@ var Bill = {
         var n = div.dataset.n;
         var saleIdQ = this.cfg.editSaleId ? '&sale_id=' + this.cfg.editSaleId : '';
         var pre = div.dataset.preSerials ? JSON.parse(div.dataset.preSerials) : [];
-        fetch('ajax.php?a=serials&item_id=' + it.id + '&loc=' + loc + saleIdQ)
+        // A return screen asks which piece is COMING BACK, so it lists the
+        // serials that were sold rather than the ones in stock, and shows the
+        // bill each went out on.
+        var isRet = !!this.cfg.returnMode;
+        if (isRet) saleIdQ = this.cfg.returnSaleId ? '&sale_id=' + this.cfg.returnSaleId : '';
+        fetch('ajax.php?a=serials&item_id=' + it.id + '&loc=' + loc + saleIdQ + (isRet ? '&mode=return' : ''))
           .then(function (r) { return r.json(); })
           .then(function (sns) {
             var boxes = sns.map(function (s) {
-              var checked = pre.indexOf(s) !== -1 ? ' checked' : '';
-              return '<label class="sp-row"><input type="checkbox" name="serial_sel[' + n + '][]" value="' + s + '"' + checked + '> ' + s + '</label>';
+              var sn = isRet ? s.serial_no : s;
+              var note = (isRet && s.note) ? ' <span class="muted">— ' + s.note + '</span>' : '';
+              var checked = pre.indexOf(sn) !== -1 ? ' checked' : '';
+              return '<label class="sp-row"><input type="checkbox" name="serial_sel[' + n + '][]" value="' + sn + '"' + checked + '> ' + sn + note + '</label>';
             }).join('');
             extra.innerHTML =
               '<div class="serial-pick mt">' +
-              '<label>Select Serial No. <span class="sp-count badge badge-warn">0 / ' + (parseFloat(div.querySelector('.i-qty').value) || 1) + ' entered</span></label>' +
+              '<label>' + (isRet ? 'કયો સિરિયલ પાછો આવ્યો?' : 'Select Serial No.') +
+              ' <span class="sp-count badge badge-warn">0 / ' + (parseFloat(div.querySelector('.i-qty').value) || 1) + ' entered</span></label>' +
               '<div class="sp-scan"><input type="text" class="sp-inp" placeholder="Type / scan serial no.">' +
               '<button type="button" class="btn btn-sm sp-add">Add</button>' +
               (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline sp-cam" title="મોબાઇલ કેમેરાથી સ્કેન">📷</button>' : '') + '</div>' +
-              '<div class="sp-list">' + (boxes || '<span class="muted">No serials in stock (advance billing will proceed)</span>') + '</div>' +
+              '<div class="sp-list">' + (boxes || '<span class="muted">' +
+                (isRet ? 'આ આઇટમનો કોઈ વેચાયેલો સિરિયલ મળ્યો નથી — નીચે જાતે લખી શકો છો'
+                       : 'No serials in stock (advance billing will proceed)') + '</span>') + '</div>' +
               '</div>';
             function updCount() {
               var c = extra.querySelectorAll('input[type=checkbox]:checked').length;
