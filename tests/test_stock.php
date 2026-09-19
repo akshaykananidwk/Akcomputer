@@ -654,3 +654,37 @@ foreach (['purchase_return.php', 'sales_return.php'] as $f) {
     t_ok($f . ' keeps a real select behind it', strpos($src, 'name="party_id" id="party_id"') !== false);
     t_ok($f . ' carries the mobile so it is searchable', strpos($src, 'data-mobile=') !== false);
 }
+
+// ------------------------------------- a purchase return can be opened again --
+// The list only ever showed a total, so "which pieces did we actually send on
+// this one, and which are still here" had no answer anywhere in the software.
+t_group('a purchase return has a detail view');
+$pr_v = file_get_contents(dirname(__DIR__) . '/purchase_return.php');
+t_ok('there is a view screen', strpos($pr_v, "if (\$action === 'view') {") !== false);
+t_ok('...reachable from the list', strpos($pr_v, "purchase_return.php?action=view&id=<?= \$r['id'] ?>") !== false);
+t_ok('...and it refuses an id that is not a return', strpos($pr_v, "die('Return not found.')") !== false);
+t_ok('it reads the return with its supplier and location',
+     strpos($pr_v, 'FROM purchase_returns pr') !== false && strpos($pr_v, 'LEFT JOIN locations l') !== false);
+
+t_group('the view answers both halves of the question');
+t_ok('WHAT WENT: the serials stored on each line are listed',
+     strpos($pr_v, 'શું મોકલ્યું') !== false && strpos($pr_v, "explode(',', (string)\$ln['serials'])") !== false);
+// each sent serial shows where it is NOW - still with the supplier, or back
+t_ok('...each with its state today', strpos($pr_v, "\$st === 'returned_supplier'") !== false
+     && strpos($pr_v, 'સપ્લાયર પાસે') !== false && strpos($pr_v, 'પાછો આવી ગયો') !== false);
+t_ok('WHAT DID NOT: the same items\' serials still in stock', strpos($pr_v, 'શું નથી મોકલ્યું') !== false
+     && strpos($pr_v, "status = 'in_stock'") !== false);
+t_ok('...scoped to this return\'s own location', strpos($pr_v, "\$ret['location_id'] ? ' AND location_id = ?' : ''") !== false);
+// only serial-tracked lines can be compared that way; for anything else the
+// quantity IS the answer and a serial list would be made up
+t_ok('...and only for serial-tracked items',
+     strpos($pr_v, "array_filter(\$lines, fn(\$l) => !empty(\$l['serial_tracked']))") !== false);
+
+t_group('the view shows where the money went');
+t_ok('an adjusted return shows the bills it credited',
+     strpos($pr_v, 'FROM purchase_return_credits c') !== false);
+t_ok('...and says plainly when part of it is still unapplied', strpos($pr_v, 'હજી કોઈ બિલ સામે લાગ્યા નથી') !== false);
+t_ok('a cash or bank refund shows the account it came into',
+     strpos($pr_v, "WHERE p.ref_type = 'purchase_return' AND p.ref_id = ?") !== false
+     && strpos($pr_v, "\$refundPay['account_name']") !== false);
+t_ok('...and a return with no payment at all says so', strpos($pr_v, 'કોઈ પેમેન્ટ નોંધાયેલું નથી') !== false);
