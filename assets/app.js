@@ -579,7 +579,11 @@ var Bill = {
     var extra = div.querySelector('.i-extra');
     extra.innerHTML = '';
     if (it.serial_tracked == 1 && this.cfg.serials) {
-      if (this.cfg.mode === 'purchase') {
+      // pickStock: choose from the serials ALREADY on the shelf instead of
+      // typing new ones. A purchase RETURN is sending our own pieces back to
+      // the supplier, so the question is "which of ours goes back" - the same
+      // list and the same tick-boxes as selling one.
+      if (this.cfg.mode === 'purchase' && !this.cfg.pickStock) {
         extra.innerHTML = '<label class="mt">Serial numbers (one per line, count = qty) — 🔫 barcode gun works: scan, scan, scan</label>' +
           '<textarea name="serials[]" rows="2" placeholder="SN001\nSN002"></textarea>' +
           (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline pu-cam" style="margin-top:6px">📷 મોબાઇલ કેમેરાથી સિરિયલ સ્કેન</button>' : '');
@@ -597,7 +601,7 @@ var Bill = {
         // serial-tracked item picked -> cursor straight into the serial box
         // so the barcode gun can start scanning units immediately
         extra.querySelector('textarea').focus();
-      } else if (this.cfg.mode === 'sale') {
+      } else if (this.cfg.mode === 'sale' || this.cfg.pickStock) {
         // Vyapar-style serial picker: scan/type + Add, checkbox list, counter.
         // When editing a bill (cfg.editSaleId set), the fetch also returns
         // this item's serials already on THIS bill, and any serials passed
@@ -623,14 +627,16 @@ var Bill = {
             }).join('');
             extra.innerHTML =
               '<div class="serial-pick mt">' +
-              '<label>' + (isRet ? 'કયો સિરિયલ પાછો આવ્યો?' : 'Select Serial No.') +
+              '<label>' + (isRet ? 'કયો સિરિયલ પાછો આવ્યો?'
+                          : (self.cfg.pickStock ? 'કયો સિરિયલ સપ્લાયરને પાછો મોકલવાનો છે?' : 'Select Serial No.')) +
               ' <span class="sp-count badge badge-warn">0 / ' + (parseFloat(div.querySelector('.i-qty').value) || 1) + ' entered</span></label>' +
               '<div class="sp-scan"><input type="text" class="sp-inp" placeholder="Type / scan serial no.">' +
               '<button type="button" class="btn btn-sm sp-add">Add</button>' +
               (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline sp-cam" title="મોબાઇલ કેમેરાથી સ્કેન">📷</button>' : '') + '</div>' +
               '<div class="sp-list">' + (boxes || '<span class="muted">' +
                 (isRet ? 'આ આઇટમનો કોઈ વેચાયેલો સિરિયલ મળ્યો નથી — નીચે જાતે લખી શકો છો'
-                       : 'No serials in stock (advance billing will proceed)') + '</span>') + '</div>' +
+                       : (self.cfg.pickStock ? 'આ લોકેશનમાં આ આઇટમનો કોઈ સિરિયલ સ્ટોકમાં નથી'
+                                             : 'No serials in stock (advance billing will proceed)')) + '</span>') + '</div>' +
               '</div>';
             function updCount() {
               var c = extra.querySelectorAll('input[type=checkbox]:checked').length;

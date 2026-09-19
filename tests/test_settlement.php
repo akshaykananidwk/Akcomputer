@@ -309,7 +309,7 @@ t_ok('the opening-balance line is not offered as a bill', strpos($js, "if (b.id 
 t_group('a sales return can credit a customer with no original invoice');
 // the old form had no customer field at all, so an adjust without an invoice
 // number had nobody to credit and silently did nothing
-t_ok('the form has a customer account picker', strpos($sr_src, '<select name="party_id">') !== false);
+t_ok('the form has a customer account picker', strpos($sr_src, 'name="party_id" id="party_id"') !== false);
 t_ok('...and the invoice still wins when one is given',
      strpos($sr_src, '$party_id = $sale ? (int)$sale[\'party_id\'] : (int)post(\'party_id\');') !== false);
 t_ok('a return with no customer says so rather than swallowing the credit',

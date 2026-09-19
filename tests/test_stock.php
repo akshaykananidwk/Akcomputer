@@ -610,3 +610,47 @@ t_eq('...at the shop\'s location', (int)$back['location_id'], $loc);
 t_eq('...and no longer tied to the bill it was sold on', $back['sale_id'], null);
 t_eq('...with one row, not a duplicate',
      (int)val('SELECT COUNT(*) FROM item_serials WHERE item_id = ? AND serial_no = ?', [$ri, 'TSR-SOLD']), 1);
+
+// ------------------------- a purchase return asks WHICH piece goes back too --
+// The sale side got its picker; the purchase side still had one free-text box
+// at the top of the page and nothing on the item itself. Sending goods back to
+// a supplier takes them off OUR shelf, so the list to pick from is the serials
+// in stock - the same tick-boxes as selling one.
+t_group('a purchase return picks the serials going back to the supplier');
+$pr_src = file_get_contents(dirname(__DIR__) . '/purchase_return.php');
+t_ok('the item offers its in-stock serials', strpos($pr_src, 'serials: true, pickStock: true') !== false);
+t_ok('the picked serials are read, keyed by the row',
+     strpos($pr_src, "post('serial_sel', [])") !== false && strpos($pr_src, "post('row_n', [])") !== false);
+t_ok('...and recorded on the return line', strpos($pr_src, "\$r['sns'] ? implode(',', \$r['sns']) : null") !== false);
+t_ok('marking one returned is scoped to its own item',
+     strpos($pr_src, "WHERE item_id=? AND serial_no=? AND status='in_stock'") !== false);
+$js3 = file_get_contents(dirname(__DIR__) . '/assets/app.js');
+t_ok('the widget can pick from stock in purchase mode',
+     strpos($js3, "this.cfg.mode === 'purchase' && !this.cfg.pickStock") !== false
+     && strpos($js3, "this.cfg.mode === 'sale' || this.cfg.pickStock") !== false);
+t_ok('...and says what the pick is for', strpos($js3, 'કયો સિરિયલ સપ્લાયરને પાછો મોકલવાનો છે?') !== false);
+
+t_group('a piece that is not on the shelf cannot go back to the supplier');
+t_ok('a serial not in stock is refused', strpos($pr_src, "\$srow['status'] !== 'in_stock'") !== false);
+t_ok('...one that is not this item\'s is refused', strpos($pr_src, 'આ આઇટમનો નથી') !== false);
+t_ok('...a serial-tracked item with nothing picked is refused',
+     strpos($pr_src, "!empty(\$item['serial_tracked']) && !\$r['sns']") !== false);
+t_ok('...and a count that does not match the quantity is refused',
+     strpos($pr_src, "count(\$r['sns']) != (int)\$r['qty']") !== false);
+$g = strpos($pr_src, 'સ્ટોકમાં નથી (અત્યારે');
+$t = strpos($pr_src, '$pdo->beginTransaction()');
+t_ok('every serial is checked before anything is written', $g !== false && $t !== false && $g < $t);
+
+t_group('deleting a purchase return brings the pieces back');
+// this used to end with "(Please manually verify serial number status.)" -
+// the software knew which serials it had sent and made the owner check anyway
+t_ok('the serials on the line are put back', strpos($pr_src, 'serial_put_in_stock((int)$ri[\'item_id\'], $sn, (int)$ret[\'location_id\'])') !== false);
+t_ok('...and the manual-check warning is gone', strpos($pr_src, 'manually verify serial number status') === false);
+
+t_group('both return screens can search the party list');
+foreach (['purchase_return.php', 'sales_return.php'] as $f) {
+    $src = file_get_contents(dirname(__DIR__) . '/' . $f);
+    t_ok($f . ' turns its party list into a search box', strpos($src, "PartyPick.init('party_id'") !== false);
+    t_ok($f . ' keeps a real select behind it', strpos($src, 'name="party_id" id="party_id"') !== false);
+    t_ok($f . ' carries the mobile so it is searchable', strpos($src, 'data-mobile=') !== false);
+}

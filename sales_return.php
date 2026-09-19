@@ -137,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 
 if ($action === 'new') {
     require_perm('sales_return.add');
-    $parties = all('SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name');
+    $parties = all('SELECT id, name, mobile FROM parties WHERE is_active = 1 ORDER BY name');
     $banks = all('SELECT id, account_name, bank_name, is_default FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
     $page_title = 'New Sales Return';
     include __DIR__ . '/includes/header.php';
@@ -155,8 +155,8 @@ if ($action === 'new') {
         </div>
         <div class="form-row cols-2">
           <div><label>Customer account (for a credit)</label>
-            <select name="party_id"><option value="">-- walk-in / none --</option>
-            <?php foreach ($parties as $pt): ?><option value="<?= $pt['id'] ?>"><?= e($pt['name']) ?></option><?php endforeach; ?>
+            <select name="party_id" id="party_id"><option value="">-- walk-in / none --</option>
+            <?php foreach ($parties as $pt): ?><option value="<?= $pt['id'] ?>" data-mobile="<?= e($pt['mobile']) ?>"><?= e($pt['name']) ?></option><?php endforeach; ?>
             </select>
             <small class="muted">If the original invoice is filled in above, that bill's customer is used instead.</small></div>
           <div><label>Notes / reason</label><input type="text" name="notes"></div>
@@ -192,7 +192,8 @@ if ($action === 'new') {
       </div>
     </form>
     <script>Bill.init({mode: 'sale', serials: true, returnMode: true, locSel: 'location_id', gst: false});
-    ReturnMoney.init({dir: 'in', partySel: 'select[name=party_id]'});</script>
+    ReturnMoney.init({dir: 'in', partySel: 'select[name=party_id]'});
+    PartyPick.init('party_id', 'ગ્રાહકનું નામ કે મોબાઇલ ટાઇપ કરો…');</script>
     <?php
     include __DIR__ . '/includes/footer.php';
     exit;
