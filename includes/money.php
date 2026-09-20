@@ -269,6 +269,52 @@ function profit_cost_sql() {
     return "si.qty * IF(i.item_type = 'service', si.cost_price, IF(si.cost_price > 0, si.cost_price, i.purchase_price))";
 }
 
+/** THE stock valuation rule, in one place - what the shop's goods are worth.
+ *
+ *  Four screens were each asking this their own way and getting four different
+ *  answers off the same data: the dashboard said 7,020, the Balance Sheet
+ *  5,620, the Business Report 7,230 and the Stock Report 6,820. The owner
+ *  noticed because two of them sat 826 rupees apart on his phone.
+ *
+ *  Three decisions, made once:
+ *
+ *  - STOCK WITH STAFF COUNTS. A part out with a technician for a job has not
+ *    been sold; it is still the shop's goods. The Balance Sheet was leaving it
+ *    out, which understated the asset side by exactly that amount and let the
+ *    difference disappear into the "opening equity" note.
+ *
+ *  - SERVICES DO NOT. A service has nothing on a shelf. If a stray stock row
+ *    exists against one it is a data fault, not inventory, and the Business
+ *    Report was pricing it as if it were.
+ *
+ *  - A SWITCHED-OFF ITEM STILL COUNTS WHILE IT HAS STOCK. Deactivating an item
+ *    hides it from the pick lists; it does not give the goods away. The Stock
+ *    Report was dropping those rows, so real stock on a real shelf was missing
+ *    from the total. (The same call is already made for parties: one
+ *    deactivated with money outstanding stays collectible.)
+ *
+ *  Valued at the item's purchase price. FIFO / weighted-average valuation is a
+ *  separate, clearly-labelled table on the Stock Report and is left alone. */
+function stock_qty_sql() {
+    return "(SELECT item_id, SUM(qty) q FROM
+                (SELECT item_id, qty FROM stock UNION ALL SELECT item_id, qty FROM staff_stock) z
+             GROUP BY item_id)";
+}
+
+/** The valuation as SQL, so a report can join more onto it. $priceCol is the
+ *  column to value at - purchase price by default, selling price for the
+ *  "what is it worth on the shelf" figure. */
+function stock_value_sql($priceCol = 'i.purchase_price') {
+    return "SELECT COALESCE(SUM(sq.q * " . $priceCol . "), 0)
+            FROM " . stock_qty_sql() . " sq JOIN items i ON i.id = sq.item_id
+            WHERE i.item_type <> 'service'";
+}
+
+/** ...and the number itself. */
+function stock_value($priceCol = 'i.purchase_price') {
+    return (float)val(stock_value_sql($priceCol));
+}
+
 /**
  * Party-wise margin contribution over a date range.
  *

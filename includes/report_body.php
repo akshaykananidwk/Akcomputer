@@ -29,9 +29,9 @@ if ($r === 'business' && can('reports.profit')) {
                + (float)val('SELECT COALESCE(SUM(si.line_disc),0) FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?', [$from, $to]);
     $recv = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid' AND is_cancelled = 0");
     $paybl = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid'");
-    $stockVal = (float)val('SELECT COALESCE(SUM(sq.q * i.purchase_price),0) FROM
-                            (SELECT item_id, SUM(qty) q FROM (SELECT item_id, qty FROM stock UNION ALL SELECT item_id, qty FROM staff_stock) z GROUP BY item_id) sq
-                            JOIN items i ON i.id = sq.item_id');
+    // the shared rule - this copy had no service filter, so a stray stock row
+    // against a service was being priced as if it were goods on a shelf
+    $stockVal = stock_value();
     $netSales = $sales - $salesRet;
     $gross = $netSales - $cogs;
     $serviceProfit = $svc + $repairIncome - $repairCost;
@@ -648,7 +648,14 @@ if ($r === 'stockval' && can('reports.profit')) {
     foreach (all('SELECT * FROM stock') as $s) $stockMap[$s['item_id']][$s['location_id']] = (float)$s['qty'];
     $staffHeld = [];
     foreach (all('SELECT item_id, SUM(qty) q FROM staff_stock GROUP BY item_id') as $s) $staffHeld[$s['item_id']] = (float)$s['q'];
-    $items = all("SELECT * FROM items WHERE is_active = 1 AND item_type <> 'service' ORDER BY name");
+    // An item switched off does not give its stock away, and the total below
+    // counts it (see stock_value()), so it has to be listed or the rows and
+    // the total disagree. Switched-off items appear only while they still
+    // carry stock, so the list does not fill up with dead rows.
+    $items = all("SELECT i.* FROM items i WHERE i.item_type <> 'service'
+                  AND (i.is_active = 1 OR EXISTS (SELECT 1 FROM " . stock_qty_sql() . " sq
+                       WHERE sq.item_id = i.id AND ABS(sq.q) > 0.0001))
+                  ORDER BY i.name");
     $grandQty = 0; $grandVal = 0; $grandSale = 0;
     // "hide zero" per the owner: rows with 0 everywhere clutter the count and
     // the totals page during stock checking - one tap hides them
@@ -667,7 +674,7 @@ if ($r === 'stockval' && can('reports.profit')) {
         foreach ($locs as $l) $rowQty += $stockMap[$it['id']][$l['id']] ?? 0;
         if ($hideZero && abs($rowQty) < 0.0001) continue;
         $rowQty = $staffHeld[$it['id']] ?? 0;
-        echo '<tr><td>' . e($it['name']) . '</td>';
+        echo '<tr><td>' . e($it['name']) . (empty($it['is_active']) ? ' <span class="badge badge-warn">બંધ</span>' : '') . '</td>';
         foreach ($locs as $l) {
             $qv = $stockMap[$it['id']][$l['id']] ?? 0;
             $rowQty += $qv;

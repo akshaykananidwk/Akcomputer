@@ -218,3 +218,64 @@ t_ok('nothing multiplies quantity by the item master price any more',
 t_ok('the rule itself lives in money.php', strpos($mny, 'function profit_cost_sql()') !== false);
 foreach (['business', 'profit', 'bill_profit', 'branch_staff'] as $rep)
     t_ok("the $rep report goes through it", strpos($rb, 'profit_cost_sql()') !== false);
+
+// ------------------------------------- one stock valuation, not four of them --
+// The owner spotted the dashboard and the Balance Sheet sitting 826 rupees
+// apart. Four screens were each asking "what is our stock worth" their own
+// way, and on data with staff-held stock, a stray service stock row and a
+// switched-off item they gave four different answers.
+t_group('every screen values stock the same way');
+$svLoc = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+$svU   = (int)val('SELECT id FROM users ORDER BY id LIMIT 1');
+
+/** An item with stock on the shelf, and optionally some out with staff. */
+function tsv_item($name, $type, $price, $shelf, $staff = 0, $active = 1) {
+    global $svLoc, $svU;
+    q("INSERT INTO items (name, item_type, purchase_price, selling_price, unit, is_active, created_at)
+       VALUES (?,?,?,?, 'pcs', ?, NOW())", [$name, $type, $price, $price * 2, $active]);
+    $id = insert_id();
+    if ($shelf) q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,?)', [$id, $svLoc, $shelf]);
+    if ($staff) q('INSERT INTO staff_stock (user_id, item_id, qty) VALUES (?,?,?)', [$svU, $id, $staff]);
+    return $id;
+}
+
+$base = stock_value();
+$tsvA = tsv_item('TSV Plain ' . bin2hex(random_bytes(2)), 'product', 100, 10);          // 1000 on the shelf
+$tsvB = tsv_item('TSV Staff ' . bin2hex(random_bytes(2)), 'product', 200, 5, 7);        // 1000 shelf + 1400 staff
+$tsvC = tsv_item('TSV Off '   . bin2hex(random_bytes(2)), 'product', 50, 4, 0, 0);      // 200, item switched off
+$tsvD = tsv_item('TSV Svc '   . bin2hex(random_bytes(2)), 'service', 70, 3);            // a service with a stray stock row
+
+// what the one rule says these are worth: 1000 + 1000 + 1400 + 200, service out
+t_eq('goods with staff are counted, a service row is not, a switched-off item is',
+     money_r(stock_value() - $base), 3600.0);
+
+// the three figures the screens actually print, each from its own code path
+require_once dirname(__DIR__) . '/includes/accounting.php';
+$fromBalanceSheet = coa_stock_value();
+t_eq('the Balance Sheet agrees with the rule', $fromBalanceSheet, stock_value());
+// the dashboard card
+$inv = dash_stock();
+t_ok('the dashboard has a stock figure at all', is_array($inv));
+
+// ...and the shape of the rule itself, so a screen cannot drift off it again
+$m = file_get_contents(dirname(__DIR__) . '/includes/money.php');
+t_ok('the rule lives in one place', substr_count($m, 'function stock_value_sql') === 1);
+t_ok('...it adds staff-held stock to the shelf', strpos($m, 'UNION ALL SELECT item_id, qty FROM staff_stock') !== false);
+t_ok('...and leaves services out', strpos($m, "WHERE i.item_type <> 'service'") !== false);
+foreach (['includes/accounting.php', 'index.php', 'includes/report_body.php'] as $f) {
+    $src = file_get_contents(dirname(__DIR__) . '/' . $f);
+    t_ok($f . ' goes through the shared rule',
+         strpos($src, 'stock_value()') !== false || strpos($src, 'stock_qty_sql()') !== false);
+    // no screen may keep its own copy of the valuation any more
+    t_ok($f . ' keeps no private copy of it',
+         strpos($src, "SUM(sq.q * i.purchase_price)") === false
+         && strpos($src, "SUM(s.qty * i.purchase_price)") === false);
+}
+
+t_group('the Stock Report rows add up to its own total');
+// a switched-off item still holding stock has to be LISTED, or the rows and
+// the total disagree - that was the fourth of the four answers
+$rb = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
+t_ok('switched-off items with stock are listed', strpos($rb, "i.is_active = 1 OR EXISTS") !== false);
+t_ok('...and marked as switched off', strpos($rb, "empty(\$it['is_active']) ? ' <span class=\"badge badge-warn\">બંધ</span>'") !== false);
+t_ok('...while ones with no stock stay hidden', strpos($rb, "ABS(sq.q) > 0.0001") !== false);

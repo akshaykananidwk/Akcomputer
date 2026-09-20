@@ -91,7 +91,10 @@ function coa_ar_ap($to) {
  *  stock ledger isn't tracked, so an as-of date in the past still shows
  *  today's valuation (report_body.php footnotes this when relevant). */
 function coa_stock_value() {
-    return (float)val("SELECT COALESCE(SUM(s.qty * i.purchase_price),0) FROM stock s JOIN items i ON i.id = s.item_id WHERE i.item_type <> 'service'");
+    // the shared rule - see stock_value() in money.php. This used to count the
+    // shelf only, so goods out with a technician were missing from the asset
+    // side and the gap vanished into the opening-equity note at the bottom.
+    return stock_value();
 }
 /** Net sales revenue (gross sales less sales returns) in a date range. */
 function coa_sales_revenue($from, $to) {
