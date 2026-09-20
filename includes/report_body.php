@@ -1326,7 +1326,11 @@ if ($r === 'trial_balance' && can('reports.accounting')) {
     echo '<tr style="font-weight:600;border-top:2px solid var(--text)"><td colspan="3">Total</td><td class="num">₹' . money($totDr) . '</td><td class="num">₹' . money($totCr) . '</td></tr>';
     echo '</tbody></table></div>';
     if (abs($totDr - $totCr) > 0.01) {
-        echo '<p class="muted mt">Debit/Credit differ by ₹' . money(abs($totDr - $totCr)) . ' - this is the shop\'s opening equity (value built up before this Accounting module was switched on) that hasn\'t been posted yet. Post it once via <a href="journal.php?action=new">Journal Entry</a> against "Owner\'s Capital" and this will balance to zero going forward.</p>';
+        // same correction as on the Balance Sheet: a balanced journal entry
+        // cannot move this difference, so do not send the owner to do one
+        echo '<p class="muted mt">Debit અને Credit વચ્ચે ₹' . money(abs($totDr - $totCr)) . ' નો ફરક છે — '
+           . 'એ આ Accounting મોડ્યુલ ચાલુ કર્યું <em>એ પહેલાંની</em> મૂડી છે (જૂનો સ્ટોક, જૂની રોકડ, જૂનું ઉઘરાણી-દેવું), '
+           . 'જે કોઈ એન્ટ્રીથી ઊભી થઈ નથી પણ ખરેખર હતી. એ રકમ ખોટી નથી; એ ફક્ત ચોપડે નોંધાયેલી નથી.</p>';
     }
     echo '</div>';
 }
@@ -1357,6 +1361,15 @@ if ($r === 'balance_sheet' && can('reports.accounting')) {
     }
     echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Total Liabilities</td><td class="num">₹' . money($totLiab) . '</td></tr>';
 
+    // What the shop is actually worth: everything it owns less everything it
+    // owes. It is the one line an owner reads a balance sheet for, and it was
+    // the one line the sheet did not have - the reader had to do the
+    // subtraction in their head against two figures a screen apart.
+    $netWorth = $totAssets - $totLiab;
+    echo '<tr style="font-weight:700;border-top:2px solid var(--text);background:var(--bg,#f6f8fb)">'
+       . '<td>ચોખ્ખી મૂડી — Net Worth <span class="muted" style="font-weight:normal">(કુલ મિલકત − કુલ દેવું)</span></td>'
+       . '<td class="num">₹' . money($netWorth) . '</td></tr>';
+
     echo '<tr style="font-weight:600"><td colspan="2">Equity</td></tr>';
     foreach ($equity as $a) {
         $v = $a['code'] === '3900'
@@ -1369,9 +1382,47 @@ if ($r === 'balance_sheet' && can('reports.accounting')) {
     echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>Total Liabilities + Equity</td><td class="num">₹' . money($totLiab + $totEquity) . '</td></tr>';
     echo '</tbody></table></div>';
 
+    // The same net worth again, worked out in full, and reconciled against
+    // what the books have actually recorded. The gap between the two IS the
+    // opening capital nobody has posted yet - showing it as a line beats
+    // leaving it as a footnote the eye skips.
     $diff = $totAssets - ($totLiab + $totEquity);
+    echo '<div class="card mt"><h3>💼 ચોખ્ખી મૂડી (Net Worth) — આખો હિસાબ</h3>';
+    echo '<div class="table-wrap"><table><tbody>';
+    echo '<tr><td>કુલ મિલકત (Total Assets)</td><td class="num">₹' . money($totAssets) . '</td></tr>';
+    echo '<tr><td>− કુલ દેવું (Total Liabilities)</td><td class="num">− ₹' . money($totLiab) . '</td></tr>';
+    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>= ચોખ્ખી મૂડી (Net Worth)</td>'
+       . '<td class="num">₹' . money($netWorth) . '</td></tr>';
+    echo '<tr><td colspan="2" style="padding-top:12px" class="muted">એમાંથી ચોપડે નોંધાયેલું:</td></tr>';
+    foreach ($equity as $a) {
+        $v = $a['code'] === '3900'
+            ? coa_net_profit('0001-01-01', $to) - journal_balance($a['id'], '0001-01-01', $to)
+            : -journal_balance($a['id'], '0001-01-01', $to);
+        echo '<tr><td style="padding-left:20px">' . e($a['name']) . '</td><td class="num">₹' . money($v) . '</td></tr>';
+    }
+    echo '<tr><td style="padding-left:20px">નોંધાયેલી કુલ મૂડી (Total Equity)</td><td class="num">₹' . money($totEquity) . '</td></tr>';
     if (abs($diff) > 0.01) {
-        echo '<p class="muted mt">Assets and Liabilities+Equity differ by ₹' . money(abs($diff)) . ' - this is the shop\'s opening equity (value built up before this Accounting module was switched on) that hasn\'t been posted yet. Post it once via <a href="journal.php?action=new">Journal Entry</a> against "Owner\'s Capital" and this will balance to zero going forward.</p>';
+        echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)">'
+           . '<td>હજી નહીં નોંધાયેલી જૂની મૂડી</td><td class="num">₹' . money($diff) . '</td></tr>';
+    }
+    echo '</tbody></table></div>';
+    if (abs($diff) > 0.01) {
+        // The note that used to sit here told the owner to post this via a
+        // Journal Entry against Owner's Capital. It cannot work: every line of
+        // a balanced entry lands in Assets, Liabilities or Equity with
+        // matching signs, so Assets - Liabilities - Equity does not move -
+        // checked against a capital entry debited to cash, to a liability and
+        // to retained earnings, and the gap stayed at exactly the same figure
+        // all three times. Telling someone to do something that cannot work is
+        // worse than telling them nothing, so this says what the number is.
+        echo '<p class="muted mt">ઉપરની <strong>ચોખ્ખી મૂડી ₹' . money($netWorth) . '</strong> એ ધંધાની ખરી કિંમત છે — '
+           . 'કુલ મિલકતમાંથી કુલ દેવું બાદ કરીને આવેલી, એટલે એ ભરોસાપાત્ર આંકડો છે.</p>';
+        echo '<p class="muted">ચોપડે ફક્ત ₹' . money($totEquity) . ' નોંધાયેલી છે. બાકીના '
+           . '<strong>₹' . money($diff) . '</strong> એ આ Accounting મોડ્યુલ ચાલુ કર્યું <em>એ પહેલાંની</em> મૂડી છે — '
+           . 'જૂનો સ્ટોક, જૂની રોકડ અને જૂનું ઉઘરાણી-દેવું, જે કોઈ એન્ટ્રીથી ઊભું થયું નથી પણ ખરેખર હતું. '
+           . 'એ રકમ ખોટી નથી; એ ફક્ત નોંધાયેલી નથી.</p>';
+    } else {
+        echo '<p class="muted mt">ચોપડે નોંધાયેલી મૂડી અને ખરી ચોખ્ખી મૂડી બરાબર મળે છે — હિસાબ પૂરો સરભર છે. ✅</p>';
     }
     echo '</div>';
 }

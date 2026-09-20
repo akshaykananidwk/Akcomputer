@@ -279,3 +279,58 @@ $rb = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
 t_ok('switched-off items with stock are listed', strpos($rb, "i.is_active = 1 OR EXISTS") !== false);
 t_ok('...and marked as switched off', strpos($rb, "empty(\$it['is_active']) ? ' <span class=\"badge badge-warn\">બંધ</span>'") !== false);
 t_ok('...while ones with no stock stay hidden', strpos($rb, "ABS(sq.q) > 0.0001") !== false);
+
+// ------------------------------------------ Total Assets - Total Liabilities --
+// The one line an owner reads a balance sheet for, and the sheet did not have
+// it: the reader had to subtract two figures a screen apart in their head.
+t_group('the Balance Sheet shows Net Worth');
+$rb2 = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
+t_ok('there is a Net Worth line', strpos($rb2, '$netWorth = $totAssets - $totLiab;') !== false);
+t_ok('...on the sheet itself, right after the liabilities',
+     strpos($rb2, 'ચોખ્ખી મૂડી — Net Worth') !== false);
+t_ok('...and worked out in full below it', strpos($rb2, 'Net Worth) — આખો હિસાબ') !== false);
+t_ok('...reconciled against what the books actually record',
+     strpos($rb2, 'એમાંથી ચોપડે નોંધાયેલું') !== false);
+t_ok('...with the unrecorded opening capital as its own line',
+     strpos($rb2, 'હજી નહીં નોંધાયેલી જૂની મૂડી') !== false);
+// the exports render the same body, so the line reaches PDF and Excel too
+foreach (['report_pdf.php', 'report_xlsx.php'] as $f)
+    t_ok($f . ' renders the same report body',
+         strpos(file_get_contents(dirname(__DIR__) . '/' . $f), "include __DIR__ . '/includes/report_body.php'") !== false);
+
+t_group('the sheet no longer gives advice that cannot work');
+// It used to say: post the difference via a Journal Entry against Owner's
+// Capital "and this will balance to zero going forward". It cannot. Every line
+// of a BALANCED entry lands in Assets, Liabilities or Equity with matching
+// signs, so Assets - Liabilities - Equity is invariant under any journal
+// entry. The arithmetic below is that proof, run rather than asserted.
+require_once dirname(__DIR__) . '/includes/accounting.php';
+function tbs_gap($to) {
+    $A = 0; $L = 0; $E = 0;
+    foreach (coa_all() as $x) {
+        if ($x['type'] === 'asset') $A += coa_balance_asof($x, $to);
+        elseif ($x['type'] === 'liability') $L += -coa_balance_asof($x, $to);
+        elseif ($x['type'] === 'equity') $E += ($x['code'] === '3900'
+            ? coa_net_profit('0001-01-01', $to) - journal_balance($x['id'], '0001-01-01', $to)
+            : -journal_balance($x['id'], '0001-01-01', $to));
+    }
+    return money_r($A - $L - $E);
+}
+$tbsTo = today();
+$gap0 = tbs_gap($tbsTo);
+$capId = (int)val("SELECT id FROM chart_of_accounts WHERE code = '3000'");
+foreach (['1000', '2000', '3900'] as $against) {
+    q("INSERT INTO journal_entries (ref_no, entry_date, narration, source, created_by, created_at)
+       VALUES (?,?, 'opening capital', 'manual', 1, NOW())", ['TBS-' . $against, $tbsTo]);
+    $eId = insert_id();
+    $drId = (int)val('SELECT id FROM chart_of_accounts WHERE code = ?', [$against]);
+    q('INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES (?,?,1000,0)', [$eId, $drId]);
+    q('INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES (?,?,0,1000)', [$eId, $capId]);
+    t_eq('crediting Owner\'s Capital against ' . $against . ' does not close the gap', tbs_gap($tbsTo), $gap0);
+}
+t_ok('so the sheet does not promise a Journal Entry will fix it',
+     strpos($rb2, 'this will balance to zero going forward') === false);
+t_ok('...it says what the number actually is instead',
+     strpos($rb2, 'એ રકમ ખોટી નથી; એ ફક્ત નોંધાયેલી નથી') !== false);
+t_ok('...and that Net Worth itself is the reliable figure',
+     strpos($rb2, 'ભરોસાપાત્ર આંકડો') !== false);
