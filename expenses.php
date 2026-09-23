@@ -140,14 +140,13 @@ include __DIR__ . '/includes/header.php';
 <div class="mb"><span class="vyf-chip">Staff: <?= e($sn) ?> — ₹<?= money(array_sum(array_column($rows, 'amount'))) ?> spent</span></div>
 <?php endif; ?>
 <?php
-// business and personal shown apart - the owner's own spending is a drawing
-// against capital, not a cost of running the shop
-$bizTot = 0; $perTot = 0;
-foreach ($rows as $rw) { if (expense_is_personal($rw['category'])) $perTot += (float)$rw['amount']; else $bizTot += (float)$rw['amount']; }
+// shop and home side by side - both counted, neither taken off the other
+$bizTot = 0; $homeTot = 0;
+foreach ($rows as $rw) { if (expense_is_home($rw['category'])) $homeTot += (float)$rw['amount']; else $bizTot += (float)$rw['amount']; }
 ?>
-<div class="list-count"><?= count($rows) ?> entries · Total ₹<?= money($bizTot + $perTot) ?>
-  <?php if ($perTot > 0.009): ?>
-    <span class="muted"> — ધંધાનો ₹<?= money($bizTot) ?> · અંગત ₹<?= money($perTot) ?></span>
+<div class="list-count"><?= count($rows) ?> entries · Total ₹<?= money($bizTot + $homeTot) ?>
+  <?php if ($homeTot > 0.009): ?>
+    <span class="muted"> — 🏪 ધંધો ₹<?= money($bizTot) ?> · 🏠 ઘર ₹<?= money($homeTot) ?></span>
   <?php endif; ?>
 </div>
 <div class="table-wrap">

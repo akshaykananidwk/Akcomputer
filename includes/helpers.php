@@ -895,11 +895,14 @@ function razorpay_payment_link($amount, $description, $customerName = '', $custo
  *  One list, in one place. It used to be a line in expenses.php, which is fine
  *  until a report or the AI suggester needs to know the same thing.
  *
- *  The last group is NOT business spending. Money the owner takes out for
- *  himself is a drawing against capital, not a cost of running the shop - so
- *  it is kept visibly apart when entering and reported separately, because a
- *  personal expense buried in the business pot makes the shop's profit look
- *  smaller than it is. */
+ *  THE HOME GROUP IS NOT A WARNING. In this shop the household runs off the
+ *  same money, and the owner wants it recorded here with everything else -
+ *  what went home, what the home light bill was, all of it. So home spending
+ *  is a normal expense, counted in every total like any other.
+ *
+ *  It is only kept as its own GROUP so the two questions can both be answered:
+ *  "what did the shop spend" and "what went home". Neither figure is hidden
+ *  and neither is taken away from the other. */
 function expense_category_groups() {
     return [
         'ધંધાનો ખર્ચ' => [
@@ -913,11 +916,19 @@ function expense_category_groups() {
             'EMI / Loan', 'GST & Government', 'Business Travel',
             'Customer/Staff Expense', 'Business Miscellaneous',
         ],
-        'અંગત (ધંધાનો ખર્ચ નથી)' => [
-            'Owner Drawings / Personal', 'Medical / Personal', 'Gifts & Family',
+        'ઘર / અંગત ખર્ચ' => [
+            'Money Given Home', 'Home Rent', 'Home Electricity',
+            'Home Gas & Water', 'Home Groceries', 'Home Mobile & DTH',
+            'School & Children', 'Medical / Personal', 'Insurance / LIC',
+            'Personal Vehicle & Petrol', 'Home Shopping & Clothes',
+            'Home Repair & Maintenance', 'Functions & Weddings',
+            'Gifts & Family', 'Owner Drawings / Personal', 'Personal Miscellaneous',
         ],
     ];
 }
+
+/** The name of the home group, so nothing has to repeat the Gujarati string. */
+function expense_home_group() { return 'ઘર / અંગત ખર્ચ'; }
 
 /** Flat list, for anything that just needs the names. */
 function expense_categories() {
@@ -926,21 +937,36 @@ function expense_categories() {
     return $out;
 }
 
-/** Is this money the owner took out rather than a cost of trading?
- *  Reports use it to show the two apart instead of adding them together. */
-function expense_is_personal($cat) {
-    $groups = expense_category_groups();
-    return in_array($cat, $groups['અંગત (ધંધાનો ખર્ચ નથી)'], true);
+/** Did this money go to the house rather than the shop? Reports use it to
+ *  show the two SIDE BY SIDE - never to drop one of them. */
+function expense_is_home($cat) {
+    $g = expense_category_groups();
+    return in_array($cat, $g[expense_home_group()], true);
 }
 
-/** Personal spending inside a date range, as its own figure. */
-function expense_personal_total($from, $to) {
-    $groups = expense_category_groups();
-    $names = $groups['અંગત (ધંધાનો ખર્ચ નથી)'];
+/** Household spending inside a date range, as its own figure. */
+function expense_home_total($from, $to) {
+    $g = expense_category_groups();
+    $names = $g[expense_home_group()];
     $in = implode(',', array_fill(0, count($names), '?'));
     return (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses
                        WHERE exp_date BETWEEN ? AND ? AND category IN ($in)",
                       array_merge([$from, $to], $names));
+}
+
+/** Month by month, what went to the shop and what went home - the answer to
+ *  "ઘરે આ મહિને કેટલા ગયા". Oldest first. */
+function expense_home_by_month($from, $to) {
+    $g = expense_category_groups();
+    $names = $g[expense_home_group()];
+    $in = implode(',', array_fill(0, count($names), '?'));
+    return all("SELECT DATE_FORMAT(exp_date, '%Y-%m') ym,
+                       COALESCE(SUM(IF(category IN ($in), amount, 0)), 0) home,
+                       COALESCE(SUM(IF(category IN ($in), 0, amount)), 0) shop,
+                       COALESCE(SUM(amount), 0) total
+                FROM expenses WHERE exp_date BETWEEN ? AND ?
+                GROUP BY ym ORDER BY ym",
+               array_merge($names, $names, [$from, $to]));
 }
 
 // ---------- Serial numbers ----------

@@ -338,8 +338,11 @@ t_ok('...and that Net Worth itself is the reliable figure',
 // ------------------------------------------------- the shop's own categories --
 t_group('expense categories are the shop\'s own list, in one place');
 $cats = expense_categories();
-t_eq('all twenty-seven are there', count($cats), 27);
-t_eq('...with no duplicates', count(array_unique($cats)), 27);
+$groups = expense_category_groups();
+t_eq('the shop\'s twenty-four are there', count($groups['ધંધાનો ખર્ચ']), 24);
+t_eq('...and the household heads beside them', count($groups[expense_home_group()]), 16);
+t_eq('...forty in all', count($cats), 40);
+t_eq('...with no duplicates', count(array_unique($cats)), 40);
 foreach (['Office Rent', 'Salary & Wages', 'Staff Advance', 'Petrol & Vehicle', 'Vehicle Repair',
           'Courier & Transport', 'Internet & Telecom', 'Hosting & Domain', 'Electricity',
           'Tea & Water', 'Food & Meals', 'Office Stationery', 'Computer Repair/Maintenance',
@@ -347,37 +350,60 @@ foreach (['Office Rent', 'Salary & Wages', 'Staff Advance', 'Petrol & Vehicle', 
           'Software & AI', 'Bank Charges & Interest', 'Payment Gateway Charges', 'EMI / Loan',
           'GST & Government', 'Business Travel', 'Customer/Staff Expense', 'Business Miscellaneous',
           'Owner Drawings / Personal', 'Medical / Personal', 'Gifts & Family'] as $c)
-    t_ok('"' . $c . '" is on the list', in_array($c, $cats, true));
+    t_ok('"' . $c . '" is still on the list', in_array($c, $cats, true));
+// the household heads the owner actually asked for
+foreach (['Money Given Home', 'Home Electricity', 'Home Rent', 'Home Groceries',
+          'School & Children', 'Insurance / LIC', 'Personal Vehicle & Petrol'] as $c)
+    t_ok('"' . $c . '" can be recorded', in_array($c, $cats, true));
 $ex_src = file_get_contents(dirname(__DIR__) . '/expenses.php');
 t_ok('the screen reads the shared list, not its own copy',
      strpos($ex_src, 'expense_category_groups()') !== false
      && strpos($ex_src, "'General', 'Rent', 'Salary'") === false);
 t_ok('...and shows the two groups apart', strpos($ex_src, '<optgroup label=') !== false);
 
-t_group('the owner\'s own spending is kept apart from the shop\'s');
-foreach (['Owner Drawings / Personal', 'Medical / Personal', 'Gifts & Family'] as $c)
-    t_ok('"' . $c . '" counts as personal', expense_is_personal($c));
-foreach (['Office Rent', 'Salary & Wages', 'Business Miscellaneous'] as $c)
-    t_ok('"' . $c . '" counts as business', !expense_is_personal($c));
-// the figure itself
-$ecFrom = '2031-01-01'; $ecTo = '2031-01-31';   // a window nothing else uses
+t_group('home spending is counted like any other, and still countable on its own');
+foreach (['Money Given Home', 'Home Electricity', 'Owner Drawings / Personal'] as $c)
+    t_ok('"' . $c . '" is household', expense_is_home($c));
+foreach (['Office Rent', 'Electricity', 'Business Miscellaneous'] as $c)
+    t_ok('"' . $c . '" is the shop\'s', !expense_is_home($c));
+// the shop's own Electricity and the house light bill must not be one line
+t_ok('the shop light bill and the home one are different categories',
+     in_array('Electricity', $cats, true) && in_array('Home Electricity', $cats, true)
+     && !expense_is_home('Electricity') && expense_is_home('Home Electricity'));
+
+$ecFrom = '2031-01-01'; $ecTo = '2031-02-28';
 $ecU = (int)val('SELECT id FROM users ORDER BY id LIMIT 1');
 $ecL = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
-foreach ([['Office Rent', 4000], ['Owner Drawings / Personal', 5000], ['Gifts & Family', 1500]] as $e)
+foreach ([['2031-01-10', 'Office Rent', 4000], ['2031-01-12', 'Money Given Home', 5000],
+          ['2031-01-20', 'Home Electricity', 1500], ['2031-02-05', 'Electricity', 900],
+          ['2031-02-08', 'Home Groceries', 2600]] as $e)
     q("INSERT INTO expenses (exp_date, category, amount, mode, notes, location_id, created_by)
-       VALUES ('2031-01-10', ?, ?, 'cash', 'ECTEST', ?, ?)", [$e[0], $e[1], $ecL, $ecU]);
-t_eq('personal spending is totalled on its own', expense_personal_total($ecFrom, $ecTo), 6500.0);
+       VALUES (?, ?, ?, 'cash', 'ECTEST', ?, ?)", [$e[0], $e[1], $e[2], $ecL, $ecU]);
+
+t_eq('what went home is its own figure', expense_home_total($ecFrom, $ecTo), 9100.0);
 $allExp = (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE exp_date BETWEEN ? AND ?", [$ecFrom, $ecTo]);
-t_eq('...and the business part is the rest', money_r($allExp - expense_personal_total($ecFrom, $ecTo)), 4000.0);
+t_eq('...the shop\'s is the rest', money_r($allExp - expense_home_total($ecFrom, $ecTo)), 4900.0);
+t_eq('...and nothing is lost between them', money_r(4900.0 + 9100.0), money_r($allExp));
+
+$mon = expense_home_by_month($ecFrom, $ecTo);
+t_eq('month by month, two months', count($mon), 2);
+t_eq('January went home', money_r($mon[0]['home']), 6500.0);
+t_eq('...and to the shop', money_r($mon[0]['shop']), 4000.0);
+t_eq('February went home', money_r($mon[1]['home']), 2600.0);
+t_eq('...and to the shop', money_r($mon[1]['shop']), 900.0);
+foreach ($mon as $mm) t_eq('each month\'s parts add to its total (' . $mm['ym'] . ')',
+     money_r($mm['home'] + $mm['shop']), money_r($mm['total']));
 
 $rb3 = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
-t_ok('the P&L shows the personal amount inside net profit', strpos($rb3, 'expense_personal_total($from, $to)') !== false);
-t_ok('...and the business-only profit beside it', strpos($rb3, 'ધંધાનો ખરો નફો') !== false);
-// deliberately NOT changed: net profit itself still counts every expense, so
-// no figure the owner already knows moves without him choosing it
-t_ok('net profit itself is left as it was',
+t_ok('the P&L says how much of the profit went home', strpos($rb3, 'expense_home_total($from, $to)') !== false);
+t_ok('...and what the shop alone made', strpos($rb3, 'ફક્ત ધંધાનો નફો') !== false);
+// the owner asked for it to stay an expense - so net profit must NOT change
+t_ok('home spending is still inside net profit',
      strpos($rb3, "<td>NET PROFIT</td><td class=\"num\">₹' . money(\$net) . '") !== false);
-t_ok('the expenses screen splits its total too', strpos($ex_src, 'expense_is_personal($rw[\'category\'])') !== false);
+t_ok('...and the screen says so in as many words', strpos($rb3, 'ગણેલો જ છે — કાઢ્યો નથી') !== false);
+t_ok('the expense report lists the two apart', strpos($rb3, 'ઘરનો કુલ') !== false && strpos($rb3, 'ધંધાનો કુલ') !== false);
+t_ok('...and month by month', strpos($rb3, 'expense_home_by_month($from, $to)') !== false);
+t_ok('the expenses screen splits its total too', strpos($ex_src, "expense_is_home(\$rw['category'])") !== false);
 
 t_group('the old category names fold into the new ones');
 // every report groups by the category STRING, so leaving the old names behind

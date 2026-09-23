@@ -857,10 +857,43 @@ if ($r === 'expense' && can('expenses.view')) {
     // staff privacy: only the full admin sees the whole shop's expenses
     $expScope = is_full_admin() ? '' : ' AND created_by = ' . (int)current_user()['id'];
     $rows = all("SELECT category, COUNT(*) cnt, SUM(amount) total FROM expenses WHERE exp_date BETWEEN ? AND ? $expScope GROUP BY category ORDER BY total DESC", [$from, $to]);
+    // shop and home listed apart, because "where did the money go" and "how
+    // much went home" are two different questions the owner asks of one screen
+    $shopRows = array_values(array_filter($rows, fn($x) => !expense_is_home($x['category'])));
+    $homeRows = array_values(array_filter($rows, fn($x) => expense_is_home($x['category'])));
+    $shopSum = array_sum(array_column($shopRows, 'total'));
+    $homeSum = array_sum(array_column($homeRows, 'total'));
+
     echo '<div class="table-wrap"><table><thead><tr><th>Category</th><th class="num">Entries</th><th class="num">Total ₹</th></tr></thead><tbody>';
-    foreach ($rows as $x) echo '<tr><td>' . e($x['category']) . '</td><td class="num">' . $x['cnt'] . '</td><td class="num">' . money($x['total']) . '</td></tr>';
-    echo '<tr><td><strong>Total</strong></td><td></td><td class="num"><strong>' . money(array_sum(array_column($rows, 'total'))) . '</strong></td></tr>';
+    echo '<tr style="font-weight:600"><td colspan="3">🏪 ધંધાનો ખર્ચ</td></tr>';
+    foreach ($shopRows as $x) echo '<tr><td style="padding-left:20px">' . e($x['category']) . '</td><td class="num">' . $x['cnt'] . '</td><td class="num">' . money($x['total']) . '</td></tr>';
+    if (!$shopRows) echo '<tr><td colspan="3" class="muted" style="padding-left:20px">—</td></tr>';
+    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>ધંધાનો કુલ</td><td></td><td class="num">' . money($shopSum) . '</td></tr>';
+
+    echo '<tr style="font-weight:600"><td colspan="3" style="padding-top:10px">🏠 ઘર / અંગત ખર્ચ</td></tr>';
+    foreach ($homeRows as $x) echo '<tr><td style="padding-left:20px">' . e($x['category']) . '</td><td class="num">' . $x['cnt'] . '</td><td class="num">' . money($x['total']) . '</td></tr>';
+    if (!$homeRows) echo '<tr><td colspan="3" class="muted" style="padding-left:20px">—</td></tr>';
+    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>ઘરનો કુલ</td><td></td><td class="num">' . money($homeSum) . '</td></tr>';
+
+    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>આખો કુલ</td><td></td><td class="num">' . money($shopSum + $homeSum) . '</td></tr>';
     echo '</tbody></table></div>';
+
+    // ...and month by month, so "ઘરે આ મહિને કેટલા ગયા" is one glance
+    $byMonth = expense_home_by_month($from, $to);
+    if (count($byMonth) > 1 || $homeSum > 0.009) {
+        echo '<div class="card mt"><h3>📅 મહિના પ્રમાણે — ધંધો અને ઘર</h3>';
+        echo '<div class="table-wrap"><table><thead><tr><th>મહિનો</th><th class="num">🏪 ધંધો</th><th class="num">🏠 ઘર</th><th class="num">કુલ</th></tr></thead><tbody>';
+        foreach ($byMonth as $mm)
+            echo '<tr><td>' . date('M Y', strtotime($mm['ym'] . '-01')) . '</td>'
+               . '<td class="num">' . money($mm['shop']) . '</td>'
+               . '<td class="num">' . money($mm['home']) . '</td>'
+               . '<td class="num">' . money($mm['total']) . '</td></tr>';
+        echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>કુલ</td>'
+           . '<td class="num">' . money(array_sum(array_column($byMonth, 'shop'))) . '</td>'
+           . '<td class="num">' . money(array_sum(array_column($byMonth, 'home'))) . '</td>'
+           . '<td class="num">' . money(array_sum(array_column($byMonth, 'total'))) . '</td></tr>';
+        echo '</tbody></table></div></div>';
+    }
 }
 
 // ---------------- bill-wise profit ----------------
@@ -1466,22 +1499,22 @@ if ($r === 'profit_loss' && can('reports.accounting')) {
     echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>NET PROFIT</td><td class="num">₹' . money($net) . '</td></tr>';
     echo '</tbody></table></div>';
 
-    // Money the owner draws for himself is not a cost of running the shop - it
-    // is a drawing against capital - but it is recorded as an expense and so
-    // it sits inside the Net Profit above. Both figures are shown rather than
-    // one being quietly changed: the owner decides which he wants to work to.
-    $personal = expense_personal_total($from, $to);
-    if ($personal > 0.009) {
-        echo '<div class="card mt"><h3>👤 અંગત ખર્ચ અલગથી</h3>';
+    // The household runs off the same money here, so home spending IS an
+    // expense and stays inside the Net Profit above - nothing is taken out.
+    // This block only answers the second question alongside it: how much of
+    // that went home, and what the shop alone would have made.
+    $homeExp = expense_home_total($from, $to);
+    if ($homeExp > 0.009) {
+        echo '<div class="card mt"><h3>🏠 ઘરનો ખર્ચ અલગથી</h3>';
         echo '<div class="table-wrap"><table><tbody>';
-        echo '<tr><td>ઉપરનો NET PROFIT</td><td class="num">₹' . money($net) . '</td></tr>';
-        echo '<tr><td>એમાં ગણાયેલો અંગત ખર્ચ</td><td class="num">₹' . money($personal) . '</td></tr>';
-        echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>ધંધાનો ખરો નફો (અંગત ખર્ચ બાદ કર્યા વગર)</td>'
-           . '<td class="num">₹' . money($net + $personal) . '</td></tr>';
+        echo '<tr><td>ઉપરનો NET PROFIT (ઘરનો ખર્ચ ગણીને)</td><td class="num">₹' . money($net) . '</td></tr>';
+        echo '<tr><td>એમાં ગયેલો ઘરનો ખર્ચ</td><td class="num">₹' . money($homeExp) . '</td></tr>';
+        echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>ફક્ત ધંધાનો નફો</td>'
+           . '<td class="num">₹' . money($net + $homeExp) . '</td></tr>';
         echo '</tbody></table></div>';
-        echo '<p class="muted mt">માલિક પોતાના માટે કાઢેલા પૈસા એ ધંધાનો ખર્ચ નથી — એ મૂડીમાંથી ઉપાડ છે. '
-           . 'અત્યારે એ ઉપરના નફામાં ગણાઈ જાય છે, એટલે ધંધાનો નફો ઓછો દેખાય છે. '
-           . 'બંને આંકડા અહીં બતાવ્યા છે; કયો વાપરવો એ તમારો નિર્ણય.</p>';
+        echo '<p class="muted mt">ઘરનો ખર્ચ ઉપરના નફામાં ગણેલો જ છે — કાઢ્યો નથી. '
+           . 'આ ખાનું ફક્ત એટલું કહે છે કે એમાંથી ₹' . money($homeExp) . ' ઘરે ગયા, '
+           . 'અને ફક્ત દુકાને ₹' . money($net + $homeExp) . ' કમાયા. બંને આંકડા સાચા છે.</p>';
         echo '</div>';
     }
     echo '</div>';
