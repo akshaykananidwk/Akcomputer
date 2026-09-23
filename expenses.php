@@ -55,10 +55,17 @@ $rows = all("SELECT e.*, u2.name by_name, l.name loc_name FROM expenses e
              JOIN users u2 ON u2.id = e.created_by JOIN locations l ON l.id = e.location_id
              WHERE e.exp_date BETWEEN ? AND ? $staffWhere ORDER BY e.exp_date DESC, e.id DESC", [$from, $to]);
 $staffAll = all('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name');
-$cats = ['General', 'Rent', 'Salary', 'Electricity', 'Internet', 'Transport', 'Tea/Food', 'Stationery', 'Repair/Maintenance', 'Marketing', 'Other'];
+// the shop's own list, shared with the reports and the note-to-category
+// suggester - see expense_category_groups() in helpers.php
+$catGroups = expense_category_groups();
+$cats = expense_categories();
 $edit = (int)get('edit') && can('expenses.edit') ? row('SELECT * FROM expenses WHERE id = ?', [(int)get('edit')]) : null;
 if ($edit && !$seeAllExp && (int)$edit['created_by'] !== (int)$u['id']) $edit = null; // never open someone else's expense
-if ($edit && $edit['category'] && !in_array($edit['category'], $cats, true)) $cats[] = $edit['category'];
+// an older entry whose category is no longer on the list stays editable
+if ($edit && $edit['category'] && !in_array($edit['category'], $cats, true)) {
+    $cats[] = $edit['category'];
+    $catGroups['જૂની નોંધ'] = [$edit['category']];
+}
 $pms = active_payment_methods();
 $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
 $page_title = 'Expenses';
@@ -77,7 +84,13 @@ include __DIR__ . '/includes/header.php';
     <input type="hidden" name="do" value="save">
     <input type="hidden" name="id" value="<?= (int)($edit['id'] ?? 0) ?>">
     <div><label>Date</label><input type="date" name="exp_date" value="<?= e($edit['exp_date'] ?? today()) ?>"></div>
-    <div><label>Category</label><select name="category" id="exp_category"><?php foreach ($cats as $c): ?><option <?= ($edit['category'] ?? '') === $c ? 'selected' : '' ?>><?= $c ?></option><?php endforeach; ?></select></div>
+    <div><label>Category</label><select name="category" id="exp_category">
+      <?php foreach ($catGroups as $grp => $list): ?>
+        <optgroup label="<?= e($grp) ?>">
+        <?php foreach ($list as $c): ?><option <?= ($edit['category'] ?? '') === $c ? 'selected' : '' ?>><?= e($c) ?></option><?php endforeach; ?>
+        </optgroup>
+      <?php endforeach; ?>
+    </select></div>
     <div><label>Amount ₹</label><input type="number" step="any" name="amount" required value="<?= $edit ? 0 + $edit['amount'] : '' ?>"></div>
     <div><label>Mode</label><select name="mode" id="exp_mode" onchange="document.getElementById('exp_bank').style.display=this.selectedOptions[0].dataset.type==='bank'?'':'none'">
       <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>" <?= ($edit['mode'] ?? '') === $pm['code'] ? 'selected' : '' ?>><?= e($pm['name']) ?></option><?php endforeach; ?>
@@ -126,7 +139,17 @@ include __DIR__ . '/includes/header.php';
 <?php if ($fStaff): $sn = array_values(array_filter($staffAll, fn($s) => $s['id'] == $fStaff))[0]['name'] ?? ''; ?>
 <div class="mb"><span class="vyf-chip">Staff: <?= e($sn) ?> — ₹<?= money(array_sum(array_column($rows, 'amount'))) ?> spent</span></div>
 <?php endif; ?>
-<div class="list-count"><?= count($rows) ?> entries · Total ₹<?= money(array_sum(array_column($rows, 'amount'))) ?></div>
+<?php
+// business and personal shown apart - the owner's own spending is a drawing
+// against capital, not a cost of running the shop
+$bizTot = 0; $perTot = 0;
+foreach ($rows as $rw) { if (expense_is_personal($rw['category'])) $perTot += (float)$rw['amount']; else $bizTot += (float)$rw['amount']; }
+?>
+<div class="list-count"><?= count($rows) ?> entries · Total ₹<?= money($bizTot + $perTot) ?>
+  <?php if ($perTot > 0.009): ?>
+    <span class="muted"> — ધંધાનો ₹<?= money($bizTot) ?> · અંગત ₹<?= money($perTot) ?></span>
+  <?php endif; ?>
+</div>
 <div class="table-wrap">
 <table>
   <thead><tr><th>Date</th><th>Category</th><th class="num">Amount</th><th>Mode</th><th>Notes</th><th>By</th><th></th></tr></thead>

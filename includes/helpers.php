@@ -888,6 +888,61 @@ function razorpay_payment_link($amount, $description, $customerName = '', $custo
     return $data['short_url'] ?? null;
 }
 
+// ---------- Expense categories ----------
+
+/** The shop's expense categories, grouped for the dropdown.
+ *
+ *  One list, in one place. It used to be a line in expenses.php, which is fine
+ *  until a report or the AI suggester needs to know the same thing.
+ *
+ *  The last group is NOT business spending. Money the owner takes out for
+ *  himself is a drawing against capital, not a cost of running the shop - so
+ *  it is kept visibly apart when entering and reported separately, because a
+ *  personal expense buried in the business pot makes the shop's profit look
+ *  smaller than it is. */
+function expense_category_groups() {
+    return [
+        'ધંધાનો ખર્ચ' => [
+            'Office Rent', 'Salary & Wages', 'Staff Advance',
+            'Petrol & Vehicle', 'Vehicle Repair', 'Courier & Transport',
+            'Internet & Telecom', 'Hosting & Domain', 'Electricity',
+            'Tea & Water', 'Food & Meals', 'Office Stationery',
+            'Computer Repair/Maintenance', 'Office Maintenance',
+            'Office Equipment & Furniture', 'Marketing & Advertising',
+            'Software & AI', 'Bank Charges & Interest', 'Payment Gateway Charges',
+            'EMI / Loan', 'GST & Government', 'Business Travel',
+            'Customer/Staff Expense', 'Business Miscellaneous',
+        ],
+        'અંગત (ધંધાનો ખર્ચ નથી)' => [
+            'Owner Drawings / Personal', 'Medical / Personal', 'Gifts & Family',
+        ],
+    ];
+}
+
+/** Flat list, for anything that just needs the names. */
+function expense_categories() {
+    $out = [];
+    foreach (expense_category_groups() as $list) foreach ($list as $c) $out[] = $c;
+    return $out;
+}
+
+/** Is this money the owner took out rather than a cost of trading?
+ *  Reports use it to show the two apart instead of adding them together. */
+function expense_is_personal($cat) {
+    $groups = expense_category_groups();
+    return in_array($cat, $groups['અંગત (ધંધાનો ખર્ચ નથી)'], true);
+}
+
+/** Personal spending inside a date range, as its own figure. */
+function expense_personal_total($from, $to) {
+    $groups = expense_category_groups();
+    $names = $groups['અંગત (ધંધાનો ખર્ચ નથી)'];
+    $in = implode(',', array_fill(0, count($names), '?'));
+    return (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses
+                       WHERE exp_date BETWEEN ? AND ? AND category IN ($in)",
+                      array_merge([$from, $to], $names));
+}
+
 // ---------- Serial numbers ----------
 
 /** Serial statuses a piece can be in while it is genuinely somewhere else:

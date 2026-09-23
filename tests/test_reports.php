@@ -334,3 +334,65 @@ t_ok('...it says what the number actually is instead',
      strpos($rb2, 'એ રકમ ખોટી નથી; એ ફક્ત નોંધાયેલી નથી') !== false);
 t_ok('...and that Net Worth itself is the reliable figure',
      strpos($rb2, 'ભરોસાપાત્ર આંકડો') !== false);
+
+// ------------------------------------------------- the shop's own categories --
+t_group('expense categories are the shop\'s own list, in one place');
+$cats = expense_categories();
+t_eq('all twenty-seven are there', count($cats), 27);
+t_eq('...with no duplicates', count(array_unique($cats)), 27);
+foreach (['Office Rent', 'Salary & Wages', 'Staff Advance', 'Petrol & Vehicle', 'Vehicle Repair',
+          'Courier & Transport', 'Internet & Telecom', 'Hosting & Domain', 'Electricity',
+          'Tea & Water', 'Food & Meals', 'Office Stationery', 'Computer Repair/Maintenance',
+          'Office Maintenance', 'Office Equipment & Furniture', 'Marketing & Advertising',
+          'Software & AI', 'Bank Charges & Interest', 'Payment Gateway Charges', 'EMI / Loan',
+          'GST & Government', 'Business Travel', 'Customer/Staff Expense', 'Business Miscellaneous',
+          'Owner Drawings / Personal', 'Medical / Personal', 'Gifts & Family'] as $c)
+    t_ok('"' . $c . '" is on the list', in_array($c, $cats, true));
+$ex_src = file_get_contents(dirname(__DIR__) . '/expenses.php');
+t_ok('the screen reads the shared list, not its own copy',
+     strpos($ex_src, 'expense_category_groups()') !== false
+     && strpos($ex_src, "'General', 'Rent', 'Salary'") === false);
+t_ok('...and shows the two groups apart', strpos($ex_src, '<optgroup label=') !== false);
+
+t_group('the owner\'s own spending is kept apart from the shop\'s');
+foreach (['Owner Drawings / Personal', 'Medical / Personal', 'Gifts & Family'] as $c)
+    t_ok('"' . $c . '" counts as personal', expense_is_personal($c));
+foreach (['Office Rent', 'Salary & Wages', 'Business Miscellaneous'] as $c)
+    t_ok('"' . $c . '" counts as business', !expense_is_personal($c));
+// the figure itself
+$ecFrom = '2031-01-01'; $ecTo = '2031-01-31';   // a window nothing else uses
+$ecU = (int)val('SELECT id FROM users ORDER BY id LIMIT 1');
+$ecL = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+foreach ([['Office Rent', 4000], ['Owner Drawings / Personal', 5000], ['Gifts & Family', 1500]] as $e)
+    q("INSERT INTO expenses (exp_date, category, amount, mode, notes, location_id, created_by)
+       VALUES ('2031-01-10', ?, ?, 'cash', 'ECTEST', ?, ?)", [$e[0], $e[1], $ecL, $ecU]);
+t_eq('personal spending is totalled on its own', expense_personal_total($ecFrom, $ecTo), 6500.0);
+$allExp = (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE exp_date BETWEEN ? AND ?", [$ecFrom, $ecTo]);
+t_eq('...and the business part is the rest', money_r($allExp - expense_personal_total($ecFrom, $ecTo)), 4000.0);
+
+$rb3 = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
+t_ok('the P&L shows the personal amount inside net profit', strpos($rb3, 'expense_personal_total($from, $to)') !== false);
+t_ok('...and the business-only profit beside it', strpos($rb3, 'ધંધાનો ખરો નફો') !== false);
+// deliberately NOT changed: net profit itself still counts every expense, so
+// no figure the owner already knows moves without him choosing it
+t_ok('net profit itself is left as it was',
+     strpos($rb3, "<td>NET PROFIT</td><td class=\"num\">₹' . money(\$net) . '") !== false);
+t_ok('the expenses screen splits its total too', strpos($ex_src, 'expense_is_personal($rw[\'category\'])') !== false);
+
+t_group('the old category names fold into the new ones');
+// every report groups by the category STRING, so leaving the old names behind
+// would carry "Rent" and "Office Rent" as two lines for ever
+$v63 = file_get_contents(dirname(__DIR__) . '/install/upgrade_v63.sql');
+foreach ([['Rent', 'Office Rent'], ['Salary', 'Salary & Wages'], ['Internet', 'Internet & Telecom'],
+          ['Transport', 'Courier & Transport'], ['Tea/Food', 'Tea & Water'], ['Stationery', 'Office Stationery'],
+          ['Repair/Maintenance', 'Office Maintenance'], ['Marketing', 'Marketing & Advertising']] as $m)
+    t_ok('"' . $m[0] . '" becomes "' . $m[1] . '"',
+         strpos($v63, "SET category = '" . $m[1] . "'") !== false && strpos($v63, "= '" . $m[0] . "'") !== false);
+t_ok('General and Other merge into one pile', strpos($v63, "IN ('General', 'Other')") !== false);
+t_ok('...and the note-to-category suggester is moved with them',
+     substr_count($v63, 'UPDATE expense_category_keywords') >= 8);
+// nothing in the old list is left pointing nowhere
+$oldNames = ['Rent', 'Salary', 'Internet', 'Transport', 'Tea/Food', 'Stationery', 'Repair/Maintenance', 'Marketing', 'General', 'Other'];
+$stranded = [];
+foreach ($oldNames as $o) if (strpos($v63, "= '" . $o . "'") === false && strpos($v63, "'" . $o . "'") === false) $stranded[] = $o;
+t_eq('every old name has somewhere to go', implode(', ', $stranded), '');

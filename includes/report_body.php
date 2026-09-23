@@ -1464,7 +1464,27 @@ if ($r === 'profit_loss' && can('reports.accounting')) {
     }
     echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Total Expenses</td><td class="num">₹' . money($totalOpex) . '</td></tr>';
     echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>NET PROFIT</td><td class="num">₹' . money($net) . '</td></tr>';
-    echo '</tbody></table></div></div>';
+    echo '</tbody></table></div>';
+
+    // Money the owner draws for himself is not a cost of running the shop - it
+    // is a drawing against capital - but it is recorded as an expense and so
+    // it sits inside the Net Profit above. Both figures are shown rather than
+    // one being quietly changed: the owner decides which he wants to work to.
+    $personal = expense_personal_total($from, $to);
+    if ($personal > 0.009) {
+        echo '<div class="card mt"><h3>👤 અંગત ખર્ચ અલગથી</h3>';
+        echo '<div class="table-wrap"><table><tbody>';
+        echo '<tr><td>ઉપરનો NET PROFIT</td><td class="num">₹' . money($net) . '</td></tr>';
+        echo '<tr><td>એમાં ગણાયેલો અંગત ખર્ચ</td><td class="num">₹' . money($personal) . '</td></tr>';
+        echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>ધંધાનો ખરો નફો (અંગત ખર્ચ બાદ કર્યા વગર)</td>'
+           . '<td class="num">₹' . money($net + $personal) . '</td></tr>';
+        echo '</tbody></table></div>';
+        echo '<p class="muted mt">માલિક પોતાના માટે કાઢેલા પૈસા એ ધંધાનો ખર્ચ નથી — એ મૂડીમાંથી ઉપાડ છે. '
+           . 'અત્યારે એ ઉપરના નફામાં ગણાઈ જાય છે, એટલે ધંધાનો નફો ઓછો દેખાય છે. '
+           . 'બંને આંકડા અહીં બતાવ્યા છે; કયો વાપરવો એ તમારો નિર્ણય.</p>';
+        echo '</div>';
+    }
+    echo '</div>';
 }
 
 if ($r === 'photo_log' && can('users.view')) {
