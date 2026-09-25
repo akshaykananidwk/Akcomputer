@@ -269,6 +269,23 @@ function profit_cost_sql() {
     return "si.qty * IF(i.item_type = 'service', si.cost_price, IF(si.cost_price > 0, si.cost_price, i.purchase_price))";
 }
 
+/** Payment modes where NO real money moved.
+ *
+ *  A contra nets two sides of one party, a settlement discount waives a
+ *  balance, and a warranty credit note is the company knocking money off what
+ *  we owe them instead of sending the part back. All three change what a party
+ *  owes; none of them is cash leaving a drawer or a bank.
+ *
+ *  Every cashbook, bank-ledger and collection figure has to exclude the same
+ *  three, so the list is written once. It used to be spelled out inline in
+ *  half a dozen queries, which is how the fourth one gets forgotten. */
+function money_noncash_modes() { return ['contra', 'discount', 'credit_note']; }
+
+/** ...as a SQL condition. $col is the mode column, already qualified. */
+function money_cash_only_sql($col = 'mode') {
+    return $col . " NOT IN ('" . implode("','", money_noncash_modes()) . "')";
+}
+
 /** THE stock valuation rule, in one place - what the shop's goods are worth.
  *
  *  Four screens were each asking this their own way and getting four different

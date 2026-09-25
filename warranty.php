@@ -46,6 +46,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             $m2 = warranty_take_back(row('SELECT * FROM warranty_claims WHERE id = ?', [$id]));
             if ($m2 !== '') flash($m2, 'info');
         }
+        // The company could not send the part, so it credited the money
+        // instead - that credit goes onto their bills like any other.
+        $m3 = warranty_apply_credit(row('SELECT * FROM warranty_claims WHERE id = ?', [$id]),
+                                    post('credit_amount'), (int)post('credit_bill_id'), $u['id']);
+        if ($m3 !== '') flash($m3, 'info');
 
         if (post('notify') && post('customer_mobile')) {
             $stMsg = ['sent' => 'has been sent to the company for warranty.',
@@ -157,6 +162,15 @@ if ($action === 'new' || $action === 'edit') {
           <div id="freshBox" style="display:none"><label>નવી વોરંટી કેટલા મહિના?</label>
             <input type="number" name="fresh_months" min="0" value="<?= (int)($c['fresh_months'] ?? 0) ?>"></div>
         </div>
+        <div class="form-row cols-2">
+          <div><label>કંપનીએ પાર્ટ નહીં, પૈસા પાછા આપ્યા? (ક્રેડિટ ₹)</label>
+            <input type="number" step="any" min="0" name="credit_amount" id="creditAmt"
+                   value="<?= (float)($c['credit_amount'] ?? 0) ?: '' ?>" oninput="wcChange()">
+            <small class="muted">આ રકમ સપ્લાયરના બિલમાં જમા થશે. ખાલી રાખો તો કંઈ નહીં થાય.</small></div>
+          <div id="creditBillBox" style="display:none"><label>કયા બિલમાં જમા કરવું?</label>
+            <select name="credit_bill_id" id="creditBill"><option value="0">આપોઆપ — સૌથી જૂનું બિલ પહેલાં</option></select>
+            <small class="muted" id="creditBillHint">Company / Supplier પસંદ કરો એટલે એમનાં બાકી બિલ દેખાશે.</small></div>
+        </div>
         <?php
         // The full life of this piece of hardware. A serial replaced twice is
         // three rows that look unrelated; this is what joins them, so the
@@ -226,6 +240,45 @@ if ($action === 'new' || $action === 'edit') {
           });
       }
       <?php if (get('sn')): ?>snLookup();<?php endif; ?>
+      // the bill picker only matters once a credit amount is typed; the list
+      // is the SAME endpoint the payment allocator uses, so "which bills are
+      // open" is answered in one place
+      function wcChange() {
+        var amt = document.getElementById('creditAmt');
+        var box = document.getElementById('creditBillBox');
+        if (!amt || !box) return;
+        box.style.display = (parseFloat(amt.value) > 0) ? '' : 'none';
+      }
+      function wcLoadBills() {
+        var sel = document.querySelector('select[name=party_id]');
+        var bill = document.getElementById('creditBill');
+        var hint = document.getElementById('creditBillHint');
+        if (!sel || !bill) return;
+        var pid = sel.value;
+        bill.innerHTML = '<option value="0">આપોઆપ — સૌથી જૂનું બિલ પહેલાં</option>';
+        if (!pid) { if (hint) hint.textContent = 'Company / Supplier પસંદ કરો એટલે એમનાં બાકી બિલ દેખાશે.'; return; }
+        fetch('ajax.php?a=party_bills&dir=out&party_id=' + encodeURIComponent(pid))
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            var n = 0, pre = '<?= (int)($c['credit_bill_id'] ?? 0) ?>';
+            (d.bills || []).forEach(function (b) {
+              if (b.id === 'op') return;   // the opening-balance line is not a bill
+              var o = document.createElement('option');
+              o.value = b.id; o.textContent = b.no + ' · ' + b.date + ' · ₹' + b.due;
+              if (String(b.id) === pre) o.selected = true;
+              bill.appendChild(o); n++;
+            });
+            if (hint) hint.textContent = n ? n + ' બાકી બિલ. આપોઆપ રાખો તો જૂનાથી શરૂ થશે.'
+                                           : 'એમનું કોઈ બિલ બાકી નથી — ક્રેડિટ ખાતામાં જમા રહેશે.';
+          })
+          .catch(function () { if (hint) hint.textContent = 'બિલ યાદી આવી નહીં; આપોઆપ તો ચાલશે જ.'; });
+      }
+      (function () {
+        var sel = document.querySelector('select[name=party_id]');
+        if (sel) sel.addEventListener('change', wcLoadBills);
+        wcChange(); wcLoadBills();
+      })();
+
       // the "how many months" box only matters when a FRESH warranty was given
       function wmChange() {
         var m = document.getElementById('warrantyMode');

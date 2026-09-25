@@ -1109,6 +1109,92 @@ function warranty_take_back(array $claim) {
     return 'સિરિયલ ' . $sn . ' રિપેર થઈને પાછો સ્ટોકમાં આવ્યો.';
 }
 
+/** A warranty claim that came back as MONEY instead of a part.
+ *
+ *  The company often cannot send the same thing back, so it knocks the amount
+ *  off what the shop owes it. That is a credit against the supplier, and it
+ *  has to land on real purchase bills - oldest first, or on the bill the owner
+ *  names - exactly the way a purchase return's credit does.
+ *
+ *  It posts ONE payments row (direction 'out', mode 'credit_note') and
+ *  allocates it. The payment row is what keeps the party ledger honest: the
+ *  supplier is owed that much less, and because 'credit_note' is one of
+ *  money_noncash_modes() it never appears as cash leaving a drawer or a bank.
+ *
+ *  Changing the amount later re-does it from scratch - the old credit is taken
+ *  back off the bills it settled, bill by bill, before the new one is applied.
+ *  Returns a line for the screen, or '' when there was nothing to do. */
+function warranty_apply_credit(array $claim, $amount, $preferBillId = 0, $userId = null) {
+    $amount = money_r($amount);
+    $party = (int)($claim['party_id'] ?? 0);
+    $claimId = (int)($claim['id'] ?? 0);
+
+    // whatever an earlier save of this claim settled comes off first
+    $had = warranty_reverse_credit($claim);
+
+    if ($amount <= MONEY_EPS) {
+        q('UPDATE warranty_claims SET credit_amount = 0, credit_bill_id = NULL, credit_payment_id = NULL WHERE id = ?', [$claimId]);
+        return $had ? 'વોરંટીનું ક્રેડિટ કાઢી નાખ્યું — બિલ પાછાં બાકી થયાં.' : '';
+    }
+    if (!$party) return 'ક્રેડિટ નોંધવા માટે પહેલાં Company / Supplier પસંદ કરો.';
+
+    $when = $claim['back_date'] ?: ($claim['received_date'] ?: today());
+    q("INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
+       VALUES (?, 'out', ?, 'credit_note', 'warranty', ?, ?, ?, ?)",
+      [$party, $amount, $claimId, $when,
+       'Warranty credit note - claim ' . ($claim['claim_no'] ?? '') . ' (serial ' . ($claim['serial_no'] ?? '') . ')',
+       $userId ?: ($_SESSION['user_id'] ?? null)]);
+    $payId = insert_id();
+
+    // the bill the owner named settles first, then the rest oldest-first -
+    // picking one never means losing the remainder
+    $done = [];
+    $left = $amount;
+    $preferBillId = (int)$preferBillId;
+    if ($preferBillId) {
+        $use = money_settle_bill($preferBillId, $party, 'out', $left);
+        if ($use > MONEY_EPS) {
+            $b = row('SELECT bill_no FROM purchases WHERE id = ?', [$preferBillId]);
+            $done[] = ['ref_id' => $preferBillId, 'amount' => $use, 'label' => ($b['bill_no'] ?? '#' . $preferBillId)];
+            $left -= $use;
+        }
+    }
+    foreach (money_settle_oldest_first($party, 'out', $left, $preferBillId ? [$preferBillId] : []) as $t) {
+        $done[] = ['ref_id' => $t['ref_id'], 'amount' => $t['amount'], 'label' => $t['label']];
+        $left -= $t['amount'];
+    }
+    foreach ($done as $t)
+        q("INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?, 'purchase', ?, ?)",
+          [$payId, $t['ref_id'], $t['amount']]);
+
+    q('UPDATE warranty_claims SET credit_amount = ?, credit_bill_id = ?, credit_payment_id = ? WHERE id = ?',
+      [$amount, $preferBillId ?: null, $payId, $claimId]);
+
+    if (!$done) return 'વોરંટીનું ક્રેડિટ ₹' . money($amount) . ' સપ્લાયરના ખાતામાં જમા — અત્યારે એમનું કોઈ બિલ બાકી નથી.';
+    $bits = [];
+    foreach ($done as $t) $bits[] = $t['label'] . ' ₹' . money($t['amount']);
+    $msg = 'વોરંટીનું ક્રેડિટ ₹' . money($amount) . ' જમા થયું: ' . implode(', ', $bits) . '.';
+    if ($left > MONEY_EPS) $msg .= ' બાકીના ₹' . money($left) . ' સપ્લાયરના ખાતામાં જમા રહ્યા.';
+    return $msg;
+}
+
+/** Takes a warranty credit back off the bills it settled and removes its
+ *  payment row. Uses the amounts actually applied, never a recalculation -
+ *  a later payment may have touched the same bill since. */
+function warranty_reverse_credit(array $claim) {
+    $payId = (int)($claim['credit_payment_id'] ?? 0);
+    if (!$payId) return 0;
+    $n = 0;
+    foreach (all('SELECT ref_type, ref_id, amount FROM payment_allocations WHERE payment_id = ?', [$payId]) as $a) {
+        money_reverse_bill_paid($a['ref_type'], (int)$a['ref_id'], (float)$a['amount']);
+        $n++;
+    }
+    q('DELETE FROM payment_allocations WHERE payment_id = ?', [$payId]);
+    q('DELETE FROM payments WHERE id = ?', [$payId]);
+    q('UPDATE warranty_claims SET credit_payment_id = NULL WHERE id = ?', [(int)($claim['id'] ?? 0)]);
+    return $n;
+}
+
 /** A warranty claim came back with a REPLACEMENT serial. Put the books right.
  *
  *  What was broken: the replacement serial was written into item_serials with
@@ -1160,12 +1246,23 @@ function warranty_apply_replacement(array $claim, $origSn, $repl, $fallbackLoc =
     // already recorded (the claim was saved twice) - never write it again
     if (row('SELECT id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$itemId, $repl])) return '';
 
-    // Whose piece is it? The claim naming a customer, or the serial carrying a
-    // sale_id, is what says so. NOT the 'claim' status - warranty_send_out()
-    // puts the shop's OWN stock into 'claim' while it is at the company, so
-    // reading that as "sold" would hand the shop's own replacement to a
-    // customer who does not exist and quietly keep it out of stock.
-    $hasCustomer = !empty($claim['party_id']) || trim((string)($claim['customer_name'] ?? '')) !== '';
+    // Whose piece is it?
+    //
+    // NOT party_id. On a warranty claim that field is the COMPANY / SUPPLIER
+    // the item was sent to - the form says so - and filling it in is the
+    // normal thing to do. Reading it as "there is a customer" meant the shop's
+    // own replacement came back marked sold to a customer who did not exist
+    // and never reached the stock, which is the very complaint this was
+    // supposed to fix. The tests missed it because their fixtures left the
+    // supplier blank.
+    //
+    // NOT the 'claim' status either - warranty_send_out() puts the shop's own
+    // stock into 'claim' while it is away.
+    //
+    // A customer is a customer's NAME or NUMBER on the claim, or a serial that
+    // carries the bill it was sold on.
+    $hasCustomer = trim((string)($claim['customer_name'] ?? '')) !== ''
+                || trim((string)($claim['customer_mobile'] ?? '')) !== '';
     $wasSold = $old && ($old['status'] === 'sold' || !empty($old['sale_id']));
     $forCustomer = $hasCustomer || $wasSold;
 

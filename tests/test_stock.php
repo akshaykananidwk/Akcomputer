@@ -688,3 +688,102 @@ t_ok('a cash or bank refund shows the account it came into',
      strpos($pr_v, "WHERE p.ref_type = 'purchase_return' AND p.ref_id = ?") !== false
      && strpos($pr_v, "\$refundPay['account_name']") !== false);
 t_ok('...and a return with no payment at all says so', strpos($pr_v, 'કોઈ પેમેન્ટ નોંધાયેલું નથી') !== false);
+
+// ------------------------------- the claim's party is the SUPPLIER, not a customer --
+// This is the bug the earlier fixtures walked straight past: on a warranty
+// claim party_id is the Company / Supplier - the form says so - and filling it
+// in is the normal thing to do. Reading it as "there is a customer" sent the
+// shop's own replacement back marked sold, to a customer who did not exist,
+// and it never reached the stock. Every fixture above leaves the supplier
+// blank, so none of them caught it.
+t_group('a claim with a supplier filled in is still the shop\'s own piece');
+$spSup = t_party('TSP Supplier ' . bin2hex(random_bytes(3)));
+$spIt = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,5) ON DUPLICATE KEY UPDATE qty = 5', [$spIt, $loc]);
+ts_serial($spIt, 'TSP-OLD', 'in_stock');
+q("UPDATE item_serials SET location_id = ? WHERE item_id = ? AND serial_no = 'TSP-OLD'", [$loc, $spIt]);
+q("INSERT INTO warranty_claims (claim_no, item_id, serial_no, party_id, customer_name, status, received_date, location_id, created_by)
+   VALUES (?,?, 'TSP-OLD', ?, '', 'received_back', CURDATE(), ?, 1)",
+  ['TSPC-' . bin2hex(random_bytes(3)), $spIt, $spSup, $loc]);
+$spClaim = row('SELECT * FROM warranty_claims WHERE id = ?', [insert_id()]);
+warranty_apply_replacement($spClaim, 'TSP-OLD', 'TSP-NEW', $loc);
+t_eq('the replacement goes into stock, not to a phantom customer', tw_ser($spIt, 'TSP-NEW')['status'], 'in_stock');
+t_eq('...and the count reflects it', stock_qty($spIt, $loc), 5.0);
+t_eq('...with no bill attached to it', tw_ser($spIt, 'TSP-NEW')['sale_id'], null);
+// a REAL customer claim still behaves, and the supplier being set changes nothing
+$spIt2 = t_item(0, $loc);
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?,?,5) ON DUPLICATE KEY UPDATE qty = 5', [$spIt2, $loc]);
+ts_serial($spIt2, 'TSP-SOLD', 'sold', 3131);
+q("INSERT INTO warranty_claims (claim_no, item_id, serial_no, party_id, customer_name, status, received_date, location_id, created_by)
+   VALUES (?,?, 'TSP-SOLD', ?, 'Ramesh', 'received_back', CURDATE(), ?, 1)",
+  ['TSPC2-' . bin2hex(random_bytes(3)), $spIt2, $spSup, $loc]);
+$spClaim2 = row('SELECT * FROM warranty_claims WHERE id = ?', [insert_id()]);
+warranty_apply_replacement($spClaim2, 'TSP-SOLD', 'TSP-SOLD2', $loc);
+t_eq('a named customer still owns the replacement', tw_ser($spIt2, 'TSP-SOLD2')['status'], 'sold');
+t_eq('...on the same bill', (int)tw_ser($spIt2, 'TSP-SOLD2')['sale_id'], 3131);
+t_eq('...and the shop\'s count is untouched', stock_qty($spIt2, $loc), 5.0);
+$hp = file_get_contents(dirname(__DIR__) . '/includes/helpers.php');
+t_ok('ownership is never read from party_id', strpos($hp, "\$hasCustomer = !empty(\$claim['party_id'])") === false);
+
+t_group('a warranty that comes back as money credits the supplier\'s bills');
+// the company often cannot send the part, so it knocks the amount off what we
+// owe it - that has to land on real bills or the dues stay too high for ever
+$wcSup = t_party('TWC Supplier ' . bin2hex(random_bytes(3)));
+$wcCo  = (int)val('SELECT id FROM companies ORDER BY id LIMIT 1');
+foreach ([['TWC-B1', '2026-07-01', 4000], ['TWC-B2', '2026-08-01', 9000]] as $b)
+    q("INSERT INTO purchases (company_id, location_id, party_id, bill_no, purchase_date, subtotal, total, paid, status, created_by)
+       VALUES (?,?,?,?,?,?,?,0,'due',1)", [$wcCo, $loc, $wcSup, $b[0], $b[1], $b[2], $b[2]]);
+$wcB2 = (int)val("SELECT id FROM purchases WHERE party_id = ? AND bill_no = 'TWC-B2'", [$wcSup]);
+$wcIt = t_item(0, $loc);
+q("INSERT INTO warranty_claims (claim_no, item_id, serial_no, party_id, status, received_date, back_date, location_id, created_by)
+   VALUES (?,?, 'TWC-SN', ?, 'received_back', '2026-09-01', '2026-09-20', ?, 1)",
+  ['TWCC-' . bin2hex(random_bytes(3)), $wcIt, $wcSup, $loc]);
+$wcClaim = row('SELECT * FROM warranty_claims WHERE id = ?', [insert_id()]);
+
+t_eq('they are owed the two bills to start with', party_balance_side($wcSup, 'out'), 13000.0);
+$m = warranty_apply_credit($wcClaim, 6000, 0, 1);
+t_ok('the credit says where it went', strpos($m, 'TWC-B1') !== false);
+t_eq('the oldest bill is settled first', val("SELECT status FROM purchases WHERE party_id = ? AND bill_no = 'TWC-B1'", [$wcSup]), 'paid');
+t_eq('...and the remainder spills onto the next', money_r((float)val("SELECT paid FROM purchases WHERE id = ?", [$wcB2])), 2000.0);
+t_eq('what we owe them drops by exactly the credit', party_balance_side($wcSup, 'out'), 7000.0);
+// no cash left a drawer - this must never appear in the cashbook or bank book
+t_eq('it is posted as a credit note, not cash',
+     val("SELECT mode FROM payments WHERE ref_type = 'warranty' AND ref_id = ?", [$wcClaim['id']]), 'credit_note');
+t_ok('...and credit_note is one of the non-cash modes', in_array('credit_note', money_noncash_modes(), true));
+
+// changing the amount re-does it from scratch rather than stacking
+$wcClaim = row('SELECT * FROM warranty_claims WHERE id = ?', [$wcClaim['id']]);
+warranty_apply_credit($wcClaim, 3000, $wcB2, 1);
+t_eq('the old credit is taken back off the bill it had settled',
+     val("SELECT status FROM purchases WHERE party_id = ? AND bill_no = 'TWC-B1'", [$wcSup]), 'due');
+t_eq('...and the new one lands on the bill that was named', money_r((float)val("SELECT paid FROM purchases WHERE id = ?", [$wcB2])), 3000.0);
+t_eq('the ledger follows', party_balance_side($wcSup, 'out'), 10000.0);
+t_eq('...with one payment row, not two',
+     (int)val("SELECT COUNT(*) FROM payments WHERE ref_type = 'warranty' AND ref_id = ?", [$wcClaim['id']]), 1);
+
+// clearing it puts everything back
+$wcClaim = row('SELECT * FROM warranty_claims WHERE id = ?', [$wcClaim['id']]);
+warranty_apply_credit($wcClaim, 0, 0, 1);
+t_eq('clearing the credit re-opens the bills', party_balance_side($wcSup, 'out'), 13000.0);
+t_eq('...and removes its payment', (int)val("SELECT COUNT(*) FROM payments WHERE ref_type = 'warranty' AND ref_id = ?", [$wcClaim['id']]), 0);
+t_eq('...leaving no orphan allocations',
+     (int)val('SELECT COUNT(*) FROM payment_allocations pa LEFT JOIN payments p ON p.id = pa.payment_id WHERE p.id IS NULL'), 0);
+// a credit with no supplier chosen has nowhere to go, and says so
+$wcClaim = row('SELECT * FROM warranty_claims WHERE id = ?', [$wcClaim['id']]);
+q('UPDATE warranty_claims SET party_id = NULL WHERE id = ?', [$wcClaim['id']]);
+$wcNoParty = row('SELECT * FROM warranty_claims WHERE id = ?', [$wcClaim['id']]);
+t_ok('a credit with no supplier is refused, not guessed',
+     strpos(warranty_apply_credit($wcNoParty, 1000, 0, 1), 'Company / Supplier') !== false);
+
+t_group('"no cash moved" is one list, not six copies');
+$mny2 = file_get_contents(dirname(__DIR__) . '/includes/money.php');
+t_ok('the list lives in one function', substr_count($mny2, 'function money_noncash_modes') === 1);
+t_eq('...and holds all three', money_noncash_modes(), ['contra', 'discount', 'credit_note']);
+$rb4 = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
+t_ok('no report spells the list out by hand any more',
+     strpos($rb4, "NOT IN ('contra','discount')") === false);
+t_ok('...they all call the shared one', substr_count($rb4, 'money_cash_only_sql(') >= 6);
+$wa3 = file_get_contents(dirname(__DIR__) . '/warranty.php');
+t_ok('the claim screen asks for the credit', strpos($wa3, 'name="credit_amount"') !== false);
+t_ok('...and which bill to put it on', strpos($wa3, 'name="credit_bill_id"') !== false);
+t_ok('...and applies it on save', strpos($wa3, 'warranty_apply_credit(') !== false);
