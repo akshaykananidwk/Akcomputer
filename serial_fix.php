@@ -11,13 +11,6 @@ require_once __DIR__ . '/includes/init.php';
 require_login();
 if (!is_full_admin()) { http_response_code(403); die('Admin only.'); }
 
-function serial_fix_loc($itemId) {
-    // where an adjustment lands: the location already holding this item's
-    // stock (largest first), else the first active location
-    return (int)(val('SELECT location_id FROM stock WHERE item_id = ? ORDER BY qty DESC LIMIT 1', [$itemId])
-        ?: val('SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1'));
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remove_serials') {
     $iid = (int)post('item_id');
     $picked = array_filter(array_map('intval', (array)post('serial_ids', [])));
@@ -32,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remove_serials') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'add_serials') {
     $iid = (int)post('item_id');
-    $locId = serial_fix_loc($iid);
+    $locId = stock_home_location(0, $iid);
     $n = 0; $already = 0; $restored = []; $liveBack = [];
     foreach (array_filter(array_map('trim', preg_split('/[\r\n,]+/', (string)post('serials')))) as $sn) {
         // serial_put_in_stock() looks the row up WITHOUT a status filter. The
@@ -66,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'match_stock') {
     $stockNow = (float)(val('SELECT SUM(qty) FROM stock WHERE item_id = ?', [$iid]) ?? 0);
     $delta = $serialCount - $stockNow;
     if (abs($delta) > 0.001) {
-        adjust_stock($iid, serial_fix_loc($iid), $delta, 'serial_fix', null, 'Stock matched to in-stock serial count');
+        adjust_stock($iid, stock_home_location(0, $iid), $delta, 'serial_fix', null, 'Stock matched to in-stock serial count');
         log_activity('serial_fix_match', "item=$iid delta=$delta");
         flash('સ્ટોક ' . money($stockNow) . ' → ' . $serialCount . ' કરી દીધો (સિરિયલ પ્રમાણે).');
     } else {

@@ -39,6 +39,24 @@ function health_checks() {
     $add('Same serial in stock twice',
         'એક જ સિરિયલ નંબર બે વાર સ્ટોકમાં પડ્યો છે (ડબલ એન્ટ્રી).',
         all("SELECT i2.name who, s2.serial_no no, COUNT(*) amount FROM item_serials s2 JOIN items i2 ON i2.id=s2.item_id WHERE s2.status='in_stock' GROUP BY s2.item_id, s2.serial_no HAVING COUNT(*) > 1 LIMIT 10"));
+    // A serial is picked BY LOCATION everywhere - billing, returns, handover -
+    // but listed on the item page without one. So a serial in stock with no
+    // location, or at a location where this item has no stock, is counted in
+    // one place and offered in none: the screens disagree and neither can be
+    // made right by hand. (migrate v65 puts the stranded ones back on a shelf)
+    $add('Serial in stock but on no shelf',
+        'આ સિરિયલ સ્ટોકમાં ગણાય છે પણ કોઈ લોકેશનમાં નથી — આઇટમના પેજ પર દેખાશે, પણ બિલ, સેલ્સ રિટર્ન કે પરચેસ રિટર્નમાં પસંદ નહીં થઈ શકે. (migrate v65 ચલાવવાથી સાફ થાય છે)',
+        all("SELECT s2.id, i2.name who, s2.serial_no no FROM item_serials s2 JOIN items i2 ON i2.id = s2.item_id
+             WHERE s2.status = 'in_stock'
+               AND (s2.location_id IS NULL OR s2.location_id = 0
+                    OR NOT EXISTS (SELECT 1 FROM locations l WHERE l.id = s2.location_id)) LIMIT 10"));
+    $add('Serial in stock where the item has none',
+        'સિરિયલ જે લોકેશનમાં પડ્યો છે ત્યાં આ આઇટમનો સ્ટોક શૂન્ય છે — બિલમાં પસંદ તો થશે, પણ સ્ટોક ન હોવાથી બિલ અટકશે. સ્ટોક ટ્રાન્સફર કરો અથવા 🔧 Serial/Stock Repair ટૂલ વાપરો.',
+        all("SELECT s2.id, i2.name who, s2.serial_no no, l.name expect FROM item_serials s2
+               JOIN items i2 ON i2.id = s2.item_id JOIN locations l ON l.id = s2.location_id
+             WHERE s2.status = 'in_stock' AND i2.is_active = 1
+               AND COALESCE((SELECT st.qty FROM stock st WHERE st.item_id = s2.item_id AND st.location_id = s2.location_id), 0) <= 0
+             LIMIT 10"), 'warn');
     $add('Serial count vs stock quantity mismatch',
         'સિરિયલવાળી આઇટમમાં "in stock" સિરિયલની સંખ્યા અને સ્ટોકનો આંકડો જુદા છે — 🔧 Serial/Stock Repair ટૂલથી બે મિનિટમાં સુધારો: serial_fix.php ખોલો (નીચે લિંક).',
         all("SELECT i2.id, i2.name who, COALESCE((SELECT SUM(qty) FROM stock st WHERE st.item_id=i2.id),0) amount, (SELECT COUNT(*) FROM item_serials s2 WHERE s2.item_id=i2.id AND s2.status='in_stock') expect FROM items i2 WHERE i2.serial_tracked=1 AND i2.is_active=1 HAVING ABS(amount - expect) > 0 LIMIT 10"), 'warn');

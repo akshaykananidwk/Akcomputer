@@ -255,14 +255,19 @@ include __DIR__ . '/includes/header.php';
 <?php if ($item['serial_tracked']): ?>
 <div class="card">
   <h3>🔢 Serial Numbers — warranty at a glance</h3>
-  <?php $serials = all('SELECT s.*, p.purchase_date, p.bill_no, p.id pid, sa.sale_date, sa.invoice_no, sa.id sid
+  <?php // the location is shown because every screen that PICKS a serial asks
+        // for the serials at one location: a piece in stock with no location
+        // is counted here and offered nowhere, and that has to be visible
+        $serials = all('SELECT s.*, p.purchase_date, p.bill_no, p.id pid, sa.sale_date, sa.invoice_no, sa.id sid,
+                               l.name loc_name
                         FROM item_serials s
                         LEFT JOIN purchases p ON p.id = s.purchase_id
                         LEFT JOIN sales sa ON sa.id = s.sale_id
+                        LEFT JOIN locations l ON l.id = s.location_id
                         WHERE s.item_id = ? ORDER BY s.id DESC LIMIT 300', [$item['id']]); ?>
   <div class="table-wrap" style="box-shadow:none">
   <table class="table-sm">
-    <thead><tr><th>Serial</th><th>Status</th><th>Purchased</th><th>Sold</th><th>Warranty till</th></tr></thead>
+    <thead><tr><th>Serial</th><th>Status</th><th>Location</th><th>Purchased</th><th>Sold</th><th>Warranty till</th></tr></thead>
     <tbody>
     <?php foreach ($serials as $sn):
         $wm = (int)($sn['warranty_months'] ?: $item['warranty_months']);
@@ -270,12 +275,15 @@ include __DIR__ . '/includes/header.php';
       <tr>
         <td><strong><?= e($sn['serial_no']) ?></strong></td>
         <td><span class="badge <?= $sn['status'] === 'in_stock' ? 'badge-ok' : ($sn['status'] === 'sold' ? 'badge-info' : 'badge-bad') ?>"><?= e($sn['status']) ?></span></td>
+        <td><?php if ($sn['loc_name']): ?><?= e($sn['loc_name']) ?>
+            <?php elseif ($sn['status'] === 'in_stock'): ?><span class="badge badge-bad" title="આ સિરિયલ સ્ટોકમાં ગણાય છે પણ કોઈ લોકેશનમાં નથી — બિલ કે રિટર્નમાં પસંદ નહીં થઈ શકે. Serial/Stock Repair ટૂલથી સુધારો.">લોકેશન નથી ⚠</span>
+            <?php else: ?><span class="muted">-</span><?php endif; ?></td>
         <td><?= $sn['purchase_date'] ? dmy($sn['purchase_date']) . ($sn['pid'] ? ' · <a href="purchase_view.php?id=' . $sn['pid'] . '">' . e($sn['bill_no'] ?: '#' . $sn['pid']) . '</a>' : '') : '<span class="muted">-</span>' ?></td>
         <td><?= $sn['sale_date'] ? dmy($sn['sale_date']) . ($sn['sid'] ? ' · <a href="sale_view.php?id=' . $sn['sid'] . '">' . e($sn['invoice_no']) . '</a>' : '') : '<span class="muted">-</span>' ?></td>
         <td><?php if ($wEnd): ?><span style="font-weight:700;color:<?= $wEnd >= today() ? 'var(--ok)' : 'var(--bad)' ?>"><?= dmy($wEnd) ?> <?= $wEnd >= today() ? '✅' : '(expired)' ?></span><?php else: ?><span class="muted">-</span><?php endif; ?></td>
       </tr>
     <?php endforeach; ?>
-    <?php if (!$serials): ?><tr><td colspan="5" class="muted">No serial numbers recorded yet.</td></tr><?php endif; ?>
+    <?php if (!$serials): ?><tr><td colspan="6" class="muted">No serial numbers recorded yet.</td></tr><?php endif; ?>
     </tbody>
   </table>
   </div>

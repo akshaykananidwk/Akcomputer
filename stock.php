@@ -8,7 +8,7 @@ $action = get('action', 'list');
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'adjust') {
     require_perm('stock.adjust');
     $item_id = (int)post('item_id');
-    $loc_id = (int)post('location_id');
+    $loc_id = stock_home_location((int)post('location_id'));
     $delta = (float)post('delta');
     if ($item_id && $loc_id && $delta != 0) {
         $item = row('SELECT * FROM items WHERE id = ?', [$item_id]);
@@ -32,16 +32,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'adjust') {
             flash('This item is serial-tracked: enter exactly ' . abs($delta) . ' serial number(s) for the adjustment.', 'error');
             redirect('stock.php');
         }
+        // Every serial is checked BEFORE the first one is written. Refusing
+        // half way down the list used to leave the serials above it already
+        // moved while the quantity never changed at all.
+        $rows = [];
         foreach ($sns as $sn) {
-            $srow = row('SELECT id, status FROM item_serials WHERE item_id=? AND serial_no=?', [$item_id, $sn]);
+            $srow = row('SELECT id, status, location_id FROM item_serials WHERE item_id=? AND serial_no=?', [$item_id, $sn]);
             if ($delta > 0) {
                 if ($srow && $srow['status'] === 'in_stock') { flash("Serial $sn is already in stock.", 'error'); redirect('stock.php'); }
+            } else {
+                if (!$srow || $srow['status'] !== 'in_stock') { flash("Serial $sn is not in stock, so it can't be adjusted out.", 'error'); redirect('stock.php'); }
+                // ...and in stock HERE. Taking the quantity off this location
+                // while the piece is sitting at another one leaves both places
+                // wrong, and nothing on the screen would ever show it.
+                if ((int)$srow['location_id'] !== $loc_id) {
+                    $where = val('SELECT name FROM locations WHERE id = ?', [(int)$srow['location_id']]);
+                    flash("Serial $sn આ લોકેશનમાં નથી" . ($where ? " — એ '$where' માં પડ્યો છે. ત્યાંથી એડજસ્ટ કરો." : '.'), 'error');
+                    redirect('stock.php');
+                }
+            }
+            $rows[$sn] = $srow;
+        }
+        foreach ($sns as $sn) {
+            if ($delta > 0) {
                 // one shared rule for putting a serial back on the shelf, whatever
                 // state it was in - see serial_put_in_stock() in helpers.php
                 serial_put_in_stock($item_id, $sn, $loc_id, (int)($item['warranty_months'] ?? 0));
             } else {
-                if (!$srow || $srow['status'] !== 'in_stock') { flash("Serial $sn is not in stock, so it can't be adjusted out.", 'error'); redirect('stock.php'); }
-                q("UPDATE item_serials SET status='adjusted_out', location_id=NULL WHERE id=?", [$srow['id']]);
+                q("UPDATE item_serials SET status='adjusted_out', location_id=NULL WHERE id=?", [$rows[$sn]['id']]);
             }
         }
         adjust_stock($item_id, $loc_id, $delta, 'manual_adjust', null, post('reason'));

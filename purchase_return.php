@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('purchase_return.add');
     if (is_period_locked(post('return_date', today()))) { flash(period_lock_message(), 'error'); redirect('purchase_return.php?action=new'); }
     $party_id = (int)post('party_id');
-    $loc_id = (int)post('location_id') ?: $u['location_id'];
+    $loc_id = stock_home_location((int)post('location_id') ?: (int)$u['location_id']);
     $item_ids = post('item_id', []);
     $qtys = post('qty', []);
     $prices = post('price', []);

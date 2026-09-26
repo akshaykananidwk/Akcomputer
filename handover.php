@@ -9,7 +9,7 @@ $action = get('action', 'list');
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('handover.add');
     $type = post('type', 'issue'); // issue | transfer
-    $loc_id = (int)post('location_id') ?: $u['location_id'];
+    $loc_id = stock_home_location((int)post('location_id') ?: (int)$u['location_id']);
     $staff_id = (int)post('staff_id');
     $to_loc = (int)post('to_location_id');
     $item_ids = post('item_id', []);
@@ -103,13 +103,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'accept') {
             adjust_stock($hi['item_id'], $h['location_id'], (float)$hi['qty'], 'handover_return', $h['id']);
             if ($hi['serials']) foreach (explode(',', $hi['serials']) as $sn) {
                 q("UPDATE item_serials SET status='in_stock', user_id=NULL, location_id=? WHERE item_id=? AND serial_no=?",
-                  [$h['location_id'], $hi['item_id'], trim($sn)]);
+                  [stock_home_location($h['location_id'], $hi['item_id']), $hi['item_id'], trim($sn)]);
             }
         } elseif ($h['type'] === 'transfer') {
             adjust_stock($hi['item_id'], $h['to_location_id'], (float)$hi['qty'], 'transfer_in', $h['id']);
             if ($hi['serials']) foreach (explode(',', $hi['serials']) as $sn) {
                 q("UPDATE item_serials SET status='in_stock', user_id=NULL, location_id=? WHERE item_id=? AND serial_no=?",
-                  [$h['to_location_id'], $hi['item_id'], trim($sn)]);
+                  [stock_home_location($h['to_location_id'], $hi['item_id']), $hi['item_id'], trim($sn)]);
             }
         }
     }
@@ -164,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'cancel') {
                 adjust_stock($hi['item_id'], $h['location_id'], (float)$hi['qty'], 'handover_cancel', $h['id']);
                 if ($hi['serials']) foreach (explode(',', $hi['serials']) as $sn)
                     q("UPDATE item_serials SET status='in_stock', user_id=NULL, location_id=? WHERE item_id=? AND serial_no=?",
-                      [$h['location_id'], $hi['item_id'], trim($sn)]);
+                      [stock_home_location($h['location_id'], $hi['item_id']), $hi['item_id'], trim($sn)]);
             }
         }
         q("UPDATE handovers SET status='cancelled' WHERE id=?", [$h['id']]);

@@ -787,3 +787,129 @@ $wa3 = file_get_contents(dirname(__DIR__) . '/warranty.php');
 t_ok('the claim screen asks for the credit', strpos($wa3, 'name="credit_amount"') !== false);
 t_ok('...and which bill to put it on', strpos($wa3, 'name="credit_bill_id"') !== false);
 t_ok('...and applies it on save', strpos($wa3, 'warranty_apply_credit(') !== false);
+
+// ---------------------------------------------------------------------------
+// Reported from the shop: the item page showed the 22-inch monitor with
+// 1 PCS in stock and its serial marked "In stock", while New Purchase Return
+// for the same item at Main Shop said "આ લોકેશનમાં આ આઇટમનો કોઈ સિરિયલ
+// સ્ટોકમાં નથી". Both screens were reading the same row and telling the truth:
+// the serial WAS in stock, and it was at no location, because every screen
+// works out the location as "the one on the form, else the user's own" and an
+// admin with no location of their own makes that 0. The item page lists
+// serials without a location filter; every picker filters by location. So the
+// piece was counted everywhere and pickable nowhere - and no screen could put
+// it right, because nothing can pick what nothing can see.
+t_group('stock and serials always land on a real shelf');
+
+$shelfLoc = (int)val('SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1');
+$nowhere  = t_item(0, $shelfLoc);
+
+// this is the call the old code made when nobody had a location
+$r = serial_put_in_stock($nowhere, 'TSL-NOWHERE', 0);
+t_eq('a serial handed no location is still added', $r['result'], 'added');
+$row = ts_serial_row($nowhere, 'TSL-NOWHERE');
+t_eq('...in stock', $row['status'], 'in_stock');
+t_ok('...but never with location 0', (int)$row['location_id'] > 0);
+t_eq('...it goes to the shop\'s own shelf', (int)$row['location_id'], $shelfLoc);
+
+// the exact query every picker runs (ajax.php a=serials) must now find it
+$pickable = all("SELECT serial_no FROM item_serials
+                 WHERE item_id = ? AND location_id = ? AND status = 'in_stock'", [$nowhere, $shelfLoc]);
+t_eq('...so the return and billing screens can offer it',
+     array_column($pickable, 'serial_no'), ['TSL-NOWHERE']);
+
+// the same hole one step up: the stock row itself
+$noLocQty = t_item(0, $shelfLoc);
+adjust_stock($noLocQty, 0, 3, 'opening', null, 'no location given');
+t_eq('stock with no location is not left at location 0',
+     (int)val('SELECT COUNT(*) FROM stock WHERE item_id = ? AND (location_id IS NULL OR location_id = 0)', [$noLocQty]), 0);
+t_eq('...it lands on the shelf, where the location-wise report can see it',
+     (float)val('SELECT qty FROM stock WHERE item_id = ? AND location_id = ?', [$noLocQty, $shelfLoc]), 3.0);
+t_eq('...and its movement history says the same place',
+     (int)val('SELECT COUNT(*) FROM stock_ledger WHERE item_id = ? AND location_id = ?', [$noLocQty, $shelfLoc]), 1);
+
+// a location that was deleted afterwards is no better than none
+$goneItem = t_item(0, $shelfLoc);
+q("INSERT INTO item_serials (item_id, serial_no, status, location_id, warranty_months, created_at)
+   VALUES (?,?,'in_stock',?,0,NOW())", [$goneItem, 'TSL-GONE', 987654]);
+t_eq('putting it back finds the stray location', serial_put_in_stock($goneItem, 'TSL-GONE', 987654)['result'], 'already');
+t_eq('...and re-shelves it somewhere real',
+     (int)ts_serial_row($goneItem, 'TSL-GONE')['location_id'], $shelfLoc);
+
+// one already in stock with nothing under it gets a shelf too - this is the
+// path the repair screen uses, and the only way to rescue a row by hand
+$strandedItem = t_item(0, $shelfLoc);
+q("INSERT INTO item_serials (item_id, serial_no, status, location_id, warranty_months, created_at)
+   VALUES (?,?,'in_stock',0,0,NOW())", [$strandedItem, 'TSL-STRANDED']);
+t_eq('a stranded serial is already in stock', serial_put_in_stock($strandedItem, 'TSL-STRANDED', 0)['result'], 'already');
+t_ok('...and is given a shelf', (int)ts_serial_row($strandedItem, 'TSL-STRANDED')['location_id'] > 0);
+
+t_group('which shelf: one rule, used everywhere');
+$homeItem = t_item(0, $shelfLoc);
+t_eq('a real location is taken as asked', stock_home_location($shelfLoc, $homeItem), $shelfLoc);
+t_eq('a location that does not exist is not', stock_home_location(987654, $homeItem), $shelfLoc);
+t_eq('nothing at all still gives a shelf', stock_home_location(0, $homeItem), $shelfLoc);
+adjust_stock($homeItem, $shelfLoc, 7, 'opening', null, 'test fixture');
+t_eq('...and it prefers where this item\'s stock already sits',
+     stock_home_location(0, $homeItem), (int)val('SELECT location_id FROM stock WHERE item_id = ? ORDER BY qty DESC LIMIT 1', [$homeItem]));
+
+// every screen that works a location out goes through it, so none of them can
+// write a 0 again
+foreach (['sales.php', 'purchases.php', 'purchase_return.php', 'sales_return.php', 'handover.php', 'stock.php'] as $scr) {
+    $src = file_get_contents(dirname(__DIR__) . '/' . $scr);
+    t_ok($scr . ' resolves the location it works with',
+         preg_match('/\$loc_id = stock_home_location\(/', $src) === 1);
+}
+$hlp = file_get_contents(dirname(__DIR__) . '/includes/helpers.php');
+t_ok('adjust_stock() resolves it for every caller',
+     preg_match('/function adjust_stock\(.*?\$location_id = stock_home_location\(/s', $hlp) === 1);
+t_ok('...and so does serial_put_in_stock()',
+     preg_match('/function serial_put_in_stock\(.*?stock_home_location\(/s', $hlp) === 1);
+t_ok('the rule is written once', substr_count($hlp, 'function stock_home_location') === 1);
+$sfx = file_get_contents(dirname(__DIR__) . '/serial_fix.php');
+t_ok('the repair screen keeps no copy of it', strpos($sfx, 'function serial_fix_loc') === false);
+
+t_group('a serial with no shelf is visible and repairable');
+$iv = file_get_contents(dirname(__DIR__) . '/item_view.php');
+t_ok('the item page shows which location each serial is at', strpos($iv, '<th>Location</th>') !== false);
+t_ok('...reading it from the locations table', strpos($iv, 'LEFT JOIN locations l ON l.id = s.location_id') !== false);
+t_ok('...and says so loudly when there is none', strpos($iv, 'લોકેશન નથી') !== false);
+$hl = file_get_contents(dirname(__DIR__) . '/includes/health.php');
+t_ok('the health check looks for stranded serials', strpos($hl, 'Serial in stock but on no shelf') !== false);
+
+// and the ones already in the books get put back by the migration
+$fixItem = t_item(0, $shelfLoc);
+q("INSERT INTO item_serials (item_id, serial_no, status, location_id, warranty_months, created_at)
+   VALUES (?,?,'in_stock',0,0,NOW())", [$fixItem, 'TSL-OLDROW']);
+q("INSERT INTO item_serials (item_id, serial_no, status, location_id, warranty_months, created_at)
+   VALUES (?,?,'in_stock',NULL,0,NOW())", [$fixItem, 'TSL-OLDNULL']);
+q("INSERT INTO item_serials (item_id, serial_no, status, location_id, warranty_months, created_at)
+   VALUES (?,?,'sold',NULL,0,NOW())", [$fixItem, 'TSL-OLDSOLD']);
+require_once dirname(__DIR__) . '/includes/dbmigrate.php';
+$v65log = [];
+dbmigrate_run_file('upgrade_v65.sql', file_get_contents(dirname(__DIR__) . '/install/upgrade_v65.sql'), $v65log);
+t_eq('migration v65 puts a location-0 serial back on the shelf',
+     (int)ts_serial_row($fixItem, 'TSL-OLDROW')['location_id'], $shelfLoc);
+t_eq('...and a NULL one too', (int)ts_serial_row($fixItem, 'TSL-OLDNULL')['location_id'], $shelfLoc);
+t_eq('...and leaves sold pieces alone, they are on nobody\'s shelf',
+     ts_serial_row($fixItem, 'TSL-OLDSOLD')['location_id'], null);
+t_eq('no serial anywhere is in stock with no shelf',
+     (int)val("SELECT COUNT(*) FROM item_serials WHERE status = 'in_stock'
+               AND (location_id IS NULL OR location_id = 0
+                    OR NOT EXISTS (SELECT 1 FROM locations l WHERE l.id = item_serials.location_id))"), 0);
+// running it twice must not move anything a second time
+dbmigrate_run_file('upgrade_v65.sql', file_get_contents(dirname(__DIR__) . '/install/upgrade_v65.sql'), $v65log);
+t_eq('...and running the migration again changes nothing',
+     (int)ts_serial_row($fixItem, 'TSL-OLDROW')['location_id'], $shelfLoc);
+
+t_group('a manual adjustment cannot move a serial that is somewhere else');
+$stk = file_get_contents(dirname(__DIR__) . '/stock.php');
+t_ok('adjusting out checks WHICH location the piece is on',
+     strpos($stk, "(int)\$srow['location_id'] !== \$loc_id") !== false);
+t_ok('...and says where it really is', strpos($stk, 'આ લોકેશનમાં નથી') !== false);
+// a refusal half way down the list used to leave the serials above it moved
+// while the quantity never changed - everything is checked before anything
+// is written now
+t_ok('every serial is checked before the first one is written',
+     strpos($stk, 'Every serial is checked BEFORE the first one is written') !== false
+     && substr_count($stk, 'foreach ($sns as $sn) {') === 2);

@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('sales_return.add');
     if (is_period_locked(post('return_date', today()))) { flash(period_lock_message(), 'error'); redirect('sales_return.php?action=new'); }
     $sale = row('SELECT * FROM sales WHERE invoice_no = ? OR id = ?', [post('invoice_ref'), (int)post('invoice_ref')]);
-    $loc_id = $sale ? (int)$sale['location_id'] : (int)$u['location_id'];
+    $loc_id = stock_home_location($sale ? (int)$sale['location_id'] : (int)$u['location_id']);
     // The original bill names the customer when there is one; otherwise the
     // owner picks them. Without a customer an "adjust" has no account to
     // credit, which is why the party can now be chosen on its own.

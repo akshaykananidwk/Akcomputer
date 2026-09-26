@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('sales.add');
     if (is_period_locked(post('sale_date', today()))) { flash(period_lock_message(), 'error'); redirect('sales.php?action=new'); }
     $company = row('SELECT * FROM companies WHERE id = ?', [(int)post('company_id')]);
-    $loc_id = (int)post('location_id') ?: $u['location_id'];
+    $loc_id = stock_home_location((int)post('location_id') ?: (int)$u['location_id']);
     if (locked_location_id()) $loc_id = locked_location_id(); // godown/shop manager bills only from their own place
     $item_ids = post('item_id', []);
     $qtys = post('qty', []);
@@ -266,7 +266,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         $pdo = db();
         $pdo->beginTransaction();
         foreach ($sale['is_cancelled'] ? [] : all('SELECT * FROM sale_items WHERE sale_id = ?', [$sid]) as $si) {
-            $siLoc = (int)($si['location_id'] ?? 0) ?: (int)$sale['location_id'];
+            // resolved, so a line saved without a location does not send the
+            // stock AND its serials to a shelf that does not exist
+            $siLoc = stock_home_location((int)($si['location_id'] ?? 0) ?: (int)$sale['location_id'], $si['item_id']);
             adjust_stock($si['item_id'], $siLoc, (float)$si['qty'] + (float)($si['free_qty'] ?? 0), 'sale_delete', $sid);
             if ($si['serials']) {
                 foreach (explode(',', $si['serials']) as $sn) {
@@ -335,7 +337,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     }
 
     $company = row('SELECT * FROM companies WHERE id = ?', [(int)post('company_id')]);
-    $loc_id = (int)post('location_id') ?: $u['location_id'];
+    $loc_id = stock_home_location((int)post('location_id') ?: (int)$u['location_id']);
     if (locked_location_id()) $loc_id = locked_location_id(); // godown/shop manager bills only from their own place
     $item_ids = post('item_id', []);
     $qtys = post('qty', []);

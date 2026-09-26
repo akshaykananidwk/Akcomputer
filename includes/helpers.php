@@ -234,6 +234,13 @@ function doc_no($prefix, $id) {
  *  this is purely additive; the Stock Report/COGS only start using it once
  *  Settings > Inventory has costing_method switched off "current". */
 function adjust_stock($item_id, $location_id, $delta, $ref_type, $ref_id = null, $note = '', $unit_cost = null) {
+    // The goods have to land on a real shelf. Every screen works out the
+    // location as "the one on the form, else the user's own" - and an admin
+    // with no location of their own makes that 0. A stock row at location 0
+    // still counts in every total, so nothing looks wrong, but it shows up in
+    // no location-wise view and the serials that came with it can be picked
+    // on no screen: the item says "1 in stock" and the bill says "none here".
+    $location_id = stock_home_location($location_id, $item_id);
     q('INSERT INTO stock (item_id, location_id, qty) VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty)', [$item_id, $location_id, $delta]);
     q('INSERT INTO stock_ledger (item_id, location_id, change_qty, ref_type, ref_id, note, created_by)
@@ -1010,6 +1017,35 @@ function expense_home_by_month($from, $to) {
  *  so callers report it rather than doing it quietly. */
 function serial_live_statuses() { return ['sold', 'with_staff', 'claim']; }
 
+/** Which shelf a piece of stock sits on - used for the stock row and for
+ *  the serials that go with it.
+ *
+ *  A serial row carries ONE location, and every screen that offers serials to
+ *  pick - billing, purchase return, handover, transfer - asks for the serials
+ *  AT the location being worked at. So a serial left with location 0, NULL, or
+ *  a location that has since been deleted is in stock and un-pickable at the
+ *  same time: the item page counts it and shows it "In stock", while the
+ *  pickers all say "આ લોકેશનમાં આ આઇટમનો કોઈ સિરિયલ સ્ટોકમાં નથી". The stock
+ *  figure and the serial list then disagree with no way to fix it from the
+ *  screens, because nothing can pick what nothing can see.
+ *
+ *  The location asked for is used whenever it is a real one. Otherwise the
+ *  piece goes where this item's stock already sits (the biggest pile first),
+ *  and failing that to the first active location - the shop's own counter. */
+function stock_home_location($prefer = 0, $itemId = 0) {
+    // adjust_stock() calls this for every line of every bill, so the usual
+    // answer - "yes, that location is real" - is remembered for the request
+    static $real = [];
+    $prefer = (int)$prefer;
+    if ($prefer > 0) {
+        if (!isset($real[$prefer])) $real[$prefer] = (bool)val('SELECT id FROM locations WHERE id = ?', [$prefer]);
+        if ($real[$prefer]) return $prefer;
+    }
+    return (int)(val('SELECT st.location_id FROM stock st JOIN locations l ON l.id = st.location_id
+                      WHERE st.item_id = ? ORDER BY st.qty DESC LIMIT 1', [(int)$itemId])
+        ?: val('SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1'));
+}
+
 /** Puts ONE serial number into stock, whatever state it is in now.
  *
  *  uk_serial is UNIQUE on (item_id, serial_no) with no status in it, so a
@@ -1019,6 +1055,11 @@ function serial_live_statuses() { return ['sold', 'with_staff', 'claim']; }
  *  Every other screen that takes serials looks the row up without a status
  *  filter and revives it; this is that same rule, in one place.
  *
+ *  The location is always resolved through stock_home_location(), so no
+ *  caller can leave a piece in stock with no shelf to be found on - several
+ *  of them work out the location from whatever the paperwork happens to
+ *  carry, and that can come out as 0.
+ *
  *  Returns 'added' (there was no such serial), 'already' (nothing to do) or
  *  'restored' (a row existed in another state and was brought back), with the
  *  state it came from. */
@@ -1026,8 +1067,19 @@ function serial_put_in_stock($itemId, $serialNo, $locId, $warrantyMonths = null)
     $itemId = (int)$itemId;
     $serialNo = trim((string)$serialNo);
     if ($itemId <= 0 || $serialNo === '') return ['result' => 'skipped', 'from' => ''];
-    $srow = row('SELECT id, status FROM item_serials WHERE item_id = ? AND serial_no = ?', [$itemId, $serialNo]);
-    if ($srow && $srow['status'] === 'in_stock') return ['result' => 'already', 'from' => 'in_stock'];
+    $srow = row('SELECT id, status, location_id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$itemId, $serialNo]);
+    $locId = stock_home_location($locId, $itemId);
+    if ($srow && $srow['status'] === 'in_stock') {
+        // Already here - but possibly on no shelf at all, or on one that has
+        // since been deleted. Give it a real one, or it stays invisible to
+        // every screen that picks serials by location. A piece at a location
+        // that does exist is left alone: that is where it physically is, not
+        // a mistake to tidy up.
+        $cur = (int)$srow['location_id'];
+        if ($locId && ($cur === 0 || !val('SELECT id FROM locations WHERE id = ?', [$cur])))
+            q('UPDATE item_serials SET location_id = ? WHERE id = ?', [$locId, $srow['id']]);
+        return ['result' => 'already', 'from' => 'in_stock'];
+    }
     if ($srow) {
         // sale_id and user_id are cleared: the piece is on our shelf now, so it
         // is not with a customer and not with a staff member
@@ -1299,7 +1351,10 @@ function warranty_apply_replacement(array $claim, $origSn, $repl, $fallbackLoc =
     $wasSold = $old && ($old['status'] === 'sold' || !empty($old['sale_id']));
     $forCustomer = $hasCustomer || $wasSold;
 
-    $locId = (int)($old['location_id'] ?? 0) ?: (int)($claim['location_id'] ?? 0) ?: (int)$fallbackLoc;
+    // the shelf the faulty one came off, else the claim's, else the caller's -
+    // resolved, because all three can be empty and a replacement that lands on
+    // no shelf can be sold by nobody
+    $locId = stock_home_location((int)($old['location_id'] ?? 0) ?: (int)($claim['location_id'] ?? 0) ?: (int)$fallbackLoc, $itemId);
 
     // which warranty date the replacement carries - see the note above
     list($months, $expiry) = warranty_replacement_dates($claim, $old);
