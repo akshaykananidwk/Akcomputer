@@ -552,7 +552,7 @@ if ($action === 'new' || $action === 'edit') {
           });
       }
       // type-to-search over the supplier list; the select stays as it was
-      PartyPick.init('party_id', 'સપ્લાયરનું નામ કે મોબાઇલ ટાઇપ કરો…');
+      SearchPick.init('party_id', 'સપ્લાયરનું નામ કે મોબાઇલ ટાઇપ કરો…');
     </script>
     <?php
     include __DIR__ . '/includes/footer.php';

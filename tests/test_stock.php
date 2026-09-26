@@ -650,7 +650,7 @@ t_ok('...and the manual-check warning is gone', strpos($pr_src, 'manually verify
 t_group('both return screens can search the party list');
 foreach (['purchase_return.php', 'sales_return.php'] as $f) {
     $src = file_get_contents(dirname(__DIR__) . '/' . $f);
-    t_ok($f . ' turns its party list into a search box', strpos($src, "PartyPick.init('party_id'") !== false);
+    t_ok($f . ' turns its party list into a search box', strpos($src, "SearchPick.init('party_id'") !== false);
     t_ok($f . ' keeps a real select behind it', strpos($src, 'name="party_id" id="party_id"') !== false);
     t_ok($f . ' carries the mobile so it is searchable', strpos($src, 'data-mobile=') !== false);
 }

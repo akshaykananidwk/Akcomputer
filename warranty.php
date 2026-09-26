@@ -118,12 +118,12 @@ if ($action === 'new' || $action === 'edit') {
         <input type="hidden" name="claim_no" value="<?= e($c['claim_no'] ?? '') ?>">
         <div class="form-row cols-3">
           <div><label>Item</label>
-            <select name="item_id"><option value="">-- select --</option>
+            <select name="item_id" id="item_id"><option value="">-- select --</option>
             <?php foreach ($itemsList as $it): ?><option value="<?= $it['id'] ?>" <?= ($c['item_id'] ?? '') == $it['id'] ? 'selected' : '' ?>><?= e($it['name']) ?></option><?php endforeach; ?>
             </select></div>
           <div><label>Serial no *</label><input type="text" name="serial_no" value="<?= e($c['serial_no'] ?? get('sn')) ?>" required></div>
           <div><label>Company / Supplier</label>
-            <select name="party_id"><option value="">-- select --</option>
+            <select name="party_id" id="party_id"><option value="">-- select --</option>
             <?php foreach ($suppliers as $s): ?><option value="<?= $s['id'] ?>" <?= ($c['party_id'] ?? '') == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option><?php endforeach; ?>
             </select></div>
         </div>
@@ -213,6 +213,10 @@ if ($action === 'new' || $action === 'edit') {
       </form>
     </div>
     <script>
+      // hundreds of items and dozens of suppliers: type a word or two from
+      // anywhere in the name instead of hunting down the list
+      SearchPick.init('item_id', 'આઇટમનું નામ ટાઇપ કરો…');
+      SearchPick.init('party_id', 'કંપની / સપ્લાયરનું નામ ટાઇપ કરો…');
       function snLookup() {
         var sn = document.getElementById('snCheck').value.trim();
         if (!sn) return;

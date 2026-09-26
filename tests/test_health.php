@@ -378,12 +378,13 @@ t_eq('every preg_split on post()/get() casts to string first', implode(', ', $ba
 t_group('the bill screens can search the party list');
 $_ROOT = dirname(__DIR__);
 $appJs2 = file_get_contents($_ROOT . '/assets/app.js');
-t_ok('the search widget exists', strpos($appJs2, 'var PartyPick = {') !== false);
-t_ok('it matches on the mobile number too', strpos($appJs2, "mob.indexOf(qy) !== -1") !== false);
+t_ok('the search widget exists', strpos($appJs2, 'var SearchPick = {') !== false);
+t_ok('it matches on the mobile number too',
+     strpos($appJs2, "var hay = (name + ' ' + mob + ' '") !== false);
 // the blank row above a typed match is how Enter picked "walk-in" instead of
 // the party just searched for - the one keystroke a bill screen must not fumble
 t_ok('the blank row is offered only on an empty box',
-     strpos($appJs2, "if (!o.value) { if (qy === '') out.push(") !== false);
+     strpos($appJs2, "if (!o.value) { if (qy === '') blank =") !== false);
 t_ok('picking fires change, so everything reading the party still works',
      strpos($appJs2, "sel.dispatchEvent(new Event('change', { bubbles: true }))") !== false);
 t_ok('an outside change (quick-add, edit mode) refreshes the box',
@@ -391,7 +392,7 @@ t_ok('an outside change (quick-add, edit mode) refreshes the box',
 
 foreach (['sales.php' => 'party_id', 'purchases.php' => 'party_id'] as $f => $id) {
     $src = file_get_contents($_ROOT . '/' . $f);
-    t_ok($f . ' turns its party list into a search box', strpos($src, "PartyPick.init('" . $id . "'") !== false);
+    t_ok($f . ' turns its party list into a search box', strpos($src, "SearchPick.init('" . $id . "'") !== false);
     // the <select> must survive untouched - it is what the form posts and what
     // every other script on the page reads
     t_ok($f . ' still posts a real <select name="party_id">', strpos($src, 'name="party_id" id="party_id"') !== false);
@@ -471,3 +472,62 @@ t_ok('the WhatsApp bill carries it', strpos($sv, "\$payLink = \$due > 0.009 ? in
 $wp = file_get_contents($_ROOT . '/includes/wa_portal.php');
 t_ok('the customer portal carries it too', strpos($wp, 'invoice_pay_url($s)') !== false);
 t_ok('...and leaves it off a settled bill', strpos($wp, "\$due > 0.009 ? \"\\n💳 ચૂકવો: \"") !== false);
+
+// "ડ્રોપ ડાઉન માં કઈ જગ્યાએ શું વસ્તુ પડી હોય છે એ નથી ખબર" - with hundreds of
+// items, finding one in a dropdown means knowing how its name was written and
+// where it sits. Typing any two words from the name, in any order, must bring
+// it to the top: "monitor 60" has to find "iVOOMi DREAM60 22-Inch Monitor".
+t_group('a long dropdown is searched word by word, in any order');
+t_ok('the matcher is its own function, so it can be tested',
+     strpos($appJs2, 'rank: function (hay, qy, toks)') !== false);
+t_ok('...and the list goes through it', strpos($appJs2, 'SearchPick.rank(hay, qy, toks)') !== false);
+t_ok('every word typed must be there, wherever it sits',
+     strpos($appJs2, 'if (hay.indexOf(toks[t]) === -1) return -1') !== false);
+t_ok('the closest match is put first',
+     strpos($appJs2, 'a.r - b.r || a.p - b.p || a.n - b.n || a.i - b.i') !== false);
+t_ok('anything else worth searching on can be hung on the option',
+     strpos($appJs2, "o.dataset.search") !== false);
+
+// every long list in the shop, not only the two bill screens
+foreach (['warranty.php' => ['item_id', 'party_id'], 'stock.php' => ['adjItem'],
+          'batches.php' => ['item_id'], 'amc.php' => ['item_id'], 'repairs.php' => ['item_id'],
+          'sales_return.php' => ['party_id'], 'purchase_return.php' => ['party_id']] as $f => $ids) {
+    $src = file_get_contents($_ROOT . '/' . $f);
+    foreach ($ids as $id)
+        t_ok($f . ' searches its ' . $id . ' list', strpos($src, "SearchPick.init('" . $id . "'") !== false);
+    t_ok($f . ' still posts a real <select>', preg_match('/<select name="(item_id|party_id)"/', $src) === 1);
+}
+
+// and the matcher itself, run for real - source text cannot show that
+// "monitor 60" actually finds the monitor
+$node = trim((string)shell_exec('command -v node 2>/dev/null')) ?: '/opt/node22/bin/node';
+if (is_executable($node)) {
+    $out = json_decode((string)shell_exec(escapeshellarg($node) . ' ' . escapeshellarg(__DIR__ . '/searchpick.js') . ' 2>&1'), true);
+    t_ok('the matcher runs', is_array($out) && isset($out['ranks']));
+    if (is_array($out) && isset($out['ranks'])) {
+        t_eq('a word from the front and one from the end finds the item',
+             $out['scattered'], ['iVOOMi DREAM60 22-Inch Monitor']);
+        t_eq('...and the same two words the other way round finds the same one',
+             $out['scattered_other_way'], ['iVOOMi DREAM60 22-Inch Monitor']);
+        t_eq('a word several items share puts the closest first',
+             $out['shared_word'][0], 'Monitor Stand Adjustable');
+        t_eq('...and the one that only has it at the end, last',
+             end($out['shared_word']), 'iVOOMi DREAM60 22-Inch Monitor');
+        t_eq('typing the whole name puts that one first', $out['exact_first'], 'Monitor Stand Adjustable');
+        t_eq('a word that is nowhere means no match, not a wrong one', $out['nonsense'], []);
+        t_eq('a party is still found by the mobile number', $out['by_mobile'], ['Varish Madlani']);
+        t_eq('...and by the name and part of the number together',
+             $out['by_name_and_mobile'], ['Varish Madlani']);
+        t_eq('part of a model number buried in the middle is found',
+             $out['buried'], ['Dell 24 Inch Monitor E2422H']);
+        t_ok('an empty box is the plain list, in its own order', $out['empty_keeps_order'] === true);
+        t_eq('exact beats everything', $out['ranks']['exact'], 0);
+        t_eq('...then what the name starts with', $out['ranks']['prefix'], 1);
+        t_eq('...then what a word starts with', $out['ranks']['word_start'], 2);
+        t_eq('...then anywhere inside', $out['ranks']['inside'], 3);
+        t_eq('...then words scattered through it', $out['ranks']['scattered'], 4);
+        t_eq('a word that is not there is no match at all', $out['ranks']['missing'], -1);
+    }
+} else {
+    t_ok('node is not installed - the matcher itself was not run (source checked above)', true);
+}

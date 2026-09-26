@@ -334,7 +334,7 @@ if ($action === 'new') {
     </form>
     <script>Bill.init({mode: 'purchase', serials: true, pickStock: true, locSel: 'location_id', gst: false});
     ReturnMoney.init({dir: 'out', partySel: 'select[name=party_id]'});
-    PartyPick.init('party_id', 'સપ્લાયરનું નામ કે મોબાઇલ ટાઇપ કરો…');</script>
+    SearchPick.init('party_id', 'સપ્લાયરનું નામ કે મોબાઇલ ટાઇપ કરો…');</script>
     <?php
     include __DIR__ . '/includes/footer.php';
     exit;

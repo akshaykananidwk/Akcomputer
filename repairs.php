@@ -337,10 +337,11 @@ if ($action === 'new' || $action === 'edit') {
         <input type="hidden" name="do" value="add_material">
         <input type="hidden" name="repair_id" value="<?= $id ?>">
         <div><label>Item</label>
-          <select name="item_id" required>
+          <select name="item_id" id="item_id" required>
             <option value="">-- select part --</option>
             <?php foreach ($repairItems as $it): ?><option value="<?= $it['id'] ?>"><?= e($it['name']) ?> (₹<?= money($it['selling_price']) ?>)</option><?php endforeach; ?>
-          </select></div>
+          </select>
+          <script>SearchPick.init('item_id', 'પાર્ટનું નામ ટાઇપ કરો…');</script></div>
         <div><label>Qty</label><input type="number" step="any" min="0.01" name="qty" value="1" required></div>
         <div style="align-self:end"><button class="btn btn-sm" type="submit">+ Add Part</button></div>
       </form>

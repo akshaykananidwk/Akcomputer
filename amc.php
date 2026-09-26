@@ -150,11 +150,12 @@ if ($action === 'new' || $action === 'edit') {
               <?php endforeach; ?>
             </select></div>
           <div><label>AMC Service Item *</label>
-            <select name="item_id" required>
+            <select name="item_id" id="item_id" required>
               <?php foreach ($serviceItems as $it): ?>
               <option value="<?= $it['id'] ?>" <?= ($c['item_id'] ?? 0) == $it['id'] ? 'selected' : '' ?>><?= e($it['name']) ?></option>
               <?php endforeach; ?>
-            </select></div>
+            </select>
+            <script>SearchPick.init('item_id', 'આઇટમનું નામ ટાઇપ કરો…');</script></div>
         </div>
         <div class="field"><label>Title / description</label><input type="text" name="title" value="<?= e($c['title'] ?? '') ?>" placeholder="e.g. CCTV AMC - 4 Camera, Dwarka branch"></div>
         <div class="form-row cols-4">

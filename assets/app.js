@@ -958,21 +958,39 @@ var ReturnMoney = {
 };
 
 // ---------------------------------------------------------------------------
-// PartyPick - type-to-search over a party <select>.
+// SearchPick - type-to-search over any long <select>: parties, items, anything
+// with more rows than anyone can scroll while a customer waits.
 //
-// The shop has hundreds of parties now and scrolling a native dropdown to find
-// one while a customer waits is the slowest part of writing a bill. This turns
-// the existing select into a search box that matches on NAME or MOBILE, the
-// same way the item box already works.
+// Typing matches WORD BY WORD, in any order. "60 monitor" finds
+// "iVOOMi DREAM60 22-Inch Monitor" even though those two words are nowhere
+// near each other in the name, and the closest match is always first: an exact
+// name, then one that starts with what was typed, then one where a word starts
+// with it, then anywhere at all. Nobody has to remember how a name was
+// written, or where in the list it sits.
 //
 // The <select> stays the source of truth: it keeps its id, its options and its
 // data-* attributes, it is what the form posts, and picking a result sets its
-// value and fires 'change'. So every script that reads party_id - credit days,
-// loyalty points, the customer's last price on the item search, quick-add -
-// keeps working untouched. If this script never runs, the plain dropdown is
-// still sitting there and the screen works exactly as before.
+// value and fires 'change'. So every script hanging off it - credit days,
+// loyalty points, the serial box on the stock screen, quick-add - keeps
+// working untouched. If this script never runs, the plain dropdown is still
+// sitting there and the screen works exactly as before.
 // ---------------------------------------------------------------------------
-var PartyPick = {
+var SearchPick = {
+  // How close a row is to what was typed. Lower is better, -1 is no match.
+  // The whole query is tried as one piece first, because someone who types
+  // the name properly must get that row at the top; only then is it split
+  // into words that may appear anywhere in the name, in any order.
+  // It sits out here, not inside init(), so it can be tested on its own.
+  rank: function (hay, qy, toks) {
+    if (hay === qy) return 0;                          // exactly it
+    if (hay.indexOf(qy) === 0) return 1;               // starts with it
+    if (hay.indexOf(' ' + qy) !== -1) return 2;        // a word starts with it
+    if (hay.indexOf(qy) !== -1) return 3;              // in there somewhere
+    for (var t = 0; t < toks.length; t++)              // every word typed, any order
+      if (hay.indexOf(toks[t]) === -1) return -1;
+    return 4;
+  },
+
   init: function (selectId, placeholder) {
     var sel = document.getElementById(selectId);
     if (!sel || sel.dataset.pickReady) return;
@@ -1000,8 +1018,9 @@ var PartyPick = {
     function showSelection() { inp.value = label(); }
 
     function matches(qy) {
-      qy = qy.trim().toLowerCase();
-      var out = [];
+      qy = qy.trim().toLowerCase().replace(/\s+/g, ' ');
+      var toks = qy === '' ? [] : qy.split(' ');
+      var out = [], blank = null;
       for (var i = 0; i < sel.options.length; i++) {
         var o = sel.options[i];
         var name = o.textContent.trim();
@@ -1010,12 +1029,18 @@ var PartyPick = {
         // EMPTY box. Keeping it in the filtered list put it above the party
         // just typed, so Enter picked walk-in instead - the one keystroke a
         // bill screen must never get wrong. Clearing the box brings it back.
-        if (!o.value) { if (qy === '') out.push({ i: i, name: name, mob: mob, blank: true }); continue; }
-        if (qy === '' || name.toLowerCase().indexOf(qy) !== -1 || mob.indexOf(qy) !== -1)
-          out.push({ i: i, name: name, mob: mob, blank: false });
-        if (out.length >= 60) break;
+        if (!o.value) { if (qy === '') blank = { i: i, name: name, mob: mob, blank: true, r: -2, p: -1 }; continue; }
+        // anything else worth finding a row by - a party's mobile, a code
+        var hay = (name + ' ' + mob + ' ' + (o.dataset.search || '')).toLowerCase().replace(/\s+/g, ' ');
+        var r = qy === '' ? 0 : SearchPick.rank(hay, qy, toks);
+        if (r < 0) continue;
+        out.push({ i: i, name: name, mob: mob, blank: false, r: r, p: hay.indexOf(toks[0] || ''), n: name.length });
       }
-      return out;
+      // closest first, then the earliest hit in the name, then the shortest
+      // name - the shorter one has less around the match, so it is the nearer
+      if (qy !== '') out.sort(function (a, b) { return a.r - b.r || a.p - b.p || a.n - b.n || a.i - b.i; });
+      if (blank) out.unshift(blank);
+      return out.slice(0, 60);
     }
 
     function render(qy) {
@@ -1025,7 +1050,7 @@ var PartyPick = {
       if (!list.length) {
         var none = document.createElement('div');
         none.className = 'ir';
-        none.innerHTML = '<small>કોઈ પાર્ટી મળી નહીં</small>';
+        none.innerHTML = '<small>કંઈ મળ્યું નહીં</small>';
         res.appendChild(none);
       }
       list.forEach(function (m, k) {
@@ -1065,7 +1090,7 @@ var PartyPick = {
       if (ev.key === 'ArrowDown') { ev.preventDefault(); move(1); }
       else if (ev.key === 'ArrowUp') { ev.preventDefault(); move(-1); }
       else if (ev.key === 'Enter') {
-        // never submit the bill from this box - Enter picks a party
+        // never submit the form from this box - Enter picks the highlighted row
         ev.preventDefault();
         var rows = res.querySelectorAll('.ir[data-k]');
         var row = cur >= 0 ? rows[cur] : rows[0];
@@ -1079,7 +1104,7 @@ var PartyPick = {
     document.addEventListener('click', function (ev) {
       if (!wrap.contains(ev.target)) res.classList.remove('show');
     });
-    // something else changed the party (quick-add, edit mode, a preset link)
+    // something else changed the selection (quick-add, edit mode, a preset link)
     sel.addEventListener('change', showSelection);
 
     showSelection();

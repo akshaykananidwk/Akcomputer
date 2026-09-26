@@ -248,6 +248,7 @@ include __DIR__ . '/includes/header.php';
         : 'Serial numbers (optional — one per line, must match the qty if used)';
     }
     adjSN();
+    SearchPick.init('adjItem', 'આઇટમનું નામ ટાઇપ કરો…');
   </script>
 </div>
 <?php endif; ?>

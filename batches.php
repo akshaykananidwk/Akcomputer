@@ -49,12 +49,13 @@ if ($action === 'new' || $action === 'edit') {
       <div class="card">
         <div class="form-row cols-2">
           <div><label>Item *</label>
-            <select name="item_id" required>
+            <select name="item_id" id="item_id" required>
               <option value="">-- select --</option>
               <?php foreach ($items as $it): ?>
               <option value="<?= $it['id'] ?>" <?= ($b['item_id'] ?? 0) == $it['id'] ? 'selected' : '' ?>><?= e($it['name']) ?></option>
               <?php endforeach; ?>
-            </select></div>
+            </select>
+            <script>SearchPick.init('item_id', 'આઇટમનું નામ ટાઇપ કરો…');</script></div>
           <div><label>Location</label>
             <select name="location_id"><?php foreach ($locations as $l): ?><option value="<?= $l['id'] ?>" <?= ($b['location_id'] ?? $u['location_id']) == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option><?php endforeach; ?></select></div>
         </div>
