@@ -24,6 +24,28 @@ if (!$public) {
 
 $items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit, i.hsn FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ? AND si.qty > 0", [$id]);
 
+// ---------- હપ્તા: lay a big bill out in parts ----------
+// The plan is dates and amounts only. What has been PAID is read from the
+// bill itself and spread over the instalments oldest-first, so an instalment
+// can never claim a rupee the bill has not received.
+if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'inst_make' && can('payments.add')) {
+    $n = (int)post('inst_count');
+    $gap = max(1, (int)post('inst_gap'));
+    if ($n < 2 || $n > 60) {
+        flash('હપ્તા 2 થી 60 વચ્ચે રાખો.', 'error');
+    } else {
+        installment_create($id, $n, $gap, post('inst_start') ?: $sale['sale_date']);
+        log_activity('installments', $sale['invoice_no'] . " x$n");
+        flash($n . ' હપ્તા બનાવી દીધા — દરેક તારીખે ગ્રાહકને આપોઆપ યાદ અપાશે.');
+    }
+    redirect('sale_view.php?id=' . $id);
+}
+if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'inst_clear' && can('payments.add')) {
+    q('DELETE FROM installments WHERE sale_id = ?', [$id]);
+    flash('હપ્તાનું આયોજન કાઢી નાખ્યું.');
+    redirect('sale_view.php?id=' . $id);
+}
+
 // ---------- the customer signs for the goods ----------
 // Drawn with a finger on the phone or tablet at the counter and kept with the
 // bill, so "I never took delivery" has an answer. It is stored as a picture
@@ -240,6 +262,71 @@ function copyPay() {
   </form>
 </div>
 <?php endif; endif; ?>
+
+<?php
+// The customer opening their own bill link sees the plan too - read only.
+// It is their payment schedule; hiding it helps nobody pay on time.
+$planPub = $public ? installment_plan($id) : [];
+if ($planPub): ?>
+<div class="card">
+  <h3>📆 તમારા હપ્તા</h3>
+  <div class="table-wrap" style="box-shadow:none">
+    <table class="table-sm">
+      <thead><tr><th>હપ્તો</th><th>તારીખ</th><th class="num">રકમ</th><th class="num">બાકી</th><th></th></tr></thead>
+      <tbody>
+      <?php foreach ($planPub as $ins): ?>
+        <tr>
+          <td><?= (int)$ins['seq'] ?></td><td><?= dmy($ins['due_date']) ?></td>
+          <td class="num">₹<?= money($ins['amount']) ?></td>
+          <td class="num">₹<?= money($ins['pending']) ?></td>
+          <td><span class="badge <?= $ins['state'] === 'paid' ? 'badge-ok' : ($ins['state'] === 'late' ? 'badge-bad' : 'badge-info') ?>">
+            <?= $ins['state'] === 'paid' ? 'ભરાઈ ગયો' : ($ins['state'] === 'late' ? 'મોડો' : 'બાકી') ?></span></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
+
+<?php if (!$public && can('payments.add') && !$sale['is_cancelled']): $plan = installment_plan($id); ?>
+<div class="card no-print">
+  <h3>📆 હપ્તા</h3>
+  <?php if ($plan): ?>
+    <div class="table-wrap" style="box-shadow:none">
+      <table class="table-sm">
+        <thead><tr><th>હપ્તો</th><th>તારીખ</th><th class="num">રકમ</th><th class="num">ભરાયા</th><th class="num">બાકી</th><th>સ્થિતિ</th></tr></thead>
+        <tbody>
+        <?php foreach ($plan as $ins): ?>
+          <tr>
+            <td><?= (int)$ins['seq'] ?></td>
+            <td><?= dmy($ins['due_date']) ?></td>
+            <td class="num">₹<?= money($ins['amount']) ?></td>
+            <td class="num">₹<?= money($ins['paid']) ?></td>
+            <td class="num">₹<?= money($ins['pending']) ?></td>
+            <td><span class="badge <?= $ins['state'] === 'paid' ? 'badge-ok' : ($ins['state'] === 'late' ? 'badge-bad' : 'badge-info') ?>">
+              <?= $ins['state'] === 'paid' ? 'ભરાઈ ગયો' : ($ins['state'] === 'late' ? 'મોડો' : 'બાકી') ?></span></td>
+          </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+    <form method="post" style="margin-top:8px" onsubmit="return confirm('હપ્તાનું આયોજન કાઢી નાખવું?')">
+      <?= csrf_field() ?><input type="hidden" name="do" value="inst_clear">
+      <button class="btn btn-sm btn-muted" type="submit">આયોજન કાઢો</button>
+    </form>
+  <?php else: ?>
+    <p class="muted">મોટું બિલ ભાગે-ભાગે લેવાનું હોય તો હપ્તા બનાવો. દરેક હપ્તાની તારીખે ગ્રાહકને આપોઆપ યાદ અપાશે.</p>
+    <form method="post" class="form-row cols-4">
+      <?= csrf_field() ?><input type="hidden" name="do" value="inst_make">
+      <div><label>કેટલા હપ્તા</label><input type="number" min="2" max="60" name="inst_count" value="3" required></div>
+      <div><label>કેટલા દિવસે એક</label><input type="number" min="1" name="inst_gap" value="30" required></div>
+      <div><label>ક્યારથી ગણવું</label><input type="date" name="inst_start" value="<?= e($sale['sale_date']) ?>"></div>
+      <div style="align-self:end"><button class="btn btn-sm" type="submit">હપ્તા બનાવો</button></div>
+    </form>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <?php if (!$public && can('sales.edit')): ?>
 <div class="card no-print">

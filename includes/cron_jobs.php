@@ -15,6 +15,8 @@
 function cron_jobs() {
     return [
         'custom_reminders' => ['⏰ Custom Reminders', 'Reminder module - one-time & recurring scheduled messages', 5, null],
+        'installment_reminders' => ['🗓️ હપ્તાનાં રિમાઇન્ડર', 'Instalment due-date reminders for bills paid in parts', 60,
+            fn() => (int)date('G') >= min(23, max(0, (int)setting('reminder_hour', '10')))],
         'overdue_reminders' => ['📅 Payment Due Reminders', 'Overdue-bill WhatsApp reminders, sent at the hour set in Settings → Reminders', 60,
             fn() => (int)date('G') >= min(23, max(0, (int)setting('reminder_hour', '10')))],
         'settle_promises' => ['🤝 Promise-to-Pay Check', 'Marks each promised payment kept or broken once its day arrives', 180, null],
@@ -122,7 +124,7 @@ function cron_job_overdue_reminders() {
             $optOut[(int)$p['id']] = (int)$p['collection_opt_out'] === 1;
     }
 
-    $sent = 0; $covered = 0; $held = 0;
+    $sent = 0; $covered = 0; $held = 0; $calls = 0;
     foreach ($bills as $s) {
         // the message must claim only what is GENUINELY left: the bill's due
         // capped by the party's real ledger (sale_true_due) - a fully covered
@@ -143,27 +145,84 @@ function cron_job_overdue_reminders() {
             ]);
             if (!$guard['ok']) { $held++; continue; }
         }
-        $lateDays = (int)floor((strtotime($today) - strtotime($s['due_date'])) / 86400);
-        $dueLine = $lateDays <= 0 ? "📅 આજે પેમેન્ટની છેલ્લી તારીખ છે!\n"
-                 : '📅 Due date: ' . dmy($s['due_date']) . " — ⏰ *$lateDays દિવસ* થઈ ગયા\n";
+        // How old the DEBT is decides what is said. The ladder is soft, then
+        // firm, then stop typing and telephone - one flat "you owe money"
+        // every few days is exactly what a customer learns to ignore.
+        // Counted from the bill's date, like the Aging report.
+        $lateDays = (int)days_between($s['sale_date'], $today);
+        $step = dunning_step($lateDays);
+        if ($step && $step['call']) {
+            // by now a message is not what is needed: put the call on the
+            // owner's list and send nothing at all
+            if ($pid) {
+                coll_log($pid, 'call', ['amount' => $trueDue, 'status' => 'open',
+                    'note' => $lateDays . ' દિવસ થયા — ફોન કરવાનો છે (' . $s['invoice_no'] . ')']);
+                q('UPDATE sales SET last_reminder = ? WHERE id = ?', [$today, $s['id']]);
+                $calls++;
+            }
+            continue;
+        }
         wa_context(['kind' => 'reminder']);
-        $ok = send_whatsapp($s['customer_mobile'], wa_template('reminder', [
-            'firm' => $s['company_name'], 'invoice_no' => $s['invoice_no'], 'date' => dmy($s['sale_date']),
-            'due' => money($trueDue),
-            'due_date_line' => $dueLine,
-        ]));
+        $ok = $step
+            ? send_whatsapp($s['customer_mobile'], dunning_message($step['tone'], [
+                'shop' => $s['company_name'], 'customer' => $s['customer_name'] ?: 'ગ્રાહક',
+                'amount' => money($trueDue), 'days' => $lateDays, 'invoice_no' => $s['invoice_no'],
+              ]))
+            : send_whatsapp($s['customer_mobile'], wa_template('reminder', [
+                'firm' => $s['company_name'], 'invoice_no' => $s['invoice_no'], 'date' => dmy($s['sale_date']),
+                'due' => money($trueDue),
+                'due_date_line' => $lateDays <= 0 ? "📅 આજે પેમેન્ટની છેલ્લી તારીખ છે!\n"
+                    : '📅 Due date: ' . dmy($s['due_date']) . " — ⏰ *$lateDays દિવસ* થઈ ગયા\n",
+              ]));
         if ($ok) {
             q('UPDATE sales SET last_reminder = ? WHERE id = ?', [$today, $s['id']]);
             $sent++;
             // recorded in the same history a human's reminder goes into, so
             // the cooldown and the Customer 360 trail cover both
             if ($pid) coll_log($pid, 'reminder', ['channel' => 'whatsapp', 'amount' => $trueDue,
-                                                  'note' => 'ઓટોમેટિક રિમાઇન્ડર — ' . $s['invoice_no'], 'status' => 'done']);
+                                                  'note' => ($step ? $step['label'] . ' — ' : 'ઓટોમેટિક રિમાઇન્ડર — ') . $s['invoice_no'], 'status' => 'done']);
         }
         usleep(400000);
     }
     return 'checked ' . count($bills) . ', sent ' . $sent
+         . ($calls ? ", call-list $calls" : '')
          . ($covered ? ", already-covered $covered" : '') . ($held ? ", held-back $held" : '');
+}
+
+/** હપ્તાનું રિમાઇન્ડર: the day an instalment falls due, the customer hears
+ *  about THAT instalment - not the whole bill. Only what is still pending on
+ *  it is asked for, worked out from the bill's real paid figure. */
+function cron_job_installment_reminders() {
+    $today = today();
+    $rows = all("SELECT i.*, s.invoice_no, s.customer_mobile, s.customer_name, c.name company_name
+                 FROM installments i
+                 JOIN sales s ON s.id = i.sale_id
+                 JOIN companies c ON c.id = s.company_id
+                 WHERE i.due_date <= ? AND (i.last_reminder IS NULL OR i.last_reminder < ?)
+                   AND s.is_cancelled = 0 AND s.status <> 'paid' AND s.customer_mobile <> ''
+                 ORDER BY i.due_date LIMIT 30", [$today, $today]);
+    $sent = 0; $done = 0;
+    foreach ($rows as $r) {
+        $plan = installment_plan((int)$r['sale_id']);
+        $this_one = null;
+        foreach ($plan as $p) if ((int)$p['seq'] === (int)$r['seq']) $this_one = $p;
+        // already covered by what the bill has been paid - nothing to ask for
+        if (!$this_one || $this_one['pending'] <= 0.009) {
+            q('UPDATE installments SET last_reminder = ? WHERE id = ?', [$today, $r['id']]);
+            $done++;
+            continue;
+        }
+        wa_context(['kind' => 'reminder']);
+        $msg = "🗓️ " . $r['company_name'] . "\n" . ($r['customer_name'] ?: 'નમસ્તે') . ",\n"
+             . "બિલ " . $r['invoice_no'] . " નો હપ્તો " . (int)$r['seq'] . " — ₹" . money($this_one['pending'])
+             . " આજે (" . dmy($r['due_date']) . ") ભરવાનો છે.\nઆભાર! 🙏";
+        if (send_whatsapp($r['customer_mobile'], $msg)) {
+            q('UPDATE installments SET last_reminder = ? WHERE id = ?', [$today, $r['id']]);
+            $sent++;
+        }
+        usleep(300000);
+    }
+    return 'instalments due ' . count($rows) . ', sent ' . $sent . ($done ? ", already-paid $done" : '');
 }
 
 /** Turn promises whose day has come into kept/broken, so the queue and the

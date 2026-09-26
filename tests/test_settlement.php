@@ -463,3 +463,186 @@ t_ok('the drill-downs follow the same net rule',
 // ...while the bill-level caps stay on their own side, which was the money fix
 $mny = file_get_contents(dirname(__DIR__) . '/includes/money.php');
 t_ok('bill dues are still capped per side', strpos($mny, 'party_balance_side($pid, $dir)') !== false);
+
+// ===========================================================================
+// B. પૈસા, ઉઘરાણી અને બેંક
+// ===========================================================================
+
+t_group('a cheque is paper until it clears — and a bounce undoes the payment');
+$chParty = t_party('CHEQUE_TEST');
+$chSale  = t_sale($chParty, 5000, 0, today());
+// the customer hands over a cheque: the payment is recorded and the bill settles
+$chPay = t_payment($chParty, 5000, 'in', 'cheque', [['sale', $chSale, 5000]]);
+$chId = cheque_add(['direction' => 'in', 'party_id' => $chParty, 'payment_id' => $chPay,
+                    'cheque_no' => 'CHQ-001', 'bank_name' => 'SBI', 'cheque_date' => today(), 'amount' => 5000]);
+t_ok('the cheque is on the register', $chId > 0);
+t_eq('...and the bill reads paid', row('SELECT status FROM sales WHERE id = ?', [$chSale])['status'], 'paid');
+
+// now it bounces: the money never arrived
+payment_reverse($chPay);
+$after = row('SELECT paid, status FROM sales WHERE id = ?', [$chSale]);
+t_eq('a bounced cheque re-opens the bill', money_r($after['paid']), 0.0);
+t_eq('...with its status back to due', $after['status'], 'due');
+t_eq('...and the payment row is gone',
+     (int)val('SELECT COUNT(*) FROM payments WHERE id = ?', [$chPay]), 0);
+t_eq('...taking its allocations with it',
+     (int)val('SELECT COUNT(*) FROM payment_allocations WHERE payment_id = ?', [$chPay]), 0);
+$chqSrc = file_get_contents(dirname(__DIR__) . '/cheques.php');
+t_ok('the register reverses through the one shared rule', strpos($chqSrc, 'payment_reverse((int)$c[\'payment_id\'])') !== false);
+t_ok('...and a cleared or cancelled cheque cannot be bounced again',
+     strpos($chqSrc, "!in_array(\$c['status'], ['cleared', 'cancelled', 'bounced'], true)") !== false);
+$mnySrc = file_get_contents(dirname(__DIR__) . '/includes/money.php');
+t_ok('the undo rule is written once', substr_count($mnySrc, 'function payment_reverse') === 1);
+$paySrc = file_get_contents(dirname(__DIR__) . '/payments.php');
+t_ok('deleting a payment uses that same rule', strpos($paySrc, 'payment_reverse($pid);') !== false);
+// a cheque dated for today and still in the drawer is money the shop has not got
+q("UPDATE cheques SET status = 'in_hand', cheque_date = ? WHERE id = ?", [date('Y-m-d', strtotime('-2 days')), $chId]);
+$dueChq = array_column(cheques_due(), 'id');
+t_ok('a cheque past its date and not yet banked is flagged', in_array($chId, array_map('intval', $dueChq), true));
+
+t_group('the reminder gets firmer as the debt gets older');
+t_eq('nothing is said in the first few days', dunning_step(3), null);
+t_eq('a week late is a polite nudge', dunning_step(7)['tone'], 'soft');
+t_eq('...and still is at 14', dunning_step(14)['tone'], 'soft');
+t_eq('a fortnight late is firm', dunning_step(15)['tone'], 'firm');
+t_eq('a month late stops typing', dunning_step(30)['tone'], 'call');
+t_ok('...and at that step nothing is sent at all', dunning_step(45)['call'] === true);
+t_ok('the wording can be changed without touching code',
+     strpos(dunning_message('soft', ['amount' => '111', 'customer' => 'ક', 'days' => 9, 'shop' => 'AK']), '111') !== false);
+$cronSrc = file_get_contents(dirname(__DIR__) . '/includes/cron_jobs.php');
+t_ok('the automatic reminder climbs the ladder', strpos($cronSrc, 'dunning_step($lateDays)') !== false);
+t_ok('...the last step writes a call on the owner\'s list instead of messaging',
+     strpos($cronSrc, "coll_log(\$pid, 'call'") !== false);
+t_ok('...and age is counted from the bill date, like the Aging report',
+     strpos($cronSrc, "days_between(\$s['sale_date'], \$today)") !== false);
+
+t_group('a big bill in instalments');
+$inParty = t_party('EMI_TEST');
+$inSale  = t_sale($inParty, 10000, 0, today());
+t_eq('a plan of three is three rows', installment_create($inSale, 3, 30), 3);
+$plan = installment_plan($inSale);
+t_eq('...that add up to the bill exactly',
+     money_r(array_sum(array_map(fn($p) => (float)$p['amount'], $plan))), 10000.0);
+t_eq('the odd paisa goes on the FIRST instalment, never the last',
+     [money_r($plan[0]['amount']), money_r($plan[1]['amount']), money_r($plan[2]['amount'])],
+     [3333.34, 3333.33, 3333.33]);
+t_eq('the first one falls due a month out',
+     $plan[0]['due_date'], date('Y-m-d', strtotime(today() . ' +30 days')));
+t_eq('nothing is paid yet', money_r($plan[0]['paid']), 0.0);
+// a part payment settles the instalments oldest-first, and only up to what
+// the BILL has really received - an instalment can never invent money
+t_payment($inParty, 4000, 'in', 'cash', [['sale', $inSale, 4000]]);
+$plan2 = installment_plan($inSale);
+t_eq('the first instalment is settled', money_r($plan2[0]['pending']), 0.0);
+t_eq('...the second part paid', money_r($plan2[1]['paid']), 666.66);
+t_eq('...the third untouched', money_r($plan2[2]['paid']), 0.0);
+t_eq('together they claim exactly what the bill received',
+     money_r(array_sum(array_map(fn($p) => (float)$p['paid'], $plan2))), 4000.0);
+t_ok('a plan cannot be made of one instalment', installment_create($inSale, 1) === 0);
+t_ok('the instalment reminder is a real cron job', strpos($cronSrc, 'function cron_job_installment_reminders') !== false);
+t_ok('...and it asks only for what that instalment still needs',
+     strpos($cronSrc, "\$this_one['pending'] <= 0.009") !== false);
+
+t_group('a credit limit is checked before the bill, not after');
+$clParty = t_party('CREDITLIMIT_TEST');
+q('UPDATE parties SET credit_limit = 10000 WHERE id = ?', [$clParty]);
+t_sale($clParty, 8000, 0, today());
+$st = credit_limit_state($clParty);
+t_ok('the limit is read', $st['set']);
+t_eq('...what they owe now', money_r($st['owed']), 8000.0);
+t_ok('...and they are inside it', !$st['over']);
+$st2 = credit_limit_state($clParty, 3000);
+t_ok('a bill that would push them past it is flagged BEFORE it is written', $st2['over']);
+t_eq('...by exactly how much', money_r($st2['excess']), 1000.0);
+$noLimit = t_party('NOLIMIT_TEST');
+t_sale($noLimit, 99999, 0, today());
+t_ok('a party with no limit set is never flagged', !credit_limit_state($noLimit, 50000)['over']);
+$ajaxSrc = file_get_contents(dirname(__DIR__) . '/ajax.php');
+t_ok('the bill screen can ask about a party', strpos($ajaxSrc, "\$a === 'party_state'") !== false);
+$slsB = file_get_contents(dirname(__DIR__) . '/sales.php');
+t_ok('...and it asks as soon as one is picked', strpos($slsB, 'function partyState()') !== false);
+
+t_group('વ્યાજ — worked out, and charged only as a bill that can be shown');
+t_eq('₹10,000 at 18% for 45 days', interest_amount(10000, 18, 45), 221.92);
+t_eq('no rate means no interest', interest_amount(10000, 0, 45), 0.0);
+t_eq('paid on time means no interest', interest_amount(10000, 18, 0), 0.0);
+t_eq('a party\'s own rate beats the shop default', interest_rate_for(['interest_pct' => 24]), 24.0);
+$intParty = t_party('INTEREST_TEST');
+q('UPDATE parties SET interest_pct = 18 WHERE id = ?', [$intParty]);
+$oldSale = t_sale($intParty, 10000, 0, date('Y-m-d', strtotime('-60 days')), date('Y-m-d', strtotime('-45 days')));
+$info = interest_due_for_party($intParty);
+t_eq('the rate used is theirs', money_r($info['rate']), 18.0);
+t_ok('interest has built up on the late bill', $info['amount'] > 200 && $info['amount'] < 240);
+$intBill = interest_charge_bill($intParty, $info['amount'], '(ટેસ્ટ)');
+t_ok('charging it raises a real bill', $intBill > 0);
+$ib = row('SELECT total, status, party_id FROM sales WHERE id = ?', [$intBill]);
+t_eq('...for exactly that amount', money_r($ib['total']), money_r($info['amount']));
+t_eq('...against that party', (int)$ib['party_id'], $intParty);
+t_eq('...as a due bill, not as money received', $ib['status'], 'due');
+t_eq('...with one line on it', (int)val('SELECT COUNT(*) FROM sale_items WHERE sale_id = ?', [$intBill]), 1);
+t_eq('...and it moves no stock, being a service',
+     (int)val("SELECT COUNT(*) FROM stock_ledger WHERE ref_type = 'sale' AND ref_id = ?", [$intBill]), 0);
+$parSrc = file_get_contents(dirname(__DIR__) . '/parties.php');
+t_ok('the ledger works the amount out itself, never from the form',
+     strpos($parSrc, "\$info = interest_due_for_party(\$pid);") !== false);
+
+t_group('what the bank took is a cost, not a mystery');
+$chgBefore = (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE category = 'Payment Gateway Charges'");
+$eid = bank_charge_post(23.60, today(), null, 'upi', '— test');
+t_ok('the charge is written as an expense', $eid > 0);
+t_eq('...in the gateway category for UPI',
+     money_r((float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE category = 'Payment Gateway Charges'") - $chgBefore), 23.60);
+$bankBefore = (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE category = 'Bank Charges & Interest'");
+bank_charge_post(50, today(), null, 'bank', '— test');
+t_eq('...and in bank charges for a bank transfer',
+     money_r((float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE category = 'Bank Charges & Interest'") - $bankBefore), 50.0);
+t_eq('nothing is written for a zero charge', bank_charge_post(0, today(), null, 'upi'), 0);
+t_ok('the payment screen asks for it only where a bank is in the middle',
+     strpos($paySrc, "id=\"chargeBox\"") !== false && strpos($paySrc, "o.value === 'upi'") !== false);
+t_ok('...and the cheque details only for a cheque', strpos($paySrc, "o.value === 'cheque'") !== false);
+
+t_group('a big expense waits for the owner');
+$expSrc = file_get_contents(dirname(__DIR__) . '/expenses.php');
+t_ok('the threshold is a setting', strpos($expSrc, "setting('expense_approval_above', '0')") !== false);
+t_ok('...the admin is not stopped by it', strpos($expSrc, '&& !is_full_admin()') !== false);
+// the reason it is held in its own table and not as a pending expense row
+t_ok('a waiting expense is NOT written into expenses',
+     strpos($expSrc, 'INSERT INTO expense_requests') !== false);
+t_ok('...so no report has to remember to skip it',
+     strpos($expSrc, "approval_status") === false);
+$apprSrc = file_get_contents(dirname(__DIR__) . '/approvals.php');
+t_ok('approving writes the real expense', strpos($apprSrc, 'INSERT INTO expenses') !== false);
+// the reject branch must return before anything is written
+$rejPos = strpos($apprSrc, "post('decision') === 'reject'");
+$rejEnd = strpos($apprSrc, "redirect('approvals.php');", $rejPos);
+t_ok('...and rejecting writes nothing at all',
+     $rejPos !== false && $rejEnd !== false
+     && strpos(substr($apprSrc, $rejPos, $rejEnd - $rejPos), 'INSERT INTO expenses') === false);
+t_ok('the expense keeps the name of whoever asked for it',
+     strpos($apprSrc, "(int)\$r['requested_by']") !== false);
+
+t_group('money of theirs that we are holding');
+$advParty = t_party('ADVANCE_TEST');
+t_payment($advParty, 5000, 'in');     // paid before there was anything to bill
+t_eq('it shows as an advance', money_r(party_advance($advParty)), 5000.0);
+t_eq('...and they owe nothing', money_r(party_balance_side($advParty, 'in')), 0.0);
+t_ok('...and they appear on the advance list',
+     in_array($advParty, array_map(fn($x) => (int)$x['id'], parties_with_advance(500)), true));
+// the day a bill is raised it eats into the advance, with no extra machinery
+t_sale($advParty, 2000, 0, today());
+t_eq('a new bill takes its share of the advance', money_r(party_advance($advParty)), 3000.0);
+t_ok('the payments screen shows who is holding what', strpos($paySrc, 'parties_with_advance(20)') !== false);
+
+t_group('the round, on the phone that goes out on it');
+$mcSrc = file_get_contents(dirname(__DIR__) . '/my_collections.php');
+t_ok('it uses the same queue the desk uses, in the same order', strpos($mcSrc, 'coll_queue($limit)') !== false);
+t_ok('tap to call', strpos($mcSrc, 'href="tel:') !== false);
+t_ok('tap for the road', strpos($mcSrc, 'google.com/maps/search') !== false);
+t_ok('tap to record what was collected', strpos($mcSrc, "payments.php?action=new&dir=in&party=") !== false);
+t_ok('it shows the cash in the staff member\'s own pocket', strpos($mcSrc, "staff_cash(\$u['id'])") !== false);
+t_ok('...and where to hand it in', strpos($mcSrc, 'cash_bank.php') !== false);
+t_ok('the step this debt has reached is on the row', strpos($mcSrc, 'dunning_step((int)$r[\'days\'])') !== false);
+$svB = file_get_contents(dirname(__DIR__) . '/sale_view.php');
+t_ok('the customer sees their own instalment plan on their bill link',
+     strpos($svB, '$planPub = $public ? installment_plan($id) : [];') !== false);
+t_ok('...but cannot change it', strpos($svB, "if (!\$public && \$_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'inst_make'") !== false);

@@ -827,6 +827,7 @@ if ($action === 'new' || $action === 'edit') {
         <?php endif; ?>
         <div class="field"><label>Customer</label><input type="text" name="customer_name" id="customer_name" placeholder="Customer name (leave blank for walk-in)"></div>
         <div class="field"><label>Phone Number</label><input type="tel" name="customer_mobile" id="customer_mobile" placeholder="WhatsApp number"></div>
+        <div id="partyWarn" class="flash flash-info no-print" style="display:none;margin:8px 0 0"></div>
       </div>
 
       <div class="card">
@@ -1313,11 +1314,50 @@ if ($action === 'new' || $action === 'edit') {
           document.getElementById('customer_mobile').value = o.dataset.mobile || '';
           var pa = document.getElementById('pointsAvail'); if (pa) pa.textContent = '(Available: ' + (o.dataset.points || 0) + ')';
           document.getElementById('credit_days').value = o.dataset.credit || 0;
+          partyState();
         } else {
           var pa2 = document.getElementById('pointsAvail'); if (pa2) pa2.textContent = '';
+          document.getElementById('partyWarn').style.display = 'none';
         }
         Bill.totals();
       });
+
+      // ક્રેડિટ લિમિટ અને એડવાન્સ — asked for the moment a party is picked, so
+      // the answer is on screen BEFORE the bill is written, not after
+      function partyState() {
+        var pid = document.getElementById('party_id').value;
+        var box = document.getElementById('partyWarn');
+        if (!pid) { box.style.display = 'none'; return; }
+        var grand = parseFloat((document.getElementById('t_grand') || {}).textContent) || 0;
+        fetch('ajax.php?a=party_state&party_id=' + pid + '&adding=' + grand)
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d) { box.style.display = 'none'; return; }
+            var bits = [];
+            if (d.advance > 0.009)
+              bits.push('<span style="color:var(--ok)">💰 આ પાર્ટીના ₹' + d.advance.toFixed(2) +
+                        ' આપણી પાસે જમા છે — બિલ સામે વપરાઈ જશે.</span>');
+            if (d.set && d.over)
+              bits.push('<span style="color:var(--bad)">⚠️ ક્રેડિટ લિમિટ ₹' + d.limit.toFixed(2) +
+                        ' છે. આ બિલ પછી બાકી ₹' + d.after.toFixed(2) +
+                        ' થશે — ₹' + d.excess.toFixed(2) + ' વધારે.</span>');
+            else if (d.set)
+              bits.push('<span class="muted">ક્રેડિટ લિમિટ ₹' + d.limit.toFixed(2) +
+                        ' · અત્યારે બાકી ₹' + d.owed.toFixed(2) + '</span>');
+            box.innerHTML = bits.join('<br>');
+            box.style.display = bits.length ? '' : 'none';
+          })
+          .catch(function () { box.style.display = 'none'; });
+      }
+      // the warning follows the bill as it grows, not just the party
+      var _pwT = null;
+      var _pwOrig = Bill.totals.bind(Bill);
+      Bill.totals = function () {
+        _pwOrig();
+        clearTimeout(_pwT);
+        _pwT = setTimeout(partyState, 400);
+      };
+      partyState();
     </script>
     <?php
     include __DIR__ . '/includes/footer.php';

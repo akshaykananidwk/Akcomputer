@@ -1653,6 +1653,265 @@ function sale_park_payload() {
     return ['sale' => $sale, 'items' => $items, 'trade_ins' => sale_trade_in_rows()];
 }
 
+// ---------- Collection: the reminder ladder ----------
+
+/** The steps a reminder goes up as a bill gets older.
+ *
+ *  One flat "you owe money" message every few days teaches a customer to
+ *  ignore it. The trade's own practice is a ladder: a polite nudge first, a
+ *  firm one when it is properly late, and then stop typing and pick up the
+ *  phone. The last step deliberately sends NOTHING - it puts a call on the
+ *  owner's list, because by then a message is not what is needed.
+ *
+ *  Days are counted from the bill's own date, the same as the Aging report. */
+function dunning_steps() {
+    return [
+        ['days' => (int)setting('dun_soft_days', '7'),  'tone' => 'soft',  'label' => '🙏 નરમ યાદ',  'call' => false],
+        ['days' => (int)setting('dun_firm_days', '15'), 'tone' => 'firm',  'label' => '⚠️ કડક યાદ',  'call' => false],
+        ['days' => (int)setting('dun_call_days', '30'), 'tone' => 'call',  'label' => '📞 ફોન કરો',  'call' => true],
+    ];
+}
+
+/** Which step a debt this old has reached, or null when it is too early for
+ *  any reminder at all. */
+function dunning_step($lateDays) {
+    $out = null;
+    foreach (dunning_steps() as $s) if ((int)$lateDays >= $s['days']) $out = $s;
+    return $out;
+}
+
+/** The wording for one step. Kept as ordinary settings so the owner can
+ *  change the tone without anybody touching the code. */
+function dunning_message($tone, array $vars) {
+    $def = [
+        'soft' => "🙏 {shop}\nનમસ્તે {customer},\nતમારું ₹{amount} નું પેમેન્ટ {days} દિવસથી બાકી છે.\nસમય મળે ત્યારે ચૂકવી દેશો. આભાર!",
+        'firm' => "⚠️ {shop}\n{customer},\nતમારું ₹{amount} નું પેમેન્ટ {days} દિવસથી બાકી છે.\nકૃપા કરીને આ અઠવાડિયામાં ચૂકવી દેશો.\nકંઈ મુશ્કેલી હોય તો જણાવશો — વાત કરી લઈએ.",
+        'call' => "📞 {shop}\n{customer},\nતમારું ₹{amount} નું પેમેન્ટ {days} દિવસથી બાકી છે. અમે તમને ફોન કરીશું.",
+    ];
+    $tpl = setting('dun_msg_' . $tone, $def[$tone] ?? $def['soft']);
+    foreach ($vars as $k => $v) $tpl = str_replace('{' . $k . '}', (string)$v, $tpl);
+    return $tpl;
+}
+
+// ---------- Interest on late payment ----------
+
+/** What a party is charged for paying late, per year. Their own rate when
+ *  one is set, else the shop's default. 0 anywhere means no interest. */
+function interest_rate_for($party) {
+    $own = (float)(is_array($party) ? ($party['interest_pct'] ?? 0) : $party);
+    return $own > 0 ? $own : (float)setting('late_interest_pct', '0');
+}
+
+/** Interest owed on one overdue amount, simple, day by day.
+ *  ₹10,000 at 18% a year, 45 days late = 10000 x 18/100 x 45/365 = ₹221.92 */
+function interest_amount($principal, $ratePct, $lateDays) {
+    $principal = (float)$principal; $ratePct = (float)$ratePct; $lateDays = (int)$lateDays;
+    if ($principal <= 0 || $ratePct <= 0 || $lateDays <= 0) return 0.0;
+    return money_r($principal * $ratePct / 100 * $lateDays / 365);
+}
+
+/** Interest a party currently owes across all their late bills - worked out,
+ *  never charged on its own. Charging it raises a real bill (see
+ *  interest_charge_bill), because a debt the customer can be shown and can
+ *  dispute has to exist as a document, not as a number that appeared in a
+ *  balance. */
+function interest_due_for_party($partyId, $asOf = null) {
+    $asOf = $asOf ?: today();
+    $p = row('SELECT * FROM parties WHERE id = ?', [(int)$partyId]);
+    if (!$p) return ['rate' => 0.0, 'amount' => 0.0, 'bills' => []];
+    $rate = interest_rate_for($p);
+    if ($rate <= 0) return ['rate' => 0.0, 'amount' => 0.0, 'bills' => []];
+    $grace = max(0, (int)setting('late_interest_grace_days', '0'));
+    $out = []; $total = 0.0;
+    foreach (money_due_bills($partyId, 'in', '*') as $b) {
+        $due = sale_true_due($b);
+        if ($due <= 0.009) continue;
+        $from = $b['due_date'] ?: $b['sale_date'];
+        $late = (int)days_between($from, $asOf) - $grace;
+        $amt = interest_amount($due, $rate, $late);
+        if ($amt <= 0.009) continue;
+        $out[] = ['invoice_no' => $b['invoice_no'], 'due' => $due, 'days' => $late, 'interest' => $amt];
+        $total += $amt;
+    }
+    return ['rate' => $rate, 'amount' => money_r($total), 'bills' => $out];
+}
+
+/** Charge a party the interest they owe, as a real bill.
+ *
+ *  Interest is NOT quietly added to a balance. A customer must be able to be
+ *  shown the thing they are being asked to pay, and to argue with it - so it
+ *  is raised as an ordinary invoice with one service line, which prints,
+ *  goes on WhatsApp, and can be cancelled like any other bill if the owner
+ *  decides to let it go.
+ *
+ *  No stock, no serials, no payment: a service line and nothing else. */
+function interest_charge_bill($partyId, $amount, $note = '') {
+    $amount = money_r($amount);
+    $party = row('SELECT * FROM parties WHERE id = ?', [(int)$partyId]);
+    if (!$party || $amount <= 0.009) return 0;
+    $company = row('SELECT * FROM companies ORDER BY id LIMIT 1');
+    if (!$company) return 0;
+
+    // one standing service item for interest, made the first time it is needed
+    $item = row("SELECT * FROM items WHERE name = 'વ્યાજ / Late Fee' LIMIT 1");
+    if (!$item) {
+        q("INSERT INTO items (name, selling_price, purchase_price, is_active, item_type, show_on_website)
+           VALUES ('વ્યાજ / Late Fee', 0, 0, 1, 'service', 0)");
+        $item = row('SELECT * FROM items WHERE id = ?', [insert_id()]);
+    }
+    $loc = stock_home_location(0, (int)$item['id']);
+    $date = today();
+    $pdo = db();
+    $own = !$pdo->inTransaction();
+    if ($own) $pdo->beginTransaction();
+    try {
+        q('INSERT INTO sales (company_id, party_id, customer_name, customer_mobile, location_id, sale_date,
+           price_type, credit_days, subtotal, discount, tax_amount, shipping, adjustment, round_off, total,
+           paid, payment_mode, status, notes, created_by, share_token)
+           VALUES (?,?,?,?,?,?, ?,0,?,0,0,0,0,0,?, 0,?,?,?,?,?)',
+          [$company['id'], (int)$partyId, $party['name'], $party['mobile'], $loc, $date,
+           'retail', $amount, $amount, 'credit', 'due',
+           trim('મોડા પેમેન્ટનું વ્યાજ ' . $note),
+           $_SESSION['user_id'] ?? (int)val('SELECT id FROM users ORDER BY id LIMIT 1'), share_token()]);
+        $saleId = insert_id();
+        $invoiceNo = doc_next_no($company['id'], $date, $company['invoice_prefix']);
+        q('UPDATE sales SET invoice_no = ? WHERE id = ?', [$invoiceNo, $saleId]);
+        q('INSERT INTO sale_items (sale_id, item_id, qty, price, cost_price, tax_rate, total, description)
+           VALUES (?,?,1,?,0,0,?,?)',
+          [$saleId, (int)$item['id'], $amount, $amount, trim('વ્યાજ ' . $note)]);
+        if ($own) $pdo->commit();
+        log_activity('interest_charge', $party['name'] . ' ₹' . money($amount) . ' ' . $invoiceNo);
+        return $saleId;
+    } catch (Exception $e) {
+        if ($own) $pdo->rollBack();
+        throw $e;
+    }
+}
+
+// ---------- Credit limit ----------
+
+/** How this party stands against the limit set for them.
+ *  'over' is what the NEXT bill of $adding would push them past by. */
+function credit_limit_state($partyId, $adding = 0) {
+    $p = row('SELECT id, name, credit_limit FROM parties WHERE id = ?', [(int)$partyId]);
+    if (!$p) return null;
+    $limit = (float)$p['credit_limit'];
+    $owed = party_balance_side((int)$partyId, 'in');
+    $after = money_r($owed + (float)$adding);
+    return ['limit' => $limit, 'owed' => money_r($owed), 'after' => $after,
+            'set' => $limit > 0.009, 'over' => $limit > 0.009 && $after > $limit + 0.009,
+            'excess' => $limit > 0.009 ? max(0.0, money_r($after - $limit)) : 0.0];
+}
+
+// ---------- Advance / deposit held for a party ----------
+
+/** Money taken before there was anything to bill it against. It is not a
+ *  separate pot - a party's ledger simply nets to their side of zero - so
+ *  this is the SAME balance every other screen shows, read from the side it
+ *  falls on. The day a bill is raised, the oldest-first settlement rule puts
+ *  it against that bill on its own. */
+function party_advance($partyId) {
+    // they are owed by us on the sales side = we are holding their money
+    return money_r(party_balance_side((int)$partyId, 'out'));
+}
+
+/** Every party currently holding an advance with the shop. */
+function parties_with_advance($limit = 100) {
+    $rows = all('SELECT p.id, p.name, p.mobile, ' . party_balance_side_expr('p', 'out') . ' adv
+                 FROM parties p WHERE p.is_active = 1
+                 HAVING adv > 0.009 ORDER BY adv DESC LIMIT ' . (int)$limit);
+    return $rows;
+}
+
+// ---------- Instalments ----------
+
+/** A bill's instalment plan with what is really paid on each.
+ *
+ *  The instalments are a SCHEDULE - dates and amounts. What has been paid is
+ *  the bill's own figure, spread over them oldest-first, so there is exactly
+ *  one answer to "how much has this bill been paid" and an instalment can
+ *  never claim a rupee the bill does not have. */
+function installment_plan($saleId) {
+    $sale = row('SELECT * FROM sales WHERE id = ?', [(int)$saleId]);
+    if (!$sale) return [];
+    $rows = all('SELECT * FROM installments WHERE sale_id = ? ORDER BY seq', [(int)$saleId]);
+    if (!$rows) return [];
+    $paidLeft = max(0.0, (float)$sale['total'] - sale_true_due($sale));
+    $out = [];
+    foreach ($rows as $r) {
+        $amt = (float)$r['amount'];
+        $paid = min($amt, $paidLeft);
+        $paidLeft = money_r($paidLeft - $paid);
+        $pending = money_r($amt - $paid);
+        $out[] = $r + ['paid' => money_r($paid), 'pending' => $pending,
+                       'state' => $pending <= 0.009 ? 'paid' : ($r['due_date'] < today() ? 'late' : 'due')];
+    }
+    return $out;
+}
+
+/** Lay a bill out in equal instalments, starting one gap after the bill.
+ *  Rounding goes on the FIRST instalment, never the last - a customer's
+ *  final payment being ₹0.03 odd is how a plan ends in an argument. */
+function installment_create($saleId, $count, $gapDays = 30, $startDate = null) {
+    $sale = row('SELECT * FROM sales WHERE id = ?', [(int)$saleId]);
+    $count = (int)$count;
+    if (!$sale || $count < 2) return 0;
+    q('DELETE FROM installments WHERE sale_id = ?', [(int)$saleId]);
+    $total = money_r((float)$sale['total']);
+    $each = money_r(floor($total / $count * 100) / 100);
+    $first = money_r($total - $each * ($count - 1));
+    $start = $startDate ?: $sale['sale_date'];
+    for ($i = 1; $i <= $count; $i++) {
+        q('INSERT INTO installments (sale_id, party_id, seq, due_date, amount, created_by) VALUES (?,?,?,?,?,?)',
+          [(int)$saleId, $sale['party_id'], $i,
+           date('Y-m-d', strtotime($start . ' +' . ($i * max(1, (int)$gapDays)) . ' days')),
+           $i === 1 ? $first : $each, $_SESSION['user_id'] ?? null]);
+    }
+    return $count;
+}
+
+// ---------- Cheques ----------
+
+function cheque_statuses() { return ['in_hand' => 'હાથમાં', 'deposited' => 'બેંકમાં નાખ્યો', 'cleared' => 'પાસ થયો', 'bounced' => 'બાઉન્સ', 'cancelled' => 'રદ']; }
+
+/** Record a cheque against a payment. The payment row is the money; this is
+ *  the piece of paper, which can still bounce. */
+function cheque_add(array $c) {
+    q('INSERT INTO cheques (direction, party_id, payment_id, cheque_no, bank_name, cheque_date, amount,
+       status, bank_account_id, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      [$c['direction'] ?? 'in', $c['party_id'] ?: null, $c['payment_id'] ?: null,
+       trim((string)$c['cheque_no']), trim((string)($c['bank_name'] ?? '')) ?: null,
+       $c['cheque_date'] ?: today(), (float)$c['amount'], $c['status'] ?? 'in_hand',
+       $c['bank_account_id'] ?: null, trim((string)($c['notes'] ?? '')) ?: null,
+       $_SESSION['user_id'] ?? null]);
+    return insert_id();
+}
+
+/** Cheques that should be in the bank by now but are still sitting in the
+ *  drawer - the money the shop already counted as received and has not. */
+function cheques_due($onOrBefore = null) {
+    return all("SELECT c.*, p.name party_name FROM cheques c LEFT JOIN parties p ON p.id = c.party_id
+                WHERE c.status = 'in_hand' AND c.cheque_date <= ? ORDER BY c.cheque_date, c.id",
+               [$onOrBefore ?: today()]);
+}
+
+// ---------- Bank / UPI charges ----------
+
+/** What the bank quietly took out of a payment. It is a real cost of doing
+ *  business, so it is written as an ordinary expense in the category the
+ *  reports already group under - not hidden inside the payment amount, where
+ *  nobody would ever see how much a year it adds up to. */
+function bank_charge_post($amount, $date, $bankAccountId, $mode, $note = '') {
+    $amount = money_r($amount);
+    if ($amount <= 0.009) return 0;
+    $cat = in_array($mode, ['upi', 'card', 'razorpay'], true) ? 'Payment Gateway Charges' : 'Bank Charges & Interest';
+    q('INSERT INTO expenses (exp_date, category, amount, mode, bank_account_id, notes, location_id, created_by)
+       VALUES (?,?,?,?,?,?,?,?)',
+      [$date ?: today(), $cat, $amount, 'bank', $bankAccountId ?: null,
+       trim('બેંક/UPI ચાર્જ ' . $note), current_user()['location_id'] ?? null, $_SESSION['user_id'] ?? null]);
+    return insert_id();
+}
+
 // ---------- Collection reminders ----------
 
 /** Send ONE payment reminder on WhatsApp: the same wording, the same picture

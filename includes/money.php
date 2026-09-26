@@ -320,6 +320,30 @@ function aging_rows($fCompany = 0, $fParty = 0) {
     return $agg;
 }
 
+/** Undo one payment completely: every bill it settled goes back to unpaid by
+ *  exactly what this payment put on it, its allocations go, and the payment
+ *  row itself goes.
+ *
+ *  Written once because it happens two ways now - the owner deleting a
+ *  payment, and a cheque bouncing. A bounced cheque is not a correction, it
+ *  is money that never arrived, and the bills it "paid" have to open again.
+ *  MUST be called inside a transaction. */
+function payment_reverse($paymentId) {
+    $pid = (int)$paymentId;
+    $pay = row('SELECT * FROM payments WHERE id = ?', [$pid]);
+    if (!$pay) return false;
+    // money_reverse_bill_paid() directly, not payments.php's one-line wrapper
+    // around it: this runs from the cheque register too, where that file is
+    // not loaded at all and the wrapper does not exist.
+    if ($pay['ref_type'] && $pay['ref_id']) money_reverse_bill_paid($pay['ref_type'], $pay['ref_id'], (float)$pay['amount']);
+    foreach (all('SELECT * FROM payment_allocations WHERE payment_id = ?', [$pid]) as $a) {
+        money_reverse_bill_paid($a['ref_type'], $a['ref_id'], (float)$a['amount']);
+    }
+    q('DELETE FROM payment_allocations WHERE payment_id = ?', [$pid]);
+    q('DELETE FROM payments WHERE id = ?', [$pid]);
+    return true;
+}
+
 /** A party's still-unpaid bills, oldest first — the canonical ordering every
  *  settlement and every cap uses. $dir 'in' = sales, 'out' = purchases. */
 function money_due_bills($party_id, $dir, $cols = '*') {

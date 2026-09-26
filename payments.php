@@ -106,6 +106,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
                 q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$dpid, $a['ref_type'], $a['ref_id'], $a['amount']]);
             }
         }
+        // The cheque itself. The payment above is the money; this is the
+        // piece of paper, which still has to reach the bank and can still
+        // bounce - and if it does, cheques.php reverses that payment.
+        if ($pid && post('mode') === 'cheque' && trim((string)post('cheque_no')) !== '') {
+            cheque_add(['direction' => $dir, 'party_id' => $party_id, 'payment_id' => $pid,
+                        'cheque_no' => post('cheque_no'), 'bank_name' => post('cheque_bank'),
+                        'cheque_date' => post('cheque_date', post('pay_date', today())),
+                        'amount' => $amount, 'notes' => 'પેમેન્ટ P-' . $pid . ' સાથે']);
+        }
+        // What the bank or the gateway quietly took off this payment. It is a
+        // real cost, so it becomes an ordinary expense in the category the
+        // reports already group under - never hidden inside the amount.
+        $charge = round((float)post('bank_charge'), 2);
+        if ($charge > 0.009) {
+            bank_charge_post($charge, post('pay_date', today()), $bankAccId, post('mode', 'cash'),
+                             '— ' . $party['name'] . ' (P-' . $pid . ')');
+        }
         $pdo->commit();
         log_activity('payment_add', "P-$pid party={$party['name']} $dir $amount");
         fire_webhook('payment.recorded', ['payment_id' => $pid, 'party' => $party['name'], 'direction' => $dir, 'amount' => $amount]);
@@ -212,12 +229,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         $pdo = db();
         $pdo->beginTransaction();
         try {
-            if ($pay['ref_type'] && $pay['ref_id']) reverse_bill_paid($pay['ref_type'], $pay['ref_id'], (float)$pay['amount']);
-            foreach (all('SELECT * FROM payment_allocations WHERE payment_id = ?', [$pid]) as $a) {
-                reverse_bill_paid($a['ref_type'], $a['ref_id'], (float)$a['amount']);
-            }
-            q('DELETE FROM payment_allocations WHERE payment_id = ?', [$pid]);
-            q('DELETE FROM payments WHERE id = ?', [$pid]);
+            // one undo rule, shared with a cheque bouncing - see
+            // payment_reverse() in includes/money.php
+            payment_reverse($pid);
+            q('UPDATE cheques SET status = ? WHERE payment_id = ?', ['cancelled', $pid]);
             $pdo->commit();
             log_activity('payment_delete', "P-$pid");
             flash('Payment entry deleted - any bill(s) it was linked to have had their paid amount reversed.');
@@ -486,6 +501,20 @@ if ($action === 'new') {
             <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?></select></div>
           <div><label>Notes</label><input type="text" name="notes"></div>
         </div>
+        <!-- what the bank / UPI took off this payment: a real cost, recorded
+             as an expense so the year's total is visible -->
+        <div class="form-row cols-3" id="chargeBox" style="display:none">
+          <div><label>બેંક / UPI ચાર્જ (₹)</label>
+            <input type="number" step="any" min="0" name="bank_charge" id="bank_charge" value="0">
+            <p class="muted mt" style="font-size:.8em">બેંકે કાપી લીધા હોય એ. ખર્ચમાં "Bank Charges" તરીકે નોંધાશે.</p></div>
+        </div>
+        <!-- the cheque itself, when one is handed over -->
+        <div class="form-row cols-3" id="chqBox" style="display:none">
+          <div><label>ચેક નંબર</label><input type="text" name="cheque_no" maxlength="40"></div>
+          <div><label>કઈ બેંકનો</label><input type="text" name="cheque_bank" maxlength="120"></div>
+          <div><label>ચેકની તારીખ</label><input type="date" name="cheque_date" value="<?= today() ?>"></div>
+          <p class="muted" style="grid-column:1/-1;margin:0">ચેક રજિસ્ટરમાં આપોઆપ ચડી જશે. બાઉન્સ થાય તો ત્યાંથી નિશાની કરજો — પેમેન્ટ પાછું ખેંચાઈ જશે.</p>
+        </div>
         <?php if ($dir === 'in'): ?>
         <label class="check-inline"><input type="checkbox" name="send_wa" value="1" checked> Send WhatsApp receipt to party</label>
         <?php endif; ?>
@@ -503,7 +532,12 @@ if ($action === 'new') {
     var DIR = '<?= $dir ?>';
     function pmChange() {
       var sel = document.getElementById('pay_mode');
-      document.getElementById('bankAccBox').style.display = sel.options[sel.selectedIndex].dataset.type === 'bank' ? '' : 'none';
+      var o = sel.options[sel.selectedIndex];
+      var isBank = o.dataset.type === 'bank';
+      document.getElementById('bankAccBox').style.display = isBank ? '' : 'none';
+      // a charge only exists where a bank or a gateway is in the middle
+      document.getElementById('chargeBox').style.display = isBank || o.value === 'upi' || o.value === 'card' ? '' : 'none';
+      document.getElementById('chqBox').style.display = o.value === 'cheque' ? '' : 'none';
     }
     window.pmChange = pmChange;
     function loadBills() {
@@ -854,6 +888,32 @@ $duePurchases = money_cap_bill_dues($duePurchases, 'out');
 $page_title = 'Payments';
 include __DIR__ . '/includes/header.php';
 ?>
+<?php
+// Money of other people's that the shop is holding. It is not a separate pot
+// - it is simply a party whose ledger has gone the other way - but it is the
+// easiest thing in a shop to forget, and the most embarrassing to be
+// reminded of by the customer.
+$advList = parties_with_advance(20);
+if ($advList): $advTot = array_sum(array_map(fn($x) => (float)$x['adv'], $advList)); ?>
+<div class="card">
+  <h3>💰 એડવાન્સ / જમા પડેલા પૈસા — ₹<?= money($advTot) ?></h3>
+  <p class="muted">આ પાર્ટીઓના પૈસા આપણી પાસે જમા છે. એમનું નવું બિલ બનશે એટલે આપોઆપ સામે વપરાઈ જશે.</p>
+  <div class="table-wrap" style="box-shadow:none">
+    <table class="table-sm">
+      <thead><tr><th>પાર્ટી</th><th>મોબાઇલ</th><th class="num">જમા</th></tr></thead>
+      <tbody>
+      <?php foreach ($advList as $a): ?>
+        <tr>
+          <td><a href="parties.php?action=ledger&id=<?= (int)$a['id'] ?>"><?= e($a['name']) ?></a></td>
+          <td class="muted"><?= e($a['mobile']) ?></td>
+          <td class="num" style="color:var(--ok);font-weight:700">₹<?= money($a['adv']) ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
 <div class="page-actions">
   <?php if (can('payments.add')): ?>
   <a class="btn btn-success" href="payments.php?action=new&dir=in">⬇ Payment-In</a>

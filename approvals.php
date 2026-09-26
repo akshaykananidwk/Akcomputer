@@ -16,6 +16,32 @@ if (!is_full_admin()) {
 }
 $u = current_user();
 
+// ખર્ચની મંજૂરી. Approving WRITES the expense - until then it exists only as
+// a request, so no report, no profit figure and no cash book has ever seen it.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'expense_decide') {
+    $r = row("SELECT * FROM expense_requests WHERE id = ? AND status = 'pending'", [(int)post('id')]);
+    if (!$r) { flash('વિનંતી મળી નહીં અથવા નિર્ણય લેવાઈ ગયો છે.', 'error'); redirect('approvals.php'); }
+    if (post('decision') === 'reject') {
+        q("UPDATE expense_requests SET status = 'rejected', decided_by = ?, decided_at = NOW(), decide_note = ? WHERE id = ?",
+          [$u['id'], trim((string)post('note')), $r['id']]);
+        log_activity('expense_request_reject', '₹' . money($r['amount']) . ' ' . $r['category']);
+        flash('ખર્ચ નામંજૂર — ચોપડામાં કંઈ ચડ્યું નથી.');
+        redirect('approvals.php');
+    }
+    $d = json_decode($r['payload'], true) ?: [];
+    q('INSERT INTO expenses (exp_date, category, amount, mode, bank_account_id, payment_method_id, notes, location_id, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?)',
+      [$d['exp_date'] ?? $r['exp_date'], $d['category'] ?? $r['category'], (float)($d['amount'] ?? $r['amount']),
+       $d['mode'] ?? 'cash', $d['bank_account_id'] ?: null, $d['payment_method_id'] ?: null,
+       $d['notes'] ?? '', $d['location_id'] ?: null, (int)$r['requested_by']]);
+    $eid = insert_id();
+    q("UPDATE expense_requests SET status = 'approved', decided_by = ?, decided_at = NOW(), expense_id = ?, decide_note = ? WHERE id = ?",
+      [$u['id'], $eid, trim((string)post('note')), $r['id']]);
+    log_activity('expense_request_approve', '₹' . money($r['amount']) . ' ' . $r['category']);
+    flash('ખર્ચ મંજૂર — ₹' . money($r['amount']) . ' ચોપડામાં ચડી ગયો.');
+    redirect('approvals.php');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'decide') {
     $req = row("SELECT * FROM edit_requests WHERE id = ? AND status = 'pending'", [(int)post('id')]);
     if (!$req) { flash('Request not found or already decided.', 'error'); redirect('approvals.php'); }
@@ -38,6 +64,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'decide') {
 
 $pending = all("SELECT er.*, u2.name requester FROM edit_requests er JOIN users u2 ON u2.id = er.requested_by
                 WHERE er.status = 'pending' ORDER BY er.id");
+$expPending = all("SELECT r.*, u2.name requester FROM expense_requests r
+                   LEFT JOIN users u2 ON u2.id = r.requested_by
+                   WHERE r.status = 'pending' ORDER BY r.id");
+$expDecided = all("SELECT r.*, u2.name requester, u3.name decider FROM expense_requests r
+                   LEFT JOIN users u2 ON u2.id = r.requested_by LEFT JOIN users u3 ON u3.id = r.decided_by
+                   WHERE r.status <> 'pending' ORDER BY r.decided_at DESC LIMIT 10");
 $decided = all("SELECT er.*, u2.name requester, u3.name decider FROM edit_requests er
                 JOIN users u2 ON u2.id = er.requested_by LEFT JOIN users u3 ON u3.id = er.decided_by
                 WHERE er.status <> 'pending' ORDER BY er.decided_at DESC LIMIT 10");
@@ -141,6 +173,36 @@ function er_diff($req) {
 $page_title = 'Edit Approvals';
 include __DIR__ . '/includes/header.php';
 ?>
+<div class="card">
+  <h2>🧾 ખર્ચની મંજૂરી બાકી (<?= count($expPending) ?>)</h2>
+  <p class="muted" style="font-size:13px">Settings માં નક્કી કરેલી રકમથી મોટો ખર્ચ સ્ટાફ નાખે તો સીધો ચોપડામાં નથી ચડતો — અહીં આવે છે. મંજૂર કરો ત્યારે જ ખર્ચ નોંધાય છે.</p>
+  <?php if (!$expPending): ?><p class="muted">🎉 કોઈ ખર્ચ મંજૂરી બાકી નથી.</p><?php endif; ?>
+  <?php foreach ($expPending as $r): ?>
+  <div class="list-row" style="display:block;cursor:default;border:1px solid rgba(128,128,128,.25);border-radius:12px;padding:12px;margin-bottom:10px">
+    <div><strong>₹<?= money($r['amount']) ?></strong> · <?= e($r['category']) ?> · <?= dmy($r['exp_date']) ?></div>
+    <div class="muted"><?= e($r['requester'] ?: '-') ?> · <?= dmyt($r['created_at']) ?><?= $r['reason'] ? ' · ' . e($r['reason']) : '' ?></div>
+    <form method="post" class="page-actions" style="margin-top:8px">
+      <?= csrf_field() ?><input type="hidden" name="do" value="expense_decide"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
+      <input type="text" name="note" placeholder="નોંધ (વૈકલ્પિક)" style="width:200px">
+      <button class="btn btn-sm btn-success" type="submit" name="decision" value="approve">✔ મંજૂર</button>
+      <button class="btn btn-sm btn-danger" type="submit" name="decision" value="reject"
+              onclick="return confirm('નામંજૂર કરવો છે?')">✕ નામંજૂર</button>
+    </form>
+  </div>
+  <?php endforeach; ?>
+  <?php if ($expDecided): ?>
+  <details><summary class="muted">છેલ્લા નિર્ણય</summary>
+    <table class="table-sm mt"><tbody>
+    <?php foreach ($expDecided as $r): ?>
+      <tr><td>₹<?= money($r['amount']) ?> · <?= e($r['category']) ?></td>
+          <td><span class="badge <?= $r['status'] === 'approved' ? 'badge-ok' : 'badge-bad' ?>"><?= $r['status'] === 'approved' ? 'મંજૂર' : 'નામંજૂર' ?></span></td>
+          <td class="muted"><?= e($r['decider'] ?: '-') ?> · <?= $r['decided_at'] ? dmyt($r['decided_at']) : '-' ?></td></tr>
+    <?php endforeach; ?>
+    </tbody></table>
+  </details>
+  <?php endif; ?>
+</div>
+
 <div class="card">
   <h2>⏳ Pending bill-edit approvals</h2>
   <p class="muted" style="font-size:13px">24 કલાકથી જૂના બિલમાં સ્ટાફે કરેલા ફેરફાર અહીં આવે છે — Approve કરો એટલે ફેરફાર બિલમાં લાગુ થઈ જાય, Reject કરો એટલે બિલ જેમ છે એમ જ રહે.</p>

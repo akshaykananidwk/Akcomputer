@@ -14,9 +14,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     // from Delete, when it still has old transactions to preserve).
     $data = [post('name'), 'both', post('mobile'), post('email'), post('gstin'),
              post('address'), post('city'), post('dob') ?: null, post('anniversary') ?: null,
-             (int)post('credit_days'), (float)post('opening_balance')];
+             (int)post('credit_days'), (float)post('opening_balance'),
+             max(0, (float)post('credit_limit')), max(0, (float)post('interest_pct'))];
     if ($id) {
-        q('UPDATE parties SET name=?, type=?, mobile=?, email=?, gstin=?, address=?, city=?, dob=?, anniversary=?, credit_days=?, opening_balance=?, is_active=1 WHERE id=?',
+        q('UPDATE parties SET name=?, type=?, mobile=?, email=?, gstin=?, address=?, city=?, dob=?, anniversary=?, credit_days=?, opening_balance=?, credit_limit=?, interest_pct=?, is_active=1 WHERE id=?',
           array_merge($data, [$id]));
         flash('Party updated.');
     } else {
@@ -32,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                 redirect('parties.php?action=new');
             }
         }
-        q('INSERT INTO parties (name, type, mobile, email, gstin, address, city, dob, anniversary, credit_days, opening_balance, is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?,1)', $data);
+        q('INSERT INTO parties (name, type, mobile, email, gstin, address, city, dob, anniversary, credit_days, opening_balance, credit_limit, interest_pct, is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)', $data);
         flash('Party added.');
     }
     log_activity('party_save', post('name'));
@@ -136,6 +137,12 @@ if ($action === 'new' || $action === 'edit') {
               <?php endforeach; ?>
             </select></div>
           <div><label>Opening balance (+ receivable / - payable)</label><input type="number" step="any" name="opening_balance" value="<?= e($p['opening_balance'] ?? '0') ?>"></div>
+          <div><label>ક્રેડિટ લિમિટ (₹)</label>
+            <input type="number" step="any" min="0" name="credit_limit" value="<?= e($p['credit_limit'] ?? '0') ?>">
+            <p class="muted mt" style="font-size:.8em">આટલાથી વધુ બાકી થાય તો બિલ બનાવતી વખતે ચેતવણી આવશે. 0 = હદ નહીં.</p></div>
+          <div><label>મોડું ચૂકવે તો વ્યાજ (% વાર્ષિક)</label>
+            <input type="number" step="any" min="0" name="interest_pct" value="<?= e($p['interest_pct'] ?? '0') ?>">
+            <p class="muted mt" style="font-size:.8em">0 રાખશો તો Settings નો ડિફોલ્ટ દર લાગશે.</p></div>
         </div>
         <button class="btn" type="submit">Save Party</button>
         <a class="btn btn-muted" href="parties.php">Cancel</a>
@@ -160,6 +167,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_ledger') {
         flash('No mobile number.', 'error');
     }
     redirect('parties.php?action=ledger&id=' . (int)post('id'));
+}
+
+// વ્યાજ વસૂલો — raise the interest as a real bill the customer can be shown.
+// The amount is worked out here from their own late bills, never taken from
+// the form: a page open since the morning must not charge yesterday's figure.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'charge_interest' && can('sales.add')) {
+    $pid = (int)post('id');
+    $info = interest_due_for_party($pid);
+    if ($info['amount'] <= 0.009) {
+        flash('અત્યારે વ્યાજ લેવા જેવું કંઈ નથી.', 'error');
+    } else {
+        try {
+            $sid = interest_charge_bill($pid, $info['amount'],
+                '(' . count($info['bills']) . ' બિલ, ' . (0 + $info['rate']) . '% વાર્ષિક)');
+            flash($sid ? '₹' . money($info['amount']) . ' નું વ્યાજનું બિલ બની ગયું.' : 'બિલ બન્યું નહીં.', $sid ? 'success' : 'error');
+        } catch (Exception $e) {
+            flash('Error: ' . $e->getMessage(), 'error');
+        }
+    }
+    redirect('parties.php?action=ledger&id=' . $pid);
 }
 
 // Payment reminder straight off the party's own ledger - the same message the
@@ -258,6 +285,34 @@ if ($action === 'ledger' && $id) {
         </span>
       </div>
       <p class="muted">Credit: <?= (int)$p['credit_days'] ?> days · <?= e($p['mobile']) ?> <?= $p['gstin'] ? '| GSTIN: ' . e($p['gstin']) : '' ?><?= setting('loyalty_enabled') === '1' ? ' | ⭐ ' . (int)$p['loyalty_points'] . ' points' : '' ?></p>
+      <?php
+      // three things about this party that are easy to forget and expensive
+      // to forget: money of theirs we are holding, how far past their limit
+      // they are, and what their late bills have been quietly earning
+      $advHeld = party_advance($id);
+      $clim = credit_limit_state($id);
+      $intr = can('sales.view') ? interest_due_for_party($id) : ['amount' => 0.0, 'rate' => 0, 'bills' => []];
+      ?>
+      <?php if ($advHeld > 0.009): ?>
+        <p class="flash flash-info" style="margin:6px 0">💰 આ પાર્ટીના <strong>₹<?= money($advHeld) ?></strong> આપણી પાસે જમા છે (એડવાન્સ) — નવું બિલ બનશે એટલે એની સામે વપરાઈ જશે.</p>
+      <?php endif; ?>
+      <?php if ($clim && $clim['set']): ?>
+        <p class="<?= $clim['over'] ? 'flash flash-error' : 'muted' ?>" style="margin:6px 0">
+          ક્રેડિટ લિમિટ ₹<?= money($clim['limit']) ?> · અત્યારે બાકી ₹<?= money($clim['owed']) ?>
+          <?= $clim['over'] ? ' — ₹' . money($clim['excess']) . ' વધારે થઈ ગયું છે.' : '' ?></p>
+      <?php endif; ?>
+      <?php if ($intr['amount'] > 0.009): ?>
+        <div class="flash flash-info no-print" style="margin:6px 0">
+          ⏳ મોડા પેમેન્ટનું વ્યાજ અત્યાર સુધી <strong>₹<?= money($intr['amount']) ?></strong>
+          (<?= count($intr['bills']) ?> બિલ પર, <?= 0 + $intr['rate'] ?>% વાર્ષિક)
+          <?php if (can('sales.add')): ?>
+          <form method="post" style="display:inline" onsubmit="return confirm('₹<?= money($intr['amount']) ?> નું વ્યાજનું બિલ બનાવવું?')">
+            <?= csrf_field() ?><input type="hidden" name="do" value="charge_interest"><input type="hidden" name="id" value="<?= $id ?>">
+            <button class="btn btn-sm btn-outline" type="submit">વ્યાજનું બિલ બનાવો</button>
+          </form>
+          <?php endif; ?>
+        </div>
+      <?php endif; ?>
       <?php if (can('sites.view')): $siteCount = (int)val('SELECT COUNT(*) FROM sites WHERE party_id = ?', [$id]); ?>
       <p class="mt no-print"><a class="btn btn-sm btn-outline" href="sites.php?party_id=<?= $id ?>">🌐 Sites (<?= $siteCount ?>)</a></p>
       <?php endif; ?>

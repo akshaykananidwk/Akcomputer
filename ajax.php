@@ -101,6 +101,21 @@ if ($a === 'serials' && can('items.view')) {
     exit;
 }
 
+// How a party stands right now: what they owe, the limit set for them, and
+// any money of theirs the shop is already holding. The bill screen asks as
+// soon as a party is picked, so the warning is there BEFORE the bill is
+// written rather than after it is saved.
+if ($a === 'party_state' && can('sales.view')) {
+    $pid = (int)get('party_id');
+    $cl = $pid ? credit_limit_state($pid, (float)get('adding')) : null;
+    echo json_encode($cl ? [
+        'limit' => $cl['limit'], 'owed' => $cl['owed'], 'after' => $cl['after'],
+        'set' => $cl['set'], 'over' => $cl['over'], 'excess' => $cl['excess'],
+        'advance' => party_advance($pid),
+    ] : null);
+    exit;
+}
+
 if ($a === 'staff_serials' && can('items.view')) {
     // serials held by the logged-in staff
     $item_id = (int)get('item_id');

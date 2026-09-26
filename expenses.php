@@ -23,6 +23,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         log_activity('expense_edit', $old['category'] . ' ' . $old['amount'] . ' -> ' . post('category') . ' ' . $amt);
         flash('Expense updated.');
     } elseif ($amt > 0) {
+        // A big expense waits for the owner. It is held in its own table, not
+        // written as a "pending" expense row: forty different queries add
+        // expenses up, and one of them forgetting to skip pending rows would
+        // quietly change the profit. Nothing exists in the books until it is
+        // approved - and approving writes an ordinary expense, right here.
+        $limit = (float)setting('expense_approval_above', '0');
+        if ($limit > 0.009 && $amt > $limit && !is_full_admin()) {
+            q('INSERT INTO expense_requests (amount, category, exp_date, payload, reason, requested_by)
+               VALUES (?,?,?,?,?,?)',
+              [$amt, post('category', 'General'), post('exp_date', today()),
+               json_encode(['exp_date' => post('exp_date', today()), 'category' => post('category', 'General'),
+                            'amount' => $amt, 'mode' => post('mode', 'cash'), 'bank_account_id' => $bankId,
+                            'payment_method_id' => $pmId, 'notes' => post('notes'),
+                            'location_id' => $u['location_id']], JSON_UNESCAPED_UNICODE),
+               trim((string)post('notes')), $u['id']]);
+            log_activity('expense_request', post('category') . ' ' . $amt);
+            try { tg_notify_admins("🧾 ખર્ચ મંજૂરી માટે\n" . $u['name'] . " — ₹" . money($amt) . ' (' . post('category') . ')'); }
+            catch (Throwable $e) { /* telling the owner must never block the request */ }
+            flash('₹' . money($amt) . ' નો ખર્ચ મંજૂરી માટે મોકલ્યો — એડમિન મંજૂર કરે પછી ચોપડામાં ચડશે.', 'info');
+            redirect('expenses.php');
+        }
         q('INSERT INTO expenses (exp_date, category, amount, mode, bank_account_id, payment_method_id, notes, location_id, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
           [post('exp_date', today()), post('category', 'General'), $amt, post('mode', 'cash'),
            $bankId, $pmId, post('notes'), $u['location_id'], $u['id']]);

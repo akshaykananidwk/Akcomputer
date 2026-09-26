@@ -256,6 +256,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reminder_gap') {
     redirect('settings.php?cat=reminders');
 }
 
+// ---- the reminder ladder, the interest rate, the expense that needs a yes ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'collection_rules') {
+    require_perm('settings.edit');
+    set_setting('dun_soft_days', max(1, (int)post('soft')));
+    set_setting('dun_firm_days', max(1, (int)post('firm')));
+    set_setting('dun_call_days', max(1, (int)post('call')));
+    foreach (['soft', 'firm', 'call'] as $t)
+        if (trim((string)post('msg_' . $t)) !== '') set_setting('dun_msg_' . $t, trim(post('msg_' . $t)));
+    set_setting('late_interest_pct', max(0, (float)post('interest_pct')));
+    set_setting('late_interest_grace_days', max(0, (int)post('grace')));
+    set_setting('expense_approval_above', max(0, (float)post('exp_above')));
+    flash('ઉઘરાણીના નિયમ સાચવ્યા.');
+    redirect('settings.php?cat=reminders');
+}
+
 // ---- Telegram management bot: save token / auto-register the webhook ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'tg_save') {
     require_perm('settings.edit');
@@ -939,6 +954,35 @@ exit;
     <div><label>એક જ બિલ માટે કેટલા દિવસે ફરી મેસેજ? (1 = રોજ)</label><input type="number" name="gap" min="1" value="<?= (int)setting('reminder_gap_days', '1') ?>"></div>
     <button class="btn btn-sm" type="submit">Save</button>
     <a class="btn btn-sm btn-outline" href="<?= e($cronUrl) ?>" target="_blank">▶ Test Run Now</a>
+  </form>
+</div>
+
+<div class="card">
+  <h3>🪜 ઉઘરાણીની સીડી, વ્યાજ અને ખર્ચ મંજૂરી</h3>
+  <p class="muted mb">એક જ સરખો મેસેજ વારંવાર મોકલવાથી ગ્રાહક વાંચતો બંધ થઈ જાય છે. જેમ જેમ જૂનું થાય તેમ તેમ ભાષા બદલાય — અને છેલ્લે મેસેજ નહીં, ફોન. છેલ્લા પગથિયે કોઈ મેસેજ જતો નથી; માલિકની યાદીમાં "ફોન કરવાનો છે" આવી જાય છે.</p>
+  <form method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="collection_rules">
+    <div class="form-row cols-3">
+      <div><label>🙏 નરમ યાદ — કેટલા દિવસે</label><input type="number" name="soft" min="1" value="<?= (int)setting('dun_soft_days', '7') ?>"></div>
+      <div><label>⚠️ કડક યાદ — કેટલા દિવસે</label><input type="number" name="firm" min="1" value="<?= (int)setting('dun_firm_days', '15') ?>"></div>
+      <div><label>📞 ફોન કરવાનો — કેટલા દિવસે</label><input type="number" name="call" min="1" value="<?= (int)setting('dun_call_days', '30') ?>"></div>
+    </div>
+    <?php foreach (['soft' => '🙏 નરમ મેસેજ', 'firm' => '⚠️ કડક મેસેજ', 'call' => '📞 છેલ્લો મેસેજ'] as $t => $lbl): ?>
+    <div class="field"><label><?= $lbl ?></label>
+      <textarea name="msg_<?= $t ?>" rows="3"><?= e(dunning_message($t, [])) ?></textarea></div>
+    <?php endforeach; ?>
+    <p class="muted">વાપરી શકાય: <code>{shop} {customer} {amount} {days} {invoice_no}</code></p>
+    <div class="form-row cols-3">
+      <div><label>મોડા પેમેન્ટ પર વ્યાજ (% વાર્ષિક)</label>
+        <input type="number" step="any" min="0" name="interest_pct" value="<?= 0 + (float)setting('late_interest_pct', '0') ?>">
+        <p class="muted mt" style="font-size:.8em">0 = વ્યાજ નહીં. પાર્ટીના પોતાના દર આના કરતાં ઉપર રહેશે.</p></div>
+      <div><label>કેટલા દિવસની છૂટ (grace)</label><input type="number" min="0" name="grace" value="<?= (int)setting('late_interest_grace_days', '0') ?>"></div>
+      <div><label>આટલાથી મોટો ખર્ચ મંજૂરી માગે (₹)</label>
+        <input type="number" step="any" min="0" name="exp_above" value="<?= 0 + (float)setting('expense_approval_above', '0') ?>">
+        <p class="muted mt" style="font-size:.8em">0 = મંજૂરી નહીં. એડમિનને લાગુ પડતું નથી.</p></div>
+    </div>
+    <button class="btn btn-sm" type="submit">Save</button>
   </form>
 </div>
 <?php endif; ?>
