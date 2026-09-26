@@ -531,3 +531,65 @@ if (is_executable($node)) {
 } else {
     t_ok('node is not installed - the matcher itself was not run (source checked above)', true);
 }
+
+// ---------------------------------------------------------------------------
+// "આઇટમ એડ કરીએ ને પાછા આવીએ તો બધું ભૂંસાઈ જાય છે" and "સબમીટ કરવા જઈએ
+// ત્યારે બધી વસ્તુ નીકળી જાય" — two ways the shop lost work it had already
+// typed. Nothing typed should ever be the price of a missing item or a
+// missed box.
+t_group('nothing typed is ever thrown away');
+$appJs3 = file_get_contents($_ROOT . '/assets/app.js');
+$slsUX  = file_get_contents($_ROOT . '/sales.php');
+$ajaxUX = file_get_contents($_ROOT . '/ajax.php');
+
+// 1. a new item is made ON the bill screen, not in another tab
+t_ok('a missing item is created without leaving the bill', strpos($appJs3, 'quickItem: function') !== false);
+t_ok('...the old "open another tab" link is gone',
+     strpos($appJs3, "window.open('items.php?action=new', '_blank')") === false);
+t_ok('...and it drops straight into the row that asked for it',
+     strpos($appJs3, 'self.pickItem(div, d);') !== false);
+t_ok('the endpoint exists', strpos($ajaxUX, "\$a === 'item_add'") !== false);
+t_ok('...and only for somebody allowed to add items', strpos($ajaxUX, "\$a === 'item_add' && can('items.add')") !== false);
+t_ok('...a name already in use is refused, not doubled',
+     strpos($ajaxUX, "SELECT id FROM items WHERE name = ? AND is_active = 1") !== false);
+t_ok('...and the shop\'s minimum-margin rule still applies to it',
+     strpos($ajaxUX, 'enforce_min_margin($id)') !== false);
+
+// 2. a refused bill comes back instead of vanishing
+t_ok('a bill the server refuses is parked, not lost',
+     strpos($slsUX, 'INSERT INTO parked_bills') !== false
+     && strpos($slsUX, "redirect('sales.php?action=new' . (\$keep ? '&park=' . \$keep : ''));") !== false);
+t_ok('...and keeping it can never hide the real error',
+     strpos($slsUX, '} catch (Throwable $e) { /* keeping the draft must never hide the real error */ }') !== false);
+// everything typed comes back, not just the items
+foreach (['notes', 'shipping', 'adjustment', 'delivery_address'] as $f)
+    t_ok('...' . $f . ' comes back too', strpos($slsUX, "\$preSale['" . $f . "']") !== false);
+
+t_group('a form says which box it needs, and keeps what is in the others');
+t_ok('there is one guard for the whole site', strpos($appJs3, 'var FormGuard = {') !== false);
+t_ok('...it runs before any page\'s own submit handler',
+     strpos($appJs3, "document.addEventListener('submit', function (ev) {") !== false
+     && strpos($appJs3, '}, true);') !== false);
+t_ok('...it stops the submit, so nothing typed is sent away and lost',
+     strpos($appJs3, 'if (!FormGuard.check(form)) { ev.preventDefault(); ev.stopPropagation(); }') !== false);
+t_ok('...it scrolls the page to the box it wants', strpos($appJs3, 'bad.scrollIntoView(') !== false);
+t_ok('...says so in Gujarati', strpos($appJs3, "msg: 'આ ખાનું ભરો'") !== false);
+t_ok('...takes over the browser\'s own English bubble too',
+     strpos($appJs3, "document.addEventListener('invalid'") !== false);
+t_ok('...shows only the first complaint, not five at once',
+     strpos($appJs3, "form.dataset.guardShown === '1'") !== false);
+t_ok('...and clears as soon as the box is filled',
+     strpos($appJs3, "el.classList.contains('field-bad') && (el.value || '').trim() !== ''") !== false);
+// a search or filter bar must not be nagged at
+t_ok('a filter bar is left alone', strpos($appJs3, "form.method.toLowerCase() === 'get'") !== false);
+t_ok('...and a form can opt out', strpos($appJs3, "form.hasAttribute('novalidate')") !== false);
+// a box inside a section nobody opened cannot be demanded
+t_ok('a hidden box is never demanded', strpos($appJs3, 'el.offsetParent === null') !== false);
+// "a bill needs an item" is not something [required] can say
+t_ok('a bill with no items is caught before it is sent', strpos($appJs3, 'guardItems: function') !== false);
+t_ok('...with words that say what to do', strpos($appJs3, 'ઓછામાં ઓછી એક આઇટમ ઉમેરો') !== false);
+
+t_group('the billing screen is short again');
+t_ok('the rare parts of a bill are folded away', strpos($slsUX, 'class="more-opts no-print"') !== false);
+t_ok('...but a bill that HAS one opens with it showing',
+     strpos($slsUX, "(\$tiRows || !empty(\$preSale['delivery_address'])) ? ' open' : ''") !== false);

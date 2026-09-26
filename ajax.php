@@ -135,6 +135,42 @@ if ($a === 'party_add' && can('parties.add') && $_SERVER['REQUEST_METHOD'] === '
     exit;
 }
 
+// Add an item WITHOUT leaving the bill.
+//
+// The old "＋ Add New Item" link opened items.php in another tab: the owner
+// filled the item there, came back, and on a phone found the half-written
+// bill gone. Nothing about billing should ever cost somebody a bill.
+//
+// Only the four things a bill actually needs are asked for here; everything
+// else about the item (HSN, warranty, photo, min stock) is filled in later on
+// the Items screen, where there is room for it.
+if ($a === 'item_add' && can('items.add') && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $name = trim((string)post('name'));
+    if ($name === '') { echo json_encode(['error' => 'આઇટમનું નામ જોઈએ.']); exit; }
+    if (row('SELECT id FROM items WHERE name = ? AND is_active = 1', [$name])) {
+        echo json_encode(['error' => 'આ નામની આઇટમ પહેલેથી છે — સર્ચમાંથી પસંદ કરો.']);
+        exit;
+    }
+    $sell = max(0, (float)post('selling_price'));
+    $cost = max(0, (float)post('purchase_price'));
+    $type = post('item_type') === 'service' ? 'service' : 'product';
+    q("INSERT INTO items (name, unit, tax_rate, purchase_price, selling_price, b2b_price,
+       serial_tracked, item_type, is_active) VALUES (?,?,?,?,?,?,?,?,1)",
+      [$name, post('unit', 'PCS') ?: 'PCS', (float)post('tax_rate'), $cost, $sell, $sell,
+       post('serial_tracked') ? 1 : 0, $type]);
+    $id = insert_id();
+    // the shop's minimum-margin rule applies to an item made here exactly as
+    // it does to one made on the Items screen
+    if (function_exists('enforce_min_margin')) enforce_min_margin($id);
+    log_activity('item_quick_add', "#$id $name");
+    $it = row("SELECT id, name, unit, tax_rate, purchase_price, selling_price, b2b_price,
+               serial_tracked, barcode, item_type FROM items WHERE id = ?", [$id]);
+    $it['stock'] = 0;
+    if (!can('items.cost')) $it['purchase_price'] = 0;
+    echo json_encode($it);
+    exit;
+}
+
 if ($a === 'party_bills' && can('payments.view')) {
     // unpaid bills of a party (for payment linking) + live balance
     $party_id = (int)get('party_id');

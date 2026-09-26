@@ -285,8 +285,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         redirect(post('save_new') ? 'sales.php?action=new' : 'sale_view.php?id=' . $sale_id);
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error: ' . $ex->getMessage(), 'error');
-        redirect('sales.php?action=new');
+        // NOTHING TYPED IS EVER THROWN AWAY. The old code flashed the reason
+        // and sent the person back to an empty form - so "not enough stock"
+        // or "pick a serial number" cost them the whole bill they had just
+        // written. The refused bill is parked exactly as it stood and the
+        // form reopens with it, so the one thing that was wrong can be fixed
+        // and it can be saved again.
+        $keep = 0;
+        try {
+            $payload = sale_park_payload();
+            if ($payload['items']) {
+                $amount = 0.0;
+                foreach ($payload['items'] as $it) $amount += $it['qty'] * $it['price'];
+                q('INSERT INTO parked_bills (label, customer_name, amount, items, payload, location_id, created_by)
+                   VALUES (?,?,?,?,?,?,?)',
+                  [mb_substr(trim((string)post('customer_name')) ?: 'સેવ ન થયેલું બિલ', 0, 120),
+                   post('customer_name'), round($amount, 2), count($payload['items']),
+                   json_encode($payload, JSON_UNESCAPED_UNICODE), $loc_id, $u['id']]);
+                $keep = insert_id();
+            }
+        } catch (Throwable $e) { /* keeping the draft must never hide the real error */ }
+        flash('Error: ' . $ex->getMessage() . ($keep ? ' — બિલ ખોવાયું નથી, નીચે એમનું એમ છે. સુધારીને ફરી સેવ કરો.' : ''), 'error');
+        redirect('sales.php?action=new' . ($keep ? '&park=' . $keep : ''));
     }
 }
 
@@ -872,8 +892,8 @@ if ($action === 'new' || $action === 'edit') {
             <input type="hidden" name="discount" id="discount" value="0">
             <input type="hidden" name="discount_type" id="discount_type" value="amount">
           </div>
-          <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= $isEdit ? 0 + $editSale['shipping'] : '0' ?>" oninput="Bill.totals()"></div>
-          <div><label>Adjustment (₹, +/-)</label><input type="number" step="any" name="adjustment" id="adjustment" value="<?= $isEdit ? 0 + $editSale['adjustment'] : '0' ?>" oninput="Bill.totals()"></div>
+          <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= 0 + (float)($preSale['shipping'] ?? 0) ?>" oninput="Bill.totals()"></div>
+          <div><label>Adjustment (₹, +/-)</label><input type="number" step="any" name="adjustment" id="adjustment" value="<?= 0 + (float)($preSale['adjustment'] ?? 0) ?>" oninput="Bill.totals()"></div>
           <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
           <div><label>⭐ Redeem Points <span class="muted" id="pointsAvail" style="font-weight:normal"></span></label>
             <input type="number" step="1" min="0" name="redeem_points" id="redeem_points" value="0" oninput="Bill.totals()"></div>
@@ -902,6 +922,16 @@ if ($action === 'new' || $action === 'edit') {
             </select></div>
           <?php endif; ?>
         </div>
+        <!-- EVERYTHING OPTIONAL LIVES BEHIND ONE LINE.
+             A counter screen has to be short. The bill that gets written a
+             hundred times a day needs a customer, items, what was paid and
+             Save; the exchange, the second payment and the delivery address
+             are real but rare, and having them all on view at once is what
+             made this screen feel like a form to fill in rather than a bill
+             to write. They open when they are wanted, and a bill that HAS
+             one opens with it already showing. -->
+        <details class="more-opts no-print"<?= ($tiRows || !empty($preSale['delivery_address'])) ? ' open' : '' ?>>
+          <summary>⚙️ વધુ વિકલ્પ — બીજું પેમેન્ટ, જૂનું લઈને નવું, ડિલિવરી સરનામું</summary>
         <?php if (!$isEdit): ?>
         <!-- ₹2,000 રોકડા + ₹3,000 UPI: the second way to pay, hidden until asked for -->
         <div class="no-print">
@@ -934,7 +964,8 @@ if ($action === 'new' || $action === 'edit') {
         <div class="field no-print"><label>ડિલિવરીનું સરનામું <span class="muted" style="font-weight:normal">(બિલના સરનામાથી અલગ હોય તો)</span></label>
           <input type="text" name="delivery_address" id="delivery_address" maxlength="250"
                  value="<?= e($preSale['delivery_address'] ?? '') ?>" placeholder="સાઇટનું સરનામું / જ્યાં માલ પહોંચાડવાનો છે"></div>
-        <div class="field"><label>Notes</label><input type="text" name="notes" <?= $isEdit ? 'value="' . e($editSale['notes']) . '"' : '' ?>></div>
+        </details>
+        <div class="field"><label>Notes</label><input type="text" name="notes" value="<?= e($preSale['notes'] ?? '') ?>"></div>
         <div class="bill-totals">
           <div class="t-line"><span>Items</span><span id="t_items">0 items · 0 qty</span></div>
           <div class="t-line" id="ldiscRow" style="display:none"><span>Item Discounts</span><span>- ₹ <span id="t_ldisc">0.00</span></span></div>

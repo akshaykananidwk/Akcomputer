@@ -224,6 +224,7 @@ var Bill = {
   init: function (cfg) {
     this.cfg = cfg;
     var self = this;
+    if (window.FormGuard && !Bill._guarded) { Bill._guarded = true; FormGuard.addCheck(function (f) { return Bill.guardItems(f); }); }
     // A barcode gun finishes every scan with an Enter keypress. On a bill
     // form that Enter must never submit the half-entered bill: single-line
     // inputs swallow it (the item search and serial boxes already run their
@@ -271,6 +272,74 @@ var Bill = {
   },
 
   // ----- 2-step "Add Items" panel (page 1 keeps just a summary list) -----
+  /** Make an item without leaving the bill, and drop it straight into this
+   *  row. Only what a bill needs is asked for: a name, what it sells for,
+   *  and - if the person may see costs - what it cost. Everything else about
+   *  the item is filled in later on the Items screen. */
+  /** A bill with no items is not a bill. Without this the form goes to the
+   *  server, the server says "Add at least one item", redirects - and the
+   *  customer, the discount and the notes that were typed are all gone. */
+  guardItems: function (form) {
+    if (!form.querySelector('#billItems')) return null;   // not a bill form
+    var rows = form.querySelectorAll('#billItems .bill-row .i-id, .add-item-panel .bill-row .i-id');
+    for (var i = 0; i < rows.length; i++) if (rows[i].value) return null;
+    var btn = document.getElementById('addItemsBtn') || form.querySelector('#billItems');
+    return { el: btn, msg: 'ઓછામાં ઓછી એક આઇટમ ઉમેરો' };
+  },
+
+  quickItem: function (div, name) {
+    var self = this;
+    var res = div.querySelector('.isearch-results');
+    if (div.querySelector('.qi-box')) { div.querySelector('.qi-name').focus(); return; }
+    res.classList.remove('show');
+    var box = document.createElement('div');
+    box.className = 'qi-box';
+    box.innerHTML =
+      '<div class="qi-head">＋ નવી આઇટમ</div>' +
+      '<input type="text" class="qi-name" placeholder="આઇટમનું નામ *">' +
+      '<div class="qi-row">' +
+        '<input type="number" step="any" min="0" class="qi-sell" placeholder="વેચાણ ભાવ ₹">' +
+        (this.cfg.showPurchasePrice || this.cfg.mode === 'purchase'
+          ? '<input type="number" step="any" min="0" class="qi-cost" placeholder="ખરીદ ભાવ ₹">' : '') +
+        '<input type="text" class="qi-unit" placeholder="યુનિટ" value="PCS">' +
+      '</div>' +
+      '<label class="check-inline"><input type="checkbox" class="qi-sn"> સિરિયલ નંબર વાળી આઇટમ</label>' +
+      '<div class="qi-msg"></div>' +
+      '<div class="qi-act">' +
+        '<button type="button" class="btn btn-sm qi-save">બનાવો અને બિલમાં નાખો</button>' +
+        '<button type="button" class="btn btn-sm btn-muted qi-cancel">રહેવા દો</button>' +
+      '</div>';
+    div.querySelector('.isearch-wrap, .i-search').parentNode.appendChild(box);
+    var nameInp = box.querySelector('.qi-name');
+    nameInp.value = name || '';
+    nameInp.focus();
+    box.querySelector('.qi-cancel').addEventListener('click', function () { box.remove(); });
+    box.querySelector('.qi-save').addEventListener('click', function () {
+      var btn = this;
+      var msg = box.querySelector('.qi-msg');
+      var nm = nameInp.value.trim();
+      if (!nm) { msg.textContent = 'આઇટમનું નામ લખો.'; nameInp.focus(); return; }
+      var fd = new FormData();
+      var csrf = document.querySelector('input[name=csrf]');
+      if (csrf) fd.append('csrf', csrf.value);
+      fd.append('name', nm);
+      fd.append('selling_price', (box.querySelector('.qi-sell') || {}).value || 0);
+      fd.append('purchase_price', (box.querySelector('.qi-cost') || {}).value || 0);
+      fd.append('unit', (box.querySelector('.qi-unit') || {}).value || 'PCS');
+      if (box.querySelector('.qi-sn').checked) fd.append('serial_tracked', '1');
+      btn.disabled = true; msg.textContent = 'બની રહી છે…';
+      fetch('ajax.php?a=item_add', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          btn.disabled = false;
+          if (d.error) { msg.textContent = d.error; return; }
+          box.remove();
+          self.pickItem(div, d);
+        })
+        .catch(function () { btn.disabled = false; msg.textContent = 'બની નહીં — ફરી પ્રયત્ન કરો.'; });
+    });
+  },
+
   openAddPanel: function (div) {
     var panel = document.getElementById('addItemPanel');
     if (!panel) return null;
@@ -467,14 +536,17 @@ var Bill = {
               d.addEventListener('click', function () { self.pickItem(div, it); });
               res.appendChild(d);
             });
-            // Vyapar-style: "Add New Item" link at the bottom of results
+            // "નવી આઇટમ" - made RIGHT HERE, on this screen.
+            //
+            // This used to open items.php in another tab. On a phone that
+            // meant leaving a half-written bill behind, and coming back to
+            // find it gone. A bill must never be the price of adding an item,
+            // so the item is created without the page moving at all.
             var addNew = document.createElement('div');
             addNew.className = 'ir';
-            addNew.innerHTML = '<strong style="color:var(--primary)">＋ Add New Item</strong><small>Create a new item "' + qy + '"</small>';
-            addNew.addEventListener('click', function () {
-              window.open('items.php?action=new', '_blank');
-              res.classList.remove('show');
-            });
+            addNew.innerHTML = '<strong style="color:var(--primary)">＋ નવી આઇટમ બનાવો</strong>' +
+                               '<small>"' + qy + '" નામની આઇટમ અહીં જ બનાવો — બિલ ખૂલ્લું જ રહેશે</small>';
+            addNew.addEventListener('click', function () { self.quickItem(div, qy); });
             res.appendChild(addNew);
             res.classList.add('show');
           });
@@ -1110,3 +1182,134 @@ var SearchPick = {
     showSelection();
   }
 };
+
+// ---------------------------------------------------------------------------
+// "આ ખાનું ભરો" — one validation behaviour for every form in the shop.
+//
+// What used to happen: a required field was left empty, the form went to the
+// server anyway, the server flashed "Party and amount required", redirected -
+// and everything typed was gone. On a long form (a bill, a purchase, a repair
+// job) that is half an hour of work lost because one box was missed, and the
+// owner cannot even see WHICH box.
+//
+// What happens now, on every form, without touching a single screen: the
+// first empty required field stops the submit, the page scrolls to it, it is
+// outlined in red with "આ ખાનું ભરો" under it, and the cursor lands in it.
+// Nothing is sent, so nothing is lost. The message clears as soon as it is
+// filled in.
+//
+// A form can opt out with novalidate, which is what a Search or Filter form
+// wants. Nothing here replaces the server's own checks - the browser is the
+// polite first pass, the server is the one that decides.
+// ---------------------------------------------------------------------------
+var FormGuard = {
+  msg: 'આ ખાનું ભરો',
+
+  clear: function (el) {
+    el.classList.remove('field-bad');
+    var box = el.parentNode ? el.parentNode.querySelector('.field-msg') : null;
+    if (box) box.remove();
+  },
+
+  mark: function (el, text) {
+    el.classList.add('field-bad');
+    if (el.parentNode && !el.parentNode.querySelector('.field-msg')) {
+      var d = document.createElement('div');
+      d.className = 'field-msg';
+      d.textContent = text || this.msg;
+      // after the field itself, so it reads directly under the box
+      if (el.nextSibling) el.parentNode.insertBefore(d, el.nextSibling);
+      else el.parentNode.appendChild(d);
+    }
+  },
+
+  /** The first field this form needs and has not got, or null. Hidden fields
+   *  are skipped: a box inside a collapsed section the person never opened is
+   *  not something they can be asked to fill. */
+  firstMissing: function (form) {
+    var els = form.querySelectorAll('[required]');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el.disabled || el.type === 'hidden') continue;
+      if (el.offsetParent === null && el.type !== 'radio') continue;   // not on screen
+      var v = (el.value || '').trim();
+      if (el.type === 'checkbox' && !el.checked) return el;
+      if (el.type !== 'checkbox' && v === '') return el;
+    }
+    return null;
+  },
+
+  // A screen can add its own rule - "a bill needs at least one item" is not
+  // something [required] on a box can say. Each returns {el, msg} or null.
+  extra: [],
+  addCheck: function (fn) { this.extra.push(fn); },
+
+  check: function (form) {
+    form.querySelectorAll('.field-bad').forEach(function (el) { FormGuard.clear(el); });
+    var bad = this.firstMissing(form);
+    var text = null;
+    if (!bad) {
+      for (var i = 0; i < this.extra.length; i++) {
+        var r = null;
+        try { r = this.extra[i](form); } catch (e) { r = null; }
+        if (r && r.el) { bad = r.el; text = r.msg; break; }
+      }
+    }
+    if (!bad) return true;
+    if (text) { this.mark(bad, text); 
+      try { bad.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { bad.scrollIntoView(); }
+      return false; }
+    this.mark(bad);
+    // bring it into view with room above, so it is not hidden under the
+    // sticky header on a phone
+    try { bad.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { bad.scrollIntoView(); }
+    setTimeout(function () { try { bad.focus({ preventScroll: true }); } catch (e) { bad.focus(); } }, 120);
+    return false;
+  }
+};
+
+// The browser refuses an empty required box on its own, but it does it in
+// English, in a bubble that vanishes, and it never scrolls a long form to
+// the box it is complaining about. So the refusal is taken over here: the
+// browser still decides WHAT is wrong (it knows about numbers, dates and
+// patterns), and this decides how the person is told - in Gujarati, on the
+// field, with the page scrolled to it. Only the first one is shown; being
+// handed five complaints at once is not help.
+document.addEventListener('invalid', function (ev) {
+  var el = ev.target;
+  if (!el || !el.form) return;
+  ev.preventDefault();                       // no native bubble
+  var form = el.form;
+  if (form.dataset.guardShown === '1') return;
+  form.dataset.guardShown = '1';
+  setTimeout(function () { form.dataset.guardShown = ''; }, 50);
+  var v = el.validity || {};
+  var text = v.valueMissing ? FormGuard.msg
+           : (v.rangeUnderflow || v.rangeOverflow || v.stepMismatch) ? 'આ આંકડો બરાબર નથી'
+           : (v.typeMismatch || v.patternMismatch) ? 'આ બરાબર લખાયું નથી — ફરી તપાસો'
+           : (el.validationMessage || FormGuard.msg);
+  FormGuard.mark(el, text);
+  try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { el.scrollIntoView(); }
+  setTimeout(function () { try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); } }, 120);
+}, true);
+
+// one listener for the whole site, in the capture phase so it runs before a
+// page's own submit handler sends anything anywhere
+document.addEventListener('submit', function (ev) {
+  var form = ev.target;
+  if (!form || form.tagName !== 'FORM') return;
+  if (form.hasAttribute('novalidate') || form.dataset.noguard === '1') return;
+  if (form.method && form.method.toLowerCase() === 'get') return;   // search / filter bars
+  if (!FormGuard.check(form)) { ev.preventDefault(); ev.stopPropagation(); }
+}, true);
+
+// the red goes away the moment the box is filled - being told off twice for
+// the same thing is its own kind of rude
+document.addEventListener('input', function (ev) {
+  var el = ev.target;
+  if (el && el.classList && el.classList.contains('field-bad') && (el.value || '').trim() !== '') FormGuard.clear(el);
+}, true);
+document.addEventListener('change', function (ev) {
+  var el = ev.target;
+  if (el && el.classList && el.classList.contains('field-bad') && (el.value || '').trim() !== '') FormGuard.clear(el);
+}, true);

@@ -781,3 +781,33 @@ a.stat { text-decoration: none; color: inherit; display: block; }
 @media (min-width: 700px) {
   .kpi-grid { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ---- નવી આઇટમ, બિલ છોડ્યા વગર -------------------------------------------
+   The quick-add panel that opens inside a bill row. It used to be a link to
+   another tab, which on a phone meant losing the bill you were writing. */
+.qi-box { border: 1px solid var(--primary); border-radius: 12px; padding: 12px;
+          margin-top: 8px; background: var(--card, #fff); }
+.qi-head { font-weight: 700; margin-bottom: 8px; color: var(--primary); }
+.qi-box input[type=text], .qi-box input[type=number] { width: 100%; margin-bottom: 8px; }
+.qi-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.qi-row input { flex: 1 1 110px; }
+.qi-msg { color: var(--bad); font-size: 13px; min-height: 18px; }
+.qi-act { display: flex; gap: 8px; }
+
+/* ---- "આ ખાનું ભરો" ------------------------------------------------------
+   The one validation look, used on every form in the shop. */
+.field-bad, input.field-bad, select.field-bad, textarea.field-bad {
+  border-color: var(--bad) !important; box-shadow: 0 0 0 3px rgba(220, 38, 38, .12);
+}
+.field-msg { color: var(--bad); font-size: 13px; font-weight: 600; margin-top: 4px; }
+
+/* ---- વધુ વિકલ્પ ---------------------------------------------------------
+   The rare-but-real parts of a bill, folded away so the everyday bill is
+   short: customer, items, paid, Save. */
+.more-opts { border: 1px solid var(--line, var(--border)); border-radius: 12px; margin: 10px 0; }
+.more-opts > summary { padding: 12px 14px; cursor: pointer; font-weight: 600; list-style: none; }
+.more-opts > summary::-webkit-details-marker { display: none; }
+.more-opts > summary::after { content: ' ▾'; color: var(--muted); }
+.more-opts[open] > summary::after { content: ' ▴'; }
+.more-opts > *:not(summary) { padding: 0 14px; }
+.more-opts > *:last-child { padding-bottom: 12px; }
