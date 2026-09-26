@@ -86,9 +86,20 @@ foreach (glob(dirname(__DIR__) . '/*.php') as $f) {
     if (in_array($base, ['config.php', 'config.sample.php', 'login.php', 'logout.php', 'forgot_password.php',
         'catalog.php', 'catalog_feed.php', 'product.php', 'price.php', 'category.php', 'brand.php', 'services.php',
         'privacy.php', 'terms.php', 'sitemap.php', 'referral.php', 'feedback.php', 'service_report.php',
+        'pay.php',   // customer pay page - share-token gated, see pay.php
         'sale_view.php', 'sale_pdf.php', 'api.php', 'cron.php', 'razorpay_webhook.php', 'wa_webhook.php',
         'telegram_webhook.php'], true)) continue;
     $src = file_get_contents($f);
     if (!preg_match('/require_perm\(|require_login\(/', $src)) $ungated[] = $base;
 }
 t_ok('no staff page is missing require_perm/require_login', empty($ungated), implode(', ', $ungated));
+
+// A page on that public list is only allowed there because it gates on
+// something of its own. pay.php's gate is the bill's share token, and it must
+// stay that way - a public page that stopped checking would hand any passer-by
+// somebody else's bill.
+t_group('the customer pay page gates on its token');
+$payPage = file_get_contents(dirname(__DIR__) . '/pay.php');
+t_ok('it compares the share token', strpos($payPage, "hash_equals(\$sale['share_token'], \$token)") !== false);
+t_ok('...and refuses without one', strpos($payPage, "!\$sale['share_token']") !== false);
+t_ok('...with a 404, not a bill', strpos($payPage, 'http_response_code(404)') !== false);

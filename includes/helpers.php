@@ -734,13 +734,46 @@ function qr_png_path($data) {
     file_put_contents($path, $png);
     return $path;
 }
-/** Relative web path (for <img src>) of the QR for this sale, or null if unavailable. */
-function invoice_qr_web_path($sale) {
+/** Relative web path (for <img src>) of the QR for this sale, or null if
+ *  unavailable. $amount defaults to the bill total; the pay page passes what
+ *  is actually still OWED, so a part-paid bill does not ask for it twice. */
+function invoice_qr_web_path($sale, $amount = null) {
     $bank = default_bank_account();
     if (!$bank || !$bank['upi_id']) return null;
-    $p = qr_png_path(upi_uri($bank['upi_id'], $bank['account_name'], $sale['total'], $sale['invoice_no']));
+    $p = qr_png_path(upi_uri($bank['upi_id'], $bank['account_name'], $amount ?? $sale['total'], $sale['invoice_no']));
     if (!$p) return null;
     return 'uploads/qrcache/' . basename($p);
+}
+
+/** The customer's own pay link for one bill.
+ *
+ *  An https:// page of ours, not a raw upi:// string. A upi:// link pasted
+ *  into WhatsApp is not tappable on most phones - WhatsApp only turns http(s)
+ *  into links - so the thing that gets sent has to be a normal web address
+ *  that then fires the UPI intent from a button. The page also carries the QR
+ *  and the UPI id as text, for a customer reading it on a desktop.
+ *
+ *  It reuses the bill's existing share_token, so it is the same unguessable
+ *  key the public bill view and PDF already use - one link per bill, nothing
+ *  new to leak. */
+function invoice_pay_url($sale) {
+    if (empty($sale['id'])) return null;
+    $tok = $sale['share_token'] ?? null;
+    if (!$tok) {   // a bill from before tokens existed - mint one now
+        $tok = share_token();
+        q('UPDATE sales SET share_token = ? WHERE id = ?', [$tok, $sale['id']]);
+    }
+    return base_url('pay.php?id=' . (int)$sale['id'] . '&t=' . $tok);
+}
+
+/** The UPI apps worth offering their own button, because some phones never
+ *  show a chooser for a bare upi:// intent. Each takes the same parameters. */
+function upi_apps() {
+    return [
+        ['Google Pay', 'tez://upi/pay'],
+        ['PhonePe',    'phonepe://pay'],
+        ['Paytm',      'paytmmp://pay'],
+    ];
 }
 
 // ---------- Item custom fields: print visibility ----------

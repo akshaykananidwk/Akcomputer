@@ -403,3 +403,71 @@ t_ok('the purchase screen fetches the mobile it renders',
      strpos(file_get_contents($_ROOT . '/purchases.php'), "SELECT id, name, mobile, credit_days FROM parties") !== false);
 t_ok('a quick-added supplier reaches the search box',
      strpos(file_get_contents($_ROOT . '/purchases.php'), "sel.dispatchEvent(new Event('change'));") !== false);
+
+// ------------------------------------------------ the invoice's pay link ----
+// The customer should be able to tap one link and land in their UPI app with
+// the shop's id and the right amount already filled in - the same thing the
+// printed QR does, but sendable.
+t_group('every unpaid bill has a pay link');
+$_ROOT = dirname(__DIR__);
+$payParty = t_party('TPay ' . bin2hex(random_bytes(3)));
+$paySale  = t_sale($payParty, 3540, 0, today());
+$payRow   = row('SELECT * FROM sales WHERE id = ?', [$paySale]);
+$url = invoice_pay_url($payRow);
+t_ok('a link is produced', (bool)$url);
+t_ok('...it is an ordinary web address, not a raw upi:// string',
+     strpos($url, 'http') === 0 && strpos($url, 'upi://') === false);
+t_ok('...pointing at the pay page', strpos($url, 'pay.php?id=' . $paySale) !== false);
+// it reuses the bill's own share token - nothing new to leak
+t_ok('...keyed by the bill\'s existing share token',
+     strpos($url, '&t=' . row('SELECT share_token FROM sales WHERE id = ?', [$paySale])['share_token']) !== false);
+// a bill that never had a token gets one rather than producing a broken link
+q("UPDATE sales SET share_token = '' WHERE id = ?", [$paySale]);
+$u2 = invoice_pay_url(row('SELECT * FROM sales WHERE id = ?', [$paySale]));
+t_ok('an old bill with no token is given one', strlen((string)val('SELECT share_token FROM sales WHERE id = ?', [$paySale])) > 10);
+t_ok('...and still gets a usable link', strpos((string)$u2, 'pay.php?id=') !== false);
+
+t_group('the UPI string carries the shop and the amount');
+$uri = upi_uri('shop@okhdfcbank', 'AK Computer', 3540, 'INV-1');
+t_ok('the shop\'s UPI id is in it', strpos($uri, 'pa=shop%40okhdfcbank') !== false);
+t_ok('the payee name is in it', strpos($uri, 'pn=AK%20Computer') !== false);
+t_ok('the amount is in it, to the paisa', strpos($uri, 'am=3540.00') !== false);
+t_ok('the currency is rupees', strpos($uri, 'cu=INR') !== false);
+t_ok('the bill number rides along as the note', strpos($uri, 'tn=INV-1') !== false);
+// the app buttons are the same string with a different scheme, so they can
+// never drift from the amount on the page
+foreach (upi_apps() as $app)
+    t_ok($app[0] . ' gets the same parameters', strpos(str_replace('upi://pay', $app[1], $uri), 'am=3540.00') !== false);
+
+t_group('the pay page asks for what is still owed, never the whole bill again');
+$pp = file_get_contents($_ROOT . '/pay.php');
+t_ok('the amount comes from the capped due rule', strpos($pp, 'sale_true_due($sale)') !== false);
+t_ok('...not from the bill total', strpos($pp, "\$due = \$sale['total']") === false);
+t_ok('a cancelled bill is never payable', strpos($pp, "\$sale['is_cancelled'] ? 0.0") !== false);
+t_ok('the QR is built for the DUE amount', strpos($pp, 'invoice_qr_web_path($sale, $due)') !== false);
+t_ok('...which the helper now accepts', strpos(file_get_contents($_ROOT . '/includes/helpers.php'),
+     'function invoice_qr_web_path($sale, $amount = null)') !== false);
+
+t_group('the pay link is public but not guessable');
+t_ok('the token is compared in constant time', strpos($pp, 'hash_equals($sale[\'share_token\'], $token)') !== false);
+t_ok('a missing or wrong token is a 404', strpos($pp, 'http_response_code(404)') !== false);
+t_ok('search engines are told to stay out', strpos($pp, 'noindex,nofollow') !== false);
+t_ok('the page needs no login', strpos($pp, 'require_perm') === false);
+
+t_group('the page never pretends a bill got paid');
+// a direct UPI transfer lands in the bank with nothing coming back here, so
+// the software cannot know. Saying otherwise would be the worst kind of wrong.
+t_ok('nothing on the page marks a bill paid',
+     strpos($pp, "UPDATE sales SET paid") === false && strpos($pp, "money_settle") === false);
+t_ok('"I have paid" only tells the shop to go and look', strpos($pp, 'tg_notify_admins') !== false);
+t_ok('...and the page says so in as many words', strpos($pp, 'જાતે "ચૂકવાઈ ગયું" નથી કરી શકતું') !== false);
+
+t_group('the link reaches the customer');
+$sv = file_get_contents($_ROOT . '/sale_view.php');
+t_ok('the bill screen offers it', strpos($sv, 'પેમેન્ટ લિંક ખોલો') !== false);
+t_ok('...with a copy button', strpos($sv, 'copyPay()') !== false);
+t_ok('...only while something is owed', strpos($sv, "(\$sale['total'] - \$sale['paid']) > 0.009 ? invoice_pay_url(\$sale) : null") !== false);
+t_ok('the WhatsApp bill carries it', strpos($sv, "\$payLink = \$due > 0.009 ? invoice_pay_url(\$sale) : null") !== false);
+$wp = file_get_contents($_ROOT . '/includes/wa_portal.php');
+t_ok('the customer portal carries it too', strpos($wp, 'invoice_pay_url($s)') !== false);
+t_ok('...and leaves it off a settled bill', strpos($wp, "\$due > 0.009 ? \"\\n💳 ચૂકવો: \"") !== false);

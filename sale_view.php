@@ -41,7 +41,11 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsap
     file_put_contents($pdfDir . '/' . $pdfName, invoice_pdf($sale, $items));
     $imgUrl = base_url('uploads/invoices/' . $pdfName);
     $due = $sale['total'] - $sale['paid'];
-    $payLink = $due > 0.009 ? razorpay_payment_link($due, 'Invoice ' . $sale['invoice_no'], $sale['customer_name'], $sale['customer_mobile'], $sale['invoice_no'], $id) : null;
+    // The shop's OWN UPI, on our own page - the money lands straight in the
+    // bank with nothing taken out of it. A raw upi:// string is not tappable
+    // in WhatsApp, which is why the link sent is a normal web address that
+    // fires the UPI intent from a button (see pay.php).
+    $payLink = $due > 0.009 ? invoice_pay_url($sale) : null;
     $msg = wa_template('bill', [
         'firm' => $sale['company_name'], 'invoice_no' => $sale['invoice_no'], 'date' => dmy($sale['sale_date']),
         'total' => money($sale['total']),
@@ -134,8 +138,22 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
 ?>
 <?php if ($sale['is_cancelled']): ?><div class="flash flash-error">🚫 This INVOICE is CANCELLED.</div><?php endif; ?>
 <?php if (!$public): ?>
+<?php if (($sale['total'] - $sale['paid']) > 0.009): ?>
+<script>
+function copyPay() {
+  var u = <?= json_encode(invoice_pay_url($sale)) ?>;
+  if (navigator.clipboard) navigator.clipboard.writeText(u).then(function () { alert('લિંક કૉપી થઈ:\n' + u); }, function () { window.prompt('આ લિંક કૉપી કરો:', u); });
+  else window.prompt('આ લિંક કૉપી કરો:', u);
+}
+</script>
+<?php endif; ?>
 <div class="page-actions no-print">
   <a class="btn" href="sale_pdf.php?id=<?= $id ?>" target="_blank" rel="noopener">🖨️ Print / PDF</a>
+  <?php $payUrl = ($sale['total'] - $sale['paid']) > 0.009 ? invoice_pay_url($sale) : null; ?>
+  <?php if ($payUrl): ?>
+    <a class="btn btn-outline" href="<?= e($payUrl) ?>" target="_blank" rel="noopener">💳 પેમેન્ટ લિંક ખોલો</a>
+    <button class="btn btn-outline" type="button" onclick="copyPay()">🔗 લિંક કૉપી કરો</button>
+  <?php endif; ?>
   <form method="post" style="display:inline-flex;gap:6px">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="whatsapp">

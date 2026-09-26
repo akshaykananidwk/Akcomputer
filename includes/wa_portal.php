@@ -68,7 +68,10 @@ function wa_portal_bill_text($s) {
         . "\n" . wa_t('bill_total') . " *₹" . money($s['total']) . '*'
         . ($due > 0.009 ? "\n" . wa_t('bill_due') . " *₹" . money($due) . '*' : "\n" . wa_t('bill_paid'))
         . "\n\n" . wa_t('bill_view') . ' ' . base_url('sale_view.php?id=' . $s['id'] . '&token=' . $s['share_token'])
-        . "\n⬇️ PDF: " . base_url('sale_pdf.php?id=' . $s['id'] . '&token=' . $s['share_token']);
+        . "\n⬇️ PDF: " . base_url('sale_pdf.php?id=' . $s['id'] . '&token=' . $s['share_token'])
+        // a bill with something still on it gets the pay link too, for the
+        // same $due the line above quotes
+        . ($due > 0.009 ? "\n💳 ચૂકવો: " . invoice_pay_url($s) : '');
 }
 
 /** Direct lookup: an invoice number or a serial number typed in the chat.
