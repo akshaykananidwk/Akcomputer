@@ -24,6 +24,41 @@ if (!$public) {
 
 $items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit, i.hsn FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ? AND si.qty > 0", [$id]);
 
+// ---------- the customer signs for the goods ----------
+// Drawn with a finger on the phone or tablet at the counter and kept with the
+// bill, so "I never took delivery" has an answer. It is stored as a picture
+// file, not in the row: a data URL in the database would be read back on
+// every list query that touches sales.
+if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signature' && can('sales.edit')) {
+    $data = (string)post('sig');
+    if (!preg_match('#^data:image/png;base64,([A-Za-z0-9+/=]+)$#', $data, $m)) {
+        flash('સહી બરાબર આવી નથી — ફરી પ્રયત્ન કરો.', 'error');
+        redirect('sale_view.php?id=' . $id);
+    }
+    $png = base64_decode($m[1], true);
+    // a signature is a few KB; anything much larger is not a signature
+    if ($png === false || strlen($png) > 400000 || substr($png, 0, 8) !== "\x89PNG\r\n\x1a\n") {
+        flash('સહી બરાબર આવી નથી — ફરી પ્રયત્ન કરો.', 'error');
+        redirect('sale_view.php?id=' . $id);
+    }
+    $dir = __DIR__ . '/uploads/signatures';
+    if (!is_dir($dir)) mkdir($dir, 0755, true);
+    $name = 'sig_' . $id . '_' . substr(md5(microtime()), 0, 6) . '.png';
+    file_put_contents($dir . '/' . $name, $png);
+    if (!empty($sale['signature']) && is_file($dir . '/' . basename($sale['signature']))) unlink($dir . '/' . basename($sale['signature']));
+    q('UPDATE sales SET signature = ? WHERE id = ?', [$name, $id]);
+    log_activity('sale_signature', $sale['invoice_no']);
+    flash('સહી સાચવી લીધી.');
+    redirect('sale_view.php?id=' . $id);
+}
+if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signature_clear' && can('sales.edit')) {
+    $f = __DIR__ . '/uploads/signatures/' . basename((string)$sale['signature']);
+    if ($sale['signature'] && is_file($f)) unlink($f);
+    q('UPDATE sales SET signature = NULL WHERE id = ?', [$id]);
+    flash('સહી કાઢી નાખી.');
+    redirect('sale_view.php?id=' . $id);
+}
+
 // ---------- WhatsApp send ----------
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
     require_once __DIR__ . '/includes/pdf.php';
@@ -206,6 +241,52 @@ function copyPay() {
 </div>
 <?php endif; endif; ?>
 
+<?php if (!$public && can('sales.edit')): ?>
+<div class="card no-print">
+  <h3>✍️ ગ્રાહકની સહી</h3>
+  <?php if (!empty($sale['signature']) && is_file(__DIR__ . '/uploads/signatures/' . basename($sale['signature']))): ?>
+    <img src="<?= e(base_url('uploads/signatures/' . $sale['signature'])) ?>" alt="signature"
+         style="max-width:320px;border:1px solid var(--line);border-radius:8px;background:#fff">
+    <form method="post" onsubmit="return confirm('સહી કાઢી નાખવી?')" style="margin-top:8px">
+      <?= csrf_field() ?><input type="hidden" name="do" value="signature_clear">
+      <button class="btn btn-sm btn-muted" type="submit">સહી કાઢો / ફરી લો</button>
+    </form>
+  <?php else: ?>
+    <p class="muted">માલ લેનાર આંગળીથી અહીં સહી કરે — બિલ સાથે સચવાઈ જશે અને પ્રિન્ટમાં પણ આવશે.</p>
+    <canvas id="sigPad" width="600" height="180"
+            style="border:1px dashed var(--line);border-radius:8px;background:#fff;touch-action:none;max-width:100%"></canvas>
+    <form method="post" id="sigForm" style="margin-top:8px">
+      <?= csrf_field() ?><input type="hidden" name="do" value="signature"><input type="hidden" name="sig" id="sigData">
+      <button class="btn btn-sm" type="submit">સહી સાચવો</button>
+      <button class="btn btn-sm btn-outline" type="button" onclick="sigClear()">ભૂંસો</button>
+    </form>
+    <script>
+    (function () {
+      var c = document.getElementById('sigPad'), ctx = c.getContext('2d'), drawing = false, used = false;
+      ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.strokeStyle = '#16202c';
+      function pos(ev) {
+        var r = c.getBoundingClientRect(), t = ev.touches ? ev.touches[0] : ev;
+        // the canvas is drawn at 600px but shown narrower on a phone, so the
+        // touch point has to be scaled or the line lands away from the finger
+        return { x: (t.clientX - r.left) * (c.width / r.width), y: (t.clientY - r.top) * (c.height / r.height) };
+      }
+      function start(ev) { ev.preventDefault(); drawing = true; used = true; var p = pos(ev); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+      function move(ev) { if (!drawing) return; ev.preventDefault(); var p = pos(ev); ctx.lineTo(p.x, p.y); ctx.stroke(); }
+      function end() { drawing = false; }
+      ['mousedown', 'touchstart'].forEach(function (e) { c.addEventListener(e, start, { passive: false }); });
+      ['mousemove', 'touchmove'].forEach(function (e) { c.addEventListener(e, move, { passive: false }); });
+      ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(function (e) { c.addEventListener(e, end); });
+      window.sigClear = function () { ctx.clearRect(0, 0, c.width, c.height); used = false; };
+      document.getElementById('sigForm').addEventListener('submit', function (ev) {
+        if (!used) { ev.preventDefault(); alert('પહેલાં સહી કરો.'); return; }
+        document.getElementById('sigData').value = c.toDataURL('image/png');
+      });
+    })();
+    </script>
+  <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <?php if (setting('invoice_design', '1') === '2'): include __DIR__ . '/includes/invoice_card_d2.php'; else: ?>
 <div class="inv-paper card inv-bill">
   <div class="inv-topbar"></div>
@@ -237,6 +318,9 @@ function copyPay() {
     <?php if ($sale['customer_mobile']): ?><div class="inv-contact"><?= e($sale['customer_mobile']) ?></div><?php endif; ?>
     <?= $sale['party_gstin'] ? '<div class="muted">GSTIN: ' . e($sale['party_gstin']) . '</div>' : '' ?>
     <?= $sale['party_address'] ? '<div class="muted">' . e($sale['party_address']) . '</div>' : '' ?>
+    <?php if (!empty($sale['delivery_address'])): ?>
+    <div class="mt"><strong>DELIVER TO:</strong> <?= e($sale['delivery_address']) ?></div>
+    <?php endif; ?>
   </div>
   <div class="table-wrap" style="box-shadow:none">
     <table class="inv-table inv-table2">
@@ -345,7 +429,8 @@ function copyPay() {
   <?php if ($sale['c_terms']): ?><p class="muted mt" style="font-size:11.5px"><strong>Terms & Conditions:</strong><br><?= nl2br(e($sale['c_terms'])) ?></p><?php endif; ?>
 
   <div class="inv-sig-row2">
-    <div class="inv-sig-line">Receiver's Signature</div>
+    <div class="inv-sig-line"><?php $sigFile = !empty($sale['signature']) ? __DIR__ . '/uploads/signatures/' . basename($sale['signature']) : '';
+                if ($sigFile && is_file($sigFile)): ?><img src="<?= e(base_url('uploads/signatures/' . $sale['signature'])) ?>" alt="" style="max-height:52px;display:block;margin:0 auto 2px"><?php endif; ?>Receiver's Signature</div>
     <div class="inv-stamp"><div class="inv-stamp-text">AK COMPUTER<br>* THANK YOU *<br><?= e(strtoupper($sale['loc_city'])) ?></div></div>
     <div class="inv-sig-line">For <?= e($sale['company_name']) ?><br>Authorised Signatory</div>
   </div>

@@ -80,7 +80,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $tax = 0;
     foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
     $shipping = max(0, (float)post('shipping'));
-    $adjustment = (float)post('adjustment');
+    // Trade-in: the old part comes back across the counter and its value comes
+    // OFF this bill. It rides on the bill's existing adjustment instead of
+    // adding a term of its own, so every total in the software - the health
+    // check, the PDF, the ledger - keeps adding up by the formula it already
+    // uses. What physically came in is written to trade_ins and reaches stock.
+    $tradeIns = sale_trade_in_rows();
+    $tradeVal = 0.0;
+    foreach ($tradeIns as $t) $tradeVal += $t['value'];
+    $adjustment = (float)post('adjustment') - $tradeVal;
     $total = $subtotal - $discount + $tax + $shipping + $adjustment;
     // Round Off Total is computed server-side from the checkbox flag only
     // (never trusting a client-posted round-off amount) so it always
@@ -108,7 +116,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $total -= $loyaltyDiscount;
     }
 
-    $paid = post('payment_mode') === 'credit' ? 0 : min((float)post('paid'), $total);
+    // What the customer actually handed over, in up to two ways: ₹2,000 cash
+    // and ₹3,000 UPI on one ₹5,000 bill. sale_payment_lines() caps the total
+    // at the bill and drops anything blank, so the bill can never show more
+    // paid than it is worth.
+    $payLines = sale_payment_lines($total);
+    $paid = 0.0;
+    foreach ($payLines as $pl) $paid += $pl['amount'];
     $credit_days = (int)post('credit_days');
     list($pmId, $bankAccId) = resolve_payment_target(post('payment_mode', 'cash'), post('bank_account_id'));
 
@@ -136,17 +150,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     try {
         q('INSERT INTO sales (company_id, party_id, customer_name, customer_mobile, location_id, sale_date, price_type,
            credit_days, due_date, subtotal, discount, loyalty_points_used, loyalty_discount, discount_type, discount_pct, tax_amount, shipping, adjustment, round_off, total, paid, payment_mode,
-           bank_account_id, payment_method_id, status, notes, created_by, share_token)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+           bank_account_id, payment_method_id, status, notes, created_by, share_token, delivery_address, trade_in)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
           [$company['id'], $party_id, post('customer_name'), post('customer_mobile'), $loc_id,
            post('sale_date', today()), post('price_type', 'retail'), $credit_days,
            // custom promised date wins; otherwise sale date + credit days
            preg_match('/^\d{4}-\d{2}-\d{2}$/', post('due_date')) ? post('due_date')
                : ($credit_days ? date('Y-m-d', strtotime(post('sale_date', today()) . " +$credit_days days")) : null),
            $subtotal, $discount, $loyaltyPointsUsed, $loyaltyDiscount, $discType, $discPct, $tax, $shipping, $adjustment, $roundOff, $total, $paid, post('payment_mode', 'cash'),
-           $bankAccId, $pmId, payment_status($total, $paid), post('notes'), $u['id'], share_token()]);
+           $bankAccId, $pmId, payment_status($total, $paid), post('notes'), $u['id'], share_token(),
+           trim((string)post('delivery_address')) ?: null, $tradeVal]);
         $sale_id = insert_id();
-        $invoice_no = $company['invoice_prefix'] . '-' . date('y') . '-' . str_pad($sale_id, 5, '0', STR_PAD_LEFT);
+        // one series per firm per financial year, counted from 1 - see
+        // doc_next_no() in includes/helpers.php
+        $invoice_no = doc_next_no($company['id'], post('sale_date', today()), $company['invoice_prefix']);
         q('UPDATE sales SET invoice_no = ? WHERE id = ?', [$invoice_no, $sale_id]);
 
         $allowNeg = setting('allow_negative_stock', '1') === '1';
@@ -192,6 +209,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             }
 
             if ($item['item_type'] === 'service') { continue; } // service: no stock effect
+            // A kit is never stocked itself - selling one takes its PARTS off
+            // the shelf. Checking the kit's own stock would refuse every sale
+            // (it is always zero) and checking nothing would sell parts the
+            // shop does not have.
+            if (is_kit($r['item_id'])) {
+                if (!$allowNeg) foreach (kit_parts($r['item_id']) as $kp) {
+                    if ($kp['item_type'] === 'service') continue;
+                    if (stock_available_qty((int)$kp['part_item_id'], $rloc) < $r['qty'] * (float)$kp['qty'])
+                        throw new Exception("Not enough {$kp['name']} for the kit {$item['name']}.");
+                }
+                kit_move_stock($r['item_id'], $rloc, $r['qty'] + $r['free'], -1, 'sale', $sale_id, $invoice_no);
+                continue;
+            }
             if (!$allowNeg && stock_available_qty($r['item_id'], $rloc) < $r['qty']) {
                 throw new Exception("Not enough stock of {$item['name']} at the line's location.");
             }
@@ -222,12 +252,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         // post initial payment to the party ledger (and to cash/bank books -
         // always recorded, even for walk-in sales with no party, so "Cash in
         // Hand" and bank account balances stay accurate)
-        if ($paid > 0) {
+        // one payment row per way of paying, so the cash book and the bank
+        // book each see their own share of a split payment
+        foreach ($payLines as $pl) {
             q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-              [$party_id, 'in', $paid, post('payment_mode', 'cash'), $bankAccId, $pmId, 'sale', $sale_id,
+              [$party_id, 'in', $pl['amount'], $pl['mode'], $pl['bank_id'], $pl['pm_id'], 'sale', $sale_id,
                post('sale_date', today()), 'With bill ' . $invoice_no, $u['id']]);
         }
+        // the old part taken in exchange reaches the shelf, and is on record
+        if ($tradeIns) sale_trade_in_save($sale_id, $tradeIns, $loc_id, $invoice_no);
         if ((int)post('estimate_id')) {
             q("UPDATE estimates SET status='converted', converted_sale_id=? WHERE id=? AND status='open'",
               [$sale_id, (int)post('estimate_id')]);
@@ -243,6 +277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             $earned = (int)floor($total * (float)setting('loyalty_earn_rate', '1') / 100);
             if ($earned > 0) loyalty_add($party_id, $earned, 'Earned on bill ' . $invoice_no, 'sale', $sale_id);
         }
+        if ((int)post('park_id')) q('DELETE FROM parked_bills WHERE id = ?', [(int)post('park_id')]);
         $pdo->commit();
         log_activity('sale_add', "$invoice_no total $total");
         fire_webhook('sale.created', ['sale_id' => $sale_id, 'invoice_no' => $invoice_no, 'total' => $total, 'paid' => $paid, 'customer_name' => post('customer_name')]);
@@ -253,6 +288,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         flash('Error: ' . $ex->getMessage(), 'error');
         redirect('sales.php?action=new');
     }
+}
+
+// ---------- park a half-made bill / throw a parked one away ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'park') {
+    require_perm('sales.add');
+    $payload = sale_park_payload();
+    if (!$payload['items']) { flash('બિલમાં એકેય આઇટમ નથી — હોલ્ડ કરવા જેવું કંઈ નથી.', 'error'); redirect('sales.php?action=new'); }
+    $amount = 0.0;
+    foreach ($payload['items'] as $it) $amount += $it['qty'] * $it['price'];
+    $label = trim((string)post('park_label')) ?: (trim((string)post('customer_name')) ?: 'ગ્રાહક');
+    $old = (int)post('park_id');
+    if ($old) q('DELETE FROM parked_bills WHERE id = ?', [$old]);   // resumed and parked again
+    q('INSERT INTO parked_bills (label, customer_name, amount, items, payload, location_id, created_by)
+       VALUES (?,?,?,?,?,?,?)',
+      [mb_substr($label, 0, 120), post('customer_name'), round($amount, 2), count($payload['items']),
+       json_encode($payload, JSON_UNESCAPED_UNICODE), (int)post('location_id') ?: $u['location_id'], $u['id']]);
+    log_activity('sale_park', $label . ' ₹' . money($amount));
+    flash('બિલ હોલ્ડ કરી દીધું — "હોલ્ડ કરેલાં બિલ" માંથી પાછું ખોલી શકશો.');
+    redirect('sales.php?action=new');
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'park_delete') {
+    require_perm('sales.add');
+    q('DELETE FROM parked_bills WHERE id = ?', [(int)post('id')]);
+    flash('હોલ્ડ કરેલું બિલ કાઢી નાખ્યું.');
+    redirect('sales.php');
 }
 
 // ---------- delete ----------
@@ -269,7 +329,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
             // resolved, so a line saved without a location does not send the
             // stock AND its serials to a shelf that does not exist
             $siLoc = stock_home_location((int)($si['location_id'] ?? 0) ?: (int)$sale['location_id'], $si['item_id']);
-            adjust_stock($si['item_id'], $siLoc, (float)$si['qty'] + (float)($si['free_qty'] ?? 0), 'sale_delete', $sid);
+            // a kit went out as its parts, so it comes back as its parts
+            if (is_kit($si['item_id']))
+                kit_move_stock($si['item_id'], $siLoc, (float)$si['qty'] + (float)($si['free_qty'] ?? 0), 1, 'sale_delete', $sid);
+            else
+                adjust_stock($si['item_id'], $siLoc, (float)$si['qty'] + (float)($si['free_qty'] ?? 0), 'sale_delete', $sid);
             if ($si['serials']) {
                 foreach (explode(',', $si['serials']) as $sn) {
                     q("UPDATE item_serials SET status='in_stock', sale_id=NULL, location_id=?, warranty_expiry=NULL
@@ -278,12 +342,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
             }
         }
         q("DELETE FROM payments WHERE ref_type = 'sale' AND ref_id = ?", [$sid]);
+        // the old part that came in against this bill goes back off the shelf
+        if (!$sale['is_cancelled']) sale_trade_in_reverse($sid);
         if ($cancelOnly) {
             q('UPDATE sales SET is_cancelled = 1, paid = 0, status = ? WHERE id = ?', ['due', $sid]);
             log_activity('sale_cancel', $sale['invoice_no']);
             flash('Invoice ' . $sale['invoice_no'] . ' CANCELLED - stock restored, record kept.');
         } else {
             q('DELETE FROM sale_items WHERE sale_id = ?', [$sid]);
+            q('DELETE FROM trade_ins WHERE sale_id = ?', [$sid]);
             q('DELETE FROM sales WHERE id = ?', [$sid]);
             log_activity('sale_delete', $sale['invoice_no']);
             flash('Bill deleted and stock restored.');
@@ -392,7 +459,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $tax = 0;
     foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
     $shipping = max(0, (float)post('shipping'));
-    $adjustment = (float)post('adjustment');
+    // Trade-in: the old part comes back across the counter and its value comes
+    // OFF this bill. It rides on the bill's existing adjustment instead of
+    // adding a term of its own, so every total in the software - the health
+    // check, the PDF, the ledger - keeps adding up by the formula it already
+    // uses. What physically came in is written to trade_ins and reaches stock.
+    $tradeIns = sale_trade_in_rows();
+    $tradeVal = 0.0;
+    foreach ($tradeIns as $t) $tradeVal += $t['value'];
+    $adjustment = (float)post('adjustment') - $tradeVal;
     $total = $subtotal - $discount + $tax + $shipping + $adjustment;
     $roundOff = 0;
     if (post('round_off_on') === '1') {
@@ -436,7 +511,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
             // restore to the location the line actually came from (per-line
             // godown/shop), falling back to the bill's location for old rows
             $oiLoc = (int)($oi['location_id'] ?? 0) ?: (int)$sale['location_id'];
-            adjust_stock($oi['item_id'], $oiLoc, (float)$oi['qty'] + (float)($oi['free_qty'] ?? 0), 'sale_edit', $sid);
+            if (is_kit($oi['item_id']))
+                kit_move_stock($oi['item_id'], $oiLoc, (float)$oi['qty'] + (float)($oi['free_qty'] ?? 0), 1, 'sale_edit', $sid);
+            else
+                adjust_stock($oi['item_id'], $oiLoc, (float)$oi['qty'] + (float)($oi['free_qty'] ?? 0), 'sale_edit', $sid);
             if ($oi['serials']) {
                 foreach (explode(',', $oi['serials']) as $sn) {
                     $sn = trim($sn);
@@ -473,6 +551,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
             }
 
             if ($item['item_type'] === 'service') { continue; }
+            if (is_kit($r['item_id'])) {
+                if (!$allowNeg) foreach (kit_parts($r['item_id']) as $kp) {
+                    if ($kp['item_type'] === 'service') continue;
+                    if (stock_available_qty((int)$kp['part_item_id'], $rloc) < $r['qty'] * (float)$kp['qty'])
+                        throw new Exception("Not enough {$kp['name']} for the kit {$item['name']}.");
+                }
+                kit_move_stock($r['item_id'], $rloc, $r['qty'] + $r['free'], -1, 'sale_edit', $sid, $sale['invoice_no']);
+                continue;
+            }
             if (!$allowNeg && stock_available_qty($r['item_id'], $rloc) < $r['qty']) {
                 throw new Exception("Not enough stock of {$item['name']} at the line's location.");
             }
@@ -531,15 +618,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
             }
         }
 
+        // the exchange is replaced as a whole: what the old rows put on the
+        // shelf comes off, then the new rows go on - re-saving a bill must
+        // not leave the shop holding two of the same old part
+        sale_trade_in_reverse($sid);
+        q('DELETE FROM trade_ins WHERE sale_id = ?', [$sid]);
+        if ($tradeIns) sale_trade_in_save($sid, $tradeIns, $loc_id, $sale['invoice_no']);
+
         q('UPDATE sales SET company_id=?, party_id=?, customer_name=?, customer_mobile=?, location_id=?, sale_date=?, price_type=?,
            credit_days=?, due_date=?, subtotal=?, discount=?, discount_type=?, discount_pct=?, tax_amount=?, shipping=?, adjustment=?, round_off=?, total=?, paid=?,
-           payment_mode=?, payment_method_id=?, bank_account_id=?, status=?, notes=? WHERE id=?',
+           payment_mode=?, payment_method_id=?, bank_account_id=?, status=?, notes=?, delivery_address=?, trade_in=? WHERE id=?',
           [$company['id'], $party_id, post('customer_name'), post('customer_mobile'), $loc_id,
            $sale_date, post('price_type', 'retail'), $credit_days,
            preg_match('/^\d{4}-\d{2}-\d{2}$/', post('due_date')) ? post('due_date')
                : ($credit_days ? date('Y-m-d', strtotime("$sale_date +$credit_days days")) : null),
            $subtotal, $discount, $discType, $discPct, $tax, $shipping, $adjustment, $roundOff, $total, $paid,
-           $modeCode, $pmId, $bankAccId, payment_status($total, $paid), post('notes'), $sid]);
+           $modeCode, $pmId, $bankAccId, payment_status($total, $paid), post('notes'),
+           trim((string)post('delivery_address')) ?: null, $tradeVal, $sid]);
 
         // Mode/bank changed on the bill itself → move this bill's existing
         // ledger entries with it, so the money shows in the right cashbook/
@@ -580,13 +675,43 @@ $terms = all('SELECT * FROM credit_terms ORDER BY days');
 if ($action === 'new' || $action === 'edit') {
     $isEdit = $action === 'edit';
     require_perm($isEdit ? 'sales.edit' : 'sales.add');
-    $editSale = null; $editItems = [];
+    // THREE ways a bill form arrives filled in, all filling the same two
+    // variables so there is one prefill block below instead of three:
+    //   edit  - this bill, saved back over itself
+    //   copy  - the same bill again for the same customer, as a NEW one
+    //   park  - a half-made bill that was put aside earlier
+    $editSale = null; $editItems = []; $tiRows = [];
+    $preSale = null; $preItems = []; $parkId = 0;
     if ($isEdit) {
         $editSale = row('SELECT * FROM sales WHERE id = ?', [(int)get('id')]);
         if (!$editSale) die('Bill not found.');
         if (!can('sales.all') && $editSale['created_by'] != $u['id']) die('Access denied.');
         if ($editSale['is_cancelled']) { flash('A cancelled bill cannot be edited.', 'error'); redirect('sale_view.php?id=' . $editSale['id']); }
         $editItems = all('SELECT si.*, i.name, i.serial_tracked, i.item_type FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$editSale['id']]);
+        $tiRows = all('SELECT * FROM trade_ins WHERE sale_id = ?', [$editSale['id']]);
+        $preSale = $editSale; $preItems = $editItems;
+    } elseif ((int)get('copy')) {
+        // the same bill again - everything except the number, the date and
+        // what was paid, which belong to the bill that was actually written
+        $src = row('SELECT * FROM sales WHERE id = ?', [(int)get('copy')]);
+        if ($src && (can('sales.all') || $src['created_by'] == $u['id'])) {
+            $preItems = all('SELECT si.*, i.name, i.serial_tracked, i.item_type FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?', [$src['id']]);
+            $src['sale_date'] = today();
+            $src['paid'] = 0;
+            $preSale = $src;
+            flash('બિલ ' . $src['invoice_no'] . ' ની નકલ છે — તપાસીને સેવ કરો.', 'info');
+        }
+    } elseif ((int)get('park')) {
+        $pk = row('SELECT * FROM parked_bills WHERE id = ?', [(int)get('park')]);
+        if ($pk) {
+            $payload = json_decode($pk['payload'], true);
+            if (is_array($payload)) {
+                $preSale = $payload['sale'] ?? null;
+                $preItems = $payload['items'] ?? [];
+                $tiRows = $payload['trade_ins'] ?? [];
+                $parkId = (int)$pk['id'];
+            }
+        }
     }
     $parties = all("SELECT id, name, mobile, credit_days, loyalty_points FROM parties WHERE is_active = 1 ORDER BY name");
     $customFields = all('SELECT id, label FROM item_custom_fields WHERE is_active = 1 ORDER BY sort_order, id');
@@ -636,6 +761,7 @@ if ($action === 'new' || $action === 'edit') {
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">
       <?php if ($isEdit): ?><input type="hidden" name="id" value="<?= $editSale['id'] ?>"><?php endif; ?>
+      <?php if ($parkId): ?><input type="hidden" name="park_id" value="<?= $parkId ?>"><?php endif; ?>
       <?php if (!$isEdit): ?>
       <div class="page-actions" style="justify-content:center">
         <div class="cc-toggle">
@@ -775,6 +901,38 @@ if ($action === 'new' || $action === 'edit') {
             </select></div>
           <?php endif; ?>
         </div>
+        <?php if (!$isEdit): ?>
+        <!-- ₹2,000 રોકડા + ₹3,000 UPI: the second way to pay, hidden until asked for -->
+        <div class="no-print">
+          <a href="javascript:splitToggle()" id="splitLink">➕ બીજી રીતે પણ પેમેન્ટ (રોકડ + UPI)</a>
+          <div class="form-row cols-3" id="splitBox" style="display:none;margin-top:8px">
+            <div><label>બીજું પેમેન્ટ (₹)</label><input type="number" step="any" min="0" name="paid2" id="paid2" value="0" oninput="Bill.totals()"></div>
+            <div><label>એનો મોડ</label>
+              <select name="payment_mode2" id="payment_mode2" onchange="pm2Change()">
+                <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
+              </select></div>
+            <div id="bankAccBox2" style="display:none"><label>બેંક ખાતું</label>
+              <select name="bank_account_id2">
+                <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
+              </select></div>
+          </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- #4 જૂનું લઈને નવું: the old part comes in, its value goes off the bill -->
+        <div class="no-print mt">
+          <a href="javascript:tiToggle()" id="tiLink">🔄 જૂનું લઈને નવું (Exchange)</a>
+          <div id="tiBox" style="display:<?= $tiRows ? 'block' : 'none' ?>;margin-top:8px">
+            <div id="tiRows"></div>
+            <button type="button" class="btn btn-sm btn-outline" onclick="tiAdd()">+ બીજું ઉમેરો</button>
+            <p class="muted" style="margin:6px 0 0">જે વસ્તુ પાછી લીધી એની કિંમત બિલમાંથી બાદ થશે. આઇટમ પસંદ કરશો તો એ સ્ટોકમાં પણ ચડી જશે.</p>
+          </div>
+        </div>
+
+        <!-- #5 બિલ એક જગ્યાએ, માલ બીજી જગ્યાએ -->
+        <div class="field no-print"><label>ડિલિવરીનું સરનામું <span class="muted" style="font-weight:normal">(બિલના સરનામાથી અલગ હોય તો)</span></label>
+          <input type="text" name="delivery_address" id="delivery_address" maxlength="250"
+                 value="<?= e($preSale['delivery_address'] ?? '') ?>" placeholder="સાઇટનું સરનામું / જ્યાં માલ પહોંચાડવાનો છે"></div>
         <div class="field"><label>Notes</label><input type="text" name="notes" <?= $isEdit ? 'value="' . e($editSale['notes']) . '"' : '' ?>></div>
         <div class="bill-totals">
           <div class="t-line"><span>Items</span><span id="t_items">0 items · 0 qty</span></div>
@@ -783,6 +941,7 @@ if ($action === 'new' || $action === 'edit') {
           <div class="t-line"><span>GST</span><span>₹ <span id="t_tax">0.00</span></span></div>
           <div class="t-line"><span>Shipping</span><span>₹ <span id="t_ship">0.00</span></span></div>
           <div class="t-line" id="adjRow" style="display:none"><span>Adjustment</span><span>₹ <span id="t_adj">0.00</span></span></div>
+          <div class="t-line" id="tiRow" style="display:none"><span>🔄 જૂનું લીધું</span><span>- ₹ <span id="t_tradein">0.00</span></span></div>
           <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
           <div class="t-line" id="loyaltyRow" style="display:none"><span>⭐ Points Discount</span><span>- ₹ <span id="t_loyalty">0.00</span></span></div>
           <?php endif; ?>
@@ -802,6 +961,8 @@ if ($action === 'new' || $action === 'edit') {
           <?php else: ?>
           <button class="btn btn-outline" type="submit" name="save_new" value="1">Save & New</button>
           <button class="btn" type="submit">💾 Save</button>
+          <button class="btn btn-muted" type="submit" name="do" value="park"
+                  title="ગ્રાહક પાછો આવે ત્યાં સુધી બિલ બાજુ પર મૂકો">⏸️ હોલ્ડ કરો</button>
           <?php endif; ?>
         </div>
       </div>
@@ -811,6 +972,68 @@ if ($action === 'new' || $action === 'edit') {
         locations: <?= json_encode(locked_location_id() || count($locations) < 2 ? [] : array_map(fn($l) => ['id' => (int)$l['id'], 'name' => $l['name']], $locations)) ?>,
         showPurchasePrice: <?= json_encode(setting('show_purchase_price_billing') === '1' && can('items.cost')) ?>,
         customFields: <?= json_encode(array_map(fn($f) => ['id' => $f['id'], 'label' => $f['label']], $customFields)) ?><?= $isEdit ? ', editSaleId: ' . (int)$editSale['id'] : '' ?>});
+      // --- ₹2,000 રોકડા + ₹3,000 UPI -------------------------------------
+      function splitToggle() {
+        var b = document.getElementById('splitBox');
+        b.style.display = b.style.display === 'none' ? '' : 'none';
+        if (b.style.display === 'none') { document.getElementById('paid2').value = 0; }
+        pm2Change();
+      }
+      function pm2Change() {
+        var sel = document.getElementById('payment_mode2');
+        var box = document.getElementById('bankAccBox2');
+        if (!sel || !box) return;
+        var t = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].dataset.type : '';
+        box.style.display = t === 'bank' ? '' : 'none';
+      }
+
+      // --- જૂનું લઈને નવું -----------------------------------------------
+      var TI_SEEDED = <?= json_encode(array_map(fn($t) => [
+          'item_id' => (int)($t['item_id'] ?? 0), 'descr' => $t['descr'] ?? '',
+          'serial' => $t['serial_no'] ?? '', 'qty' => (float)($t['qty'] ?? 1), 'value' => (float)($t['value'] ?? 0),
+      ], $tiRows)) ?>;
+      var TI_ITEMS = <?= json_encode(array_map(fn($i) => ['id' => (int)$i['id'], 'name' => $i['name']],
+          all("SELECT id, name FROM items WHERE is_active = 1 AND item_type <> 'service' ORDER BY name LIMIT 400"))) ?>;
+      function tiToggle() {
+        var b = document.getElementById('tiBox');
+        b.style.display = b.style.display === 'none' ? '' : 'none';
+        if (b.style.display !== 'none' && !document.querySelector('#tiRows .ti-row')) tiAdd();
+      }
+      function tiAdd(seed) {
+        seed = seed || {};
+        var wrap = document.getElementById('tiRows');
+        var div = document.createElement('div');
+        div.className = 'form-row cols-4 ti-row';
+        var opts = '<option value="">— સ્ટોકમાં ન ચડાવવું —</option>';
+        TI_ITEMS.forEach(function (it) {
+          opts += '<option value="' + it.id + '"' + (seed.item_id == it.id ? ' selected' : '') + '>' +
+                  it.name.replace(/[<>&]/g, '') + '</option>';
+        });
+        div.innerHTML =
+          '<div><label>શું પાછું લીધું</label><input type="text" name="ti_descr[]" maxlength="160" value="' +
+            (seed.descr || '').replace(/"/g, '&quot;') + '" placeholder="દા.ત. જૂની બેટરી"></div>' +
+          '<div><label>કઈ આઇટમ તરીકે સ્ટોકમાં</label><select name="ti_item_id[]" class="ti-item">' + opts + '</select></div>' +
+          '<div><label>નંગ</label><input type="number" step="any" min="1" name="ti_qty[]" value="' + (seed.qty || 1) + '"></div>' +
+          '<div><label>કિંમત (₹, બિલમાંથી બાદ)</label><input type="number" step="any" min="0" name="ti_value[]" class="ti-val" value="' +
+            (seed.value || 0) + '" oninput="tiTotal()"></div>' +
+          '<div><label>સિરિયલ નં. (હોય તો)</label><input type="text" name="ti_serial[]" value="' +
+            (seed.serial || '').replace(/"/g, '&quot;') + '"></div>';
+        wrap.appendChild(div);
+        tiTotal();
+      }
+      // the exchange rides on the bill's adjustment, so the running total the
+      // counter sees matches what will be saved
+      function tiTotal() {
+        var t = 0;
+        document.querySelectorAll('.ti-val').forEach(function (el) { t += parseFloat(el.value) || 0; });
+        var box = document.getElementById('tiTotalLine');
+        if (box) box.textContent = t.toFixed(2);
+        Bill.tradeIn = t;
+        Bill.totals();
+      }
+      TI_SEEDED.forEach(function (t) { tiAdd(t); });
+      if (TI_SEEDED.length) document.getElementById('tiBox').style.display = '';
+
       // barcode scan shortcut next to "+ Add Items" - opens a fresh item
       // row already in the panel and starts the camera scan immediately
       var scanItemBtn = document.getElementById('scanItemBtn');
@@ -860,8 +1083,9 @@ if ($action === 'new' || $action === 'edit') {
         Bill.renderSummary();
       })();
       <?php endif; ?>
-      <?php if ($isEdit): ?>
-      // prefill rows from the existing bill being edited
+      <?php if ($preSale): ?>
+      // prefill rows - from the bill being edited, the bill being copied, or
+      // the half-made bill that was parked. One block, three ways in.
       (function () {
         var pre = <?= json_encode(array_map(fn($x) => [
             'id' => (int)$x['item_id'], 'name' => $x['name'], 'qty' => (float)$x['qty'],
@@ -874,20 +1098,20 @@ if ($action === 'new' || $action === 'edit') {
             'isService' => ($x['item_type'] ?? '') === 'service' ? 1 : 0,
             'cost' => (float)($x['cost_price'] ?? 0),
             'customData' => $x['custom_data'] ? json_decode($x['custom_data'], true) : [],
-        ], $editItems)) ?>;
-        document.getElementById('company_id').value = '<?= (int)$editSale['company_id'] ?>';
-        document.getElementById('location_id').value = '<?= (int)$editSale['location_id'] ?>';
-        document.getElementById('price_type').value = <?= json_encode($editSale['price_type']) ?>;
-        document.getElementById('credit_days').value = '<?= (int)$editSale['credit_days'] ?>';
-        document.getElementById('due_date').value = <?= json_encode($editSale['due_date'] ?: '') ?>;
-        document.getElementById('party_id').value = '<?= (int)$editSale['party_id'] ?>';
-        document.getElementById('customer_name').value = <?= json_encode($editSale['customer_name']) ?>;
-        document.getElementById('customer_mobile').value = <?= json_encode($editSale['customer_mobile']) ?>;
-        document.querySelector('input[name=sale_date]').value = <?= json_encode($editSale['sale_date']) ?>;
-        document.getElementById('discount_type').value = <?= json_encode($editSale['discount_type']) ?>;
-        document.getElementById('discount_val').value = '<?= $editSale['discount_type'] === 'percent' ? (float)$editSale['discount_pct'] : (float)$editSale['discount'] ?>';
-        document.getElementById('discAmt').className = <?= json_encode($editSale['discount_type']) ?> === 'amount' ? 'on-cash' : '';
-        document.getElementById('discPct').className = <?= json_encode($editSale['discount_type']) ?> === 'percent' ? 'on-cash' : '';
+        ], $preItems)) ?>;
+        document.getElementById('company_id').value = '<?= (int)$preSale['company_id'] ?>';
+        document.getElementById('location_id').value = '<?= (int)$preSale['location_id'] ?>';
+        document.getElementById('price_type').value = <?= json_encode($preSale['price_type']) ?>;
+        document.getElementById('credit_days').value = '<?= (int)$preSale['credit_days'] ?>';
+        document.getElementById('due_date').value = <?= json_encode($preSale['due_date'] ?: '') ?>;
+        document.getElementById('party_id').value = '<?= (int)$preSale['party_id'] ?>';
+        document.getElementById('customer_name').value = <?= json_encode($preSale['customer_name']) ?>;
+        document.getElementById('customer_mobile').value = <?= json_encode($preSale['customer_mobile']) ?>;
+        document.querySelector('input[name=sale_date]').value = <?= json_encode($preSale['sale_date']) ?>;
+        document.getElementById('discount_type').value = <?= json_encode($preSale['discount_type']) ?>;
+        document.getElementById('discount_val').value = '<?= $preSale['discount_type'] === 'percent' ? (float)$preSale['discount_pct'] : (float)$preSale['discount'] ?>';
+        document.getElementById('discAmt').className = <?= json_encode($preSale['discount_type']) ?> === 'amount' ? 'on-cash' : '';
+        document.getElementById('discPct').className = <?= json_encode($preSale['discount_type']) ?> === 'percent' ? 'on-cash' : '';
         Bill.cfg.gst = document.querySelector('#company_id option:checked').dataset.gst == 1;
         pre.forEach(function (it) {
           var div = Bill.addRow();
@@ -1005,7 +1229,14 @@ if ($action === 'new' || $action === 'edit') {
         var g = document.getElementById('t_grand');
         var adjInp = document.getElementById('adjustment');
         var adj = adjInp ? (parseFloat(adjInp.value) || 0) : 0;
+        // the exchange rides on the adjustment - the SAME arithmetic the
+        // server does, so what the counter reads is what gets saved
+        var tradeIn = Bill.tradeIn || 0;
+        adj = adj - tradeIn;
         var grand = (parseFloat(g.textContent) || 0) + adj;
+        var tiRow = document.getElementById('tiRow');
+        if (tiRow) tiRow.style.display = tradeIn > 0.004 ? '' : 'none';
+        var tiT = document.getElementById('t_tradein'); if (tiT) tiT.textContent = tradeIn.toFixed(2);
         var adjRow = document.getElementById('adjRow'); if (adjRow) adjRow.style.display = Math.abs(adj) > 0.004 ? '' : 'none';
         var adjT = document.getElementById('t_adj'); if (adjT) adjT.textContent = (adj >= 0 ? '' : '- ') + Math.abs(adj).toFixed(2);
 
@@ -1052,12 +1283,24 @@ if ($action === 'new' || $action === 'edit') {
         }
 
         g.textContent = grand.toFixed(2);
+        var paid2El = document.getElementById('paid2');
+        var splitOpen = paid2El && document.getElementById('splitBox').style.display !== 'none';
+        var paid2 = splitOpen ? (parseFloat(paid2El.value) || 0) : 0;
         var due = document.getElementById('t_due');
-        if (due) { var paid = parseFloat((document.getElementById('paid') || {}).value) || 0; due.textContent = (grand - paid).toFixed(2); }
+        if (due) {
+          var paid = parseFloat((document.getElementById('paid') || {}).value) || 0;
+          due.textContent = (grand - paid - paid2).toFixed(2);
+        }
 
         if (ccMode === 'cash' && !SALE_EDIT) {
           var p = document.getElementById('paid');
-          if (p) { p.value = grand.toFixed(2); if (due) due.textContent = '0.00'; }
+          // with a split open, the first line takes only what the second does
+          // not - otherwise the second one is capped to zero on save and the
+          // UPI half of the payment quietly disappears
+          if (p) {
+            p.value = Math.max(0, grand - paid2).toFixed(2);
+            if (due) due.textContent = '0.00';
+          }
         }
       };
       // type-to-search over the party list (hundreds of them now) - the select
@@ -1105,6 +1348,39 @@ include __DIR__ . '/includes/header.php';
 <div class="page-actions">
   <?php if (can('sales.add')): ?><a class="btn" href="sales.php?action=new">+ New Bill</a><?php endif; ?>
 </div>
+<?php
+// Bills put aside mid-counter. They are not sales - no number, no stock, no
+// ledger - so they live here until they are finished or thrown away.
+$parked = can('sales.add') ? all('SELECT pb.*, us.name staff FROM parked_bills pb
+        LEFT JOIN users us ON us.id = pb.created_by ORDER BY pb.id DESC LIMIT 20') : [];
+if ($parked): ?>
+<div class="card">
+  <h3>⏸️ હોલ્ડ કરેલાં બિલ (<?= count($parked) ?>)</h3>
+  <div class="table-wrap" style="box-shadow:none">
+  <table class="table-sm">
+    <thead><tr><th>ગ્રાહક</th><th class="num">આઇટમ</th><th class="num">અંદાજે</th><th>ક્યારે</th><th>કોણે</th><th></th></tr></thead>
+    <tbody>
+    <?php foreach ($parked as $pb): ?>
+      <tr>
+        <td><strong><?= e($pb['label']) ?></strong></td>
+        <td class="num"><?= (int)$pb['items'] ?></td>
+        <td class="num">₹<?= money($pb['amount']) ?></td>
+        <td class="muted"><?= dmyt($pb['created_at']) ?></td>
+        <td class="muted"><?= e($pb['staff'] ?: '-') ?></td>
+        <td style="white-space:nowrap">
+          <a class="btn btn-sm" href="sales.php?action=new&park=<?= (int)$pb['id'] ?>">▶️ પાછું ખોલો</a>
+          <form method="post" style="display:inline" onsubmit="return confirm('આ હોલ્ડ કરેલું બિલ કાઢી નાખવું?')">
+            <?= csrf_field() ?><input type="hidden" name="do" value="park_delete"><input type="hidden" name="id" value="<?= (int)$pb['id'] ?>">
+            <button class="btn btn-sm btn-danger" type="submit">✕</button>
+          </form>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+  </div>
+</div>
+<?php endif; ?>
 <form method="get" class="filterbar">
   <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>
   <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>
@@ -1124,7 +1400,8 @@ include __DIR__ . '/includes/header.php';
       <td><?= e($s['company_name']) ?></td>
       <td class="num">₹<?= money($s['total']) ?></td>
       <td><?= $s['is_cancelled'] ? '<span class="badge badge-bad">CANCELLED</span>' : status_badge($s['status']) ?></td>
-      <td><a class="btn btn-sm btn-outline" href="sale_view.php?id=<?= $s['id'] ?>">View</a></td>
+      <td style="white-space:nowrap"><a class="btn btn-sm btn-outline" href="sale_view.php?id=<?= $s['id'] ?>">View</a>
+        <?php if (can('sales.add')): ?><a class="btn btn-sm btn-outline" href="sales.php?action=new&copy=<?= $s['id'] ?>" title="આ જ બિલ ફરીથી બનાવો">⧉</a><?php endif; ?></td>
     </tr>
   <?php endforeach; ?>
   </tbody>

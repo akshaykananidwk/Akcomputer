@@ -913,3 +913,86 @@ t_ok('...and says where it really is', strpos($stk, 'આ લોકેશનમ�
 t_ok('every serial is checked before the first one is written',
      strpos($stk, 'Every serial is checked BEFORE the first one is written') !== false
      && substr_count($stk, 'foreach ($sns as $sn) {') === 2);
+
+// ---------------------------------------------------------------------------
+// #6 કીટ / કોમ્બો — "4 કેમેરાનું સેટ" is sold as one line and leaves the shelf
+// as its parts. The kit itself is never stocked, so taking the kit's own
+// quantity down would do nothing at all and the parts would walk out untracked.
+t_group('a kit is sold as one line and leaves the shelf as its parts');
+$kLoc = (int)val('SELECT id FROM locations WHERE is_active = 1 ORDER BY id LIMIT 1');
+$kCam = t_item(20, $kLoc);
+$kDvr = t_item(5, $kLoc);
+$kKit = t_item(0, $kLoc);
+q('INSERT INTO item_kit_parts (kit_item_id, part_item_id, qty) VALUES (?,?,4)', [$kKit, $kCam]);
+q('INSERT INTO item_kit_parts (kit_item_id, part_item_id, qty) VALUES (?,?,1)', [$kKit, $kDvr]);
+
+t_ok('the item knows it is a kit', is_kit($kKit));
+t_ok('...and an ordinary item does not', !is_kit($kCam));
+t_eq('the kit lists what it is made of', count(kit_parts($kKit)), 2);
+
+kit_move_stock($kKit, $kLoc, 2, -1, 'sale', 0, 'test');
+t_eq('selling two sets takes eight cameras', stock_qty($kCam, $kLoc), 12.0);
+t_eq('...and two recorders', stock_qty($kDvr, $kLoc), 3.0);
+t_eq('the kit itself never moves', stock_qty($kKit, $kLoc), 0.0);
+
+kit_move_stock($kKit, $kLoc, 2, 1, 'sale_delete', 0, 'test');
+t_eq('cancelling the bill puts the cameras back', stock_qty($kCam, $kLoc), 20.0);
+t_eq('...and the recorders', stock_qty($kDvr, $kLoc), 5.0);
+
+$slsK = file_get_contents(dirname(__DIR__) . '/sales.php');
+t_ok('the bill screen moves a kit\'s parts when it is sold',
+     strpos($slsK, "kit_move_stock(\$r['item_id'], \$rloc, \$r['qty'] + \$r['free'], -1, 'sale'") !== false);
+t_ok('...and gives them back when it is cancelled',
+     strpos($slsK, "kit_move_stock(\$si['item_id'], \$siLoc") !== false);
+// selling a kit must be refused for want of a PART, never for want of the kit
+t_ok('the stock check looks at the parts, not at the kit',
+     strpos($slsK, 'Not enough {$kp[\'name\']} for the kit') !== false);
+$itmK = file_get_contents(dirname(__DIR__) . '/items.php');
+t_ok('a kit is built from the item screen', strpos($itmK, "value=\"kit_add\"") !== false);
+t_ok('...and a kit can never contain itself', strpos($itmK, '$kit !== $part') !== false);
+
+// #4 the old part taken in exchange reaches the shelf
+t_group('the part taken in exchange reaches the shelf');
+$tiItem = t_item(3, $kLoc);
+$tiSale = t_sale(t_party('TRADEIN_TEST'), 5000, 0);
+sale_trade_in_save($tiSale, [
+    ['item_id' => $tiItem, 'descr' => 'જૂનું CPU', 'serial_no' => null, 'qty' => 1, 'value' => 900],
+    ['item_id' => null, 'descr' => 'જૂની બેટરી', 'serial_no' => null, 'qty' => 1, 'value' => 200],
+], $kLoc, 'TEST-1');
+t_eq('the part that is a real item goes into stock', stock_qty($tiItem, $kLoc), 4.0);
+t_eq('both are on record whatever they were',
+     (int)val('SELECT COUNT(*) FROM trade_ins WHERE sale_id = ?', [$tiSale]), 2);
+sale_trade_in_reverse($tiSale);
+t_eq('cancelling the bill takes it back off the shelf', stock_qty($tiItem, $kLoc), 3.0);
+// free text is worth money off the bill but is not something the shop stocks
+t_eq('...and free text moved no stock at all',
+     (int)val("SELECT COUNT(*) FROM stock_ledger WHERE ref_type IN ('trade_in','trade_in_reverse') AND ref_id = ?", [$tiSale]), 2);
+
+// #2 a half-made bill put aside is not a sale
+t_group('a bill put aside is kept, but it is not a sale');
+$_POST = ['item_id' => [$kCam], 'qty' => ['2'], 'price' => ['500'], 'tax_rate' => ['0'],
+          'customer_name' => 'વોકિન', 'sale_date' => today(), 'company_id' => '1'];
+$pl = sale_park_payload();
+$_POST = [];
+t_eq('the items are kept', count($pl['items']), 1);
+t_eq('...with their price', money_r($pl['items'][0]['price']), 500.0);
+t_eq('...and the customer', $pl['sale']['customer_name'], 'વોકિન');
+t_eq('nothing was paid on a parked bill', money_r($pl['sale']['paid']), 0.0);
+t_eq('...and no serials are held: the shelf may have moved by the time it is resumed',
+     $pl['items'][0]['serials'], null);
+t_ok('parking takes no bill number', strpos($slsK, "post('do') === 'park'") !== false
+     && strpos($slsK, "doc_next_no") !== false
+     && preg_match("/post\('do'\) === 'park'.*?doc_next_no/s", $slsK) !== 1);
+t_ok('finishing a parked bill removes it from the hold list',
+     strpos($slsK, "if ((int)post('park_id')) q('DELETE FROM parked_bills WHERE id = ?'") !== false);
+
+// #7 / #2 - one prefill path for edit, copy and resume
+t_group('a bill form fills itself the same way, whichever way it was opened');
+t_ok('editing fills it', strpos($slsK, '$preSale = $editSale; $preItems = $editItems;') !== false);
+t_ok('copying fills it', strpos($slsK, "elseif ((int)get('copy'))") !== false);
+t_ok('resuming a parked bill fills it', strpos($slsK, "elseif ((int)get('park'))") !== false);
+t_ok('...through one block, not three', substr_count($slsK, '// prefill rows - from the bill being edited') === 1);
+t_ok('a copy is a NEW bill, so it carries no id to save over',
+     strpos($slsK, '<?php if ($isEdit): ?><input type="hidden" name="id"') !== false);
+t_ok('...and starts from today with nothing paid',
+     strpos($slsK, "\$src['sale_date'] = today();") !== false && strpos($slsK, "\$src['paid'] = 0;") !== false);

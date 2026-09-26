@@ -284,3 +284,103 @@ t_ok('migration v67 restores the wiped statuses',
      strpos($v67, "UPDATE item_serials SET status = 'adjusted_out' WHERE status = ''") !== false);
 t_eq('no serial is left in no status at all',
      (int)val("SELECT COUNT(*) FROM item_serials WHERE status = ''"), 0);
+
+// ---------------------------------------------------------------------------
+// A. બિલિંગ અને કાઉન્ટર — the ten counter jobs.
+t_group('bill numbers start at 1 again each financial year');
+t_eq('April starts the year', fin_year_code('2026-04-01'), '26-27');
+t_eq('March is still the same year', fin_year_code('2027-03-31'), '26-27');
+t_eq('...and the next April is the next one', fin_year_code('2027-04-01'), '27-28');
+t_eq('a January date belongs to the year that started last April', fin_year_code('2027-01-15'), '26-27');
+
+$coA = (int)val('SELECT id FROM companies ORDER BY id LIMIT 1');
+// its own doc_type, so the real bill series is not borrowed (and bumped) here
+$dt = 'test_' . bin2hex(random_bytes(3));
+$n1 = doc_next_no($coA, '2026-06-10', 'TST', $dt);
+$n2 = doc_next_no($coA, '2026-09-26', 'TST', $dt);
+t_eq('the first bill of the year is 1', $n1, 'TST-26-27-00001');
+t_eq('the next one is 2', $n2, 'TST-26-27-00002');
+$n3 = doc_next_no($coA, '2027-04-05', 'TST', $dt);
+t_eq('the new financial year starts at 1 again', $n3, 'TST-27-28-00001');
+t_eq('...and the old year carries on where it was',
+     doc_next_no($coA, '2026-12-01', 'TST', $dt), 'TST-26-27-00003');
+// the number must come from the bill's own date, not from the day it is typed
+t_ok('the year in the number is the bill\'s year, not today\'s',
+     strpos(doc_next_no($coA, '2024-05-01', 'TST', $dt), '-24-25-') !== false);
+// each firm counts on its own - two shops must not share one run of numbers
+$coB = (int)val('SELECT id FROM companies ORDER BY id DESC LIMIT 1');
+if ($coB !== $coA) t_eq('the other firm has its own series',
+     doc_next_no($coB, '2026-06-10', 'OTH', $dt), 'OTH-26-27-00001');
+$slsSrc = file_get_contents(dirname(__DIR__) . '/sales.php');
+t_ok('the bill screen no longer builds the number from the row id',
+     strpos($slsSrc, "str_pad(\$sale_id, 5, '0'") === false);
+t_ok('...it asks for the next one in the series', strpos($slsSrc, 'doc_next_no($company[\'id\']') !== false);
+// two people billing at once must not be handed the same number
+$hlpN = file_get_contents(dirname(__DIR__) . '/includes/helpers.php');
+t_ok('the counter is locked while it is read',
+     preg_match('/function doc_next_no.*?FOR UPDATE/s', $hlpN) === 1);
+
+t_group('one bill, two ways of paying');
+$_POST = ['payment_mode' => 'cash', 'paid' => '2000', 'payment_mode2' => 'upi', 'paid2' => '3000'];
+$lines = sale_payment_lines(5000);
+t_eq('both ways are recorded', count($lines), 2);
+t_eq('...the cash half', [$lines[0]['mode'], money_r($lines[0]['amount'])], ['cash', 2000.0]);
+t_eq('...and the UPI half', [$lines[1]['mode'], money_r($lines[1]['amount'])], ['upi', 3000.0]);
+$_POST = ['payment_mode' => 'cash', 'paid' => '4000', 'payment_mode2' => 'upi', 'paid2' => '3000'];
+$lines = sale_payment_lines(5000);
+t_eq('together they can never exceed the bill',
+     money_r($lines[0]['amount'] + $lines[1]['amount']), 5000.0);
+t_eq('...the second one is the one that gets trimmed', money_r($lines[1]['amount']), 1000.0);
+$_POST = ['payment_mode' => 'credit', 'paid' => '5000', 'payment_mode2' => 'upi', 'paid2' => '3000'];
+t_eq('credit means nothing was paid, whatever else is on the form', sale_payment_lines(5000), []);
+$_POST = ['payment_mode' => 'cash', 'paid' => '2000'];
+t_eq('one way of paying is still one payment row', count(sale_payment_lines(5000)), 1);
+$_POST = ['payment_mode' => 'cash', 'paid' => '0', 'payment_mode2' => 'upi', 'paid2' => '0'];
+t_eq('nothing paid writes nothing', sale_payment_lines(5000), []);
+$_POST = [];
+t_ok('the bill screen writes one payment row per way of paying',
+     strpos($slsSrc, 'foreach ($payLines as $pl)') !== false);
+
+t_group('જૂનું લઈને નવું — the old part comes back across the counter');
+$_POST = ['ti_descr' => ['જૂની બેટરી', ''], 'ti_value' => ['400', '0'], 'ti_qty' => ['1', '1'], 'ti_item_id' => ['0', '0']];
+$tr = sale_trade_in_rows();
+t_eq('an empty row on the form is not an exchange', count($tr), 1);
+t_eq('...and the one that was filled in is', [$tr[0]['descr'], money_r($tr[0]['value'])], ['જૂની બેટરી', 400.0]);
+$_POST = ['ti_descr' => [''], 'ti_value' => ['400'], 'ti_qty' => ['1'], 'ti_item_id' => ['0']];
+t_eq('money off a bill always says what it was for', sale_trade_in_rows()[0]['descr'], 'જૂનો માલ');
+$_POST = [];
+t_ok('the exchange rides on the bill\'s own adjustment, so every total still adds up',
+     strpos($slsSrc, "\$adjustment = (float)post('adjustment') - \$tradeVal;") !== false);
+t_ok('...it is written down, not just deducted', strpos($slsSrc, 'sale_trade_in_save($sale_id') !== false);
+t_ok('...and taken back off the shelf if the bill is cancelled',
+     strpos($slsSrc, 'sale_trade_in_reverse($sid)') !== false);
+
+t_group('the bill goes to the office, the goods go to the site');
+t_ok('the bill form asks for a delivery address', strpos($slsSrc, 'name="delivery_address"') !== false);
+t_ok('...it is saved with the bill', strpos($slsSrc, "trim((string)post('delivery_address')) ?: null") !== false);
+$svSrc = file_get_contents(dirname(__DIR__) . '/sale_view.php');
+t_ok('...and printed on the bill', strpos($svSrc, 'DELIVER TO:') !== false);
+$d2Src = file_get_contents(dirname(__DIR__) . '/includes/invoice_card_d2.php');
+t_ok('...on the other invoice design too', strpos($d2Src, "delivery_address") !== false);
+
+t_group('the customer signs for the goods');
+t_ok('the bill page has a signature pad', strpos($svSrc, "id=\"sigPad\"") !== false);
+// a data URL goes straight to disk, so it is checked before anything is written
+t_ok('only a real PNG data URL is accepted',
+     strpos($svSrc, "preg_match('#^data:image/png;base64,([A-Za-z0-9+/=]+)\$#', \$data, \$m)") !== false);
+t_ok('...and it must actually start like a PNG', strpos($svSrc, 'substr($png, 0, 8) !== "\x89PNG\r\n\x1a\n"') !== false);
+t_ok('...and be signature-sized, not a photo album', strpos($svSrc, 'strlen($png) > 400000') !== false);
+t_ok('the picture is kept as a file, not in the sales row',
+     strpos($svSrc, "uploads/signatures") !== false && strpos($svSrc, "UPDATE sales SET signature = ?") !== false);
+t_ok('replacing a signature does not leave the old file behind',
+     strpos($svSrc, 'if (!empty($sale[\'signature\']) && is_file($dir') !== false);
+t_ok('...and it prints on the bill', strpos($svSrc, "uploads/signatures/' . \$sale['signature']") !== false);
+t_ok('a customer opening the public bill link cannot sign for themselves',
+     strpos($svSrc, "if (!\$public && \$_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signature'") !== false);
+
+t_group('discount and round-off, one touch at the counter');
+// these two were already on the bill form - checked here so they stay
+t_ok('discount takes ₹ or %', strpos($slsSrc, "setDiscType('percent')") !== false && strpos($slsSrc, "setDiscType('amount')") !== false);
+t_ok('round-off is one tick', strpos($slsSrc, 'name="round_off_on"') !== false);
+t_ok('...and the rounding is worked out on the server, never taken from the form',
+     strpos($slsSrc, "if (post('round_off_on') === '1') {") !== false && strpos($slsSrc, '$roundOff = round($rounded - $total, 2);') !== false);

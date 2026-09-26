@@ -7,6 +7,31 @@ $action = get('action', 'list');
 $id = (int)get('id');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // --- kit / combo parts: what "4 કેમેરાનું સેટ" is really made of.
+    // The kit itself is never stocked - selling one takes its parts down -
+    // so this is the list that makes that possible.
+    if (post('do') === 'kit_add') {
+        require_perm('items.edit');
+        $kit = (int)post('kit_item_id');
+        $part = (int)post('part_item_id');
+        $qty = max(0.001, (float)post('part_qty'));
+        // a kit inside itself would take its own stock down for ever
+        if ($kit && $part && $kit !== $part) {
+            q('INSERT INTO item_kit_parts (kit_item_id, part_item_id, qty) VALUES (?,?,?)
+               ON DUPLICATE KEY UPDATE qty = VALUES(qty)', [$kit, $part, $qty]);
+            log_activity('kit_part_add', "kit=$kit part=$part qty=$qty");
+            flash('કીટમાં પાર્ટ ઉમેર્યો.');
+        } else {
+            flash('પાર્ટ બરાબર પસંદ કરો (કીટ પોતે એનો જ પાર્ટ ન બની શકે).', 'error');
+        }
+        redirect('items.php?action=edit&id=' . $kit);
+    }
+    if (post('do') === 'kit_del') {
+        require_perm('items.edit');
+        q('DELETE FROM item_kit_parts WHERE id = ?', [(int)post('id')]);
+        flash('પાર્ટ કાઢ્યો.');
+        redirect('items.php?action=edit&id=' . (int)post('kit_item_id'));
+    }
     if (post('do') === 'save') {
         require_perm($id ? 'items.edit' : 'items.add');
         $photo = post('old_photo');
@@ -164,6 +189,49 @@ if ($action === 'new' || $action === 'edit') {
         <a class="btn btn-muted" href="items.php">Cancel</a>
       </form>
     </div>
+    <?php if ($action === 'edit' && $it): $kparts = kit_parts($it['id']); ?>
+    <div class="card">
+      <h3>📦 કીટ / સેટ — આ આઇટમ શેમાંથી બને છે</h3>
+      <p class="muted">"4 કેમેરાનું સેટ" જેવી વસ્તુ એક લાઇનમાં વેચાય, પણ સ્ટોક અંદરના પાર્ટમાંથી કપાય.
+         અહીં પાર્ટ ઉમેરશો એટલે આ આઇટમ કીટ બની જશે — પછી એનો પોતાનો સ્ટોક નહીં ગણાય, પાર્ટનો ગણાશે.</p>
+      <?php if ($kparts): ?>
+      <div class="table-wrap" style="box-shadow:none">
+        <table class="table-sm">
+          <thead><tr><th>પાર્ટ</th><th class="num">એક કીટમાં કેટલા</th><th class="num">અત્યારે સ્ટોક</th><th></th></tr></thead>
+          <tbody>
+          <?php foreach ($kparts as $kp): ?>
+            <tr>
+              <td><a href="item_view.php?id=<?= (int)$kp['part_item_id'] ?>"><?= e($kp['name']) ?></a></td>
+              <td class="num"><?= 0 + $kp['qty'] ?></td>
+              <td class="num"><?= 0 + (float)(val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [(int)$kp['part_item_id']]) ?? 0) ?></td>
+              <td><form method="post" style="display:inline"><?= csrf_field() ?>
+                <input type="hidden" name="do" value="kit_del">
+                <input type="hidden" name="kit_item_id" value="<?= (int)$it['id'] ?>">
+                <input type="hidden" name="id" value="<?= (int)$kp['id'] ?>">
+                <button class="btn btn-sm btn-danger" type="submit">✕</button></form></td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+      <?php endif; ?>
+      <form method="post" class="form-row cols-3 mt">
+        <?= csrf_field() ?>
+        <input type="hidden" name="do" value="kit_add">
+        <input type="hidden" name="kit_item_id" value="<?= (int)$it['id'] ?>">
+        <div><label>પાર્ટ</label>
+          <select name="part_item_id" id="part_item_id" required>
+            <option value="">-- પસંદ કરો --</option>
+            <?php foreach (all("SELECT id, name FROM items WHERE is_active = 1 AND id <> ? AND item_type <> 'service' ORDER BY name", [$it['id']]) as $pi): ?>
+            <option value="<?= (int)$pi['id'] ?>"><?= e($pi['name']) ?></option>
+            <?php endforeach; ?>
+          </select></div>
+        <div><label>એક કીટમાં કેટલા</label><input type="number" step="any" min="0.001" name="part_qty" value="1" required></div>
+        <div style="align-self:end"><button class="btn btn-sm" type="submit">+ પાર્ટ ઉમેરો</button></div>
+      </form>
+      <script>SearchPick.init('part_item_id', 'આઇટમનું નામ ટાઇપ કરો…');</script>
+    </div>
+    <?php endif; ?>
     <div class="card">
       <h3>Quick add category</h3>
       <form method="post" class="filterbar">

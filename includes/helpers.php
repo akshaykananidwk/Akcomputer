@@ -1466,6 +1466,193 @@ function warranty_replacement_dates(array $claim, $old) {
     return [(int)($old['warranty_months'] ?? 0), $old['warranty_expiry'] ?? null];
 }
 
+// ---------- Document numbers: one series per firm, per financial year ----------
+
+/** The Indian financial year a date falls in, as "26-27" (April to March).
+ *  April 2026 and March 2027 are both 26-27; April 2027 starts 27-28. */
+function fin_year_code($date = null) {
+    $ts = strtotime($date ?: today());
+    $y = (int)date('Y', $ts);
+    $start = (int)date('n', $ts) >= 4 ? $y : $y - 1;
+    return substr((string)$start, 2) . '-' . substr((string)($start + 1), 2);
+}
+
+/** The next bill number for this firm and this financial year.
+ *
+ *  Bill numbers used to be built from the sale's own row id, so they never
+ *  restarted - the 252nd bill the shop ever wrote was 00252 whether that was
+ *  in its first year or its fifth - and the year printed in the number came
+ *  from the day the bill was SAVED, so a bill dated in March and entered in
+ *  April carried the wrong year.
+ *
+ *  Now each firm counts from 1 again each financial year. The counter row is
+ *  read with FOR UPDATE, so two people billing in the same second get two
+ *  different numbers instead of both reading "14" and both writing 15.
+ *
+ *  MUST be called inside a transaction - the lock is only held to the end of
+ *  one, and the number must not be handed out unless the bill really saves. */
+function doc_next_no($companyId, $date, $prefix, $docType = 'sale') {
+    $companyId = (int)$companyId;
+    $fy = fin_year_code($date);
+    q("INSERT INTO doc_counters (company_id, doc_type, fy, seq) VALUES (?,?,?,0)
+       ON DUPLICATE KEY UPDATE seq = seq", [$companyId, $docType, $fy]);
+    $row = row('SELECT id, seq FROM doc_counters WHERE company_id = ? AND doc_type = ? AND fy = ? FOR UPDATE',
+               [$companyId, $docType, $fy]);
+    $seq = (int)($row['seq'] ?? 0) + 1;
+    q('UPDATE doc_counters SET seq = ? WHERE id = ?', [$seq, (int)$row['id']]);
+    return $prefix . '-' . $fy . '-' . str_pad((string)$seq, 5, '0', STR_PAD_LEFT);
+}
+
+// ---------- Kits / combo items ----------
+
+/** The parts a kit is made of, or [] for an ordinary item.
+ *
+ *  A kit ("4 કેમેરાનું સેટ") is sold as one line but leaves the shelf as its
+ *  parts. The kit itself is never stocked, so selling one must take the parts
+ *  down instead - every screen that moves stock for a sale asks this first. */
+function kit_parts($itemId) {
+    return all('SELECT kp.part_item_id, kp.qty, i.name, i.item_type
+                FROM item_kit_parts kp JOIN items i ON i.id = kp.part_item_id
+                WHERE kp.kit_item_id = ? ORDER BY i.name', [(int)$itemId]);
+}
+
+/** true when this item is sold as a kit. */
+function is_kit($itemId) { return (int)val('SELECT COUNT(*) FROM item_kit_parts WHERE kit_item_id = ?', [(int)$itemId]) > 0; }
+
+/** Move a kit's parts, not the kit: $sign is -1 when selling, +1 when the
+ *  bill is cancelled or deleted. One place, so the two directions can never
+ *  drift apart and leave a kit's parts half returned. */
+function kit_move_stock($itemId, $locId, $qty, $sign, $refType, $refId, $note = '') {
+    foreach (kit_parts($itemId) as $p) {
+        if ($p['item_type'] === 'service') continue;
+        adjust_stock((int)$p['part_item_id'], $locId, $sign * $qty * (float)$p['qty'], $refType, $refId, $note);
+    }
+}
+
+// ---------- Billing counter: split payment, trade-in ----------
+
+/** The one or two ways the customer paid this bill, read off the form.
+ *
+ *  ₹5,000 bill settled with ₹2,000 cash and ₹3,000 UPI is two payment rows,
+ *  not one - the cash book and the bank book each have to see their own
+ *  share, or "Cash in Hand" is wrong by ₹3,000 the moment the bill is saved.
+ *
+ *  Whatever is typed, the two lines together can never exceed the bill: the
+ *  second line is trimmed to what is left, and 'credit' means nothing was
+ *  paid at all. */
+function sale_payment_lines($total) {
+    $total = max(0.0, (float)$total);
+    if (post('payment_mode') === 'credit') return [];
+    $out = [];
+    $left = $total;
+    foreach ([['payment_mode', 'paid', 'bank_account_id'], ['payment_mode2', 'paid2', 'bank_account_id2']] as $f) {
+        $mode = trim((string)post($f[0]));
+        $amt = round((float)post($f[1]), 2);
+        if ($mode === '' || $mode === 'credit' || $amt <= 0.009 || $left <= 0.009) continue;
+        $amt = min($amt, $left);
+        list($pmId, $bankId) = resolve_payment_target($mode, post($f[2]));
+        $out[] = ['mode' => $mode, 'amount' => $amt, 'pm_id' => $pmId, 'bank_id' => $bankId];
+        $left = money_r($left - $amt);
+    }
+    return $out;
+}
+
+/** The old parts taken in against this bill, read off the form.
+ *
+ *  Each one needs a name at the very least - a value with nothing said about
+ *  what it was for is money off a bill with no reason recorded, and that is
+ *  exactly what an auditor asks about. A row with no value and no name is
+ *  simply an empty box on the form and is skipped. */
+function sale_trade_in_rows() {
+    $out = [];
+    foreach ((array)post('ti_descr', []) as $i => $descr) {
+        $descr = trim((string)$descr);
+        $value = round((float)(post('ti_value', [])[$i] ?? 0), 2);
+        $qty = max(1.0, (float)(post('ti_qty', [])[$i] ?? 1));
+        $itemId = (int)(post('ti_item_id', [])[$i] ?? 0);
+        if ($descr === '' && $value <= 0.009) continue;
+        if ($descr === '') $descr = 'જૂનો માલ';
+        $out[] = ['item_id' => $itemId ?: null, 'descr' => mb_substr($descr, 0, 160),
+                  'serial_no' => trim((string)(post('ti_serial', [])[$i] ?? '')) ?: null,
+                  'qty' => $qty, 'value' => max(0.0, $value)];
+    }
+    return $out;
+}
+
+/** Write this bill's trade-ins and put what came in onto the shelf.
+ *
+ *  Only a row pointing at a real item moves stock - "જૂની બેટરી" typed as
+ *  free text is worth money off the bill but is not something the shop
+ *  stocks, so it is recorded and left alone. */
+function sale_trade_in_save($saleId, array $rows, $locId, $invoiceNo = '') {
+    foreach ($rows as $t) {
+        q('INSERT INTO trade_ins (sale_id, item_id, descr, serial_no, qty, value, location_id) VALUES (?,?,?,?,?,?,?)',
+          [(int)$saleId, $t['item_id'], $t['descr'], $t['serial_no'], $t['qty'], $t['value'], $locId]);
+        if ($t['item_id']) {
+            adjust_stock((int)$t['item_id'], $locId, (float)$t['qty'], 'trade_in', (int)$saleId,
+                         'Exchange on ' . ($invoiceNo ?: '#' . $saleId), $t['value'] / max(1, (float)$t['qty']));
+            if ($t['serial_no']) serial_put_in_stock((int)$t['item_id'], $t['serial_no'], $locId);
+        }
+    }
+}
+
+/** Take back what a trade-in put on the shelf, when its bill is deleted or
+ *  cancelled. Stock only - the rows stay until the bill itself goes. */
+function sale_trade_in_reverse($saleId) {
+    foreach (all('SELECT * FROM trade_ins WHERE sale_id = ?', [(int)$saleId]) as $t) {
+        if (!$t['item_id']) continue;
+        adjust_stock((int)$t['item_id'], (int)$t['location_id'], -(float)$t['qty'], 'trade_in_reverse', (int)$saleId,
+                     'Bill cancelled - exchange taken back');
+    }
+}
+
+/** A half-made bill, in the same shape a saved bill is read back in.
+ *
+ *  A customer walks off in the middle of a bill and the next one is already
+ *  at the counter. The form as it stands is put aside - items, prices, party,
+ *  the exchange, the lot - and picked up again later. It is NOT a sale: no
+ *  number is taken, no stock moves, nothing reaches the ledger.
+ *
+ *  It is written in the same shape sales/sale_items come back in, so the bill
+ *  form has ONE way of filling itself in, whether from a saved bill, a copy
+ *  of one, or this. */
+function sale_park_payload() {
+    $items = [];
+    foreach ((array)post('item_id', []) as $i => $iid) {
+        $iid = (int)$iid;
+        $qty = (float)(post('qty', [])[$i] ?? 0);
+        if (!$iid || $qty <= 0) continue;
+        $it = row('SELECT name, serial_tracked, item_type FROM items WHERE id = ?', [$iid]);
+        if (!$it) continue;
+        $items[] = [
+            'item_id' => $iid, 'name' => $it['name'], 'qty' => $qty,
+            'free_qty' => (float)(post('free_qty', [])[$i] ?? 0),
+            'price' => (float)(post('price', [])[$i] ?? 0),
+            'tax_rate' => (float)(post('tax_rate', [])[$i] ?? 0),
+            'line_disc_val' => (float)(post('ldisc', [])[$i] ?? 0),
+            'line_disc_type' => (post('ldisc_t', [])[$i] ?? 'amount') === 'percent' ? 'percent' : 'amount',
+            'serials' => null,        // serials are picked again when it is resumed - the shelf may have moved
+            'serial_tracked' => (int)$it['serial_tracked'],
+            'item_type' => $it['item_type'],
+            'description' => (string)(post('description', [])[$i] ?? ''),
+            'location_id' => (int)(post('line_loc', [])[$i] ?? 0),
+            'cost_price' => (float)(post('line_cost', [])[$i] ?? 0),
+            'custom_data' => null,
+        ];
+    }
+    $sale = [];
+    foreach (['company_id', 'location_id', 'price_type', 'credit_days', 'due_date', 'party_id',
+              'customer_name', 'customer_mobile', 'sale_date', 'discount_type', 'shipping',
+              'adjustment', 'notes', 'delivery_address'] as $k) $sale[$k] = post($k);
+    $sale['discount'] = (float)post('discount_val');
+    $sale['discount_pct'] = post('discount_type') === 'percent' ? (float)post('discount_val') : 0;
+    $sale['paid'] = 0;
+    $sale['payment_mode'] = post('payment_mode', 'cash');
+    $sale['round_off'] = 0;
+    $sale['total'] = 0;
+    return ['sale' => $sale, 'items' => $items, 'trade_ins' => sale_trade_in_rows()];
+}
+
 // ---------- Collection reminders ----------
 
 /** Send ONE payment reminder on WhatsApp: the same wording, the same picture

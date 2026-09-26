@@ -42,6 +42,7 @@ $trust = [
     <div>
       <div class="inv2-billto">👤 BILL TO :</div>
       <div class="inv2-cust"><?= e($sale['customer_name'] ?: $sale['party_name'] ?: 'Walk-in Customer') ?></div>
+      <?php if (!empty($sale['delivery_address'])): ?><div class="muted" style="font-size:11px">ડિલિવરી: <?= e($sale['delivery_address']) ?></div><?php endif; ?>
       <?php if ($sale['customer_mobile']): ?><div class="inv2-contact">📞 <?= e($sale['customer_mobile']) ?></div><?php endif; ?>
       <?= $sale['party_gstin'] ? '<div class="muted">GSTIN: ' . e($sale['party_gstin']) . '</div>' : '' ?>
     </div>
@@ -138,7 +139,8 @@ $trust = [
     <div style="text-align:right"><strong>We Deal In :</strong><br>Computers · Laptops · Accessories · CCTV · Networking · AMC</div>
   </div>
   <div class="inv2-sigrow">
-    <div class="inv2-sig">Receiver's Signature</div>
+    <div class="inv2-sig"><?php $sigFile = !empty($sale['signature']) ? dirname(__DIR__) . '/uploads/signatures/' . basename($sale['signature']) : '';
+                if ($sigFile && is_file($sigFile)): ?><img src="<?= e(base_url('uploads/signatures/' . $sale['signature'])) ?>" alt="" style="max-height:52px;display:block;margin:0 auto 2px"><?php endif; ?>Receiver's Signature</div>
     <div class="inv2-stamp">AK COMPUTER<br>★ THANK YOU ★<br><?= e(strtoupper(trim(explode('-', $sale['loc_city'])[0]))) ?></div>
     <div class="inv2-sig">For <?= e($sale['company_name']) ?> - Authorised Signatory</div>
   </div>
