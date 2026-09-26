@@ -162,6 +162,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wa_ledger') {
     redirect('parties.php?action=ledger&id=' . (int)post('id'));
 }
 
+// Payment reminder straight off the party's own ledger - the same message the
+// Aging / Collection report sends. The amount is NOT taken from the form: it
+// is worked out here from the ledger, so a stale page open since this morning
+// can never ask a customer for money they have already paid.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'collection_reminder' && can('payments.view')) {
+    $pid = (int)post('id');
+    $p = row('SELECT * FROM parties WHERE id = ?', [$pid]);
+    $mobile = trim((string)(post('mobile') ?: ($p['mobile'] ?? '')));
+    $due = $p ? party_balance_side($pid, 'in') : 0.0;   // what THEY owe US
+    if (!$p || !$mobile) {
+        flash('મોબાઇલ નંબર નથી.', 'error');
+    } elseif ($due <= 0.009) {
+        flash('આ પાર્ટી પાસેથી કંઈ લેવાનું બાકી નથી — રિમાઇન્ડર મોકલ્યું નથી.', 'error');
+    } elseif (collection_reminder_send($mobile, $due, $p['name'])) {
+        log_activity('aging_reminder_whatsapp', $p['name'] . ' ' . $mobile . ' ₹' . money($due) . ' (ledger)');
+        flash('₹' . money($due) . ' નું રિમાઇન્ડર ' . $mobile . ' પર WhatsApp કરી દીધું.');
+    } else {
+        flash('WhatsApp મોકલાયું નહીં. ' . whatsapp_last_error(), 'error');
+    }
+    redirect('parties.php?action=ledger&id=' . $pid);
+}
+
 if ($action === 'ledger' && $id) {
     $p = row('SELECT * FROM parties WHERE id = ?', [$id]);
     if (!$p) { flash('Party not found', 'error'); redirect('parties.php'); }
@@ -218,6 +240,16 @@ if ($action === 'ledger' && $id) {
           <form method="post" style="display:inline" onsubmit="return confirm('આખો હિસાબ (statement PDF) <?= e($p['mobile']) ?> પર WhatsApp કરવો?')">
             <?= csrf_field() ?><input type="hidden" name="do" value="statement_wa"><input type="hidden" name="id" value="<?= $p['id'] ?>">
             <button class="btn btn-sm btn-wa" type="submit">📲 Statement WhatsApp</button>
+          </form>
+          <?php endif; ?>
+          <?php
+          // Reminder is offered only when there is really something to ask
+          // for - a party who owes nothing must never get one by accident
+          $remDue = can('payments.view') ? party_balance_side($p['id'], 'in') : 0.0;
+          if ($p['mobile'] && $remDue > 0.009): ?>
+          <form method="post" style="display:inline" onsubmit="return confirm('₹<?= money($remDue) ?> નું પેમેન્ટ રિમાઇન્ડર <?= e($p['mobile']) ?> પર મોકલવું?')">
+            <?= csrf_field() ?><input type="hidden" name="do" value="collection_reminder"><input type="hidden" name="id" value="<?= $p['id'] ?>">
+            <button class="btn btn-sm btn-wa" type="submit">🔔 રિમાઇન્ડર ₹<?= money($remDue) ?></button>
           </form>
           <?php endif; ?>
           <a class="btn btn-sm btn-outline" href="customer.php?id=<?= $p['id'] ?>">👤 Customer 360</a>

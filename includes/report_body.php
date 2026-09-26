@@ -522,47 +522,9 @@ if ($r === 'payables') {
 // ---------------- aging / collection (as of today, ignores from/to) ----------------
 if ($r === 'aging') {
     $isPdf = !empty($reportPdf);
-    $ewA = ''; $epA = [];
-    if ($fCompany) { $ewA .= ' AND s.company_id = ?'; $epA[] = $fCompany; }
-    if ($fParty) { $ewA .= ' AND s.party_id = ?'; $epA[] = $fParty; }
-    $rows = all("SELECT s.party_id, COALESCE(p.name, NULLIF(s.customer_name, ''), 'Walk-in') pname, s.customer_mobile,
-                 p.mobile party_mobile, TRIM(CONCAT_WS(', ', NULLIF(p.address, ''), NULLIF(p.city, ''))) addr,
-                 s.due_date, s.sale_date, (s.total - s.paid) due
-                 FROM sales s LEFT JOIN parties p ON p.id = s.party_id
-                 WHERE s.is_cancelled = 0 AND s.status <> 'paid' AND s.total - s.paid > 0.009 $ewA
-                 ORDER BY COALESCE(s.due_date, s.sale_date), s.id", $epA);
-    // A payment saved in the party LEDGER (Payment In) without being linked
-    // to its bill leaves sales.paid untouched - the customer HAS paid and the
-    // ledger says so, but the bill alone still reads "due". So each party is
-    // capped at their REAL ledger balance, knocking the already-received
-    // difference off the oldest bills first (FIFO), the way Vyapar/Tally do.
-    // A fully settled party disappears from this report entirely.
-    $byParty = [];
-    foreach ($rows as $x) $byParty[($x['party_id'] ?: 'w') . '|' . $x['pname']][] = $x;
-    $agg = [];
-    foreach ($byParty as $key => $bills) {
-        $pid = (int)$bills[0]['party_id'];
-        if ($pid) {
-            // same oldest-first ledger cap the Payments list and every reminder
-            // use - money_trim_dues() in includes/money.php is the one copy
-            $sumDue = 0;
-            foreach ($bills as $b) $sumDue += (float)$b['due'];
-            try { $cap = party_balance_side($pid, 'in'); } catch (Exception $e) { $cap = $sumDue; }
-            foreach (money_trim_dues(array_column($bills, 'due'), $cap) as $i => $adj) $bills[$i]['due'] = $adj;
-        }
-        foreach ($bills as $x) {
-            if ((float)$x['due'] <= 0.009) continue;
-            $base = $x['due_date'] ?: $x['sale_date'];
-            $days = days_between($base);
-            $bucket = $days <= 30 ? 'b1' : ($days <= 60 ? 'b2' : ($days <= 90 ? 'b3' : 'b4'));
-            if (!isset($agg[$key])) $agg[$key] = ['pname' => $x['pname'], 'party_id' => $x['party_id'],
-                'mobile' => $x['party_mobile'] ?: $x['customer_mobile'], 'addr' => $x['addr'],
-                'b1' => 0, 'b2' => 0, 'b3' => 0, 'b4' => 0, 'total' => 0];
-            $agg[$key][$bucket] += $x['due'];
-            $agg[$key]['total'] += $x['due'];
-        }
-    }
-    usort($agg, fn($a, $b) => $b['total'] <=> $a['total']);
+    // the whole "who owes what, and how old is it" rule lives in
+    // aging_rows() (includes/money.php); this file only draws it
+    $agg = aging_rows($fCompany, $fParty);
 
     $tot = ['b1' => 0, 'b2' => 0, 'b3' => 0, 'b4' => 0, 'total' => 0];
     foreach ($agg as $x) foreach (['b1', 'b2', 'b3', 'b4', 'total'] as $k) $tot[$k] += $x[$k];
@@ -574,7 +536,7 @@ if ($r === 'aging') {
     echo '<div class="stat"><div class="stat-label">📄 Total Due</div><div class="stat-value">₹' . money($tot['total']) . '</div></div>';
     echo '<div class="stat s-bad"><div class="stat-label">⚠️ Overdue (30+ days)</div><div class="stat-value">₹' . money($overdue) . '</div></div>';
     echo '</div>';
-    echo '<p class="muted mb">As of today — based on how many days each bill is overdue. The date filter above does not apply here.</p>';
+    echo '<p class="muted mb">As of today — બિલની તારીખથી કેટલા દિવસ થયા એ પ્રમાણે (ડ્યુ ડેટથી નહીં). જૂનું ઓપનિંગ બેલેન્સ પણ ગણેલું છે, પાર્ટી બની એ દિવસથી. ઉપરનું તારીખ ફિલ્ટર અહીં લાગુ પડતું નથી.</p>';
 
     // ---- the table (wrapped in a bulk-send form on screen) ----
     $canWa = !$isPdf && can('payments.view');

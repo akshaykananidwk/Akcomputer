@@ -1406,6 +1406,36 @@ function warranty_replacement_dates(array $claim, $old) {
     return [(int)($old['warranty_months'] ?? 0), $old['warranty_expiry'] ?? null];
 }
 
+// ---------- Collection reminders ----------
+
+/** Send ONE payment reminder on WhatsApp: the same wording, the same picture
+ *  and the same template wherever it is sent from - the Aging report's single
+ *  send, its bulk send, or the party's own ledger page.
+ *
+ *  It was written out three times before, and the copies had already drifted:
+ *  only the bulk one told the provider it was a reminder (wa_context), so the
+ *  other two went out on the generic template once the 24-hour window had
+ *  closed. Returns true when it went.
+ *
+ *  Logging is left to the caller: one send logs one line, a bulk run logs a
+ *  single summary. */
+function collection_reminder_send($mobile, $amount, $pname = '') {
+    require_once __DIR__ . '/billimage.php';
+    $mobile = trim((string)$mobile);
+    $amount = (float)$amount;
+    if ($mobile === '' || $amount <= 0.009) return false;
+
+    $shop = setting('app_name', 'AK Computer');
+    $dir = dirname(__DIR__) . '/uploads/reminders';
+    if (!is_dir($dir)) mkdir($dir, 0755, true);
+    $name = 'reminder_' . preg_replace('/\D/', '', $mobile) . '_' . substr(md5(microtime() . $pname), 0, 6) . '.jpg';
+    file_put_contents($dir . '/' . $name, reminder_image_jpg($shop, $amount));
+
+    wa_context(['kind' => 'reminder']);
+    $msg = wa_template('aging_reminder', ['amount' => money($amount), 'shop' => $shop, 'customer' => $pname]);
+    return send_whatsapp($mobile, $msg, base_url('uploads/reminders/' . $name));
+}
+
 // ---------- Misc ----------
 function share_token() { return bin2hex(random_bytes(16)); }
 

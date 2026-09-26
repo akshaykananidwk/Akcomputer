@@ -422,3 +422,124 @@ $oldNames = ['Rent', 'Salary', 'Internet', 'Transport', 'Tea/Food', 'Stationery'
 $stranded = [];
 foreach ($oldNames as $o) if (strpos($v63, "= '" . $o . "'") === false && strpos($v63, "'" . $o . "'") === false) $stranded[] = $o;
 t_eq('every old name has somewhere to go', implode(', ', $stranded), '');
+
+// ---------------------------------------------------------------------------
+// "જે દિવસથી બિલ બન્યો હોય ને એ તારીખ જ ... ડ્યુ કર્યું એ ડેટ કેલ્ક્યુલેશન ન
+// થાય. અને કોઈ ઓપનિંગ બેલેન્સ હોય ને એ પણ ... પાર્ટી બની હોય ત્યારથી."
+//
+// Two rules, both money rules, so both are checked on real rows rather than
+// on the source text.
+t_group('aging is counted from the bill date, not the due date');
+
+function tr_aging_row($pid) {
+    foreach (aging_rows(0, $pid) as $r) if ((int)$r['party_id'] === (int)$pid) return $r;
+    return null;
+}
+$agoDate = fn($d) => date('Y-m-d', strtotime("-$d days"));
+
+// a bill written 45 days ago, given 30 days' credit, so only 15 days overdue
+$apA = t_party('AGING_BILLDATE');
+t_sale($apA, 5000, 0, $agoDate(45), $agoDate(15));
+$rowA = tr_aging_row($apA);
+t_ok('the party is on the report', $rowA !== null);
+t_eq('the whole amount is claimed', money_r($rowA['total']), 5000.0);
+t_eq('...and it sits in 31-60 days, because the BILL is 45 days old',
+     money_r($rowA['b2']), 5000.0);
+t_eq('...not in 0-30, where the due date would have put it', money_r($rowA['b1']), 0.0);
+
+// the buckets themselves, from the bill date
+$apB = t_party('AGING_BUCKETS');
+t_sale($apB, 100, 0, $agoDate(10),  $agoDate(200));   // due date far in the past/future must not matter
+t_sale($apB, 200, 0, $agoDate(45),  null);
+t_sale($apB, 400, 0, $agoDate(75),  null);
+t_sale($apB, 800, 0, $agoDate(365), null);
+$rowB = tr_aging_row($apB);
+t_eq('0-30 days holds the newest bill',   money_r($rowB['b1']), 100.0);
+t_eq('31-60 days holds the 45-day bill',  money_r($rowB['b2']), 200.0);
+t_eq('61-90 days holds the 75-day bill',  money_r($rowB['b3']), 400.0);
+t_eq('90+ days holds the year-old bill',  money_r($rowB['b4']), 800.0);
+t_eq('...and they add up', money_r($rowB['total']), 1500.0);
+
+t_group('the opening balance is a debt too, aged from the day the party was made');
+
+// old money carried in, no bills at all - this party was invisible before
+$apC = t_party('AGING_OPENING_ONLY', 7000);
+q("UPDATE parties SET created_at = ? WHERE id = ?", [$agoDate(120) . ' 10:00:00', $apC]);
+$rowC = tr_aging_row($apC);
+t_ok('a party whose whole balance is opening money is on the report', $rowC !== null);
+t_eq('...for the full opening balance', money_r($rowC['total']), 7000.0);
+t_eq('...aged from the day the party was created, so 90+ days', money_r($rowC['b4']), 7000.0);
+
+// a freshly created party's opening balance is new money, not old
+$apD = t_party('AGING_OPENING_NEW', 1200);
+t_eq('an opening balance entered today is 0-30 days', money_r(tr_aging_row($apD)['b1']), 1200.0);
+
+t_group('opening balance and bills are counted once, not twice');
+$apE = t_party('AGING_OPEN_PLUS_BILLS', 3000);
+q("UPDATE parties SET created_at = ? WHERE id = ?", [$agoDate(200) . ' 10:00:00', $apE]);
+t_sale($apE, 2000, 0, $agoDate(10), null);
+$rowE = tr_aging_row($apE);
+t_eq('the opening money is in the oldest bucket', money_r($rowE['b4']), 3000.0);
+t_eq('...the bill in the newest', money_r($rowE['b1']), 2000.0);
+t_eq('...and the total is exactly what the ledger says they owe',
+     money_r($rowE['total']), money_r(party_balance_side($apE, 'in')));
+
+// money received but never linked to a bill settles the OLDEST debt first,
+// and nothing is older than the opening balance
+$apF = t_party('AGING_UNLINKED_PAYMENT', 3000);
+q("UPDATE parties SET created_at = ? WHERE id = ?", [$agoDate(200) . ' 10:00:00', $apF]);
+t_sale($apF, 2000, 0, $agoDate(10), null);
+t_payment($apF, 3500, 'in');            // not linked to anything
+$rowF = tr_aging_row($apF);
+t_eq('an unlinked payment clears the opening balance first', money_r($rowF['b4']), 0.0);
+t_eq('...then eats into the newest bill', money_r($rowF['b1']), 1500.0);
+t_eq('...leaving exactly the ledger balance',
+     money_r($rowF['total']), money_r(party_balance_side($apF, 'in')));
+
+// a party who owes nothing at all is off the report entirely
+$apG = t_party('AGING_SETTLED');
+t_sale($apG, 900, 900, $agoDate(50), null);
+t_ok('a fully paid party is not on the report', tr_aging_row($apG) === null);
+
+t_group('the report screen only draws what the rule returns');
+$rbA = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
+t_ok('the aging figures come from the shared rule', strpos($rbA, 'aging_rows($fCompany, $fParty)') !== false);
+t_ok('...and the report file works none of it out by hand',
+     strpos($rbA, "\$x['due_date'] ?: \$x['sale_date']") === false);
+$mnyA = file_get_contents(dirname(__DIR__) . '/includes/money.php');
+t_ok('the rule ages from the bill date', strpos($mnyA, "'date' => \$x['sale_date']") !== false);
+t_ok('...and the opening balance from the party\'s own creation date',
+     strpos($mnyA, "substr((string)\$pp['created_at'], 0, 10)") !== false);
+t_ok('...reusing opening_due(), so a settled opening is not asked for twice',
+     strpos($mnyA, "opening_due((int)\$pp['id'], 'in')") !== false);
+
+// "જે આપણે રિમાઇન્ડર મોકલીએ છીએ ને એ એક ઓપ્શન અહિયાં પણ હોવું જોઈએ" - the
+// reminder was only on the Aging report; the ledger is where the owner is
+// actually standing when they decide to chase someone.
+t_group('a payment reminder can be sent from the party ledger too');
+$hlpR = file_get_contents(dirname(__DIR__) . '/includes/helpers.php');
+t_ok('what a reminder says and looks like is written once',
+     substr_count($hlpR, 'function collection_reminder_send') === 1);
+t_ok('...and it tells the provider it is a reminder, so the right template goes out',
+     preg_match('/function collection_reminder_send.*?wa_context\(\[\'kind\' => \'reminder\'\]\)/s', $hlpR) === 1);
+$rpR = file_get_contents(dirname(__DIR__) . '/reports.php');
+t_ok('the aging report sends through it', strpos($rpR, 'collection_reminder_send($mobile, $amount') !== false);
+t_ok('...and so does the bulk send', strpos($rpR, 'collection_reminder_send(trim($mobile)') !== false);
+t_ok('no screen builds the reminder picture by hand any more',
+     strpos($rpR, 'reminder_image_jpg(') === false);
+$paR = file_get_contents(dirname(__DIR__) . '/parties.php');
+t_ok('the ledger page has a reminder button', strpos($paR, "name=\"do\" value=\"collection_reminder\"") !== false);
+t_ok('...which goes through the same one rule', strpos($paR, 'collection_reminder_send($mobile, $due, $p[\'name\'])') !== false);
+// a stale page must not be able to ask a customer for money already paid
+t_ok('the amount is worked out on the server, never taken from the form',
+     strpos($paR, "\$due = \$p ? party_balance_side(\$pid, 'in') : 0.0;") !== false);
+t_ok('...and nothing is sent when they owe nothing',
+     strpos($paR, 'રિમાઇન્ડર મોકલ્યું નથી') !== false);
+t_ok('the button is only drawn when there is something to ask for',
+     strpos($paR, "if (\$p['mobile'] && \$remDue > 0.009)") !== false);
+// a party switched off still owes what they owe - the bills side never
+// filtered them out either
+$apH = t_party('AGING_INACTIVE', 2500);
+q("UPDATE parties SET is_active = 0, created_at = ? WHERE id = ?", [date('Y-m-d', strtotime('-95 days')) . ' 10:00:00', $apH]);
+t_eq('an inactive party\'s opening balance is still chased',
+     money_r(tr_aging_row($apH)['b4']), 2500.0);

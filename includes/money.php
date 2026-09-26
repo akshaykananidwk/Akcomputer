@@ -210,6 +210,116 @@ function money_trim_dues(array $dues, $balance) {
     return $out;
 }
 
+/** WHO OWES WHAT, AND HOW OLD IT IS - the Aging / Collection report's one rule.
+ *
+ *  Returns one row per party, newest-owing first, with the four age buckets
+ *  (0-30 / 31-60 / 61-90 / 90+ days) and the total. The report screen only
+ *  draws what comes back, so the numbers can be checked without a browser.
+ *
+ *  Two things decide every figure here:
+ *
+ *  1. AGE IS COUNTED FROM THE BILL DATE, never the due date. Credit days are
+ *     a promise about when the money will come, not about how old the debt
+ *     is. A bill written 45 days ago with 30 days' credit is 45 days old, not
+ *     15 - counting from the due date pushed real old money into the "0-30"
+ *     column and hid exactly what needed chasing.
+ *
+ *  2. THE OPENING BALANCE COUNTS TOO, from the day the party was created -
+ *     the day the shop took that old money onto its books. It is the oldest
+ *     thing a party owes, so it sits at the head of the list, and the
+ *     oldest-first trim below takes any already-received money off it first.
+ */
+function aging_rows($fCompany = 0, $fParty = 0) {
+    $ewA = ''; $epA = [];
+    if ($fCompany) { $ewA .= ' AND s.company_id = ?'; $epA[] = $fCompany; }
+    if ($fParty) { $ewA .= ' AND s.party_id = ?'; $epA[] = $fParty; }
+    $rows = all("SELECT s.party_id, COALESCE(p.name, NULLIF(s.customer_name, ''), 'Walk-in') pname, s.customer_mobile,
+                 p.mobile party_mobile, TRIM(CONCAT_WS(', ', NULLIF(p.address, ''), NULLIF(p.city, ''))) addr,
+                 s.due_date, s.sale_date, (s.total - s.paid) due
+                 FROM sales s LEFT JOIN parties p ON p.id = s.party_id
+                 WHERE s.is_cancelled = 0 AND s.status <> 'paid' AND s.total - s.paid > 0.009 $ewA
+                 ORDER BY COALESCE(s.due_date, s.sale_date), s.id", $epA);
+    // Everything a party still owes, oldest first, as ONE list per party:
+    // the opening balance they came in with, then each unpaid bill.
+    $byParty = [];
+    $openItem = function ($key, $pid, $pname, $mobile, $addr) use (&$byParty) {
+        if (!isset($byParty[$key])) $byParty[$key] = ['pid' => (int)$pid, 'pname' => $pname,
+            'mobile' => $mobile, 'addr' => $addr, 'items' => []];
+    };
+
+    // The opening balance is old money the shop was already owed on the day
+    // the party was put into the software. It is a debt like any other and
+    // belongs on this report - it was missing entirely, so a party whose
+    // whole balance was opening money showed up owing nothing. It is also the
+    // OLDEST thing they owe, so it goes at the head of the list: unlinked
+    // payments settle the oldest debt first, and the trim below has to know
+    // that. opening_due() is the same rule the payment allocator uses, so a
+    // part of it already settled against a payment is not asked for twice.
+    //
+    // Its age is counted from the day the party was created - the day the
+    // shop took that balance onto its books.
+    //
+    // A company filter narrows the report to one firm's bills; an opening
+    // balance belongs to no firm, so it is left out of that view. A party
+    // switched OFF is still chased: the bills side never filtered them out
+    // either, and money owed does not stop being owed.
+    if (!$fCompany) {
+        $ow = ''; $op = [];
+        if ($fParty) { $ow = ' AND p.id = ?'; $op[] = $fParty; }
+        foreach (all("SELECT p.id, p.name, p.mobile, p.created_at,
+                             TRIM(CONCAT_WS(', ', NULLIF(p.address, ''), NULLIF(p.city, ''))) addr
+                      FROM parties p WHERE p.opening_balance > 0.009 $ow", $op) as $pp) {
+            $odue = opening_due((int)$pp['id'], 'in');
+            if ($odue <= 0.009) continue;
+            $key = $pp['id'] . '|' . $pp['name'];
+            $openItem($key, $pp['id'], $pp['name'], $pp['mobile'], $pp['addr']);
+            $byParty[$key]['items'][] = ['date' => substr((string)$pp['created_at'], 0, 10), 'due' => $odue];
+        }
+    }
+
+    foreach ($rows as $x) {
+        $key = ($x['party_id'] ?: 'w') . '|' . $x['pname'];
+        $openItem($key, $x['party_id'], $x['pname'], $x['party_mobile'] ?: $x['customer_mobile'], $x['addr']);
+        // AGED FROM THE BILL DATE, not the due date. Credit days are a promise
+        // about when money will come, not about how old the debt is: a bill
+        // given 30 days' credit is 45 days old on day 45, and putting it in
+        // the "0-30" column because it only went overdue a fortnight ago hid
+        // exactly the money that needed chasing.
+        $byParty[$key]['items'][] = ['date' => $x['sale_date'], 'due' => (float)$x['due']];
+    }
+
+    // A payment saved in the party LEDGER (Payment In) without being linked
+    // to its bill leaves sales.paid untouched - the customer HAS paid and the
+    // ledger says so, but the bill alone still reads "due". So each party is
+    // capped at their REAL ledger balance, knocking the already-received
+    // difference off the oldest debt first (FIFO), the way Vyapar/Tally do.
+    // A fully settled party disappears from this report entirely.
+    $agg = [];
+    foreach ($byParty as $key => $P) {
+        $items = $P['items'];
+        if ($P['pid']) {
+            // same oldest-first ledger cap the Payments list and every reminder
+            // use - money_trim_dues() in includes/money.php is the one copy
+            try {
+                foreach (money_trim_dues(array_column($items, 'due'), party_balance_side($P['pid'], 'in')) as $i => $adj)
+                    $items[$i]['due'] = $adj;
+            } catch (Exception $e) { /* no ledger reading - leave the dues as billed */ }
+        }
+        foreach ($items as $it) {
+            if ((float)$it['due'] <= 0.009) continue;
+            $days = (int)days_between($it['date']);
+            $bucket = $days <= 30 ? 'b1' : ($days <= 60 ? 'b2' : ($days <= 90 ? 'b3' : 'b4'));
+            if (!isset($agg[$key])) $agg[$key] = ['pname' => $P['pname'], 'party_id' => $P['pid'],
+                'mobile' => $P['mobile'], 'addr' => $P['addr'],
+                'b1' => 0, 'b2' => 0, 'b3' => 0, 'b4' => 0, 'total' => 0];
+            $agg[$key][$bucket] += $it['due'];
+            $agg[$key]['total'] += $it['due'];
+        }
+    }
+    usort($agg, fn($a, $b) => $b['total'] <=> $a['total']);
+    return $agg;
+}
+
 /** A party's still-unpaid bills, oldest first — the canonical ordering every
  *  settlement and every cap uses. $dir 'in' = sales, 'out' = purchases. */
 function money_due_bills($party_id, $dir, $cols = '*') {

@@ -21,18 +21,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete_custom_repor
     redirect('reports.php?r=custom');
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'send_aging_reminder' && can('payments.view')) {
-    require_once __DIR__ . '/includes/billimage.php';
     $mobile = post('mobile');
     $amount = (float)post('amount');
     if (!$mobile || $amount <= 0.009) { flash('Missing mobile number or amount.', 'error'); redirect('reports.php?r=aging'); }
-    $shopName = setting('app_name', 'AK Computer');
-    $imgDir = __DIR__ . '/uploads/reminders';
-    if (!is_dir($imgDir)) mkdir($imgDir, 0755, true);
-    $imgName = 'reminder_' . preg_replace('/\D/', '', $mobile) . '_' . substr(md5(microtime()), 0, 6) . '.jpg';
-    file_put_contents($imgDir . '/' . $imgName, reminder_image_jpg($shopName, $amount));
-    $imgUrl = base_url('uploads/reminders/' . $imgName);
-    $msg = wa_template('aging_reminder', ['amount' => money($amount), 'shop' => $shopName, 'customer' => post('pname')]);
-    if (send_whatsapp($mobile, $msg, $imgUrl)) {
+    // one shared rule for what a reminder says and looks like - see
+    // collection_reminder_send() in includes/helpers.php
+    if (collection_reminder_send($mobile, $amount, post('pname'))) {
         log_activity('aging_reminder_whatsapp', post('pname') . ' ' . $mobile . ' ₹' . money($amount));
         flash('Reminder sent on WhatsApp to ' . $mobile . '.');
     } else {
@@ -111,30 +105,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'preview_aging_bulk'
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'send_aging_bulk' && can('payments.view')) {
-    require_once __DIR__ . '/includes/billimage.php';
-    $shopName = setting('app_name', 'AK Computer');
-    $imgDir = __DIR__ . '/uploads/reminders';
-    if (!is_dir($imgDir)) mkdir($imgDir, 0755, true);
     // Each ticked row arrives as "mobile|amount|name" in rem[], so a party's
     // amount and name can never drift onto another party's number.
     $rows = post('rem', []);
     $sent = 0; $failed = 0;
-    foreach ($rows as $i => $val) {
+    foreach ($rows as $val) {
         list($mobile, $amountRaw, $pname) = array_pad(explode('|', (string)$val, 3), 3, '');
-        $mobile = trim($mobile);
-        $amount = (float)$amountRaw;
-        if (!$mobile || $amount <= 0.009) { continue; }
-        $imgName = 'reminder_' . preg_replace('/\D/', '', $mobile) . '_' . substr(md5(microtime() . $i), 0, 6) . '.jpg';
-        file_put_contents($imgDir . '/' . $imgName, reminder_image_jpg($shopName, $amount));
-        $imgUrl = base_url('uploads/reminders/' . $imgName);
-        wa_context(['kind' => 'reminder']);
-        $msg = wa_template('aging_reminder', ['amount' => money($amount), 'shop' => $shopName, 'customer' => $pname]);
-        if (send_whatsapp($mobile, $msg, $imgUrl)) $sent++; else $failed++;
+        // same one rule as the single send and the ledger page
+        if (collection_reminder_send(trim($mobile), (float)$amountRaw, $pname)) $sent++;
+        elseif (trim($mobile) !== '' && (float)$amountRaw > 0.009) $failed++;
     }
     log_activity('aging_reminder_bulk', "sent=$sent failed=$failed");
     if ($sent && !$failed) flash("Payment reminder sent on WhatsApp to $sent party(ies).");
     elseif ($sent) flash("Sent to $sent, but $failed failed. " . whatsapp_last_error(), 'error');
-    else flash('No reminders sent — tick at least one party with a mobile number. ' . whatsapp_last_error(), 'error');
+    // "tick at least one party" is only true when nothing was tried - saying it
+    // after a failed send blames the owner for the gateway being down
+    elseif ($failed) flash("$failed રિમાઇન્ડર મોકલાયાં નહીં. " . whatsapp_last_error(), 'error');
+    else flash('No reminders sent — tick at least one party with a mobile number.', 'error');
     redirect('reports.php?r=aging');
 }
 
