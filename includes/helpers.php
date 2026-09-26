@@ -533,16 +533,76 @@ function staff_cash($userId) {
       - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND from_user_id=$uid AND txn_type='cash_adjust' AND adjust_dir='reduce'),0)");
 }
 
-/** Total cash in hand across the whole shop (all wallets together). */
-function total_cash_in_hand() {
+/** Cash in hand across the whole shop (all wallets together) at the END of
+ *  $date - or right now when $date is null.
+ *
+ *  One formula, used both for "what is in the drawer today" and for "what
+ *  should have been in the drawer the night we closed on the 3rd". Writing
+ *  the second one separately is how the day-close figure and the Cash & Bank
+ *  page would come to disagree. */
+function cash_in_hand_upto($date = null) {
+    $pay = $exp = $mt = '';
+    $args = [];
+    if ($date) {
+        $pay = ' AND pay_date <= ?'; $exp = ' AND exp_date <= ?'; $mt = ' AND txn_date <= ?';
+        $args = array_fill(0, 7, $date);   // one for each sub-select below, in order
+    }
     return (float)val("SELECT
-        COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='in'),0)
-      - COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='out'),0)
-      - COALESCE((SELECT SUM(amount) FROM expenses WHERE mode='cash'),0)
-      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_to_bank'),0)
-      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='bank_to_cash'),0)
-      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='add'),0)
-      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='reduce'),0)");
+        COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='in' $pay),0)
+      - COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='out' $pay),0)
+      - COALESCE((SELECT SUM(amount) FROM expenses WHERE mode='cash' $exp),0)
+      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_to_bank' $mt),0)
+      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='bank_to_cash' $mt),0)
+      + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='add' $mt),0)
+      - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='reduce' $mt),0)", $args);
+}
+
+/** Total cash in hand across the whole shop, right now. */
+function total_cash_in_hand() { return cash_in_hand_upto(null); }
+
+/** ONE DAY'S CASH, the way it is counted at closing time.
+ *
+ *  Opening is not stored anywhere and is not yesterday's counted note - it is
+ *  worked out BACKWARDS from the closing figure, so the day always adds up:
+ *
+ *      opening + received - paid out - expenses - sent to bank
+ *              + drawn from bank ± corrections  =  expected
+ *
+ *  by construction. Storing an opening separately is how a day-book comes to
+ *  disagree with the Cash & Bank page after one edited entry. */
+function day_close_figures($date) {
+    $date = $date ?: today();
+    $one = function ($sql, $args) { return (float)val($sql, $args); };
+    $f = [
+        'date'     => $date,
+        'in'       => $one("SELECT COALESCE(SUM(amount),0) FROM payments WHERE mode='cash' AND direction='in' AND pay_date = ?", [$date]),
+        'out'      => $one("SELECT COALESCE(SUM(amount),0) FROM payments WHERE mode='cash' AND direction='out' AND pay_date = ?", [$date]),
+        'expense'  => $one("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE mode='cash' AND exp_date = ?", [$date]),
+        'to_bank'  => $one("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='cash_to_bank' AND txn_date = ?", [$date]),
+        'from_bank'=> $one("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_to_cash' AND txn_date = ?", [$date]),
+        'adj_add'  => $one("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='add' AND txn_date = ?", [$date]),
+        'adj_less' => $one("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='reduce' AND txn_date = ?", [$date]),
+    ];
+    $f['expected'] = money_r(cash_in_hand_upto($date));
+    $f['moved'] = money_r($f['in'] - $f['out'] - $f['expense'] - $f['to_bank'] + $f['from_bank'] + $f['adj_add'] - $f['adj_less']);
+    $f['opening'] = money_r($f['expected'] - $f['moved']);
+    return $f;
+}
+
+/** The note/coin counting slip. One list, used by the counting form and by
+ *  anything that prints a past count back. */
+function cash_denominations() { return [500, 200, 100, 50, 20, 10, 5, 2, 1]; }
+
+/** What was counted, from the stored "500x4,100x7" string. Returns
+ *  [value => count] for the notes that were actually there. */
+function cash_denom_parse($s) {
+    $out = [];
+    foreach (explode(',', (string)$s) as $bit) {
+        if (strpos($bit, 'x') === false) continue;
+        list($v, $n) = explode('x', $bit, 2);
+        if ((int)$v > 0 && (int)$n > 0) $out[(int)$v] = (int)$n;
+    }
+    return $out;
 }
 
 /** One bank account's live balance, transfers and adjustments included. */

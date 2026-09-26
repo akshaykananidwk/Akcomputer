@@ -25,6 +25,8 @@ function permission_catalog() {
         'warranty' => ['view', 'add', 'edit', 'delete'],
         'payments' => ['view', 'add', 'edit', 'delete'],
         'cashbank' => ['adjust', 'transfer', 'viewall'],
+        // counting the drawer is a different job from correcting it
+        'dayclose' => ['view', 'add'],
         'expenses' => ['view', 'add', 'edit', 'delete'],
         'challans' => ['view', 'add', 'edit', 'delete'],
         'weborders' => ['view', 'edit', 'delete'],

@@ -246,7 +246,9 @@ CREATE TABLE IF NOT EXISTS item_serials (
   serial_no VARCHAR(100) NOT NULL,
   location_id INT DEFAULT NULL,
   user_id INT DEFAULT NULL,
-  status ENUM('in_stock','with_staff','sold','claim','returned_supplier','replaced') NOT NULL DEFAULT 'in_stock',
+  -- every status the code writes must be here: a missing one is not an
+  -- error, it TRUNCATES the row to '' and the piece ends up in no status
+  status ENUM('in_stock','with_staff','sold','claim','returned_supplier','replaced','adjusted_out') NOT NULL DEFAULT 'in_stock',
   purchase_id INT DEFAULT NULL,
   sale_id INT DEFAULT NULL,
   warranty_months INT NOT NULL DEFAULT 0,

@@ -186,3 +186,101 @@ $rep = file_get_contents(dirname(__DIR__) . '/reports.php');
 t_ok('...and the tab is hidden without it', strpos($rep, "unset(\$tabs['party_profit'])") !== false);
 $mn = file_get_contents(dirname(__DIR__) . '/includes/money.php');
 t_ok('cost uses the one shared definition', preg_match('/function party_profit.*?profit_cost_sql\(\)/s', $mn) === 1);
+
+// ---------------------------------------------------------------------------
+// દિવસનું ક્લોઝિંગ - the night's cash count.
+t_group('one cash rule, whether for today or for a night last week');
+
+// the date-bounded version must agree exactly with the live figure when no
+// date is given - they are the same formula and must not be allowed to drift
+$cashNow = (float)val("SELECT
+    COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='in'),0)
+  - COALESCE((SELECT SUM(amount) FROM payments WHERE mode='cash' AND direction='out'),0)
+  - COALESCE((SELECT SUM(amount) FROM expenses WHERE mode='cash'),0)
+  - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_to_bank'),0)
+  + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='bank_to_cash'),0)
+  + COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='add'),0)
+  - COALESCE((SELECT SUM(amount) FROM money_transfers WHERE status='done' AND txn_type='cash_adjust' AND adjust_dir='reduce'),0)");
+t_eq('the open-ended figure is the old formula, to the paisa',
+     money_r(cash_in_hand_upto(null)), money_r($cashNow));
+t_eq('...and total_cash_in_hand() is that same function',
+     money_r(total_cash_in_hand()), money_r(cash_in_hand_upto(null)));
+
+$dcParty = t_party('DAYCLOSE_TEST');
+$dcToday = today();
+$dcYest  = date('Y-m-d', strtotime('-1 day'));
+$dcTomorrow = date('Y-m-d', strtotime('+1 day'));
+$beforeToday = money_r(cash_in_hand_upto($dcYest));
+// other fixtures in this suite have already put cash through today, so the
+// day's figures are compared as a DELTA, not as absolutes
+$f0 = day_close_figures($dcToday);
+
+t_payment($dcParty, 4000, 'in', 'cash');
+q("UPDATE payments SET pay_date = ? WHERE id = ?", [$dcToday, (int)val('SELECT MAX(id) FROM payments')]);
+t_payment($dcParty, 1500, 'out', 'cash');
+q("UPDATE payments SET pay_date = ? WHERE id = ?", [$dcToday, (int)val('SELECT MAX(id) FROM payments')]);
+q("INSERT INTO expenses (exp_date, category, amount, mode, location_id, created_by) VALUES (?, 'Tea & Water', 300, 'cash', ?, 1)",
+  [$dcToday, (int)val('SELECT id FROM locations ORDER BY id LIMIT 1')]);
+
+$f = day_close_figures($dcToday);
+t_eq('the cash that came in today', money_r($f['in'] - $f0['in']), 4000.0);
+t_eq('the cash that went out today', money_r($f['out'] - $f0['out']), 1500.0);
+t_eq('the cash spent today', money_r($f['expense'] - $f0['expense']), 300.0);
+// the whole point: the day has to ADD UP to the closing figure
+t_eq('opening + what moved = what should be in the drawer',
+     money_r($f['opening'] + $f['moved']), money_r($f['expected']));
+t_eq('...and that closing figure is the live cash figure',
+     money_r($f['expected']), money_r(total_cash_in_hand()));
+t_eq('...with yesterday\'s close as this morning\'s opening',
+     money_r($f['opening']), $beforeToday);
+
+// a cheque-dated-forward entry must not be counted as money in the drawer
+t_payment($dcParty, 9999, 'in', 'cash');
+q("UPDATE payments SET pay_date = ? WHERE id = ?", [$dcTomorrow, (int)val('SELECT MAX(id) FROM payments')]);
+$f2 = day_close_figures($dcToday);
+t_eq('money dated tomorrow is not in tonight\'s drawer', money_r($f2['expected']), money_r($f['expected']));
+t_ok('...though it is in the live all-time figure',
+     money_r(total_cash_in_hand()) > money_r($f2['expected']));
+
+t_group('the counting slip');
+t_eq('the notes counted are read back', cash_denom_parse('500x4,100x7'), [500 => 4, 100 => 7]);
+t_eq('rubbish in the slip is ignored, not guessed', cash_denom_parse('500x4,rubbish,x,200x0'), [500 => 4]);
+t_eq('an empty slip is simply empty', cash_denom_parse(''), []);
+$dcSrc = file_get_contents(dirname(__DIR__) . '/day_close.php');
+// a total typed into a hidden field is a claim about the count, not the count
+t_ok('the counted total is added up on the server, from the note boxes',
+     strpos($dcSrc, "\$counted += \$v * \$n;") !== false);
+t_ok('the difference is worked out against the shared rule, not a posted figure',
+     strpos($dcSrc, 'day_close_figures($date)') !== false);
+t_ok('a gap is never written into the books by itself',
+     strpos($dcSrc, "if (post('post_adjust') && abs(\$diff) > 0.009)") !== false);
+t_ok('...and when it is, it goes through the one cash-correction path',
+     strpos($dcSrc, "txn_type, amount, adjust_dir") !== false && strpos($dcSrc, "'cash_adjust'") !== false);
+t_ok('a future date cannot be closed', strpos($dcSrc, "if (\$date > today())") !== false);
+t_ok('a locked period cannot be closed', strpos($dcSrc, 'is_period_locked($date)') !== false);
+
+// ---------------------------------------------------------------------------
+// Found while running Migrate: it had been reporting "1 failed" for a long
+// time. v3 re-set item_serials.status to a list that did not include
+// 'adjusted_out', which v28 had added - and migrations re-run in order every
+// single time. Narrowing an ENUM does not fail, it TRUNCATES, so on a server
+// that does not report it every adjusted-out serial was left holding the
+// empty string: in no status at all, offered by no screen, explained by
+// nothing.
+t_group('a migration can never narrow away a status the code writes');
+$serialStatuses = ['in_stock', 'with_staff', 'sold', 'claim', 'returned_supplier', 'replaced', 'adjusted_out'];
+foreach (glob(dirname(__DIR__) . '/install/*.sql') as $sqlFile) {
+    $sql = file_get_contents($sqlFile);
+    if (!preg_match_all('/item_serials[^;]*?status ENUM\(([^)]*)\)/i', $sql, $m)) continue;
+    foreach ($m[1] as $list) {
+        $missing = [];
+        foreach ($serialStatuses as $st) if (strpos($list, "'" . $st . "'") === false) $missing[] = $st;
+        t_eq(basename($sqlFile) . ' keeps every serial status the code writes', implode(', ', $missing), '');
+    }
+}
+// and the rows that already lost it are put back
+$v67 = file_get_contents(dirname(__DIR__) . '/install/upgrade_v67.sql');
+t_ok('migration v67 restores the wiped statuses',
+     strpos($v67, "UPDATE item_serials SET status = 'adjusted_out' WHERE status = ''") !== false);
+t_eq('no serial is left in no status at all',
+     (int)val("SELECT COUNT(*) FROM item_serials WHERE status = ''"), 0);
