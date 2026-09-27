@@ -228,25 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             adjust_stock($r['item_id'], $rloc, -($r['qty'] + $r['free']), 'sale', $sale_id, $invoice_no);
 
             foreach ($serials as $sn) {
-                $expiry = $item['warranty_months'] > 0
-                    ? date('Y-m-d', strtotime(post('sale_date', today()) . ' +' . $item['warranty_months'] . ' months'))
-                    : null;
-                // Same tolerant rule as bill-edit: an in-stock serial gets sold;
-                // an unknown serial is CREATED as sold (advance billing - the
-                // vendor's bill arrives days later, and the purchase entry will
-                // reconcile it); only a serial already sold on ANOTHER bill is
-                // refused.
-                $srow = row('SELECT id, status, sale_id FROM item_serials WHERE item_id=? AND serial_no=?', [$r['item_id'], $sn]);
-                if ($srow) {
-                    if ($srow['status'] !== 'in_stock') {
-                        throw new Exception("Serial $sn has already been sold/used on another bill.");
-                    }
-                    q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL, warranty_expiry=? WHERE id=?",
-                      [$sale_id, $expiry, $srow['id']]);
-                } else {
-                    q("INSERT INTO item_serials (item_id, serial_no, status, sale_id, location_id, warranty_expiry, warranty_months)
-                       VALUES (?,?,'sold',?,NULL,?,?)", [$r['item_id'], $sn, $sale_id, $expiry, (int)$item['warranty_months']]);
-                }
+                serial_sell($r['item_id'], $sn, $sale_id, post('sale_date', today()), (int)$item['warranty_months']);
             }
         }
         // post initial payment to the party ledger (and to cash/bank books -
@@ -586,37 +568,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
             adjust_stock($r['item_id'], $rloc, -($r['qty'] + $r['free']), 'sale_edit', $sid, $sale['invoice_no']);
 
             foreach ($serials as $sn) {
-                $expiry = $item['warranty_months'] > 0
-                    ? date('Y-m-d', strtotime($sale_date . ' +' . $item['warranty_months'] . ' months'))
-                    : null;
-                // Re-attach the serial to this bill. We already reversed this
-                // bill's own serials to in_stock above, so normally it's back
-                // in stock now. Be tolerant so a price-only edit never fails on
-                // serials: accept a serial that's in stock OR already sold to
-                // THIS same bill (regardless of which godown), and only reject
-                // one that has genuinely moved on (sold on another bill /
-                // returned / warranty). The old code additionally required an
-                // exact location match, which wrongly errored ("Serial X is not
-                // available in stock") whenever the posted godown didn't line up
-                // with where the serial was reversed to.
-                $srow = row("SELECT id, status, sale_id FROM item_serials WHERE item_id=? AND serial_no=?", [$r['item_id'], $sn]);
-                if ($srow) {
-                    $onThisBill = ($srow['status'] === 'sold' && (int)$srow['sale_id'] === $sid);
-                    if ($srow['status'] !== 'in_stock' && !$onThisBill) {
-                        throw new Exception("Serial $sn has already been sold or returned on another bill, so it can't be added here.");
-                    }
-                    q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL, warranty_expiry=? WHERE id=?",
-                      [$sid, $expiry, $srow['id']]);
-                } else {
-                    // The bill references this serial but its stock row is gone
-                    // (e.g. the purchase that created it was later deleted/edited).
-                    // Reconcile by recreating the record, marked sold to this
-                    // bill, so editing the bill never dead-ends on missing serial
-                    // bookkeeping - the physical unit was, after all, sold here.
-                    q("INSERT INTO item_serials (item_id, serial_no, status, sale_id, location_id, warranty_expiry, warranty_months)
-                       VALUES (?,?,'sold',?,NULL,?,?)",
-                      [$r['item_id'], $sn, $sid, $expiry, (int)$item['warranty_months']]);
-                }
+                serial_sell($r['item_id'], $sn, $sid, $sale_date, (int)$item['warranty_months']);
             }
         }
 

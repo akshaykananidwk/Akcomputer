@@ -118,16 +118,99 @@ if ($r === 'sync' && $method === 'GET') {
                            " . party_balance_expr('p') . " balance
                     FROM parties p WHERE 1=1 $partyW ORDER BY p.id LIMIT 5000", $partyA);
 
+    // Serial numbers of what is actually on the shelf. A camera or a DVR is
+    // sold BY its serial, so without these the app can take the order but
+    // cannot finish the bill - which is exactly the gap the counter noticed.
+    // Only in_stock ones: a sold serial is of no use to a bill being written.
+    $serials = api_can('stock.view')
+        ? all("SELECT s.id, s.item_id, s.serial_no, s.location_id
+               FROM item_serials s WHERE s.status = 'in_stock' ORDER BY s.item_id, s.id LIMIT 20000")
+        : [];
+
+    // Where the stock is, so the phone can answer "is it in the shop or at
+    // the godown?" standing in front of the customer, with no signal.
+    $stock = api_can('stock.view')
+        ? all('SELECT item_id, location_id, qty FROM stock WHERE qty <> 0 ORDER BY item_id LIMIT 20000')
+        : [];
+
+    // A window of the shop's OWN books - not just this phone's bills - so a
+    // party statement, an outstanding list and the day's figures can all be
+    // worked out with no signal. Always the whole window, never incremental:
+    // a bill's paid amount changes when money comes in later, and a cursor
+    // would quietly miss that.
+    $days = min(max((int)get('days', 90), 7), 400);
+    $from = date('Y-m-d', strtotime("-$days days"));
+    list($scope, $scopeArgs) = api_own_scope($u, 'sales');
+    $sales = api_can('sales.view') ? all(
+        "SELECT id, invoice_no, sale_date, party_id, customer_name, customer_mobile, total, paid,
+                status, is_cancelled, payment_mode, client_uuid
+         FROM sales WHERE sale_date >= ? $scope ORDER BY id DESC LIMIT 5000",
+        array_merge([$from], $scopeArgs)) : [];
+    $pays = api_can('payments.view') ? all(
+        "SELECT id, party_id, direction, amount, mode, pay_date, notes, ref_type, ref_id, client_uuid
+         FROM payments WHERE pay_date >= ? ORDER BY id DESC LIMIT 5000", [$from]) : [];
+
     api_json([
         'server_time' => date('c'),
         'full' => $full,
         'items' => $items,
         'parties' => $parties,
+        'serials' => $serials,
+        'stock' => $stock,
+        'sales' => $sales,
+        'payments' => $pays,
+        'days' => $days,
         'locations' => all('SELECT id, name FROM locations WHERE is_active = 1 ORDER BY id'),
         'companies' => all('SELECT id, name, invoice_prefix, is_gst FROM companies ORDER BY id'),
         'payment_modes' => all("SELECT code, name, type FROM payment_methods WHERE is_active = 1 ORDER BY sort_order, id"),
         'shop' => setting('app_name', 'AK Computer'),
+        'wa_share' => (int)!!setting('wa_enabled', 1),
     ]);
+}
+
+// ---------------------------------------------------------------------------
+// EVERY SCREEN THE SHOP HAS, as the app's "બધું" list.
+//
+// Built from nav_menu() - the same definition the website's own sidebar is
+// drawn from - and filtered by what this token is allowed to see. A screen
+// added to the website turns up in the app by itself; there is no second
+// list to keep in step, which is the only way eighty screens can be in two
+// places without one of them going stale.
+// ---------------------------------------------------------------------------
+if ($r === 'menu' && $method === 'GET') {
+    // the screens the app does ITSELF, offline. Everything else opens the
+    // real website page inside the app.
+    $native = ['sales.php?action=new' => 'newbill', 'sales.php' => 'bills',
+               'payments.php' => 'collect', 'my_collections.php' => 'collect',
+               'parties.php' => 'parties', 'items.php' => 'items', 'stock.php' => 'stock'];
+    $out = [];
+    foreach (nav_menu() as $e) {
+        if ($e[0] === 'link') {
+            if ($e[4] !== null && !api_can($e[4])) continue;
+            $out[] = ['label' => $e[3], 'items' => [
+                ['label' => $e[3], 'href' => $e[1], 'native' => $native[$e[1]] ?? null]]];
+            continue;
+        }
+        $items = [];
+        foreach ($e[4] as $it) {
+            if ($it[2] !== null && $it[2] !== '*' && !api_can($it[2])) continue;
+            if ($it[2] === '*' && !in_array('*', $u['perms'], true)) continue;
+            $items[] = ['label' => $it[1], 'href' => $it[0], 'native' => $native[$it[0]] ?? null];
+            if (!empty($it[3]) && (empty($it[4]) || api_can($it[4]))) {
+                $items[] = ['label' => '+ ' . $it[1], 'href' => $it[3], 'native' => $native[$it[3]] ?? null];
+            }
+        }
+        if ($items) $out[] = ['label' => $e[3], 'items' => $items];
+    }
+    api_json(['groups' => $out]);
+}
+
+// A one-time key that opens a website page already logged in. The app asks
+// for it the moment the owner taps a screen it does not do itself.
+if ($r === 'weblink' && $method === 'GET') {
+    $nonce = app_link_make($u['id'], get('to', 'index.php'), 'app');
+    if ($nonce === '') api_json(['error' => 'એ પાનું નથી'], 422);
+    api_json(['url' => 'login.php?app=' . $nonce, 'ttl' => APP_LINK_TTL]);
 }
 
 if ($r === 'sales') {
@@ -180,7 +263,15 @@ if ($r === 'sales') {
             if ($qty <= 0) api_json(['error' => 'qty must be > 0'], 422);
             $lineTotal = $qty * $price;
             $subtotal += $lineTotal;
-            $lineRows[] = ['item_id' => $item['id'], 'qty' => $qty, 'price' => $price, 'total' => $lineTotal];
+            // serials come up from the phone as an array of strings; blanks
+            // dropped here so a half-filled box never becomes a serial ''
+            $serials = array_values(array_filter(array_map(
+                fn($s) => trim((string)$s), (array)($it['serials'] ?? [])), fn($s) => $s !== ''));
+            if ($item['serial_tracked'] && count($serials) > $qty) {
+                api_json(['error' => 'બહુ બધા સિરિયલ નંબર: ' . $item['name']], 422);
+            }
+            $lineRows[] = ['item_id' => $item['id'], 'qty' => $qty, 'price' => $price, 'total' => $lineTotal,
+                           'serials' => $serials, 'warranty_months' => (int)$item['warranty_months']];
         }
         $total = $subtotal;
         $pdo = db();
@@ -206,6 +297,12 @@ if ($r === 'sales') {
                 q('INSERT INTO sale_items (sale_id, item_id, qty, price, total) VALUES (?,?,?,?,?)',
                   [$sale_id, $lr['item_id'], $lr['qty'], $lr['price'], $lr['total']]);
                 adjust_stock($lr['item_id'], $loc, -$lr['qty'], 'sale', $sale_id);
+                // one rule, three callers: the billing screen, bill-edit and
+                // this. A serial already on somebody else's bill is refused
+                // here exactly as it is at the counter.
+                foreach ($lr['serials'] as $sn) {
+                    serial_sell($lr['item_id'], $sn, $sale_id, $saleDate, $lr['warranty_months']);
+                }
             }
             // money received has to reach the cash book, or "Cash in Hand" is
             // wrong from the moment the phone syncs. The website's billing

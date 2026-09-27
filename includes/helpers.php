@@ -1123,6 +1123,50 @@ function stock_home_location($prefer = 0, $itemId = 0) {
  *  Returns 'added' (there was no such serial), 'already' (nothing to do) or
  *  'restored' (a row existed in another state and was brought back), with the
  *  state it came from. */
+/** The other direction: a serial LEAVES the shelf onto a bill.
+ *
+ *  Three callers now - the billing screen, bill-edit, and the phone app
+ *  through api.php - and they must agree exactly, because this decides
+ *  whether a customer can be handed a camera that is already on somebody
+ *  else's invoice. The rule, in one place:
+ *
+ *    in stock            -> sold to this bill
+ *    already on THIS     -> sold to this bill (a price-only edit re-posts
+ *      bill                 its own serials and must not fail on them)
+ *    not known at all    -> created, sold to this bill. Advance billing is
+ *                           normal here: the goods are handed over today and
+ *                           the vendor's bill turns up next week. The
+ *                           purchase entry reconciles it later.
+ *    sold/returned/      -> refused. This is the one that matters.
+ *      claimed elsewhere
+ *
+ *  Warranty runs from the date of the BILL, not from today, so a backdated
+ *  bill does not quietly give the customer extra cover.
+ */
+function serial_sell($itemId, $serialNo, $saleId, $saleDate, $warrantyMonths = 0) {
+    $itemId = (int)$itemId;
+    $serialNo = trim((string)$serialNo);
+    $saleId = (int)$saleId;
+    if ($itemId <= 0 || $serialNo === '') return 'skipped';
+    $warrantyMonths = (int)$warrantyMonths;
+    $expiry = $warrantyMonths > 0
+        ? date('Y-m-d', strtotime(($saleDate ?: today()) . ' +' . $warrantyMonths . ' months'))
+        : null;
+    $srow = row('SELECT id, status, sale_id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$itemId, $serialNo]);
+    if ($srow) {
+        $onThisBill = ($srow['status'] === 'sold' && (int)$srow['sale_id'] === $saleId);
+        if ($srow['status'] !== 'in_stock' && !$onThisBill) {
+            throw new Exception("Serial $serialNo has already been sold or returned on another bill, so it can't be added here.");
+        }
+        q("UPDATE item_serials SET status='sold', sale_id=?, location_id=NULL, warranty_expiry=? WHERE id=?",
+          [$saleId, $expiry, $srow['id']]);
+        return $onThisBill ? 'rebound' : 'sold';
+    }
+    q("INSERT INTO item_serials (item_id, serial_no, status, sale_id, location_id, warranty_expiry, warranty_months)
+       VALUES (?,?,'sold',?,NULL,?,?)", [$itemId, $serialNo, $saleId, $expiry, $warrantyMonths]);
+    return 'created';
+}
+
 function serial_put_in_stock($itemId, $serialNo, $locId, $warrantyMonths = null) {
     $itemId = (int)$itemId;
     $serialNo = trim((string)$serialNo);

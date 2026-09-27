@@ -1,5 +1,20 @@
 <?php
 require_once __DIR__ . '/includes/init.php';
+
+// Arriving from inside the phone app, carrying a one-time key instead of a
+// password. The key does the whole job: it names the user and the page, it
+// works once, and it dies two minutes after it was made. A wrong, spent or
+// stale key simply falls through to the ordinary login form below - it is
+// never an invitation to guess again.
+if (($_GET['app'] ?? '') !== '') {
+    $handover = app_link_consume($_GET['app']);
+    if ($handover) {
+        establish_session($handover['user_id']);
+        log_activity('app_open', 'Opened ' . $handover['target'] . ' from the phone app');
+        redirect($handover['target']);
+    }
+}
+
 if (current_user()) redirect('index.php');
 
 $err = '';

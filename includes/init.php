@@ -64,3 +64,5 @@ function base_url($path = '') {
     if (!preg_match('#^https?://#i', $base)) $base = 'https://' . $base;
     return rtrim($base, '/') . ($path ? '/' . ltrim($path, '/') : '');
 }
+require_once __DIR__ . '/menu.php';      // the one menu the website and the app both draw
+require_once __DIR__ . '/app_link.php';     // one-time handover from the app's token to a web session

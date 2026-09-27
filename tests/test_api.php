@@ -178,3 +178,126 @@ if ($resp === false || $code === 0) {
     curl_close($ch);
     t_ok('a wrong password gets no token', in_array($code, [401, 429], true) && strpos($body, '"token"') === false, "HTTP $code");
 }
+
+t_group('App API — the menu is the website\'s own menu');
+
+// The whole point: ONE definition. If the app ever grows a second hard-coded
+// list, a screen added to the website silently never reaches the phone.
+t_ok('the menu lives in its own file, not inside a page', is_file(__DIR__ . '/../includes/menu.php'));
+$hdr = file_get_contents(__DIR__ . '/../includes/header.php');
+t_ok('the website draws its sidebar from it', strpos($hdr, 'nav_menu()') !== false);
+t_ok('...and no longer keeps its own copy', strpos($hdr, "['group', 'items'") === false);
+t_ok('the app is served the same one', strpos($src, 'nav_menu()') !== false);
+
+$menu = nav_menu();
+t_ok('every entry is a link or a group', count(array_filter($menu, fn($e) => in_array($e[0], ['link', 'group'], true))) === count($menu));
+$screens = [];
+foreach ($menu as $e) {
+    if ($e[0] === 'link') { $screens[] = $e[1]; continue; }
+    foreach ($e[4] as $it) { $screens[] = $it[0]; if ($it[3]) $screens[] = $it[3]; }
+}
+t_ok('the menu really does cover the shop', count($screens) > 60, count($screens) . ' screens');
+// a menu entry pointing at a page that does not exist is a dead end in both
+// the sidebar and the app
+$missing = [];
+foreach ($screens as $h) {
+    $file = preg_replace('/\?.*$/', '', $h);
+    if (!is_file(__DIR__ . '/../' . $file)) $missing[] = $h;
+}
+t_ok('every screen in the menu exists', !$missing, implode(', ', $missing));
+
+t_group('App API — opening a website screen from the app');
+
+// A one-time key that turns the app's token into a web session. Everything
+// here is about what it must REFUSE.
+$uid = (int)val('SELECT id FROM users WHERE is_active = 1 ORDER BY id LIMIT 1');
+
+foreach ([
+    'https://evil.example/x'      => 'another site',
+    '//evil.example/x'            => 'a protocol-relative address',
+    'javascript:alert(1)'         => 'a javascript: url',
+    '../../etc/passwd'            => 'a path climbing out',
+    'index.php\\..\\x'            => 'a backslash',
+    'no_such_page_at_all.php'     => 'a page that does not exist',
+    'index.html'                  => 'a non-page file',
+] as $bad => $why) {
+    t_ok("a link is refused for $why", app_link_target_ok($bad) === '', var_export($bad, true));
+}
+t_ok('an ordinary screen is accepted', app_link_target_ok('reports.php?r=profit_loss') === 'reports.php?r=profit_loss');
+t_ok('an empty target means the dashboard', app_link_target_ok('') === 'index.php');
+
+$nonce = app_link_make($uid, 'reports.php', 'test');
+t_ok('a key is issued', strlen($nonce) === 64);
+t_ok('the key itself is NOT stored', !val('SELECT id FROM app_web_links WHERE nonce_hash = ?', [$nonce]));
+t_ok('only its hash is', (bool)val('SELECT id FROM app_web_links WHERE nonce_hash = ?', [hash('sha256', $nonce)]));
+
+$first = app_link_consume($nonce);
+t_ok('spending it logs the right person in', $first && $first['user_id'] === $uid, json_encode($first));
+t_ok('...at the right page', $first && $first['target'] === 'reports.php');
+// THE one that matters: a key in a log or a history must be worthless
+t_ok('spending it a SECOND time gets nothing', app_link_consume($nonce) === null);
+
+$stale = app_link_make($uid, 'index.php', 'test');
+q("UPDATE app_web_links SET expires_at = DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE nonce_hash = ?", [hash('sha256', $stale)]);
+t_ok('an expired key gets nothing', app_link_consume($stale) === null);
+t_ok('a made-up key gets nothing', app_link_consume(str_repeat('a', 64)) === null);
+t_ok('a malformed key gets nothing', app_link_consume('../../x') === null);
+t_ok('a key for a switched-off user gets nothing', (function () {
+    q("INSERT INTO users (name, username, mobile, password, role_id, location_id, is_active)
+       VALUES ('T', ?, '9000000000', ?, (SELECT id FROM roles ORDER BY id LIMIT 1), (SELECT id FROM locations ORDER BY id LIMIT 1), 1)",
+      ['tmp_' . bin2hex(random_bytes(4)), password_hash('x', PASSWORD_DEFAULT)]);
+    $tid = insert_id();
+    $n = app_link_make($tid, 'index.php', 'test');
+    q('UPDATE users SET is_active = 0 WHERE id = ?', [$tid]);
+    return app_link_consume($n) === null;
+})());
+
+$loginSrc = file_get_contents(__DIR__ . '/../login.php');
+t_ok('login.php spends the key through the one helper', strpos($loginSrc, 'app_link_consume(') !== false);
+t_ok('...and a bad key just shows the ordinary login form', strpos($loginSrc, 'if ($handover)') !== false);
+
+t_group('App API — what the phone needs to work a full day offline');
+
+t_ok('serial numbers on the shelf are sent down', strpos($sync, "status = 'in_stock'") !== false);
+t_ok('where the stock is, is sent down', strpos($sync, 'FROM stock WHERE qty <> 0') !== false);
+t_ok('the shop\'s own recent bills are sent down, not just this phone\'s', strpos($sync, 'FROM sales WHERE sale_date >= ?') !== false);
+t_ok('...and its payments, so a statement works with no signal', strpos($sync, 'FROM payments WHERE pay_date >= ?') !== false);
+t_ok('bills are re-sent whole, never by cursor (a paid amount changes later)',
+     strpos($sync, 'sale_date >= ?') !== false && strpos($sync, 'sales.updated_at') === false);
+t_ok('a staff member only gets their own bills if that is all they may see', strpos($sync, 'api_own_scope') !== false);
+t_ok('serials are withheld from a phone not allowed to see stock', strpos($sync, "api_can('stock.view')") !== false);
+
+t_group('One rule: a serial leaves the shelf the same way everywhere');
+
+$salesSrc = file_get_contents(__DIR__ . '/../sales.php');
+t_ok('the billing screen no longer works it out by hand',
+     substr_count($salesSrc, "UPDATE item_serials SET status='sold'") === 0, 'hand-written copies left');
+t_ok('the billing screen calls the rule', substr_count($salesSrc, 'serial_sell(') === 2, 'new sale + bill edit');
+t_ok('the app calls the same rule', strpos($src, 'serial_sell(') !== false);
+
+// and the rule itself behaves
+$si = t_item(3);
+q('UPDATE items SET serial_tracked = 1, warranty_months = 12 WHERE id = ?', [$si]);
+$sale1 = t_sale(t_party(), 500);
+$sn = 'SNTEST' . bin2hex(random_bytes(3));
+t_eq('an unknown serial is created as sold (advance billing)', serial_sell($si, $sn, $sale1, '2026-01-15', 12), 'created');
+$s = row('SELECT status, sale_id, warranty_expiry, location_id FROM item_serials WHERE item_id = ? AND serial_no = ?', [$si, $sn]);
+t_eq('...marked sold', $s['status'], 'sold');
+t_eq('...to that bill', (int)$s['sale_id'], $sale1);
+t_ok('...off every shelf', $s['location_id'] === null);
+t_eq('warranty runs from the BILL date, not today', $s['warranty_expiry'], '2027-01-15');
+
+$sale2 = t_sale(t_party(), 500);
+$threw = false;
+try { serial_sell($si, $sn, $sale2, today(), 12); } catch (Throwable $e) { $threw = true; }
+t_ok('THE important one: the same serial cannot be sold on a second bill', $threw);
+
+t_eq('re-posting the same bill\'s own serial is fine (a price-only edit)',
+     serial_sell($si, $sn, $sale1, today(), 12), 'rebound');
+
+$sn2 = 'SNTEST' . bin2hex(random_bytes(3));
+serial_put_in_stock($si, $sn2, 0, 12);
+t_eq('a serial sitting in stock is sold normally', serial_sell($si, $sn2, $sale1, today(), 0), 'sold');
+t_ok('no warranty months means no expiry date',
+     val('SELECT warranty_expiry FROM item_serials WHERE item_id = ? AND serial_no = ?', [$si, $sn2]) === null);
+t_eq('a blank serial is ignored, not stored', serial_sell($si, '   ', $sale1, today(), 0), 'skipped');
