@@ -1,0 +1,10 @@
+# Build output. www_assets is a copy of www/ that gradle makes on every
+# build (see app/build.gradle) - never edit it, never commit it.
+build/
+www_assets/
+.gradle/
+local.properties
+
+# The released apk IS committed (see README) so the shop can download it
+# straight from the website; only stray build copies are ignored.
+app/build/outputs/apk/**/*.apk

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#1a56db">
+<title>AK Computer</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<div id="netbar" class="netbar" hidden></div>
+
+<header id="top" class="top" hidden>
+  <button class="icon" id="backBtn" hidden>←</button>
+  <div class="ttl" id="title">AK Computer</div>
+  <button class="icon" id="syncBtn" title="સિંક">⟳</button>
+</header>
+
+<main id="main"></main>
+
+<nav id="tabs" class="tabs" hidden>
+  <button data-go="home"><span>🏠</span>ઘર</button>
+  <button data-go="newbill"><span>🧾</span>નવું બિલ</button>
+  <button data-go="bills"><span>📄</span>બિલ</button>
+  <button data-go="collect"><span>₹</span>ઉઘરાણી</button>
+  <button data-go="sync"><span>⟳</span>સિંક</button>
+</nav>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="db.js"></script>
+<script src="sync.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
