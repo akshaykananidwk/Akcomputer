@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['forgot_user'] = $user['id'];
                     $step = 'reset';
                 } else {
-                    $err = 'OTP WhatsApp પર મોકલી શકાયો નથી. (' . whatsapp_last_error() . ') થોડી વારે ફરી પ્રયત્ન કરો અથવા એડમિનનો સંપર્ક કરો.';
+                    $err = 'The OTP could not be sent on WhatsApp. (' . whatsapp_last_error() . ') try again shortly, or contact the admin.';
                 }
             } else {
                 $err = 'User not found or no WhatsApp mobile registered. Contact admin.';

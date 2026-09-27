@@ -201,19 +201,19 @@ function cust_segment_rows($extraWhere = '') {
         $segs = [];
 
         if ($x['created_at'] && days_between_dates(substr($x['created_at'], 0, 10), $t) <= $r['new_days'])
-            $segs['new'] = 'ખાતું ' . $r['new_days'] . ' દિવસમાં ખૂલ્યું છે';
+            $segs['new'] = 'Account ' . $r['new_days'] . ' opened within days';
 
         if ($last !== null) {
             if ((float)$x['year_value'] >= $r['vip_spend'] && $idle <= $r['inactive_days'])
-                $segs['vip'] = 'છેલ્લા વર્ષમાં ₹' . money($x['year_value']) . ' ની ખરીદી';
+                $segs['vip'] = 'Rs in the last year' . money($x['year_value']) . ' bought';
             elseif ((float)$x['year_value'] >= $r['high_value_spend'])
-                $segs['high_value'] = 'છેલ્લા વર્ષમાં ₹' . money($x['year_value']) . ' ની ખરીદી';
+                $segs['high_value'] = 'Rs in the last year' . money($x['year_value']) . ' bought';
 
             if ((int)$x['year_bills'] >= $r['regular_bills'])
-                $segs['regular'] = 'છેલ્લા વર્ષમાં ' . (int)$x['year_bills'] . ' બિલ';
+                $segs['regular'] = 'in the last year ' . (int)$x['year_bills'] . ' Bill';
 
             if ($idle >= $r['inactive_days']) {
-                $segs['inactive'] = $idle . ' દિવસથી કંઈ ખરીદ્યું નથી';
+                $segs['inactive'] = $idle . ' days since anything was bought';
             } else {
                 // At Risk is judged against the customer's OWN usual gap first,
                 // and only falls back to a fixed number when they have no
@@ -221,9 +221,9 @@ function cust_segment_rows($extraWhere = '') {
                 // at 70; somebody who buys twice a year is not.
                 $g = $gaps[$id] ?? null;
                 if ($g && $idle > $g * $r['at_risk_factor'])
-                    $segs['at_risk'] = 'સામાન્ય રીતે દર ' . $g . ' દિવસે ખરીદે છે, પણ ' . $idle . ' દિવસથી નથી આવ્યા';
+                    $segs['at_risk'] = 'usually every ' . $g . ' days they buy, but ' . $idle . ' days since they came';
                 elseif (!$g && $idle >= $r['at_risk_days'])
-                    $segs['at_risk'] = $idle . ' દિવસથી ખરીદી નથી';
+                    $segs['at_risk'] = $idle . ' days without a purchase';
             }
         }
 
@@ -234,7 +234,7 @@ function cust_segment_rows($extraWhere = '') {
         // sales assistant exactly how much every customer is behind on.
         if ($owed > MONEY_EPS && can('payments.view')) {
             $risk = cust_credit_risk_level($id, $owed, $x);
-            if ($risk['overdue'] > MONEY_EPS) $segs['overdue'] = '₹' . money($risk['overdue']) . ' ની મુદત વીતી ગઈ છે';
+            if ($risk['overdue'] > MONEY_EPS) $segs['overdue'] = '₹' . money($risk['overdue']) . ' is past due';
             if ($risk['level'] === 'high') $segs['credit_risk'] = $risk['why'];
         }
 
@@ -342,7 +342,7 @@ function cust_credit_risk_level($partyId, $bal, array $agg = []) {
     $amt = $due['overdue'];
     if ($days >= 60 || ($days >= 30 && $amt >= 25000)) {
         return ['level' => 'high', 'overdue' => $amt,
-                'why' => '₹' . money($amt) . ' ' . $days . ' દિવસથી બાકી છે'];
+                'why' => '₹' . money($amt) . ' ' . $days . ' days outstanding'];
     }
     return ['level' => $days >= 15 ? 'medium' : 'low', 'overdue' => $amt, 'why' => ''];
 }
@@ -359,9 +359,9 @@ function cust_opportunities($partyId) {
     foreach (all("SELECT * FROM amc_contracts WHERE party_id = ? AND status = 'active'
                   AND end_date IS NOT NULL AND end_date <= DATE_ADD(CURDATE(), INTERVAL 45 DAY)
                   ORDER BY end_date LIMIT 3", [$partyId]) as $a) {
-        $ops[] = ['kind' => 'amc', 'icon' => '🔁', 'title' => 'AMC રિન્યુ કરાવો',
-                  'why' => e($a['title']) . ' — ' . dmy($a['end_date']) . ' ના પૂરો થાય છે',
-                  'link' => 'amc.php', 'cta' => 'AMC ખોલો'];
+        $ops[] = ['kind' => 'amc', 'icon' => '🔁', 'title' => 'Renew the AMC',
+                  'why' => e($a['title']) . ' — ' . dmy($a['end_date']) . ' ends on',
+                  'link' => 'amc.php', 'cta' => 'Open AMC'];
     }
     // warranty ending soon on something they bought
     foreach (all("SELECT i.name, s.sale_date, i.warranty_months
@@ -369,16 +369,16 @@ function cust_opportunities($partyId) {
                   WHERE s.party_id = ? AND s.is_cancelled = 0 AND i.warranty_months > 0
                     AND DATE_ADD(s.sale_date, INTERVAL i.warranty_months MONTH) BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 45 DAY)
                   ORDER BY s.sale_date DESC LIMIT 3", [$partyId]) as $w) {
-        $ops[] = ['kind' => 'warranty', 'icon' => '🛡️', 'title' => 'વોરંટી પૂરી થવામાં છે',
-                  'why' => e($w['name']) . ' ની વોરંટી પૂરી થાય છે',
-                  'link' => 'warranty.php', 'cta' => 'જુઓ'];
+        $ops[] = ['kind' => 'warranty', 'icon' => '🛡️', 'title' => 'Warranty is about to end',
+                  'why' => e($w['name']) . ' warranty ends',
+                  'link' => 'warranty.php', 'cta' => 'See'];
     }
     // repeat repair customer -> maintenance
     $rep = (int)val("SELECT COUNT(*) FROM repairs WHERE party_id = ? AND received_date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)", [$partyId]);
     if ($rep >= 2) {
-        $ops[] = ['kind' => 'service', 'icon' => '🛠️', 'title' => 'મેન્ટેનન્સ પ્લાન સૂચવો',
-                  'why' => 'છેલ્લા વર્ષમાં ' . $rep . ' વાર રિપેર કરાવ્યું છે',
-                  'link' => 'amc.php?action=new&party_id=' . (int)$partyId, 'cta' => 'AMC આપો'];
+        $ops[] = ['kind' => 'service', 'icon' => '🛠️', 'title' => 'Suggest a maintenance plan',
+                  'why' => 'in the last year ' . $rep . ' times repaired',
+                  'link' => 'amc.php?action=new&party_id=' . (int)$partyId, 'cta' => 'Offer an AMC'];
     }
     // bought a big-ticket item, never bought accessories from the same category
     $fav = row("SELECT c.id, c.name, MAX(s.sale_date) last_buy
@@ -387,16 +387,16 @@ function cust_opportunities($partyId) {
                 WHERE s.party_id = ? AND s.is_cancelled = 0 AND c.id IS NOT NULL
                 GROUP BY c.id ORDER BY SUM(si.total) DESC LIMIT 1", [$partyId]);
     if ($fav) {
-        $ops[] = ['kind' => 'cross_sell', 'icon' => '🧩', 'title' => e($fav['name']) . ' સાથેની વસ્તુઓ બતાવો',
-                  'why' => 'સૌથી વધુ ખરીદી આ કેટેગરીમાં કરી છે (છેલ્લે ' . dmy($fav['last_buy']) . ')',
-                  'link' => 'items.php?category_id=' . (int)$fav['id'], 'cta' => 'આઇટમ જુઓ'];
+        $ops[] = ['kind' => 'cross_sell', 'icon' => '🧩', 'title' => e($fav['name']) . ' Show items with',
+                  'why' => 'buys most in this category (last ' . dmy($fav['last_buy']) . ')',
+                  'link' => 'items.php?category_id=' . (int)$fav['id'], 'cta' => 'See the item'];
     }
     // gone quiet
     $seg = cust_segments_for($partyId);
     if (isset($seg['at_risk']) || isset($seg['inactive'])) {
-        $ops[] = ['kind' => 'reactivation', 'icon' => '📣', 'title' => 'ફરી સંપર્ક કરો',
+        $ops[] = ['kind' => 'reactivation', 'icon' => '📣', 'title' => 'Get back in touch',
                   'why' => $seg['at_risk'] ?? $seg['inactive'],
-                  'link' => 'customer.php?id=' . (int)$partyId . '&do=draft_reactivation', 'cta' => 'મેસેજ તૈયાર કરો'];
+                  'link' => 'customer.php?id=' . (int)$partyId . '&do=draft_reactivation', 'cta' => 'Prepare the message'];
     }
     return $ops;
 }
@@ -413,10 +413,10 @@ function cust_reactivation_draft($partyId) {
                 GROUP BY c.id ORDER BY SUM(si.total) DESC LIMIT 1", [$partyId]);
     $shop = setting('app_name', 'AK Computer');
     $last = val("SELECT MAX(sale_date) FROM sales WHERE party_id = ? AND is_cancelled = 0", [$partyId]);
-    $msg = 'નમસ્તે ' . $p['name'] . ",\n\n";
-    if ($last) $msg .= 'ઘણા સમયથી (' . dmy($last) . ' પછી) આપની ખરીદી થઈ નથી.' . "\n";
-    if ($fav) $msg .= 'આપને ગમતી ' . $fav['name'] . ' માં નવો સ્ટોક આવેલો છે.' . "\n";
-    $msg .= "\nએક વાર દુકાને આંટો મારજો.\n\n" . $shop;
+    $msg = 'Hello ' . $p['name'] . ",\n\n";
+    if ($last) $msg .= 'for a long time (' . dmy($last) . ' ), you have not bought anything.' . "\n";
+    if ($fav) $msg .= 'you may like ' . $fav['name'] . ' new stock has come in.' . "\n";
+    $msg .= "\nDo drop by the shop.\n\n" . $shop;
     return $msg;
 }
 
@@ -441,41 +441,41 @@ function coll_priority(array $c) {
     $amt = (float)$c['overdue'];
     $amtPts = min(30, $amt / max(1, $rules['big_debt']) * 30);
     $score += $amtPts;
-    if ($amt > 0) $why[] = '₹' . money($amt) . ' બાકી';
+    if ($amt > 0) $why[] = '₹' . money($amt) . ' Due';
 
     // how late (0-30), measured against what this shop calls very late
     $days = (int)$c['days'];
     $score += min(30, $days / max(1, $rules['very_late_days']) * 30);
-    if ($days > 0) $why[] = $days . ' દિવસ મોડું';
+    if ($days > 0) $why[] = $days . ' days late';
 
     // do they usually pay on time (0-20)
     $rate = $c['reliability']['rating'] ?? 'new';
     $relPts = ['poor' => 20, 'slow' => 14, 'new' => 8, 'good' => 4, 'excellent' => 0][$rate] ?? 8;
     $score += $relPts;
-    if ($relPts >= 14) $why[] = 'પહેલાં પણ મોડું ચૂકવે છે';
+    if ($relPts >= 14) $why[] = 'has paid late before too';
 
     // a broken promise is the strongest signal there is (0-15)
     if (!empty($c['broken_promises'])) {
         $score += min(15, $c['broken_promises'] * 7.5);
-        $why[] = $c['broken_promises'] . ' વાર વાયદો તૂટ્યો';
+        $why[] = $c['broken_promises'] . ' promises broken';
     }
 
     // several unpaid bills piling up (0-5)
     if (($c['bill_count'] ?? 0) > 1) {
         $score += min(5, ($c['bill_count'] - 1) * 2);
-        $why[] = (int)$c['bill_count'] . ' બિલ બાકી';
+        $why[] = (int)$c['bill_count'] . ' Bill outstanding';
     }
 
     // a valuable customer is chased sooner, but gently - this only nudges
     if (($c['year_value'] ?? 0) >= $rules['vip_spend']) {
         $score += 5;
-        $why[] = 'મોટા ગ્રાહક';
+        $why[] = 'Big customer';
     }
 
     // an open promise for a future date parks the customer until then
     if (!empty($c['promise_open']) && $c['promise_open']['due_date'] >= today()) {
         $score = max(0, $score - 25);
-        $why[] = dmy($c['promise_open']['due_date']) . ' નો વાયદો છે';
+        $why[] = dmy($c['promise_open']['due_date']) . ' is promised';
     }
 
     $score = (int)round(min(100, $score));
@@ -643,19 +643,19 @@ function coll_reliability_map(array $ids) {
 function coll_can_remind(array $c) {
     $r = cust_rules();
     $t = today();
-    if (!empty($c['opt_out']))    return ['ok' => false, 'why' => 'આ ગ્રાહકે મેસેજ ન મોકલવાનું કહ્યું છે'];
-    if (empty($c['mobile']))      return ['ok' => false, 'why' => 'મોબાઇલ નંબર નથી'];
+    if (!empty($c['opt_out']))    return ['ok' => false, 'why' => 'This customer has asked not to be messaged'];
+    if (empty($c['mobile']))      return ['ok' => false, 'why' => 'No mobile number'];
     if (!empty($c['snoozed_until']) && $c['snoozed_until'] >= $t)
-        return ['ok' => false, 'why' => dmy($c['snoozed_until']) . ' સુધી રોકી રાખ્યું છે'];
+        return ['ok' => false, 'why' => dmy($c['snoozed_until']) . ' is held until'];
     if (!empty($c['promise_open']) && $c['promise_open']['due_date'] >= $t)
-        return ['ok' => false, 'why' => dmy($c['promise_open']['due_date']) . ' નો વાયદો છે — ત્યાં સુધી રાહ જુઓ'];
+        return ['ok' => false, 'why' => dmy($c['promise_open']['due_date']) . ' promised — wait until then'];
     if (!empty($c['last_contact'])) {
         $since = (int)floor((time() - strtotime($c['last_contact'])) / 86400);
         if ($since < $r['reminder_cooldown'])
-            return ['ok' => false, 'why' => $since . ' દિવસ પહેલાં જ સંપર્ક કર્યો છે (ઓછામાં ઓછા ' . $r['reminder_cooldown'] . ' દિવસ રાહ જુઓ)'];
+            return ['ok' => false, 'why' => $since . ' were contacted only days ago (at least ' . $r['reminder_cooldown'] . ' days, wait)'];
     }
     if (($c['contacts_30d'] ?? 0) >= $r['max_reminders'])
-        return ['ok' => false, 'why' => 'આ મહિને પહેલેથી ' . $c['contacts_30d'] . ' વાર સંપર્ક થયો છે'];
+        return ['ok' => false, 'why' => 'already this month ' . $c['contacts_30d'] . ' times contacted'];
     return ['ok' => true, 'why' => ''];
 }
 
@@ -704,12 +704,12 @@ function coll_settle_promises() {
         if ($paid + MONEY_EPS >= (float)$e['amount']) {
             q("UPDATE collection_events SET status = 'done' WHERE id = ?", [$e['id']]);
             coll_log($e['party_id'], 'kept', ['amount' => $e['amount'], 'ref_id' => $e['id'], 'status' => 'done',
-                                              'note' => 'વાયદો પળાયો']);
+                                              'note' => 'Promise kept']);
             $kept++;
         } elseif ($e['due_date'] < $t) {
             q("UPDATE collection_events SET status = 'done' WHERE id = ?", [$e['id']]);
             coll_log($e['party_id'], 'broken', ['amount' => $e['amount'], 'ref_id' => $e['id'], 'status' => 'done',
-                                                'note' => dmy($e['due_date']) . ' નો વાયદો તૂટ્યો']);
+                                                'note' => dmy($e['due_date']) . ' promise was broken']);
             $broken++;
         }
     }
@@ -749,13 +749,13 @@ function coll_summary() {
 function cust_favourites($partyId, $limit = 5) {
     $p = [(int)$partyId];
     return [
-        'categories' => all("SELECT COALESCE(c.name,'(કોઈ કેટેગરી નહીં)') name, c.id,
+        'categories' => all("SELECT COALESCE(c.name,'(no category)') name, c.id,
                                     SUM(si.total) amount, SUM(si.qty) qty
                              FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
                              LEFT JOIN categories c ON c.id = i.category_id
                              WHERE s.party_id = ? AND s.is_cancelled = 0
                              GROUP BY i.category_id ORDER BY amount DESC LIMIT $limit", $p),
-        'brands' => all("SELECT COALESCE(NULLIF(i.brand,''),'(કોઈ બ્રાન્ડ નહીં)') name, SUM(si.total) amount
+        'brands' => all("SELECT COALESCE(NULLIF(i.brand,''),'(no brand)') name, SUM(si.total) amount
                          FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
                          WHERE s.party_id = ? AND s.is_cancelled = 0
                          GROUP BY i.brand ORDER BY amount DESC LIMIT $limit", $p),

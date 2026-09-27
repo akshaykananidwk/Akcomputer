@@ -35,14 +35,14 @@ $catList = $it['category_id']
     : [];
 
 $faqs = [
-    $it['name'] . ' નો ભાવ કેટલો છે?' =>
-        $it['name'] . ' ની કિંમત ₹' . money($dp) . ' છે (' . $monthYear . ', ' . $app_name . ', Dwarka). જથ્થાબંધ ભાવ માટે WhatsApp કરો.',
-    'શું આ પ્રોડક્ટ સ્ટોકમાં છે?' =>
-        $inStock ? 'હા, ' . $app_name . ' Dwarka પર અત્યારે સ્ટોકમાં છે — આજે જ મળી શકે.' : 'અત્યારે ઓર્ડર પર મળે છે — WhatsApp કરો, જલદી મંગાવી આપીશું.',
-    'વોરંટી મળે છે?' =>
-        ((int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' મહિનાની વોરંટી સાથે મળે છે.' : 'બ્રાન્ડની ઓફિશિયલ વોરંટી પ્રમાણે વોરંટી મળે છે.') . ' પ્રોડક્ટ 100% જેન્યુઇન છે.',
-    'ઇન્સ્ટોલેશન / સર્વિસ મળે?' =>
-        'હા, ' . $app_name . ' Dwarka પર ઇન્સ્ટોલેશન અને આફ્ટર-સેલ સર્વિસ બંને મળે છે.',
+    $it['name'] . ' What is the price?' =>
+        $it['name'] . ' worth Rs ' . money($dp) . '  (' . $monthYear . ', ' . $app_name . ', Dwarka). WhatsApp us for wholesale prices.',
+    'Is this product in stock?' =>
+        $inStock ? 'Yes, ' . $app_name . ' in stock in Dwarka right now — available today.' : 'Available to order right now — WhatsApp us and we will get it quickly.',
+    'Is there a warranty?' =>
+        ((int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' months of warranty included.' : 'Warranty is as per the brand official warranty.') . ' Products are 100% genuine.',
+    'Is installation or service available?' =>
+        'Yes, ' . $app_name . ' in Dwarka, with both installation and after-sales service.',
 ];
 $metaDesc = $it['name'] . ' price in Dwarka, Gujarat: ₹' . money($dp) . ' (' . $monthYear . ') at ' . $app_name . '. ' .
             ($it['brand'] ? $it['brand'] . ' ' . $it['model'] . '. ' : '') .
@@ -103,11 +103,11 @@ $metaDesc = $it['name'] . ' price in Dwarka, Gujarat: ₹' . money($dp) . ' (' .
       <div class="pbtns">
         <a class="btn btn-block" href="<?= e($prodUrl) ?>" style="background:linear-gradient(100deg,#4f46e5,#2563eb);border:0">🛒 View Product &amp; Order</a>
         <?php if ($waShop): ?>
-        <a class="btn btn-success btn-block" href="https://wa.me/<?= e($waShop) ?>?text=<?= rawurlencode("નમસ્તે! " . $label . " નો ભાવ ₹" . money($dp) . " જોયો — વધુ વિગત જોઈએ છે.\n" . $purl) ?>" rel="noopener">💬 WhatsApp પર ભાવ પાકો કરો</a>
+        <a class="btn btn-success btn-block" href="https://wa.me/<?= e($waShop) ?>?text=<?= rawurlencode("Hello! " . $label . " priced Rs " . money($dp) . " — I would like more detail.\n" . $purl) ?>" rel="noopener">💬 Confirm the price on WhatsApp</a>
         <?php endif; ?>
       </div>
     </div>
-    <p style="margin-top:14px"><?= e($it['name']) ?> — <?= $it['brand'] ? e(trim($it['brand'] . ' ' . $it['model'])) . ' — ' : '' ?>Dwarka (દ્વારકા), Gujarat માં બેસ્ટ ભાવે <?= e($app_name) ?> પર મળે છે. પ્રોડક્ટ 100% જેન્યુઇન, <?= (int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' મહિનાની વોરંટી' : 'બ્રાન્ડ વોરંટી' ?> અને ઇન્સ્ટોલેશન-સર્વિસ સપોર્ટ સાથે. ભાવમાં ફેરફાર થઈ શકે — લેટેસ્ટ ભાવ માટે WhatsApp કરો.</p>
+    <p style="margin-top:14px"><?= e($it['name']) ?> — <?= $it['brand'] ? e(trim($it['brand'] . ' ' . $it['model'])) . ' — ' : '' ?>at the best price in Dwarka, Gujarat <?= e($app_name) ?> . Products are 100% genuine, <?= (int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' months warranty' : 'Brand warranty' ?> with installation and after-sales support. Prices may change — WhatsApp us for the latest.</p>
   </div>
 
   <?php if (count($catList) > 1): ?>
@@ -120,7 +120,7 @@ $metaDesc = $it['name'] . ' price in Dwarka, Gujarat: ₹' . money($dp) . ' (' .
           <td class="num">₹<?= money(dealer_price($r['selling_price'], $waPct)) ?></td></tr>
       <?php endforeach; ?>
     </table>
-    <p class="muted" style="font-size:12.5px">બધા ભાવ <?= e($monthYear) ?> ના છે અને બદલાઈ શકે છે — પાકા ભાવ માટે સંપર્ક કરો.</p>
+    <p class="muted" style="font-size:12.5px">All prices <?= e($monthYear) ?> and may change — contact us for a firm price.</p>
   </div>
   <?php endif; ?>
 

@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'adjust') {
                 // wrong, and nothing on the screen would ever show it.
                 if ((int)$srow['location_id'] !== $loc_id) {
                     $where = val('SELECT name FROM locations WHERE id = ?', [(int)$srow['location_id']]);
-                    flash("Serial $sn આ લોકેશનમાં નથી" . ($where ? " — એ '$where' માં પડ્યો છે. ત્યાંથી એડજસ્ટ કરો." : '.'), 'error');
+                    flash("Serial $sn is not at this location" . ($where ? " — it '$where' is sitting there. Adjust it from there." : '.'), 'error');
                     redirect('stock.php');
                 }
             }
@@ -134,7 +134,7 @@ include __DIR__ . '/includes/header.php';
 <table id="sTable">
   <thead><tr><th>Item</th>
   <?php foreach ($locations as $l): ?><th class="num"><?= e($l['code']) ?></th><?php endforeach; ?>
-  <th class="num">Staff</th><th class="num" title="પેન્ડિંગ હેન્ડઓવરમાં — કોઈ જગ્યાએ નથી ગણાતો">રસ્તામાં</th><th class="num">Total</th><th></th></tr></thead>
+  <th class="num">Staff</th><th class="num" title="On a pending handover — counted at no location">In transit</th><th class="num">Total</th><th></th></tr></thead>
   <tbody>
   <?php foreach ($stockRows as $it):
       $rowTotal = 0;
@@ -152,7 +152,7 @@ include __DIR__ . '/includes/header.php';
       <?php endforeach; $sh = $staffHeld[$it['id']] ?? 0; $rowTotal += $sh; ?>
       <td class="num"><?= $sh ?: '·' ?></td>
       <?php $tr = $transitHeld[(int)$it['id']] ?? 0; $rowTotal += $tr; ?>
-      <td class="num"><?= $tr ? '<a href="item_view.php?id=' . (int)$it['id'] . '" title="પેન્ડિંગ હેન્ડઓવરમાં">' . rtrim(rtrim(number_format($tr, 2), '0'), '.') . '</a>' : '·' ?></td>
+      <td class="num"><?= $tr ? '<a href="item_view.php?id=' . (int)$it['id'] . '" title="on a pending handover">' . rtrim(rtrim(number_format($tr, 2), '0'), '.') . '</a>' : '·' ?></td>
       <td class="num" data-total="<?= $rowTotal ?>"><strong><?= $rowTotal ?></strong>
         <?= $it['min_stock'] > 0 && $rowTotal < $it['min_stock'] ? '<span class="badge badge-bad">LOW</span>' : '' ?></td>
       <td style="white-space:nowrap"><a class="btn btn-sm btn-outline" href="stock.php?action=ledger&item_id=<?= $it['id'] ?>">Ledger</a>
@@ -182,14 +182,14 @@ include __DIR__ . '/includes/header.php';
 
 <?php if ($transitRows): ?>
 <div class="card">
-  <h2>⏳ રસ્તામાં પડેલો માલ <span class="muted" style="font-weight:400;font-size:13px">· સ્વીકારવાનું બાકી</span></h2>
+  <h2>⏳ Goods in transit <span class="muted" style="font-weight:400;font-size:13px">· awaiting acceptance</span></h2>
   <p class="muted mb" style="font-size:13px">
-    હેન્ડઓવર બનતાં જ માલ મોકલનારી જગ્યામાંથી ઓછો થઈ જાય છે અને સામેવાળો OTP થી સ્વીકારે ત્યારે જ ઉમેરાય છે.
-    વચ્ચે એ <b>કોઈ જગ્યાના સ્ટોકમાં ગણાતો નથી</b> — એટલે ખોવાયો નથી, અહીં છે.
+    The moment a handover is created the goods leave the sending location, and they are added only when the other side accepts with an OTP.
+    in between it <b>is not counted in the stock of any location</b> — so it is not lost, it is here.
   </p>
   <div class="table-wrap" style="box-shadow:none">
   <table class="table-sm">
-    <thead><tr><th>હેન્ડઓવર</th><th>વસ્તુ</th><th class="num">નંગ</th><th>ક્યાંથી</th><th>કોની પાસે</th><th class="num">દિવસ</th></tr></thead>
+    <thead><tr><th>Handover</th><th>Item</th><th class="num">Qty</th><th>From where</th><th>Who holds it</th><th class="num">days</th></tr></thead>
     <tbody><?php foreach ($transitRows as $t): ?>
       <tr>
         <td><a href="handover.php?action=view&id=<?= (int)$t['id'] ?>"><?= e($t['handover_no']) ?></a></td>
@@ -248,7 +248,7 @@ include __DIR__ . '/includes/header.php';
         : 'Serial numbers (optional — one per line, must match the qty if used)';
     }
     adjSN();
-    SearchPick.init('adjItem', 'આઇટમનું નામ ટાઇપ કરો…');
+    SearchPick.init('adjItem', 'Type an item name…');
   </script>
 </div>
 <?php endif; ?>

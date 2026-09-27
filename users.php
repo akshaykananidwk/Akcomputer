@@ -168,7 +168,7 @@ if ($action === 'new' || $action === 'edit') {
             <select name="location_id">
               <?php foreach ($locations as $l): ?><option value="<?= $l['id'] ?>" <?= ($usr['location_id'] ?? '') == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?> (<?= e($l['city']) ?>)</option><?php endforeach; ?>
             </select>
-            <label class="check-inline mt"><input type="checkbox" name="location_locked" value="1" <?= !empty($usr['location_locked']) ? 'checked' : '' ?>> 📍 ફક્ત પોતાની Location પૂરતું જ કામ <span class="muted" style="font-weight:normal">(ગોડાઉન-મેનેજર/શોપ-મેનેજર અલગ: સ્ટોક, ઓડિટ અને બિલ ફક્ત ઉપર પસંદ કરેલી જગ્યાના જ)</span></label></div>
+            <label class="check-inline mt"><input type="checkbox" name="location_locked" value="1" <?= !empty($usr['location_locked']) ? 'checked' : '' ?>> 📍 Works only within their own location <span class="muted" style="font-weight:normal">(godown manager / shop manager differ: stock, audits and bills only for the location chosen above)</span></label></div>
         </div>
         <div class="form-row cols-2">
           <div><label>Password <?= $usr ? '(blank = keep same)' : '*' ?></label><input type="password" name="password"></div>

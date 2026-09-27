@@ -42,7 +42,7 @@ $trust = [
     <div>
       <div class="inv2-billto">👤 BILL TO :</div>
       <div class="inv2-cust"><?= e($sale['customer_name'] ?: $sale['party_name'] ?: 'Walk-in Customer') ?></div>
-      <?php if (!empty($sale['delivery_address'])): ?><div class="muted" style="font-size:11px">ડિલિવરી: <?= e($sale['delivery_address']) ?></div><?php endif; ?>
+      <?php if (!empty($sale['delivery_address'])): ?><div class="muted" style="font-size:11px">Delivery: <?= e($sale['delivery_address']) ?></div><?php endif; ?>
       <?php if ($sale['customer_mobile']): ?><div class="inv2-contact">📞 <?= e($sale['customer_mobile']) ?></div><?php endif; ?>
       <?= $sale['party_gstin'] ? '<div class="muted">GSTIN: ' . e($sale['party_gstin']) . '</div>' : '' ?>
     </div>

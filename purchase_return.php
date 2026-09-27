@@ -35,22 +35,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     foreach ($rows as $r) {
         $item = row('SELECT name, serial_tracked FROM items WHERE id = ?', [$r['item_id']]);
         if ($r['sns'] && count($r['sns']) != (int)$r['qty']) {
-            flash(($item['name'] ?? '#' . $r['item_id']) . ': ' . count($r['sns']) . ' સિરિયલ પસંદ કર્યા છે પણ જથ્થો '
-                . (0 + $r['qty']) . ' છે — બંને સરખા હોવા જોઈએ.', 'error');
+            flash(($item['name'] ?? '#' . $r['item_id']) . ': ' . count($r['sns']) . ' serials chosen but the quantity is '
+                . (0 + $r['qty']) . ' — the two should be the same.', 'error');
             redirect('purchase_return.php?action=new');
         }
         if (!empty($item['serial_tracked']) && !$r['sns']) {
-            flash(($item['name'] ?? '#' . $r['item_id']) . ': આ આઇટમ સિરિયલવાળી છે — કયો સિરિયલ પાછો મોકલવાનો છે એ પસંદ કરો.', 'error');
+            flash(($item['name'] ?? '#' . $r['item_id']) . ': this item is serial-tracked — choose which serial is going back.', 'error');
             redirect('purchase_return.php?action=new');
         }
         foreach ($r['sns'] as $sn) {
             $srow = row('SELECT status FROM item_serials WHERE item_id = ? AND serial_no = ?', [$r['item_id'], $sn]);
             if (!$srow) {
-                flash('સિરિયલ ' . $sn . ' આ આઇટમનો નથી (નોંધાયેલો જ નથી).', 'error');
+                flash('Serial ' . $sn . ' does not belong to this item (it is not recorded at all).', 'error');
                 redirect('purchase_return.php?action=new');
             }
             if ($srow['status'] !== 'in_stock') {
-                flash('સિરિયલ ' . $sn . ' સ્ટોકમાં નથી (અત્યારે: ' . $srow['status'] . ') — એટલે સપ્લાયરને પાછો મોકલી શકાય નહીં.', 'error');
+                flash('Serial ' . $sn . ' is not in stock (currently: ' . $srow['status'] . ') — so it cannot be sent back to the supplier.', 'error');
                 redirect('purchase_return.php?action=new');
             }
         }
@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $pdo->commit();
         log_activity('purchase_return', doc_no('PR', $rid));
         $msg = 'Purchase return saved, stock deducted.';
-        if ($sentSns) $msg .= ' સપ્લાયરને પાછા મોકલેલા સિરિયલ: ' . implode(', ', array_unique($sentSns)) . '.';
+        if ($sentSns) $msg .= ' Serials sent back to the supplier: ' . implode(', ', array_unique($sentSns)) . '.';
         if ($creditedTo) {
             $bits = [];
             foreach ($creditedTo as $t) $bits[] = $t['label'] . ' ₹' . money($t['amount']);
@@ -162,28 +162,28 @@ if ($action === 'view') {
     include __DIR__ . '/includes/header.php';
     ?>
     <div class="page-actions">
-      <a class="btn btn-outline btn-sm" href="purchase_return.php">← બધા રિટર્ન</a>
-      <a class="btn btn-outline btn-sm" href="parties.php?action=ledger&id=<?= $ret['party_id'] ?>">સપ્લાયરનું ખાતું</a>
+      <a class="btn btn-outline btn-sm" href="purchase_return.php">← All returns</a>
+      <a class="btn btn-outline btn-sm" href="parties.php?action=ledger&id=<?= $ret['party_id'] ?>">Supplier account</a>
     </div>
 
     <div class="card">
       <h2><?= e($ret['return_no']) ?> <span class="badge badge-info"><?= e($ret['refund_mode']) ?></span></h2>
       <table>
-        <tr><th>સપ્લાયર</th><td><a href="parties.php?action=ledger&id=<?= $ret['party_id'] ?>"><?= e($ret['party_name']) ?></a>
+        <tr><th>Supplier</th><td><a href="parties.php?action=ledger&id=<?= $ret['party_id'] ?>"><?= e($ret['party_name']) ?></a>
             <?= $ret['party_mobile'] ? ' · ' . e($ret['party_mobile']) : '' ?></td></tr>
-        <tr><th>તારીખ</th><td><?= dmy($ret['return_date']) ?></td></tr>
-        <tr><th>લોકેશન</th><td><?= e($ret['loc_name'] ?: '-') ?></td></tr>
-        <tr><th>કુલ રકમ</th><td><strong>₹<?= money($ret['total']) ?></strong></td></tr>
-        <?php if ($ret['notes']): ?><tr><th>નોંધ</th><td><?= e($ret['notes']) ?></td></tr><?php endif; ?>
-        <tr><th>બનાવ્યું</th><td><?= e($ret['staff_name'] ?: '-') ?> · <?= dmyt($ret["created_at"]) ?></td></tr>
+        <tr><th>Date</th><td><?= dmy($ret['return_date']) ?></td></tr>
+        <tr><th>Location</th><td><?= e($ret['loc_name'] ?: '-') ?></td></tr>
+        <tr><th>Total amount</th><td><strong>₹<?= money($ret['total']) ?></strong></td></tr>
+        <?php if ($ret['notes']): ?><tr><th>Note</th><td><?= e($ret['notes']) ?></td></tr><?php endif; ?>
+        <tr><th>Created</th><td><?= e($ret['staff_name'] ?: '-') ?> · <?= dmyt($ret["created_at"]) ?></td></tr>
       </table>
     </div>
 
     <div class="card">
-      <h3>📦 શું મોકલ્યું</h3>
+      <h3>📦 What was sent</h3>
       <div class="table-wrap">
       <table>
-        <thead><tr><th>આઇટમ</th><th class="num">નંગ</th><th class="num">ભાવ</th><th class="num">કુલ</th><th>સિરિયલ નંબર</th></tr></thead>
+        <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th><th>Serial number</th></tr></thead>
         <tbody>
         <?php foreach ($lines as $ln):
             $sent = array_filter(array_map('trim', explode(',', (string)$ln['serials']))); ?>
@@ -199,10 +199,10 @@ if ($action === 'view') {
                   // where that piece is NOW: still with the supplier, or back
                   $st = val('SELECT status FROM item_serials WHERE item_id = ? AND serial_no = ?', [$ln['item_id'], $sn]); ?>
                 <div><strong><?= e($sn) ?></strong>
-                  <?php if ($st === 'returned_supplier'): ?><span class="badge badge-warn">સપ્લાયર પાસે</span>
-                  <?php elseif ($st === 'in_stock'): ?><span class="badge badge-ok">પાછો આવી ગયો</span>
+                  <?php if ($st === 'returned_supplier'): ?><span class="badge badge-warn">With the supplier</span>
+                  <?php elseif ($st === 'in_stock'): ?><span class="badge badge-ok">came back</span>
                   <?php elseif ($st): ?><span class="badge"><?= e($st) ?></span>
-                  <?php else: ?><span class="badge badge-bad">રેકોર્ડ નથી</span><?php endif; ?>
+                  <?php else: ?><span class="badge badge-bad">No record</span><?php endif; ?>
                 </div>
               <?php endforeach; endif; ?>
             </td>
@@ -211,7 +211,7 @@ if ($action === 'view') {
         </tbody>
       </table>
       </div>
-      <?php if (!$lines): ?><p class="muted">આ રિટર્નમાં કોઈ આઇટમ નથી.</p><?php endif; ?>
+      <?php if (!$lines): ?><p class="muted">There is no item on this return.</p><?php endif; ?>
     </div>
 
     <?php
@@ -221,7 +221,7 @@ if ($action === 'view') {
     $trackedLines = array_filter($lines, fn($l) => !empty($l['serial_tracked']));
     if ($trackedLines): ?>
     <div class="card">
-      <h3>🏠 શું નથી મોકલ્યું <span class="muted" style="font-weight:normal">— આ જ આઇટમના જે પીસ હજી આપણી પાસે છે</span></h3>
+      <h3>🏠 What was not sent <span class="muted" style="font-weight:normal">— the pieces of this item we still hold</span></h3>
       <?php foreach ($trackedLines as $ln):
           $left = all("SELECT serial_no FROM item_serials
                        WHERE item_id = ? AND status = 'in_stock'" . ($ret['location_id'] ? ' AND location_id = ?' : '') . "
@@ -229,13 +229,13 @@ if ($action === 'view') {
                       $ret['location_id'] ? [$ln['item_id'], $ret['location_id']] : [$ln['item_id']]); ?>
         <div style="margin-bottom:10px">
           <strong><?= e($ln['item_name']) ?></strong>
-          <span class="muted">— સ્ટોકમાં <?= count($left) ?> પીસ</span>
+          <span class="muted">— in stock <?= count($left) ?> pieces</span>
           <?php if ($left): ?>
             <div class="sp-list" style="max-height:150px;overflow:auto;margin-top:4px">
               <?php foreach ($left as $l2): ?><span class="badge badge-ok" style="margin:2px"><?= e($l2['serial_no']) ?></span><?php endforeach; ?>
             </div>
           <?php else: ?>
-            <div class="muted">આ લોકેશનમાં આ આઇટમનો એકેય સિરિયલ સ્ટોકમાં નથી.</div>
+            <div class="muted">No serial of this item is in stock at this location.</div>
           <?php endif; ?>
         </div>
       <?php endforeach; ?>
@@ -243,13 +243,13 @@ if ($action === 'view') {
     <?php endif; ?>
 
     <div class="card">
-      <h3>💰 પૈસાનું શું થયું</h3>
+      <h3>💰 What happened to the money</h3>
       <?php if ($ret['refund_mode'] === 'adjust'): ?>
         <?php if ($credits): ?>
-          <p class="muted">આ રકમ સપ્લાયરનાં જૂનાં બિલમાં જમા થઈ (સૌથી જૂનું પહેલાં):</p>
+          <p class="muted">This amount was credited against the supplier older bills (oldest first):</p>
           <div class="table-wrap">
           <table>
-            <thead><tr><th>બિલ</th><th>તારીખ</th><th class="num">બિલની રકમ</th><th class="num">આમાં જમા</th><th>હાલત</th></tr></thead>
+            <thead><tr><th>Bill</th><th>Date</th><th class="num">Bill amount</th><th class="num">credited here</th><th>Condition</th></tr></thead>
             <tbody><?php $sumC = 0; foreach ($credits as $c): $sumC += (float)$c['amount']; ?>
               <tr><td><?= e($c['bill_no'] ?: '#' . $c['bill_id']) ?></td>
                   <td><?= $c['purchase_date'] ? dmy($c['purchase_date']) : '-' ?></td>
@@ -260,17 +260,17 @@ if ($action === 'view') {
           </table>
           </div>
           <?php $leftOver = money_r((float)$ret['total'] - $sumC); if ($leftOver > MONEY_EPS): ?>
-            <p class="muted">બાકીના ₹<?= money($leftOver) ?> સપ્લાયરના ખાતામાં જમા પડ્યા છે — હજી કોઈ બિલ સામે લાગ્યા નથી.</p>
+            <p class="muted">the remaining Rs <?= money($leftOver) ?> sit as credit in the supplier account — not yet applied against any bill.</p>
           <?php endif; ?>
         <?php else: ?>
-          <p class="muted">આખી રકમ ₹<?= money($ret['total']) ?> સપ્લાયરના ખાતામાં જમા છે — એ વખતે કોઈ બિલ બાકી નહોતું.</p>
+          <p class="muted">Full amount Rs <?= money($ret['total']) ?> sits as credit in the supplier account — no bill was outstanding at the time.</p>
         <?php endif; ?>
       <?php elseif ($refundPay): ?>
-        <p>સપ્લાયરે <strong>₹<?= money($refundPay['amount']) ?></strong> પાછા આપ્યા
+        <p>The supplier <strong>₹<?= money($refundPay['amount']) ?></strong> refunded
           (<?= e($refundPay['mode']) ?><?= $refundPay['account_name'] ? ' — ' . e($refundPay['account_name']) . ' / ' . e($refundPay['bank_name']) : '' ?>)
           · <?= dmy($refundPay['pay_date']) ?></p>
       <?php else: ?>
-        <p class="muted">આ રિટર્નનું કોઈ પેમેન્ટ નોંધાયેલું નથી.</p>
+        <p class="muted">No payment is recorded for this return.</p>
       <?php endif; ?>
     </div>
     <?php
@@ -316,9 +316,9 @@ if ($action === 'new') {
             <select name="credit_bill_id" id="creditBill"><option value="0">Automatic - oldest bill first</option></select>
             <small class="muted" id="creditHint">Pick a supplier to see their unpaid bills.</small></div>
         </div>
-        <div class="field"><label>સિરિયલ નંબર — ફક્ત સિરિયલ યાદી વગરની આઇટમ માટે (કોમા / નવી લાઇન, મરજી પ્રમાણે)</label>
+        <div class="field"><label>Serial numbers — only for items with no serial list (comma or new line, as you prefer)</label>
           <textarea name="return_serials" rows="2"></textarea>
-          <small class="muted">સિરિયલવાળી આઇટમ નીચે ઉમેરશો એટલે એની સ્ટોકમાં પડેલી સિરિયલ યાદી ત્યાં જ આવશે — ટિક કરી લેજો.</small></div>
+          <small class="muted">Add a serial-tracked item below and the list of its in-stock serials appears right there — just tick them.</small></div>
         <div class="field"><label>Notes / reason</label><input type="text" name="notes"></div>
       </div>
       <div class="card">
@@ -334,7 +334,7 @@ if ($action === 'new') {
     </form>
     <script>Bill.init({mode: 'purchase', serials: true, pickStock: true, locSel: 'location_id', gst: false});
     ReturnMoney.init({dir: 'out', partySel: 'select[name=party_id]'});
-    SearchPick.init('party_id', 'સપ્લાયરનું નામ કે મોબાઇલ ટાઇપ કરો…');</script>
+    SearchPick.init('party_id', 'Type a supplier name or mobile…');</script>
     <?php
     include __DIR__ . '/includes/footer.php';
     exit;
@@ -378,7 +378,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
         $pdo->commit();
         log_activity('purchase_return_delete', $ret['return_no']);
         flash('Return ' . $ret['return_no'] . ' deleted, stock reversed.'
-            . ($backSns ? ' સિરિયલ પાછા સ્ટોકમાં: ' . implode(', ', $backSns) . '.' : ''));
+            . ($backSns ? ' Serials back in stock: ' . implode(', ', $backSns) . '.' : ''));
     }
     redirect('purchase_return.php');
 }

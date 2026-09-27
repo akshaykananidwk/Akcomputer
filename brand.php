@@ -56,10 +56,10 @@ foreach (array_slice($items, 0, 30) as $pos => $i) {
 <div class="swrap">
   <div class="scard">
     <h1><?= e($brand) ?> Products in Dwarka, Gujarat</h1>
-    <p><?= e($brand) ?> ની ઓરિજિનલ પ્રોડક્ટ Dwarka (દ્વારકા) માં <?= e($app_name) ?> પર — <strong><?= count($items) ?> પ્રોડક્ટ</strong>,
-       ભાવ ₹<?= money(min($prices)) ?> થી ₹<?= money(max($prices)) ?>.
+    <p><?= e($brand) ?> original products in Dwarka <?= e($app_name) ?> on — <strong><?= count($items) ?> Products</strong>,
+       Price Rs <?= money(min($prices)) ?> from Rs <?= money(max($prices)) ?>.
        <?php if ($cats): ?><?= e(implode(', ', array_slice($cats, 0, 6))) ?> —<?php endif; ?>
-       બધું વોરંટી અને સર્વિસ સપોર્ટ સાથે. WhatsApp પર ભાવ પૂછો કે ઓર્ડર કરો.</p>
+       All with warranty and service support. Ask the price or order on WhatsApp.</p>
     <?php if ($cats): ?>
     <div class="chips">
       <?php foreach (array_slice($cats, 0, 10) as $c): if (seo_slug($c) === '') continue; ?>

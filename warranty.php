@@ -153,23 +153,23 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Replacement serial (if any)</label><input type="text" name="replacement_serial" value="<?= e($c['replacement_serial'] ?? '') ?>"></div>
         </div>
         <div class="form-row cols-2">
-          <div><label>રિપ્લેસમેન્ટની વોરંટી</label>
+          <div><label>Replacement warranty</label>
             <select name="warranty_mode" id="warrantyMode" onchange="wmChange()">
-              <option value="continue"<?= ($c['warranty_mode'] ?? 'continue') !== 'fresh' ? ' selected' : '' ?>>જૂની વોરંટી ચાલુ રહે (પહેલી ખરીદીથી)</option>
-              <option value="fresh"<?= ($c['warranty_mode'] ?? '') === 'fresh' ? ' selected' : '' ?>>નવી વોરંટી મળી છે (પાછું આવ્યું એ દિવસથી)</option>
+              <option value="continue"<?= ($c['warranty_mode'] ?? 'continue') !== 'fresh' ? ' selected' : '' ?>>The old warranty continues (from the first purchase)</option>
+              <option value="fresh"<?= ($c['warranty_mode'] ?? '') === 'fresh' ? ' selected' : '' ?>>A new warranty was given (from the day it came back)</option>
             </select>
-            <small class="muted">મોટાભાગે જૂની જ ચાલુ રહે છે. કંપનીએ નવી આપી હોય તો જ બીજો વિકલ્પ.</small></div>
-          <div id="freshBox" style="display:none"><label>નવી વોરંટી કેટલા મહિના?</label>
+            <small class="muted">Usually the old one continues. Choose the other option only if the company gave a new one.</small></div>
+          <div id="freshBox" style="display:none"><label>New warranty, how many months?</label>
             <input type="number" name="fresh_months" min="0" value="<?= (int)($c['fresh_months'] ?? 0) ?>"></div>
         </div>
         <div class="form-row cols-2">
-          <div><label>કંપનીએ પાર્ટ નહીં, પૈસા પાછા આપ્યા? (ક્રેડિટ ₹)</label>
+          <div><label>Did the company return money instead of a part? (credit Rs)</label>
             <input type="number" step="any" min="0" name="credit_amount" id="creditAmt"
                    value="<?= (float)($c['credit_amount'] ?? 0) ?: '' ?>" oninput="wcChange()">
-            <small class="muted">આ રકમ સપ્લાયરના બિલમાં જમા થશે. ખાલી રાખો તો કંઈ નહીં થાય.</small></div>
-          <div id="creditBillBox" style="display:none"><label>કયા બિલમાં જમા કરવું?</label>
-            <select name="credit_bill_id" id="creditBill"><option value="0">આપોઆપ — સૌથી જૂનું બિલ પહેલાં</option></select>
-            <small class="muted" id="creditBillHint">Company / Supplier પસંદ કરો એટલે એમનાં બાકી બિલ દેખાશે.</small></div>
+            <small class="muted">This amount is credited against the supplier bills. Leave it blank and nothing happens.</small></div>
+          <div id="creditBillBox" style="display:none"><label>Credit it against which bill?</label>
+            <select name="credit_bill_id" id="creditBill"><option value="0">Automatic — oldest bill first</option></select>
+            <small class="muted" id="creditBillHint">Choose a company or supplier to see their outstanding bills.</small></div>
         </div>
         <?php
         // The full life of this piece of hardware. A serial replaced twice is
@@ -180,12 +180,12 @@ if ($action === 'new' || $action === 'edit') {
         if (count($chain) > 1):
             $origin = serial_warranty_origin($c['serial_no']); ?>
         <div class="card" style="margin-top:10px">
-          <h4 style="margin:0 0 6px">🔗 આ સિરિયલની આખી સાંકળ</h4>
+          <h4 style="margin:0 0 6px">🔗 The whole chain of this serial</h4>
           <?php if ($origin && $origin['sale_date']): ?>
-          <p class="muted" style="margin:0 0 8px">વોરંટી શરૂ થઈ <strong><?= dmy($origin['sale_date']) ?></strong>
-            <?= $origin['invoice_no'] ? ' · બિલ ' . e($origin['invoice_no']) : '' ?>
+          <p class="muted" style="margin:0 0 8px">Warranty started <strong><?= dmy($origin['sale_date']) ?></strong>
+            <?= $origin['invoice_no'] ? ' · bill ' . e($origin['invoice_no']) : '' ?>
             <?= $origin['customer'] ? ' · ' . e($origin['customer']) : '' ?>
-            <?= $origin['expiry'] ? ' · વોરંટી ' . dmy($origin['expiry']) . ' સુધી' : '' ?></p>
+            <?= $origin['expiry'] ? ' · warranty ' . dmy($origin['expiry']) . ' until' : '' ?></p>
           <?php endif; ?>
           <div class="sp-list">
           <?php foreach ($chain as $k => $lnk): ?>
@@ -194,10 +194,10 @@ if ($action === 'new' || $action === 'edit') {
               <span class="badge <?= $lnk['status'] === 'replaced' ? 'badge-bad' : 'badge-info' ?>"><?= e($lnk['status']) ?></span>
               <?php if (!empty($lnk['claim'])): ?>
                 <span class="muted"> · <?= e($lnk['claim']['claim_no']) ?>
-                <?= $lnk['claim']['sent_date'] ? ' મોકલ્યો ' . dmy($lnk['claim']['sent_date']) : '' ?>
-                <?= $lnk['claim']['back_date'] ? ' · પાછો ' . dmy($lnk['claim']['back_date']) : '' ?></span>
+                <?= $lnk['claim']['sent_date'] ? ' sent ' . dmy($lnk['claim']['sent_date']) : '' ?>
+                <?= $lnk['claim']['back_date'] ? ' · back ' . dmy($lnk['claim']['back_date']) : '' ?></span>
               <?php endif; ?>
-              <?php if ($lnk['warranty_expiry']): ?><span class="muted"> · વોરંટી <?= dmy($lnk['warranty_expiry']) ?></span><?php endif; ?>
+              <?php if ($lnk['warranty_expiry']): ?><span class="muted"> · warranty <?= dmy($lnk['warranty_expiry']) ?></span><?php endif; ?>
             </div>
           <?php endforeach; ?>
           </div>
@@ -215,8 +215,8 @@ if ($action === 'new' || $action === 'edit') {
     <script>
       // hundreds of items and dozens of suppliers: type a word or two from
       // anywhere in the name instead of hunting down the list
-      SearchPick.init('item_id', 'આઇટમનું નામ ટાઇપ કરો…');
-      SearchPick.init('party_id', 'કંપની / સપ્લાયરનું નામ ટાઇપ કરો…');
+      SearchPick.init('item_id', 'Type an item name…');
+      SearchPick.init('party_id', 'Type a company or supplier name…');
       function snLookup() {
         var sn = document.getElementById('snCheck').value.trim();
         if (!sn) return;
@@ -259,8 +259,8 @@ if ($action === 'new' || $action === 'edit') {
         var hint = document.getElementById('creditBillHint');
         if (!sel || !bill) return;
         var pid = sel.value;
-        bill.innerHTML = '<option value="0">આપોઆપ — સૌથી જૂનું બિલ પહેલાં</option>';
-        if (!pid) { if (hint) hint.textContent = 'Company / Supplier પસંદ કરો એટલે એમનાં બાકી બિલ દેખાશે.'; return; }
+        bill.innerHTML = '<option value="0">Automatic — oldest bill first</option>';
+        if (!pid) { if (hint) hint.textContent = 'Choose a company or supplier to see their outstanding bills.'; return; }
         fetch('ajax.php?a=party_bills&dir=out&party_id=' + encodeURIComponent(pid))
           .then(function (r) { return r.json(); })
           .then(function (d) {
@@ -272,10 +272,10 @@ if ($action === 'new' || $action === 'edit') {
               if (String(b.id) === pre) o.selected = true;
               bill.appendChild(o); n++;
             });
-            if (hint) hint.textContent = n ? n + ' બાકી બિલ. આપોઆપ રાખો તો જૂનાથી શરૂ થશે.'
-                                           : 'એમનું કોઈ બિલ બાકી નથી — ક્રેડિટ ખાતામાં જમા રહેશે.';
+            if (hint) hint.textContent = n ? n + ' outstanding bills. Left automatic, it starts from the oldest.'
+                                           : 'None of their bills is outstanding — the credit stays in the account.';
           })
-          .catch(function () { if (hint) hint.textContent = 'બિલ યાદી આવી નહીં; આપોઆપ તો ચાલશે જ.'; });
+          .catch(function () { if (hint) hint.textContent = 'The bill list did not load; automatic still works.'; });
       }
       (function () {
         var sel = document.querySelector('select[name=party_id]');

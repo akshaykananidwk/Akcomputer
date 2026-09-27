@@ -57,10 +57,10 @@ foreach (array_slice($items, 0, 30) as $pos => $i) {
 <div class="swrap">
   <div class="scard">
     <h1><?= e(cat_icon($cat['name'])) ?> <?= e($cat['name']) ?> in Dwarka, Gujarat</h1>
-    <p><?= e($cat['name']) ?> ખરીદવા માટે Dwarka (દ્વારકા) માં <?= e($app_name) ?> — <strong><?= count($items) ?> પ્રોડક્ટ</strong>,
-       ભાવ ₹<?= money($cat['pmin']) ?> થી ₹<?= money($cat['pmax']) ?>. 100% જેન્યુઇન પ્રોડક્ટ, વોરંટી અને ઇન્સ્ટોલેશન-સર્વિસ સાથે.
+    <p><?= e($cat['name']) ?> to buy in Dwarka <?= e($app_name) ?> — <strong><?= count($items) ?> Products</strong>,
+       Price Rs <?= money($cat['pmin']) ?> from Rs <?= money($cat['pmax']) ?>. 100% genuine products, with warranty and installation service.
        <?php if ($brands): ?>Brands: <strong><?= e(implode(', ', array_slice($brands, 0, 8))) ?></strong>.<?php endif; ?>
-       WhatsApp પર ઓર્ડર કરો — હોમ ડિલિવરી પણ મળે.</p>
+       Order on WhatsApp — home delivery is available too.</p>
     <?php if ($brands): ?>
     <div class="chips">
       <?php foreach (array_slice($brands, 0, 12) as $b): if (seo_slug($b) === '') continue; ?>

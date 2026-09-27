@@ -68,9 +68,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if ($type === 'issue' && (!$staff || !$staff['mobile'] || empty($waOk))) {
             // WhatsApp missing/failed: show the OTP once so the handover can
             // still be completed by telling it to the staff member in person
-            flash('Handover created, પણ OTP WhatsApp પર ગયો નથી ('
-                . ($staff && $staff['mobile'] ? whatsapp_last_error() : 'સ્ટાફના ખાતામાં મોબાઈલ નંબર નથી')
-                . '). OTP: ' . $otp . ' — સ્ટાફને રૂબરૂ કહી દો.', 'error');
+            flash('Handover created, but the OTP did not go out on WhatsApp ('
+                . ($staff && $staff['mobile'] ? whatsapp_last_error() : 'The staff account has no mobile number')
+                . '). OTP: ' . $otp . ' — tell the staff member in person.', 'error');
         } else {
             flash('Handover created' . ($type === 'issue' ? ' - OTP sent on staff WhatsApp.' : '.'));
         }
@@ -275,22 +275,22 @@ if ($action === 'view') {
               // been sent.
               $canAcceptThis = handover_can_accept($h, $u); ?>
         <p class="muted mb">
-          ⏳ આ માલ અત્યારે <b>ક્યાંય નથી ગણાતો</b> — <?= e($h['loc_name']) ?> માંથી નીકળી ગયો છે અને
+          ⏳ These goods are currently <b>counted nowhere</b> — <?= e($h['loc_name']) ?> has left it and
           <?= e(transit_destination(['type' => $h['type'], 'staff_name' => $h['staff_name'] ?? '', 'to_loc' => $h['to_loc_name'] ?? '', 'from_loc' => $h['loc_name'] ?? ''])) ?>
-          સુધી પહોંચ્યો નથી. OTP થી સ્વીકારાય એટલે ઉમેરાઈ જશે.
+          has not arrived yet. It is added once accepted with the OTP.
         </p>
         <?php if ($canAcceptThis): $forOther = handover_accepting_for_other($h, $u); ?>
           <?php if ($forOther): ?>
             <p class="muted mb" style="font-size:13px">
-              OTP <b><?= e($h['staff_name']) ?></b> ના WhatsApp પર ગયો છે. એમની પાસેથી નંબર પૂછીને અહીં નાખો.
-              માલ <b><?= e($h['staff_name']) ?></b> ના નામે જ ચડશે, અને નોંધમાં લખાશે કે <b>તમે</b> સ્વીકાર્યું છે.
+              OTP <b><?= e($h['staff_name']) ?></b> has gone to their WhatsApp. Ask them for the number and enter it here.
+              Goods <b><?= e($h['staff_name']) ?></b> is recorded in their name, and the note says that <b>You</b> accepted it.
             </p>
           <?php else: ?>
           <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="otp_me"><input type="hidden" name="id" value="<?= $h['id'] ?>">
             <button class="btn btn-outline btn-sm" type="submit">Send OTP to my WhatsApp</button></form>
           <?php endif; ?>
           <form method="post" class="filterbar mt"><?= csrf_field() ?><input type="hidden" name="do" value="accept"><input type="hidden" name="id" value="<?= $h['id'] ?>">
-            <div><input type="text" name="otp" placeholder="OTP અહીં નાખો" inputmode="numeric" maxlength="6" required autocomplete="one-time-code"></div>
+            <div><input type="text" name="otp" placeholder="Enter the OTP here" inputmode="numeric" maxlength="6" required autocomplete="one-time-code"></div>
             <button class="btn btn-success btn-sm" type="submit">✔ Accept</button></form>
           <?php if ($h['type'] === 'issue'): ?>
           <form method="post" class="mt" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="otp_resend"><input type="hidden" name="id" value="<?= $h['id'] ?>">

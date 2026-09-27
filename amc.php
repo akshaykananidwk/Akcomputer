@@ -155,7 +155,7 @@ if ($action === 'new' || $action === 'edit') {
               <option value="<?= $it['id'] ?>" <?= ($c['item_id'] ?? 0) == $it['id'] ? 'selected' : '' ?>><?= e($it['name']) ?></option>
               <?php endforeach; ?>
             </select>
-            <script>SearchPick.init('item_id', 'આઇટમનું નામ ટાઇપ કરો…');</script></div>
+            <script>SearchPick.init('item_id', 'Type an item name…');</script></div>
         </div>
         <div class="field"><label>Title / description</label><input type="text" name="title" value="<?= e($c['title'] ?? '') ?>" placeholder="e.g. CCTV AMC - 4 Camera, Dwarka branch"></div>
         <div class="form-row cols-4">

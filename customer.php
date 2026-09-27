@@ -23,11 +23,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $amt = round((float)post('amount'), 2);
         $on = post('due_date');
         if ($amt <= 0.009 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $on)) {
-            flash('રકમ અને તારીખ બંને જોઈએ.', 'error'); redirect($back);
+            flash('Both an amount and a date are needed.', 'error'); redirect($back);
         }
         coll_log($pid, 'promise', ['amount' => $amt, 'due_date' => $on, 'note' => trim(post('note'))]);
         log_activity('collection_promise', "party=$pid amount=$amt on=$on");
-        flash('વાયદો નોંધાયો — ' . dmy($on) . ' સુધી આ ગ્રાહકને રિમાઇન્ડર નહીં જાય.');
+        flash('Promise recorded — ' . dmy($on) . ' no reminder goes to this customer until then.');
         redirect($back);
     }
     if (post('do') === 'log_event') {
@@ -36,11 +36,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $opt = ['note' => trim(post('note')), 'channel' => $type === 'call' ? 'phone' : ''];
         if ($type === 'snooze') {
             $on = post('due_date');
-            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $on)) { flash('તારીખ નાખો.', 'error'); redirect($back); }
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $on)) { flash('Enter a date.', 'error'); redirect($back); }
             $opt['due_date'] = $on;
         }
         coll_log($pid, $type, $opt);
-        flash($type === 'snooze' ? 'આ ગ્રાહકને ' . dmy($opt['due_date']) . ' સુધી રિમાઇન્ડર નહીં જાય.' : 'નોંધ સચવાઈ.');
+        flash($type === 'snooze' ? 'this customer ' . dmy($opt['due_date']) . ' no reminder goes until then.' : 'Note saved.');
         redirect($back);
     }
     if (post('do') === 'opt_out') {
@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $v = post('value') === '1' ? 1 : 0;
         q('UPDATE parties SET collection_opt_out = ? WHERE id = ?', [$v, $pid]);
         log_activity('collection_opt_out', "party=$pid value=$v");
-        flash($v ? 'હવે આ ગ્રાહકને ઉઘરાણીના મેસેજ નહીં જાય.' : 'હવે આ ગ્રાહકને મેસેજ જઈ શકશે.');
+        flash($v ? 'No collection messages will go to this customer now.' : 'Messages can go to this customer now.');
         redirect($back);
     }
     // Marketing consent is its own switch, on purpose. Someone who does not
@@ -60,13 +60,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $v = post('value') === '1' ? 1 : 0;
         q('UPDATE parties SET marketing_opt_out = ? WHERE id = ?', [$v, $pid]);
         log_activity('marketing_opt_out', "party=$pid value=$v");
-        flash($v ? 'હવે આ ગ્રાહકને જાહેરાત/ઓફરના મેસેજ નહીં જાય.' : 'હવે આ ગ્રાહકને ઓફરના મેસેજ જઈ શકશે.');
+        flash($v ? 'No advertising or offer messages will go to this customer now.' : 'Offer messages can go to this customer now.');
         redirect($back);
     }
 }
 
 $c = cust_360($id);
-if (!$c) { flash('ગ્રાહક મળ્યો નહીં.', 'error'); redirect('parties.php'); }
+if (!$c) { flash('Customer not found.', 'error'); redirect('parties.php'); }
 $p = $c['party'];
 $fav = cust_favourites($id);
 $svc = cust_service($id);
@@ -76,14 +76,14 @@ $events = $seeMoney ? cust_events($id) : [];
 $draft = get('do') === 'draft_reactivation' ? cust_reactivation_draft($id) : '';
 
 $segLabels = [
-    'vip' => ['⭐ VIP', 's-ok'], 'high_value' => ['💎 મોટા ગ્રાહક', 's-ok'],
-    'regular' => ['🔁 નિયમિત', ''], 'new' => ['🆕 નવા', ''],
-    'at_risk' => ['⚠️ છૂટી રહ્યા છે', 's-warn'], 'inactive' => ['😴 બંધ થઈ ગયા', 's-warn'],
-    'overdue' => ['⏰ મુદત વીતી', 's-bad'], 'credit_risk' => ['🚩 ઉધાર જોખમ', 's-bad'],
+    'vip' => ['⭐ VIP', 's-ok'], 'high_value' => ['💎 Big customers', 's-ok'],
+    'regular' => ['🔁 Regular', ''], 'new' => ['🆕 New', ''],
+    'at_risk' => ['⚠️ Slipping away', 's-warn'], 'inactive' => ['😴 Gone quiet', 's-warn'],
+    'overdue' => ['⏰ Overdue', 's-bad'], 'credit_risk' => ['🚩 Credit risk', 's-bad'],
 ];
-$relLabels = ['excellent' => ['સમયસર ચૂકવે છે', 'badge-ok'], 'good' => ['સારું', 'badge-ok'],
-              'slow' => ['ધીમું ચૂકવે છે', 'badge-warn'], 'poor' => ['ખરાબ', 'badge-bad'],
-              'new' => ['હજી નક્કી નથી', 'badge-info']];
+$relLabels = ['excellent' => ['pays on time', 'badge-ok'], 'good' => ['Good', 'badge-ok'],
+              'slow' => ['pays slowly', 'badge-warn'], 'poor' => ['Poor', 'badge-bad'],
+              'new' => ['not decided yet', 'badge-info']];
 
 $page_title = 'Customer 360 — ' . $p['name'];
 include __DIR__ . '/includes/header.php';
@@ -92,24 +92,24 @@ include __DIR__ . '/includes/header.php';
   <div class="page-actions no-print" style="margin:0 0 8px;justify-content:space-between">
     <h2 style="margin:0"><?= e($p['name']) ?></h2>
     <span>
-      <a class="btn btn-sm btn-outline" href="parties.php?action=ledger&id=<?= $id ?>">📒 ખાતાવહી</a>
-      <?php if (can('sales.add')): ?><a class="btn btn-sm" href="sales.php?action=new&party_id=<?= $id ?>">🧾 નવું બિલ</a><?php endif; ?>
-      <?php if (can('payments.add')): ?><a class="btn btn-sm btn-success" href="payments.php?action=new&dir=in&party_id=<?= $id ?>">💵 પેમેન્ટ</a><?php endif; ?>
+      <a class="btn btn-sm btn-outline" href="parties.php?action=ledger&id=<?= $id ?>">📒 Ledger</a>
+      <?php if (can('sales.add')): ?><a class="btn btn-sm" href="sales.php?action=new&party_id=<?= $id ?>">🧾 New bill</a><?php endif; ?>
+      <?php if (can('payments.add')): ?><a class="btn btn-sm btn-success" href="payments.php?action=new&dir=in&party_id=<?= $id ?>">💵 Payment</a><?php endif; ?>
     </span>
   </div>
   <p class="muted" style="margin:0 0 10px">
     <?php if ($p['mobile']): ?><a href="tel:<?= e($p['mobile']) ?>">📞 <?= e($p['mobile']) ?></a> · <?php endif; ?>
-    <?= e(trim(($p['city'] ?? '') . ' ' . ($p['address'] ?? ''))) ?: 'સરનામું નથી' ?>
-    · ગ્રાહક <?= $c['since'] ? dmy($c['since']) . ' થી' : '—' ?>
+    <?= e(trim(($p['city'] ?? '') . ' ' . ($p['address'] ?? ''))) ?: 'No address' ?>
+    · customer <?= $c['since'] ? dmy($c['since']) . ' from' : '—' ?>
     · <?= e($p['type']) ?>
-    <?php if ($c['opt_out']): ?> · <span class="badge badge-warn">મેસેજ બંધ</span><?php endif; ?>
+    <?php if ($c['opt_out']): ?> · <span class="badge badge-warn">Messages off</span><?php endif; ?>
   </p>
   <div class="range-bar">
     <?php foreach ($c['segments'] as $k => $why):
       list($lbl, $tone) = $segLabels[$k] ?? [$k, '']; ?>
     <span class="rchip" title="<?= e($why) ?>"><?= $lbl ?></span>
     <?php endforeach; ?>
-    <?php if (!$c['segments']): ?><span class="muted">હજી કોઈ ખાસ વર્ગીકરણ નથી</span><?php endif; ?>
+    <?php if (!$c['segments']): ?><span class="muted">No particular grouping yet</span><?php endif; ?>
   </div>
   <?php if ($c['segments']): ?>
   <p class="muted" style="font-size:12px;margin:8px 0 0">
@@ -122,15 +122,15 @@ include __DIR__ . '/includes/header.php';
 
 <?php if ($draft): ?>
 <div class="card">
-  <h2>📣 ફરી સંપર્કનો મેસેજ</h2>
-  <p class="muted mb">આ મેસેજ એમની પોતાની ખરીદી પરથી બન્યો છે. વાંચીને, જોઈએ તો સુધારીને, પછી મોકલો.</p>
+  <h2>📣 A win-back message</h2>
+  <p class="muted mb">This message was built from their own purchases. Read it, edit it if you like, then send.</p>
   <textarea rows="8" id="reactMsg" style="width:100%"><?= e($draft) ?></textarea>
   <p class="mt">
     <?php if ($p['mobile']): ?>
     <a class="btn btn-wa" id="reactSend" target="_blank"
-       href="https://wa.me/<?= e(preg_replace('/\D/', '', $p['mobile'])) ?>?text=<?= rawurlencode($draft) ?>">📲 WhatsApp ખોલો</a>
-    <?php else: ?><span class="muted">મોબાઇલ નંબર નથી.</span><?php endif; ?>
-    <a class="btn btn-outline" href="customer.php?id=<?= $id ?>">બંધ કરો</a>
+       href="https://wa.me/<?= e(preg_replace('/\D/', '', $p['mobile'])) ?>?text=<?= rawurlencode($draft) ?>">📲 Open WhatsApp</a>
+    <?php else: ?><span class="muted">No mobile number.</span><?php endif; ?>
+    <a class="btn btn-outline" href="customer.php?id=<?= $id ?>">Turn off</a>
   </p>
   <script>
   (function(){ var t=document.getElementById('reactMsg'), a=document.getElementById('reactSend');
@@ -142,59 +142,59 @@ include __DIR__ . '/includes/header.php';
 
 <?php // ---------- money ---------- ?>
 <div class="card">
-  <h2>💰 હિસાબ</h2>
+  <h2>💰 Account</h2>
   <div class="kpi-grid">
     <?php
-      dash_card('કુલ ખરીદી', money($c['lifetime_value']), 'reports.php?r=party_sales');
-      dash_card('છેલ્લા વર્ષમાં', money($c['year_value']), 'reports.php?r=party_sales');
-      dash_card('મહિને સરેરાશ', money($c['monthly_value']), 'reports.php?r=party_sales');
-      dash_card('સરેરાશ બિલ', money($c['avg_bill']), 'parties.php?action=ledger&id=' . $id);
-      dash_card('સૌથી મોટું બિલ', money($c['biggest_bill']), 'parties.php?action=ledger&id=' . $id);
-      dash_card('બિલ', (string)$c['bills'], 'parties.php?action=ledger&id=' . $id, null, null, '', '');
+      dash_card('Total purchases', money($c['lifetime_value']), 'reports.php?r=party_sales');
+      dash_card('in the last year', money($c['year_value']), 'reports.php?r=party_sales');
+      dash_card('monthly average', money($c['monthly_value']), 'reports.php?r=party_sales');
+      dash_card('Average bill', money($c['avg_bill']), 'parties.php?action=ledger&id=' . $id);
+      dash_card('Biggest bill', money($c['biggest_bill']), 'parties.php?action=ledger&id=' . $id);
+      dash_card('Bill', (string)$c['bills'], 'parties.php?action=ledger&id=' . $id, null, null, '', '');
       if ($seeMoney) {
-        dash_card('બાકી', money($c['outstanding']), 'parties.php?action=ledger&id=' . $id, null, null, $c['outstanding'] > 0.009 ? 's-bad' : 's-ok');
-        dash_card('મુદત વીતી', money($c['overdue']), 'reports.php?r=aging', null, null, $c['overdue'] > 0.009 ? 's-bad' : '');
+        dash_card('Due', money($c['outstanding']), 'parties.php?action=ledger&id=' . $id, null, null, $c['outstanding'] > 0.009 ? 's-bad' : 's-ok');
+        dash_card('Overdue', money($c['overdue']), 'reports.php?r=aging', null, null, $c['overdue'] > 0.009 ? 's-bad' : '');
       }
       if ($seeProfit && $c['margin']) {
-        dash_card('માર્જિન યોગદાન', money($c['margin']['contribution']), 'reports.php?r=profit', null, null, 's-ok');
-        dash_card('ડિસ્કાઉન્ટ આપ્યું', money($c['discount_given']), 'parties.php?action=ledger&id=' . $id, null, null, 's-warn');
+        dash_card('Margin contributed', money($c['margin']['contribution']), 'reports.php?r=profit', null, null, 's-ok');
+        dash_card('Discount given', money($c['discount_given']), 'parties.php?action=ledger&id=' . $id, null, null, 's-warn');
       }
     ?>
   </div>
   <?php if ($seeProfit && $c['margin']): ?>
   <p class="muted" style="font-size:12px;margin:8px 0 0">
-    "માર્જિન યોગદાન" = વેચાણ − માલની પડતર − આપેલું ડિસ્કાઉન્ટ. એમાં ભાડું, પગાર કે બીજા ખર્ચ ગણ્યા નથી,
-    એટલે એને ચોખ્ખો નફો ન સમજવો.
+    "Margin contributed" = sales − cost of goods − discount given. Rent, salaries and other costs are not in it,
+    so do not read it as net profit.
   </p>
   <?php endif; ?>
   <p class="muted" style="font-size:13px;margin:8px 0 0">
-    છેલ્લી ખરીદી: <strong><?= $c['last_sale'] ? dmy($c['last_sale']) : '—' ?></strong>
+    Last purchase: <strong><?= $c['last_sale'] ? dmy($c['last_sale']) : '—' ?></strong>
     <?php if ($c['frequency']['gap_days']): ?>
-      · સામાન્ય રીતે દર <strong><?= (int)$c['frequency']['gap_days'] ?></strong> દિવસે ખરીદે છે
-      (વર્ષે ~<?= $c['frequency']['per_year'] ?> વાર)
+      · usually every <strong><?= (int)$c['frequency']['gap_days'] ?></strong> days they buy
+      (about per year <?= $c['frequency']['per_year'] ?> times)
     <?php endif; ?>
     <?php if ($seeMoney && $c['last_payment']): ?>
-      · છેલ્લું પેમેન્ટ <strong><?= dmy($c['last_payment']['pay_date']) ?></strong> (₹<?= money($c['last_payment']['amount']) ?>)
-    <?php elseif ($seeMoney): ?> · <span class="muted">ક્યારેય પેમેન્ટ નથી આવ્યું</span><?php endif; ?>
+      · last payment <strong><?= dmy($c['last_payment']['pay_date']) ?></strong> (₹<?= money($c['last_payment']['amount']) ?>)
+    <?php elseif ($seeMoney): ?> · <span class="muted">No payment has ever come in</span><?php endif; ?>
   </p>
 </div>
 
 <?php // ---------- credit ---------- ?>
 <?php if ($seeMoney): $cr = $c['credit']; list($rl, $rc) = $relLabels[$cr['reliability']['rating']] ?? ['—', 'badge-info']; ?>
 <div class="card">
-  <h2>🏦 ઉધારની સ્થિતિ</h2>
+  <h2>🏦 Credit position</h2>
   <div class="grid-stats">
-    <div class="stat <?= $cr['over_limit'] ? 's-bad' : '' ?>"><div class="stat-label">અત્યારે બાકી</div><div class="stat-value">₹<?= money($cr['outstanding']) ?></div></div>
-    <div class="stat"><div class="stat-label">સૂચવેલી ઉધાર મર્યાદા</div><div class="stat-value">₹<?= money($cr['suggested']) ?></div></div>
-    <div class="stat"><div class="stat-label">ચૂકવણીની ટેવ</div><div class="stat-value" style="font-size:15px"><span class="badge <?= $rc ?>"><?= $rl ?></span></div></div>
-    <div class="stat"><div class="stat-label">સરેરાશ મોડું</div><div class="stat-value"><?= (int)($cr['reliability']['avg_delay'] ?? 0) ?> દિ.</div></div>
+    <div class="stat <?= $cr['over_limit'] ? 's-bad' : '' ?>"><div class="stat-label">outstanding now</div><div class="stat-value">₹<?= money($cr['outstanding']) ?></div></div>
+    <div class="stat"><div class="stat-label">Suggested credit limit</div><div class="stat-value">₹<?= money($cr['suggested']) ?></div></div>
+    <div class="stat"><div class="stat-label">Payment habit</div><div class="stat-value" style="font-size:15px"><span class="badge <?= $rc ?>"><?= $rl ?></span></div></div>
+    <div class="stat"><div class="stat-label">Average delay</div><div class="stat-value"><?= (int)($cr['reliability']['avg_delay'] ?? 0) ?> d</div></div>
   </div>
   <?php if ($cr['over_limit']): ?>
-  <p class="alertrow al-bad" style="border:0">⚠️ આ ગ્રાહકનું બાકી ₹<?= money($cr['outstanding']) ?> છે, જે સૂચવેલી મર્યાદા ₹<?= money($cr['suggested']) ?> કરતાં વધારે છે. નવું ઉધાર આપતાં પહેલાં વિચારજો.</p>
+  <p class="alertrow al-bad" style="border:0">⚠️ This customer owes Rs <?= money($cr['outstanding']) ?> , which against the suggested limit of Rs <?= money($cr['suggested']) ?> is above it. Think before giving more credit.</p>
   <?php endif; ?>
   <p class="muted" style="font-size:12px;margin:6px 0 0">
-    મર્યાદા એમની છેલ્લા વર્ષની ખરીદી (મહિને ~₹<?= money($cr['monthly_buy']) ?>) અને ચૂકવણીની ટેવ પરથી <strong>સૂચવેલી</strong> છે.
-    સિસ્ટમ કંઈ રોકતી નથી — નિર્ણય તમારો.
+    The limit comes from their purchases last year (about Rs <?= money($cr['monthly_buy']) ?>) and from their payment habits <strong>Suggested</strong> .
+    The system blocks nothing — the decision is yours.
   </p>
 </div>
 <?php endif; ?>
@@ -202,45 +202,45 @@ include __DIR__ . '/includes/header.php';
 <?php // ---------- collection ---------- ?>
 <?php if ($seeMoney && $c['outstanding'] > 0.009): $due = cust_outstanding($id, $c['balance']); ?>
 <div class="card">
-  <h2>📮 ઉઘરાણી</h2>
+  <h2>📮 Collections</h2>
   <div class="table-wrap"><table class="table-sm">
-    <thead><tr><th>બિલ</th><th>તારીખ</th><th>મુદત</th><th class="num">બાકી ₹</th></tr></thead>
+    <thead><tr><th>Bill</th><th>Date</th><th>Term</th><th class="num">Due Rs </th></tr></thead>
     <tbody>
     <?php foreach ($due['lines'] as $l): ?>
     <tr>
       <td><a href="sale_view.php?id=<?= (int)$l['id'] ?>"><?= e($l['invoice_no']) ?></a></td>
       <td><?= dmy($l['date']) ?></td>
-      <td><?= $l['due_date'] ? dmy($l['due_date']) : '—' ?> <?= $l['overdue'] ? '<span class="badge badge-bad">વીતી ગઈ</span>' : '' ?></td>
+      <td><?= $l['due_date'] ? dmy($l['due_date']) : '—' ?> <?= $l['overdue'] ? '<span class="badge badge-bad">overdue</span>' : '' ?></td>
       <td class="num">₹<?= money($l['due']) ?></td>
     </tr>
     <?php endforeach; ?>
-    <tr><td colspan="3"><strong>કુલ</strong></td><td class="num"><strong>₹<?= money($due['total']) ?></strong></td></tr>
+    <tr><td colspan="3"><strong>Total</strong></td><td class="num"><strong>₹<?= money($due['total']) ?></strong></td></tr>
     </tbody>
   </table></div>
-  <p class="muted" style="font-size:12px">આ આંકડા ખાતાવહી પ્રમાણે છે — જે પેમેન્ટ બિલ સાથે લિંક નથી થયું એ પણ બાદ થઈ ગયું છે.</p>
+  <p class="muted" style="font-size:12px">These figures are per the ledger — payments not linked to a bill are deducted too.</p>
 
   <div class="grid-2 mt">
     <form method="post">
       <?= csrf_field() ?><input type="hidden" name="do" value="promise"><input type="hidden" name="id" value="<?= $id ?>">
-      <h3>🤝 ચૂકવવાનો વાયદો નોંધો</h3>
+      <h3>🤝 Record a payment promise</h3>
       <div class="form-row cols-2">
-        <div><label>રકમ (₹)</label><input type="number" step="any" name="amount" value="<?= 0 + $due['total'] ?>" required></div>
-        <div><label>ક્યારે આપશે</label><input type="date" name="due_date" value="<?= e(date('Y-m-d', strtotime('+3 days'))) ?>" required></div>
+        <div><label>Amount (Rs)</label><input type="number" step="any" name="amount" value="<?= 0 + $due['total'] ?>" required></div>
+        <div><label>When will they pay</label><input type="date" name="due_date" value="<?= e(date('Y-m-d', strtotime('+3 days'))) ?>" required></div>
       </div>
-      <div class="field"><label>નોંધ</label><input type="text" name="note" placeholder="દા.ત. શુક્રવારે દુકાને આવીને આપશે"></div>
-      <button class="btn btn-sm" type="submit">વાયદો સાચવો</button>
-      <span class="muted" style="font-size:12px">વાયદાની તારીખ સુધી રિમાઇન્ડર બંધ રહેશે.</span>
+      <div class="field"><label>Note</label><input type="text" name="note" placeholder="e.g. will come to the shop on Friday and pay"></div>
+      <button class="btn btn-sm" type="submit">Save the promise</button>
+      <span class="muted" style="font-size:12px">Reminders stay off until the promised date.</span>
     </form>
     <form method="post">
       <?= csrf_field() ?><input type="hidden" name="do" value="log_event"><input type="hidden" name="id" value="<?= $id ?>">
-      <h3>📝 સંપર્કની નોંધ</h3>
+      <h3>📝 Contact note</h3>
       <div class="form-row cols-2">
-        <div><label>શું કર્યું</label>
-          <select name="type"><option value="call">ફોન કર્યો</option><option value="note">નોંધ</option><option value="snooze">થોડા દિવસ રહેવા દો</option></select></div>
-        <div><label>ક્યાં સુધી (snooze માટે)</label><input type="date" name="due_date" value="<?= e(date('Y-m-d', strtotime('+7 days'))) ?>"></div>
+        <div><label>What was done</label>
+          <select name="type"><option value="call">Called</option><option value="note">Note</option><option value="snooze">Leave it a few days</option></select></div>
+        <div><label>Until when (for the snooze)</label><input type="date" name="due_date" value="<?= e(date('Y-m-d', strtotime('+7 days'))) ?>"></div>
       </div>
-      <div class="field"><label>નોંધ</label><input type="text" name="note" placeholder="દા.ત. ફોન ઉપાડ્યો નહીં"></div>
-      <button class="btn btn-sm btn-outline" type="submit">સાચવો</button>
+      <div class="field"><label>Note</label><input type="text" name="note" placeholder="e.g. did not answer the phone"></div>
+      <button class="btn btn-sm btn-outline" type="submit">Save</button>
     </form>
   </div>
 </div>
@@ -249,15 +249,15 @@ include __DIR__ . '/includes/header.php';
 <?php // ---------- follow-up history ---------- ?>
 <?php if ($seeMoney && $events): ?>
 <div class="card">
-  <h2>🕘 ઉઘરાણીનો ઇતિહાસ</h2>
-  <p class="muted mb" style="font-size:12px">આ યાદી એટલા માટે છે કે એક જ ગ્રાહકને વારંવાર એકના એક મેસેજ ન જાય.</p>
+  <h2>🕘 Collection history</h2>
+  <p class="muted mb" style="font-size:12px">This list exists so the same customer does not get the same message over and over.</p>
   <div class="table-wrap"><table class="table-sm">
-    <thead><tr><th>ક્યારે</th><th>શું</th><th class="num">રકમ</th><th>નોંધ</th><th>કોણે</th></tr></thead>
+    <thead><tr><th>When</th><th>What</th><th class="num">Amount</th><th>Note</th><th>Who</th></tr></thead>
     <tbody>
     <?php
-      $evLabels = ['reminder' => '📲 મેસેજ ગયો', 'call' => '📞 ફોન કર્યો', 'note' => '📝 નોંધ',
-                   'promise' => '🤝 વાયદો', 'kept' => '✅ વાયદો પળાયો', 'broken' => '❌ વાયદો તૂટ્યો',
-                   'snooze' => '⏸️ રોકી રાખ્યું'];
+      $evLabels = ['reminder' => '📲 Message sent', 'call' => '📞 Called', 'note' => '📝 Note',
+                   'promise' => '🤝 Promise', 'kept' => '✅ Promise kept', 'broken' => '❌ Promise broken',
+                   'snooze' => '⏸️ On hold'];
       foreach ($events as $ev): ?>
     <tr>
       <td><?= dmyt($ev['created_at']) ?></td>
@@ -276,7 +276,7 @@ include __DIR__ . '/includes/header.php';
 <?php // ---------- opportunities ---------- ?>
 <?php if ($ops): ?>
 <div class="card">
-  <h2>💡 આગળ શું આપી શકાય</h2>
+  <h2>💡 What could be offered next</h2>
   <?php foreach ($ops as $o): ?>
   <div class="act act-info">
     <span class="act-ico"><?= $o['icon'] ?></span>
@@ -289,9 +289,9 @@ include __DIR__ . '/includes/header.php';
 
 <?php // ---------- what they buy ---------- ?>
 <div class="card">
-  <h2>🛒 શું ખરીદે છે</h2>
+  <h2>🛒 What they buy</h2>
   <div class="grid-2">
-    <?php foreach ([['મનપસંદ કેટેગરી', $fav['categories']], ['મનપસંદ બ્રાન્ડ', $fav['brands']]] as list($ft, $frows)):
+    <?php foreach ([['Favourite category', $fav['categories']], ['Favourite brand', $fav['brands']]] as list($ft, $frows)):
       if (!$frows) continue; ?>
     <div>
       <h3><?= $ft ?></h3>
@@ -304,9 +304,9 @@ include __DIR__ . '/includes/header.php';
     <?php endforeach; ?>
   </div>
   <?php if ($fav['products']): ?>
-  <h3>સૌથી વધુ ખરીદેલી વસ્તુઓ</h3>
+  <h3>Most bought items</h3>
   <div class="table-wrap"><table class="table-sm">
-    <thead><tr><th>વસ્તુ</th><th class="num">નંગ</th><th class="num">રકમ ₹</th><th>છેલ્લે</th></tr></thead>
+    <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Amount Rs </th><th>Last</th></tr></thead>
     <tbody>
     <?php foreach ($fav['products'] as $f): ?>
     <tr><td><a href="item_view.php?id=<?= (int)$f['id'] ?>"><?= e($f['name']) ?></a></td>
@@ -316,44 +316,44 @@ include __DIR__ . '/includes/header.php';
     </tbody>
   </table></div>
   <?php endif; ?>
-  <?php if (!$fav['products']): ?><p class="muted">હજી કોઈ વસ્તુ ખરીદી નથી.</p><?php endif; ?>
+  <?php if (!$fav['products']): ?><p class="muted">Nothing has been bought yet.</p><?php endif; ?>
 </div>
 
 <?php // ---------- service + engagement ---------- ?>
 <div class="card">
-  <h2>🛠️ સેવા અને સંપર્ક</h2>
+  <h2>🛠️ Service and contact</h2>
   <div class="grid-stats">
     <?php if (can('repairs.view')): ?>
-    <a class="stat <?= $svc['repairs_open'] ? 's-warn' : '' ?>" href="repairs.php"><div class="stat-label">રિપેર</div>
+    <a class="stat <?= $svc['repairs_open'] ? 's-warn' : '' ?>" href="repairs.php"><div class="stat-label">Repair</div>
       <div class="stat-value"><?= $svc['repairs'] ?></div>
-      <div class="muted" style="font-size:11px"><?= $svc['repairs_open'] ? $svc['repairs_open'] . ' ચાલુ' : 'બધા પૂરા' ?><?= $svc['last_repair'] ? '<br>છેલ્લે ' . dmy($svc['last_repair']) : '' ?></div></a>
+      <div class="muted" style="font-size:11px"><?= $svc['repairs_open'] ? $svc['repairs_open'] . ' On' : 'All complete' ?><?= $svc['last_repair'] ? '<br>Last ' . dmy($svc['last_repair']) : '' ?></div></a>
     <?php endif; ?>
     <?php if (can('warranty.view')): ?>
-    <a class="stat <?= $svc['warranty_open'] ? 's-warn' : '' ?>" href="warranty.php"><div class="stat-label">વોરંટી ક્લેમ</div>
+    <a class="stat <?= $svc['warranty_open'] ? 's-warn' : '' ?>" href="warranty.php"><div class="stat-label">Warranty claim</div>
       <div class="stat-value"><?= $svc['warranty'] ?></div>
-      <div class="muted" style="font-size:11px"><?= $svc['warranty_open'] ? $svc['warranty_open'] . ' ચાલુ' : '—' ?></div></a>
+      <div class="muted" style="font-size:11px"><?= $svc['warranty_open'] ? $svc['warranty_open'] . ' On' : '—' ?></div></a>
     <?php endif; ?>
     <?php if (can('amc.view')): ?>
     <a class="stat" href="amc.php"><div class="stat-label">AMC</div>
       <div class="stat-value"><?= $svc['amc_active'] ?></div>
-      <div class="muted" style="font-size:11px"><?= $svc['amc_next'] ? 'આગળ ' . dmy($svc['amc_next']) : 'ચાલુ નથી' ?></div></a>
+      <div class="muted" style="font-size:11px"><?= $svc['amc_next'] ? 'Next ' . dmy($svc['amc_next']) : 'not running' ?></div></a>
     <?php endif; ?>
     <?php if (can('estimates.view')): ?>
-    <a class="stat" href="estimates.php"><div class="stat-label">ક્વોટેશન</div>
+    <a class="stat" href="estimates.php"><div class="stat-label">Quotation</div>
       <div class="stat-value"><?= $eng['quotes'] ?></div>
-      <div class="muted" style="font-size:11px"><?= $eng['quotes_open'] ? $eng['quotes_open'] . ' ખુલ્લાં' : '—' ?></div></a>
+      <div class="muted" style="font-size:11px"><?= $eng['quotes_open'] ? $eng['quotes_open'] . ' Open' : '—' ?></div></a>
     <?php endif; ?>
     <?php if (can('weborders.view')): ?>
-    <a class="stat" href="web_orders.php"><div class="stat-label">વેબ ઓર્ડર</div><div class="stat-value"><?= $eng['orders'] ?></div></a>
+    <a class="stat" href="web_orders.php"><div class="stat-label">Web orders</div><div class="stat-value"><?= $eng['orders'] ?></div></a>
     <?php endif; ?>
-    <a class="stat" href="reviews.php"><div class="stat-label">રિવ્યુ</div><div class="stat-value"><?= $eng['reviews'] ?></div></a>
+    <a class="stat" href="reviews.php"><div class="stat-label">Reviews</div><div class="stat-value"><?= $eng['reviews'] ?></div></a>
     <?php if ($eng['loyalty']): ?>
-    <div class="stat"><div class="stat-label">લોયલ્ટી પોઇન્ટ</div><div class="stat-value"><?= (int)$eng['loyalty'] ?></div></div>
+    <div class="stat"><div class="stat-label">Loyalty points</div><div class="stat-value"><?= (int)$eng['loyalty'] ?></div></div>
     <?php endif; ?>
     <?php if (is_full_admin() && $eng['wa_msgs']): ?>
-    <a class="stat" href="wa_inbox.php"><div class="stat-label">WhatsApp મેસેજ</div>
+    <a class="stat" href="wa_inbox.php"><div class="stat-label">WhatsApp message</div>
       <div class="stat-value"><?= $eng['wa_msgs'] ?></div>
-      <div class="muted" style="font-size:11px"><?= $eng['wa_last'] ? 'છેલ્લે ' . dmy(substr($eng['wa_last'], 0, 10)) : '' ?></div></a>
+      <div class="muted" style="font-size:11px"><?= $eng['wa_last'] ? 'Last ' . dmy(substr($eng['wa_last'], 0, 10)) : '' ?></div></a>
     <?php endif; ?>
   </div>
 </div>
@@ -361,32 +361,32 @@ include __DIR__ . '/includes/header.php';
 <?php // ---------- consent ---------- ?>
 <?php if (can('parties.edit')): ?>
 <div class="card">
-  <h3>🔕 મેસેજની પરવાનગી</h3>
+  <h3>🔕 Message permission</h3>
   <p class="muted mb" style="font-size:13px">
     <?= $c['opt_out']
-        ? 'આ ગ્રાહકે ઉઘરાણીના મેસેજ ન મોકલવાનું કહ્યું છે. કોઈ પણ બલ્ક મેસેજ કે ક્રોન એમને છોડી દેશે.'
-        : 'આ ગ્રાહકને ઉઘરાણીના મેસેજ જઈ શકે છે. જો એ ના પાડે તો અહીંથી બંધ કરી દો.' ?>
+        ? 'This customer has asked not to be sent collection messages. Every bulk send and cron will skip them.'
+        : 'Collection messages can go to this customer. If they refuse, switch it off here.' ?>
   </p>
-  <form method="post" onsubmit="return confirm('<?= $c['opt_out'] ? 'ફરી મેસેજ ચાલુ કરવા છે?' : 'આ ગ્રાહકને મેસેજ મોકલવાના બંધ કરવા છે?' ?>')">
+  <form method="post" onsubmit="return confirm('<?= $c['opt_out'] ? 'Turn messages back on?' : 'Stop sending messages to this customer?' ?>')">
     <?= csrf_field() ?><input type="hidden" name="do" value="opt_out"><input type="hidden" name="id" value="<?= $id ?>">
     <input type="hidden" name="value" value="<?= $c['opt_out'] ? '0' : '1' ?>">
     <button class="btn btn-sm <?= $c['opt_out'] ? 'btn-success' : 'btn-outline btn-danger' ?>" type="submit">
-      <?= $c['opt_out'] ? '🔔 મેસેજ ફરી ચાલુ કરો' : '🔕 મેસેજ બંધ કરો' ?>
+      <?= $c['opt_out'] ? '🔔 Turn messages back on' : '🔕 Turn messages off' ?>
     </button>
   </form>
   <hr>
   <?php $mkt = (int)($p['marketing_opt_out'] ?? 0); ?>
   <p class="muted mb" style="font-size:13px">
-    <b>જાહેરાત / ઓફરના મેસેજ</b> — આ અલગ પરવાનગી છે.
+    <b>Advertising / offer messages</b> — this is a separate permission.
     <?= $mkt
-        ? 'આ ગ્રાહકે ઓફરના મેસેજ બંધ કરાવ્યા છે, એટલે કોઈ કેમ્પેન એમને નહીં જાય. બિલ અને પેમેન્ટની જરૂરી જાણ ચાલુ રહેશે.'
-        : 'આ ગ્રાહકને કેમ્પેનના મેસેજ જઈ શકે છે. ગ્રાહક WhatsApp પર "STOP" લખે તો પણ આ આપોઆપ બંધ થઈ જાય છે.' ?>
+        ? 'This customer has turned off offer messages, so no campaign reaches them. Necessary bill and payment notices continue.'
+        : 'Campaign messages can go to this customer. If the customer replies "STOP" on WhatsApp, this turns itself off too.' ?>
   </p>
-  <form method="post" onsubmit="return confirm('<?= $mkt ? 'ફરી ઓફરના મેસેજ ચાલુ કરવા છે?' : 'આ ગ્રાહકને ઓફરના મેસેજ બંધ કરવા છે?' ?>')">
+  <form method="post" onsubmit="return confirm('<?= $mkt ? 'Turn offer messages back on?' : 'Turn off offer messages for this customer?' ?>')">
     <?= csrf_field() ?><input type="hidden" name="do" value="mkt_opt_out"><input type="hidden" name="id" value="<?= $id ?>">
     <input type="hidden" name="value" value="<?= $mkt ? '0' : '1' ?>">
     <button class="btn btn-sm <?= $mkt ? 'btn-success' : 'btn-outline btn-danger' ?>" type="submit">
-      <?= $mkt ? '📣 ઓફરના મેસેજ ફરી ચાલુ કરો' : '🚫 ઓફરના મેસેજ બંધ કરો' ?>
+      <?= $mkt ? '📣 Turn offer messages back on' : '🚫 Turn off offer messages' ?>
     </button>
   </form>
 </div>

@@ -174,7 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
               ['purchase', $pid, json_encode($_POST, JSON_UNESCAPED_UNICODE), $u['id']]);
             log_activity('edit_request', 'purchase ' . ($purchase['bill_no'] ?: ('#' . $pid)));
             try { tg_notify_admins('✏️ Purchase edit approval\n' . $u['name'] . ' wants to change bill ' . ($purchase['bill_no'] ?: ('#' . $pid)) . "\n" . base_url('approvals.php')); } catch (Exception $e) { /* optional */ }
-            flash('બિલ 24 કલાકથી જૂનું છે, એટલે તમારો ફેરફાર એડમિનની મંજૂરી માટે મોકલાયો છે. મંજૂર થાય એટલે આપોઆપ લાગુ થઈ જશે.', 'info');
+            flash('This bill is more than 24 hours old, so your change has been sent for admin approval. It applies automatically once approved.', 'info');
         } catch (Exception $e) {
             flash('Edit request could not be saved - run Settings → Migrate first.', 'error');
         }
@@ -345,7 +345,7 @@ if ($action === 'new' || $action === 'edit') {
     include __DIR__ . '/includes/header.php';
     ?>
     <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serial_tracked'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers are pre-filled - you can change them if needed.</div><?php endif; ?>
-    <?php if ($isEdit && !is_full_admin() && strtotime($editPurchase['created_at']) < time() - 86400): ?><div class="flash flash-info">⏳ આ બિલ 24 કલાકથી જૂનું છે — સેવ કરશો એટલે ફેરફાર સીધો લાગુ નહીં થાય, એડમિનની મંજૂરી માટે જશે.</div><?php endif; ?>
+    <?php if ($isEdit && !is_full_admin() && strtotime($editPurchase['created_at']) < time() - 86400): ?><div class="flash flash-info">⏳ This bill is more than 24 hours old — saving will not apply the change directly, it goes for admin approval.</div><?php endif; ?>
     <form method="post">
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">
@@ -552,7 +552,7 @@ if ($action === 'new' || $action === 'edit') {
           });
       }
       // type-to-search over the supplier list; the select stays as it was
-      SearchPick.init('party_id', 'સપ્લાયરનું નામ કે મોબાઇલ ટાઇપ કરો…');
+      SearchPick.init('party_id', 'Type a supplier name or mobile…');
     </script>
     <?php
     include __DIR__ . '/includes/footer.php';

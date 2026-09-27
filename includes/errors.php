@@ -81,9 +81,9 @@ set_exception_handler(function ($e) {
         echo "Error: " . $e->getMessage() . "\n";
     } else {
         echo '<div style="font-family:system-ui;max-width:560px;margin:60px auto;padding:22px;border:1px solid #ddd;border-radius:12px">'
-           . '<h2 style="margin:0 0 8px">કંઈક ગડબડ થઈ 😔</h2>'
-           . '<p style="color:#555;margin:0 0 14px">આ ભૂલ નોંધાઈ ગઈ છે અને એડમિનને જાણ થઈ ગઈ છે. થોડી વારે ફરી પ્રયત્ન કરો.</p>'
-           . '<a href="index.php" style="color:#2f5fd0">← ડેશબોર્ડ પર જાવ</a></div>';
+           . '<h2 style="margin:0 0 8px">Something went wrong 😔</h2>'
+           . '<p style="color:#555;margin:0 0 14px">This error has been recorded and the admin has been told. Please try again shortly.</p>'
+           . '<a href="index.php" style="color:#2f5fd0">← Go to the dashboard</a></div>';
     }
 });
 

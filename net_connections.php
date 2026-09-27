@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'renew') {
         $newExp = date('Y-m-d', strtotime("$base +{$c['months']} months"));
         q("UPDATE net_connections SET expiry_date = ?, status = 'active', last_alert_date = NULL WHERE id = ?", [$newExp, $c['id']]);
         if ($c['notify_customer'] && $c['mobile']) {
-            send_whatsapp($c['mobile'], "✅ *" . setting('app_name', 'AK Computer') . "*\n\n" . $c['customer_name'] . ", તમારું ઇન્ટરનેટ કનેક્શન રિન્યૂ થઈ ગયું! 🎉\nPlan: " . ($c['plan_name'] ?: '-') . "\nહવે ચાલશે: *" . dmy($newExp) . "* સુધી\n\nThank you! 🙏");
+            send_whatsapp($c['mobile'], "✅ *" . setting('app_name', 'AK Computer') . "*\n\n" . $c['customer_name'] . ", your internet connection has been renewed! 🎉\nPlan: " . ($c['plan_name'] ?: '-') . "\nValid until: *" . dmy($newExp) . "*\n\nThank you! 🙏");
         }
         log_activity('netconn_renew', $c['customer_name'] . ' till ' . $newExp);
         flash('Renewed till ' . dmy($newExp) . '.');
@@ -98,7 +98,7 @@ include __DIR__ . '/includes/header.php';
         <input type="date" name="expiry_date" value="<?= e($edit['expiry_date'] ?? '') ?>"></div>
       <div><label>Notes</label><input type="text" name="notes" value="<?= e($edit['notes'] ?? '') ?>"></div>
     </div>
-    <label class="check-inline"><input type="checkbox" name="notify_customer" value="1" <?= ($edit['notify_customer'] ?? 1) ? 'checked' : '' ?>> Expiry પહેલા ગ્રાહકને પણ WhatsApp કરવો</label>
+    <label class="check-inline"><input type="checkbox" name="notify_customer" value="1" <?= ($edit['notify_customer'] ?? 1) ? 'checked' : '' ?>> WhatsApp the customer too before expiry</label>
     <div class="mt"><button class="btn" type="submit"><?= $edit ? 'Update' : 'Add Connection' ?></button>
     <?php if ($edit): ?><a class="btn btn-muted" href="net_connections.php">Cancel</a><?php endif; ?></div>
   </form>
@@ -144,5 +144,5 @@ include __DIR__ . '/includes/header.php';
   </tbody>
 </table>
 </div>
-<p class="muted">⏰ રોજનો cron ચાલે એટલે: 7 દિવસ પહેલાં, 1 દિવસ પહેલાં અને expiry ના દિવસે દુકાનના WhatsApp પર એલર્ટ આવે છે (અને ટિક કરેલા ગ્રાહકને પણ યાદ અપાવાય છે).</p>
+<p class="muted">⏰ When the daily cron runs: an alert reaches the shop WhatsApp 7 days before, 1 day before and on the expiry day (and ticked customers are reminded too).</p>
 <?php include __DIR__ . '/includes/footer.php'; ?>

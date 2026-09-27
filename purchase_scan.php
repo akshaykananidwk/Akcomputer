@@ -82,24 +82,24 @@ include __DIR__ . '/includes/header.php';
 <?php if ($review !== null): ?>
 <?php if ($doc): ?>
 <div class="card">
-  <h2>🧾 બિલનો હિસાબ ચકાસ્યો</h2>
+  <h2>🧾 The bill arithmetic was checked</h2>
   <p class="muted" style="margin-top:0;font-size:13px">
-    AI એ બિલ વાંચ્યું, પણ દરેક આંકડો કોડે સરવાળા-ગુણાકારથી ચકાસ્યો છે — નંગ × ભાવ = લાઇન ટોટલ, અને લાઇનોનો સરવાળો = બિલનો ટોટલ.
-    જે બેસતું નથી એ નીચે લાલ નિશાનીથી બતાવ્યું છે અને <b>જાતે ચકાસ્યા વગર ઉમેરાશે નહીં</b>.
+    The AI read the bill, but every figure was checked by code with plain arithmetic — qty × price = line total, and the sum of the lines = the bill total.
+    Whatever does not add up is marked in red below and <b>nothing is added without you checking it</b>.
   </p>
   <div class="grid-stats">
-    <div class="stat"><div class="stat-label">લાઇન</div><div class="stat-value"><?= count($doc['lines']) ?></div></div>
-    <div class="stat <?= $doc['bad_lines'] ? 's-bad' : '' ?>"><div class="stat-label">હિસાબ બેસતો નથી</div><div class="stat-value"><?= (int)$doc['bad_lines'] ?></div></div>
-    <div class="stat"><div class="stat-label">લાઇનોનો સરવાળો</div><div class="stat-value">₹<?= money($doc['line_sum']) ?></div></div>
-    <div class="stat"><div class="stat-label">બિલમાં લખેલો ટોટલ</div><div class="stat-value"><?= $doc['total'] > 0 ? '₹' . money($doc['total']) : '—' ?></div></div>
+    <div class="stat"><div class="stat-label">Line</div><div class="stat-value"><?= count($doc['lines']) ?></div></div>
+    <div class="stat <?= $doc['bad_lines'] ? 's-bad' : '' ?>"><div class="stat-label">does not add up</div><div class="stat-value"><?= (int)$doc['bad_lines'] ?></div></div>
+    <div class="stat"><div class="stat-label">Sum of the lines</div><div class="stat-value">₹<?= money($doc['line_sum']) ?></div></div>
+    <div class="stat"><div class="stat-label">The total written on the bill</div><div class="stat-value"><?= $doc['total'] > 0 ? '₹' . money($doc['total']) : '—' ?></div></div>
   </div>
   <?php if ($doc['problems']): ?>
-    <div class="flash flash-error" style="margin-top:10px">⚠️ <?= e(implode(' · ', $doc['problems'])) ?>. બિલ સામે રાખીને ચકાસો.</div>
+    <div class="flash flash-error" style="margin-top:10px">⚠️ <?= e(implode(' · ', $doc['problems'])) ?>. Check it against the bill.</div>
   <?php elseif ($doc['total'] > 0): ?>
-    <div class="flash flash-success" style="margin-top:10px">✅ બિલનો સરવાળો બરાબર બેસે છે.</div>
+    <div class="flash flash-success" style="margin-top:10px">✅ The bill adds up correctly.</div>
   <?php endif; ?>
   <p class="muted" style="font-size:12.5px;margin-bottom:0">
-    <?= e(trim(($doc['supplier'] ? $doc['supplier'] . ' · ' : '') . ($doc['bill_no'] ? 'બિલ ' . $doc['bill_no'] . ' · ' : '') . ($doc['bill_date'] ? dmy($doc['bill_date']) : ''), ' ·')) ?>
+    <?= e(trim(($doc['supplier'] ? $doc['supplier'] . ' · ' : '') . ($doc['bill_no'] ? 'Bill ' . $doc['bill_no'] . ' · ' : '') . ($doc['bill_date'] ? dmy($doc['bill_date']) : ''), ' ·')) ?>
   </p>
 </div>
 <?php endif; ?>
@@ -118,8 +118,8 @@ include __DIR__ . '/includes/header.php';
          style="cursor:default;flex-wrap:wrap;align-items:flex-start<?= $probs ? ';background:var(--bad-soft,#fef2f2)' : '' ?>">
       <div class="list-row-main" style="flex:1 1 100%">
         <label class="check-inline"><input type="checkbox" class="scan-include" <?= $lineOk ? 'checked' : '' ?>> <strong><?= e($r['token']) ?></strong>
-          <?php if ($billPrice > 0): ?><span class="muted" style="font-weight:normal">· read from bill: ₹<?= money($billPrice) ?><?php if (!empty($r['qty'])): ?> × <?= rtrim(rtrim(number_format((float)$r['qty'], 2), '0'), '.') ?> નંગ = ₹<?= money($r['amount'] ?? 0) ?><?php endif; ?></span><?php endif; ?></label>
-        <?php foreach ($probs as $p): ?><div style="color:var(--bad,#b91c1c);font-size:12.5px">⚠️ <?= e($p) ?> — જાતે ચકાસો</div><?php endforeach; ?>
+          <?php if ($billPrice > 0): ?><span class="muted" style="font-weight:normal">· read from bill: ₹<?= money($billPrice) ?><?php if (!empty($r['qty'])): ?> × <?= rtrim(rtrim(number_format((float)$r['qty'], 2), '0'), '.') ?> qty = Rs <?= money($r['amount'] ?? 0) ?><?php endif; ?></span><?php endif; ?></label>
+        <?php foreach ($probs as $p): ?><div style="color:var(--bad,#b91c1c);font-size:12.5px">⚠️ <?= e($p) ?> — check it yourself</div><?php endforeach; ?>
         <?php foreach ($r['notes'] ?? [] as $n): ?><div class="muted" style="font-size:12.5px">🧮 <?= e($n) ?></div><?php endforeach; ?>
         <select class="scan-item-select mt" style="width:100%" onchange="scanItemChanged(this)">
           <?php foreach ($r['matches'] as $m): ?>
@@ -272,7 +272,7 @@ function scanContinue() {
   // a line whose arithmetic did not add up can still be taken - but only
   // deliberately, and only after the person says they checked it
   var flagged = document.querySelectorAll('.scan-bad .scan-include:checked').length;
-  if (flagged && !confirm(flagged + ' લાઇનનો હિસાબ બિલ સાથે બેસતો નથી. તમે જાતે ચકાસી લીધું છે?')) return;
+  if (flagged && !confirm(flagged + ' lines do not add up to the bill. Have you checked it yourself?')) return;
   sessionStorage.setItem('reorderItems', JSON.stringify(items));
   location = 'purchases.php?action=new&reorder=1&bill_photo=' + encodeURIComponent(SCAN_FILE);
 }

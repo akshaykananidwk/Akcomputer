@@ -38,7 +38,7 @@ if ($a === 'item_search' && can('items.view')) {
     if (!$costOk) foreach ($items as &$_i) { $_i['purchase_price'] = 0; } unset($_i);
     // Price history for THIS customer: when a party is selected on the bill,
     // each suggestion also carries the price they were charged last time
-    // ("આ ગ્રાહકને છેલ્લે આ ભાવે આપેલું") so haggling has a reference point.
+    // ("this customer Last આ Priceે આપેલું") so haggling has a reference point.
     $lpParty = (int)get('party');
     if ($lpParty > 0) {
         foreach ($items as &$_i) {
@@ -146,9 +146,9 @@ if ($a === 'party_add' && can('parties.add') && $_SERVER['REQUEST_METHOD'] === '
 // the Items screen, where there is room for it.
 if ($a === 'item_add' && can('items.add') && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim((string)post('name'));
-    if ($name === '') { echo json_encode(['error' => 'આઇટમનું નામ જોઈએ.']); exit; }
+    if ($name === '') { echo json_encode(['error' => 'An item name is needed.']); exit; }
     if (row('SELECT id FROM items WHERE name = ? AND is_active = 1', [$name])) {
-        echo json_encode(['error' => 'આ નામની આઇટમ પહેલેથી છે — સર્ચમાંથી પસંદ કરો.']);
+        echo json_encode(['error' => 'An item with this name already exists — pick it from the search.']);
         exit;
     }
     $sell = max(0, (float)post('selling_price'));
@@ -187,7 +187,7 @@ if ($a === 'party_bills' && can('payments.view')) {
         // the party's unsettled OPENING balance (pre-software ledger) rides
         // on top as its own linkable line - id 'op' instead of a bill id
         ($opDue = opening_due($party_id, $dir)) > 0.009
-            ? [['id' => 'op', 'no' => '📜 Opening Balance / જૂનો હિસાબ', 'date' => '—', 'due' => $opDue]] : [],
+            ? [['id' => 'op', 'no' => '📜 Opening balance / old account', 'date' => '—', 'due' => $opDue]] : [],
         array_map(fn($b) => [
             'id' => (int)$b['id'], 'no' => $b['no'], 'date' => dmy($b['d']), 'due' => round((float)$b['due'], 2),
         ], $bills))]);

@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_apply') {
     require_perm('settings.edit');
     // overwriting every application file is an owner-level action, not a
     // "can edit settings" one - and it now snapshots files + DB first
-    if (!is_full_admin()) { flash('સોફ્ટવેર અપડેટ ફક્ત એડમિન કરી શકે.', 'error'); redirect('settings.php?cat=backup'); }
+    if (!is_full_admin()) { flash('Only an admin can update the software.', 'error'); redirect('settings.php?cat=backup'); }
     list($ok, $msg) = gh_apply_update(post('sha'));
     flash($msg, $ok ? 'success' : 'error');
     redirect('settings.php?cat=backup');
@@ -104,11 +104,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_meta_wa') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'meta_full_sync') {
     require_perm('settings.edit');
     require_once __DIR__ . '/includes/wa_meta.php';
-    if (!meta_wa_configured()) { flash('પહેલા Meta Token + Phone ID Save કરો.', 'error'); redirect('settings.php?cat=whatsapp'); }
+    if (!meta_wa_configured()) { flash('Save the Meta token and phone ID first.', 'error'); redirect('settings.php?cat=whatsapp'); }
     $rep = meta_wa_full_sync();
     $bad = count(array_filter($rep, fn($x) => $x['status'] === 'fail'));
     $warn = count(array_filter($rep, fn($x) => $x['status'] === 'warn'));
-    flash($bad ? "Sync પૂરું — $bad વસ્તુ ધ્યાન માંગે છે (નીચે લાલ લાઈન + ઉકેલ જુઓ)." : ($warn ? "Sync પૂરું ✔ — $warn નાની નોંધ નીચે જુઓ." : 'બધું Sync થઈ ગયું ✔ બધું લીલું!'), $bad ? 'error' : 'success');
+    flash($bad ? "Sync done — $bad things need attention (see the red lines and fixes below)." : ($warn ? "Sync done ✔ — $warn small notes below." : 'Everything synced ✔ all green!'), $bad ? 'error' : 'success');
     log_activity('meta_full_sync', json_encode(array_map(fn($x) => $x['status'], $rep)));
     redirect('settings.php?cat=whatsapp');
 }
@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'meta_wa_sync') {
     else {
         $n = count($res);
         $appr = count(array_filter($res, fn($t) => $t['status'] === 'APPROVED'));
-        flash("Meta સાથે કનેક્ટ થયું ✔ $n ટેમ્પ્લેટ સિંક થયા ($appr Approved). સ્ટેટસ નીચે કાર્ડમાં દેખાય છે.");
+        flash("Connected to Meta ✔ $n templates synced ($appr approved). The status is on the card below.");
         log_activity('meta_wa_sync', json_encode(array_map(fn($t) => $t['status'], $res)));
     }
     redirect('settings.php?cat=whatsapp');
@@ -225,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'apply_margin_all') 
         if ((float)val('SELECT selling_price FROM items WHERE id = ?', [$mi['id']]) > (float)$mi['selling_price'] + 0.005) $fixed++;
     }
     log_activity('margin_apply_all', "raised=$fixed");
-    flash($fixed ? "$fixed આઇટમના વેચાણ-ભાવ વધારીને મિનિમમ નફા સુધી લાવ્યા. (કોઈનો ભાવ ઘટાડ્યો નથી)" : 'બધી આઇટમ પહેલેથી મિનિમમ નફા ઉપર જ છે ✔');
+    flash($fixed ? "$fixed items had their selling price raised to the minimum profit. (No price was lowered)" : 'Every item is already above the minimum profit ✔');
     redirect('settings.php?cat=transaction');
 }
 
@@ -267,7 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'collection_rules') 
     set_setting('late_interest_pct', max(0, (float)post('interest_pct')));
     set_setting('late_interest_grace_days', max(0, (int)post('grace')));
     set_setting('expense_approval_above', max(0, (float)post('exp_above')));
-    flash('ઉઘરાણીના નિયમ સાચવ્યા.');
+    flash('Collection rules saved.');
     redirect('settings.php?cat=reminders');
 }
 
@@ -284,7 +284,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'tg_save') {
             CURLOPT_POSTFIELDS => http_build_query(['url' => $whUrl]), CURLOPT_SSL_VERIFYPEER => true]);
         $r = json_decode((string)curl_exec($ch), true);
         curl_close($ch);
-        flash(($r['ok'] ?? false) ? 'Telegram bot connected ✔ — હવે સ્ટાફ /link કોડથી જોડાય.' : ('Webhook set failed: ' . ($r['description'] ?? 'check the token')), ($r['ok'] ?? false) ? 'success' : 'error');
+        flash(($r['ok'] ?? false) ? 'Telegram bot connected ✔ — staff can now join with a /link code.' : ('Webhook set failed: ' . ($r['description'] ?? 'check the token')), ($r['ok'] ?? false) ? 'success' : 'error');
     } else {
         flash('Telegram settings saved.');
     }
@@ -344,14 +344,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_backup_auto') 
     set_setting('error_alerts', post('error_alerts') ? '1' : '0');
     log_activity('settings_save', 'auto backup + error alerts');
     flash(post('backup_passphrase') !== ''
-        ? '✅ સેવ થયું — હવેથી રોજનું બેકઅપ લોક થઈને (encrypted) બનશે.'
-        : '✅ સેવ થયું — પાસફ્રેઝ ખાલી છે, એટલે બેકઅપ ફાઈલ Telegram પર નહીં મોકલાય (સર્વર પર સેવ થશે).');
+        ? '✅ Saved — from now on the daily backup is made locked (encrypted).'
+        : '✅ Saved — the passphrase is blank, so the backup file is not sent to Telegram (it is saved on the server).');
     redirect('settings.php?cat=backup');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_rollback') {
     require_perm('settings.edit');
-    if (!is_full_admin()) { flash('Rollback ફક્ત એડમિન કરી શકે.', 'error'); redirect('settings.php?cat=backup'); }
+    if (!is_full_admin()) { flash('Only an admin can roll back.', 'error'); redirect('settings.php?cat=backup'); }
     list($ok, $msg) = gh_rollback(post('id'));
     flash($msg, $ok ? 'success' : 'error');
     redirect('settings.php?cat=backup');
@@ -442,7 +442,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_store') {
     set_setting('store_deal_item', (string)(int)post('store_deal_item'));
     set_setting('store_show_qty', post('store_show_qty') ? '1' : '0');
     log_activity('settings_save', 'store design');
-    flash('Store design saved — વેબસાઇટ પર તરત લાગુ.');
+    flash('Store design saved — live on the website at once.');
     redirect('settings.php?cat=store');
 }
 
@@ -514,23 +514,23 @@ exit;
     <input type="hidden" name="do" value="save_transaction">
     <label class="check-inline mb"><input type="checkbox" name="cash_sale_default" value="1" <?= setting('cash_sale_default', '1') === '1' ? 'checked' : '' ?>> Cash Sale by default <span class="muted" style="font-weight:normal">(new bill's Cash/Credit toggle stays on Cash)</span></label>
     <label class="check-inline mb"><input type="checkbox" name="round_off_default" value="1" <?= setting('round_off_default', '1') === '1' ? 'checked' : '' ?>> Round Off Total <span class="muted" style="font-weight:normal">(bill total auto-rounds to the nearest rupee - the checkbox can still be changed per bill)</span></label>
-    <div class="mb"><label>Default Minimum Profit % <span class="muted" style="font-weight:normal">— દરેક પ્રોડક્ટમાં ઓછામાં ઓછો આટલો નફો: પરચેસ થાય એટલે વેચાણ-ભાવ આપોઆપ ખરીદ + આટલા % થાય, અને ક્યારેય એનાથી નીચે ન રહે. (આઇટમનું પોતાનું Margin % ભરેલું હોય તો એ જ ચાલે; 0 = નિયમ બંધ)</span></label>
+    <div class="mb"><label>Default Minimum Profit % <span class="muted" style="font-weight:normal">— the least profit on every product: on a purchase the selling price becomes cost + this %, and never falls below it. (An item own Margin % wins if it is filled in; 0 = rule off)</span></label>
       <input type="number" step="any" min="0" name="default_margin_pct" value="<?= 0 + (float)setting('default_margin_pct', '30') ?>" style="max-width:120px"></div>
     <label class="check-inline mb"><input type="checkbox" name="show_profit_billing" value="1" <?= setting('show_profit_billing') === '1' ? 'checked' : '' ?>> Show Profit while making Sale Invoice</label>
     <label class="check-inline mb"><input type="checkbox" name="show_purchase_price_billing" value="1" <?= setting('show_purchase_price_billing') === '1' ? 'checked' : '' ?>> Display Purchase Price of Items <span class="muted" style="font-weight:normal">(in the item search list while billing)</span></label>
     <label class="check-inline mb"><input type="checkbox" name="add_time_transactions" value="1" <?= setting('add_time_transactions', '1') === '1' ? 'checked' : '' ?>> Add Time on Transactions <span class="muted" style="font-weight:normal">(shows Time next to the bill's Date - view, PDF, WhatsApp image)</span></label>
     <button class="btn" type="submit">Save</button>
   </form>
-  <form method="post" class="mt" onsubmit="return confirm('બધી જૂની આઇટમના વેચાણ-ભાવ ચેક કરીને, જ્યાં મિનિમમ નફા કરતાં ઓછો હોય ત્યાં વધારી દેવો? (કોઈનો ભાવ ઘટશે નહીં)')">
+  <form method="post" class="mt" onsubmit="return confirm('Check every existing item selling price and raise the ones below the minimum profit? (No price is ever lowered)')">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="apply_margin_all">
-    <button class="btn btn-sm btn-outline" type="submit">⚡ બધી હાલની આઇટમ પર મિનિમમ નફો લગાડો</button>
+    <button class="btn btn-sm btn-outline" type="submit">⚡ Apply the minimum profit to every existing item</button>
   </form>
 </div>
 
 <div class="card">
   <h3>Item Custom Fields / Description Points</h3>
-  <p class="muted mb">Extra labeled fields (e.g. "Exp. Date", "Brand", "Warranty", "Install note") that show up under every item while adding it to a sale — 6-7 જેટલા પોઇન્ટ ઉમેરી શકાય. દરેક પોઇન્ટ માટે નક્કી કરો: <strong>🖨️ Print+PDF</strong> = ગ્રાહકના બિલ/PDF/WhatsApp માં દેખાય · <strong>🔒 Internal</strong> = ફક્ત તમને સ્ક્રીન પર દેખાય, બિલમાં ક્યારેય નહીં.</p>
+  <p class="muted mb">Extra labeled fields (e.g. "Exp. Date", "Brand", "Warranty", "Install note") that show up under every item while adding it to a sale — up to 6 or 7 points. For each point decide: <strong>🖨️ Print+PDF</strong> = appears on the customer bill/PDF/WhatsApp · <strong>🔒 Internal</strong> = visible only to you on screen, never on a bill.</p>
   <table class="table-sm mb">
     <?php foreach ($customFields as $cf): $cfPrint = (int)($cf['show_on_print'] ?? 1); ?>
     <tr>
@@ -554,7 +554,7 @@ exit;
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="custom_field_add">
     <div><input type="text" name="label" placeholder="Field label, e.g. Brand" required></div>
-    <label class="check-inline"><input type="checkbox" name="show_on_print" value="1" checked> Print/PDF માં દેખાડવું</label>
+    <label class="check-inline"><input type="checkbox" name="show_on_print" value="1" checked> Show on print/PDF</label>
     <button class="btn btn-sm" type="submit">Add field</button>
   </form>
 </div>
@@ -574,9 +574,9 @@ exit;
     <div class="form-row cols-2">
       <div><label>Shop WhatsApp number (for the website catalog's "Order" button)</label>
         <input type="tel" name="wa_shop_number" value="<?= e(setting('wa_shop_number')) ?>" placeholder="91XXXXXXXXXX"></div>
-      <div><label>એક મેસેજનો ખર્ચ (₹)</label>
+      <div><label>Cost per message (Rs)</label>
         <input type="number" step="0.0001" min="0" name="wa_cost_per_msg" value="<?= e(setting('wa_cost_per_msg', '')) ?>" placeholder="0">
-        <span class="muted" style="font-size:12px">તમારા WhatsApp પ્રોવાઇડરના બિલ પ્રમાણેનો ભાવ ભરો. ઘણા બધા રિમાઇન્ડર એકસાથે મોકલતાં પહેલાં કેટલો ખર્ચ થશે એ બતાવવા માટે વપરાય છે. ખાલી રાખશો તો ખર્ચ નહીં દેખાય.</span></div>
+        <span class="muted" style="font-size:12px">Enter the price from your WhatsApp provider bill. It is used to show what a bulk send will cost before you send it. Leave it blank and no cost is shown.</span></div>
     </div>
     <button class="btn" type="submit">Save</button>
   </form>
@@ -584,14 +584,14 @@ exit;
 
 <div class="card">
   <h2>☁️ Official Meta (Facebook) WhatsApp Cloud API</h2>
-  <p class="muted" style="font-size:13px">બે API સાથે ચાલે છે — નીચે પ્રાયોરિટી પસંદ કરો: પહેલી નિષ્ફળ જાય તો બીજી આપોઆપ બેકઅપ તરીકે વપરાય છે.</p>
+  <p class="muted" style="font-size:13px">Two APIs run together — choose the priority below: if the first fails the second is used automatically as a backup.</p>
   <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save_meta_wa">
-    <div class="field"><label>કઈ API પહેલા વાપરવી? (Priority)</label>
+    <div class="field"><label>Which API to use first? (priority)</label>
       <select name="wa_provider_order">
-        <option value="thirdparty_first" <?= setting('wa_provider_order', 'thirdparty_first') !== 'meta_first' ? 'selected' : '' ?>>1️⃣ થર્ડ-પાર્ટી પહેલા → Meta બેકઅપ</option>
-        <option value="meta_first" <?= setting('wa_provider_order') === 'meta_first' ? 'selected' : '' ?>>1️⃣ Meta (Official) પહેલા → થર્ડ-પાર્ટી બેકઅપ</option>
+        <option value="thirdparty_first" <?= setting('wa_provider_order', 'thirdparty_first') !== 'meta_first' ? 'selected' : '' ?>>1️⃣ Third-party first → Meta as backup</option>
+        <option value="meta_first" <?= setting('wa_provider_order') === 'meta_first' ? 'selected' : '' ?>>1️⃣ Meta (official) first → third-party as backup</option>
       </select></div>
     <div class="field"><label>Permanent Access Token</label>
       <input type="text" name="meta_wa_token" value="<?= e(setting('meta_wa_token')) ?>" placeholder="EAAG... (Meta Business > System User token)" autocomplete="off"></div>
@@ -599,19 +599,19 @@ exit;
       <div><label>Phone Number ID</label><input type="text" name="meta_wa_phone_id" value="<?= e(setting('meta_wa_phone_id')) ?>" placeholder="1234567890"></div>
       <div><label>WhatsApp Business Account (WABA) ID</label><input type="text" name="meta_wa_waba_id" value="<?= e(setting('meta_wa_waba_id')) ?>" placeholder="1234567890"></div>
     </div>
-    <div class="field"><label>Meta Catalog ID <span class="muted" style="font-weight:normal">(વૈકલ્પિક — Commerce Manager કેટલોગમાં પ્રોડક્ટ પણ Sync થાય)</span></label>
-      <input type="text" name="meta_catalog_id" value="<?= e(setting('meta_catalog_id')) ?>" placeholder="business.facebook.com/commerce → Catalog → Settings માંથી ID"></div>
+    <div class="field"><label>Meta Catalog ID <span class="muted" style="font-weight:normal">(optional — products also sync into the Commerce Manager catalogue)</span></label>
+      <input type="text" name="meta_catalog_id" value="<?= e(setting('meta_catalog_id')) ?>" placeholder="the ID from business.facebook.com/commerce → Catalog → Settings"></div>
     <button class="btn" type="submit">Save</button>
   </form>
   <form method="post" style="margin-top:10px">
     <?= csrf_field() ?><input type="hidden" name="do" value="meta_full_sync">
-    <button class="btn" type="submit">🔄 Synchronize — બધું એક ક્લિકમાં</button>
-    <span class="muted" style="font-size:12.5px"> — Templates + Profile + Webhook + Catalog + Phone status બધું Sync; જે આપોઆપ ઠીક થાય એ ઠીક, બાકીનું ઉકેલ સાથે નીચે.</span>
+    <button class="btn" type="submit">🔄 Synchronize — everything in one click</button>
+    <span class="muted" style="font-size:12.5px"> — Templates + Profile + Webhook + Catalog + Phone status all synced; whatever can fix itself does, the rest is listed below with what to do.</span>
   </form>
   <?php $syncRep = json_decode(setting('meta_sync_report', ''), true) ?: [];
         if ($syncRep): $sIcon = ['ok' => '✅', 'warn' => '⚠️', 'fail' => '❌', 'skip' => '⏭️']; ?>
   <table class="table-sm mt">
-    <thead><tr><th></th><th>વિભાગ</th><th>સ્થિતિ / ઉકેલ</th></tr></thead>
+    <thead><tr><th></th><th>Section</th><th>Status / fix</th></tr></thead>
     <tbody>
     <?php foreach ($syncRep as $sr): ?>
     <tr><td><?= $sIcon[$sr['status']] ?? '·' ?></td><td style="white-space:nowrap"><?= e($sr['name']) ?></td>
@@ -636,7 +636,7 @@ exit;
     <?php endforeach; ?>
     </tbody>
   </table>
-  <p class="muted" style="font-size:12px">Last sync: <?= e(setting('meta_wa_tpl_synced_at', '-')) ?> · સ્ટેટસ દર 6 કલાકે આપોઆપ પણ રિફ્રેશ થાય છે (Pending → Approved થાય એટલે અહીં દેખાશે).</p>
+  <p class="muted" style="font-size:12px">Last sync: <?= e(setting('meta_wa_tpl_synced_at', '-')) ?> · the status also refreshes itself every 6 hours (Pending → Approved shows up here).</p>
   <?php endif; ?>
 </div>
 
@@ -650,7 +650,7 @@ exit;
   </form>
 </div>
 <div class="card">
-  <h3>💰 મહિનાનો અંદાજિત ખર્ચ — AI + Meta WhatsApp API</h3>
+  <h3>💰 Estimated monthly cost — AI + Meta WhatsApp API</h3>
   <?php
   require_once __DIR__ . '/includes/wa_bot.php';
   try { list($aiUsed2, $aiCap2) = wa_bot_ai_usage(); } catch (Exception $e) { $aiUsed2 = 0; $aiCap2 = 1500; }
@@ -659,18 +659,18 @@ exit;
   $metaEst = round($metaOut * 0.13, 2); // WORST case: every message billed as a utility/auth template (~₹0.115-0.13); replies inside the 24h window are actually FREE
   ?>
   <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
-    <thead><tr><th>સર્વિસ</th><th class="num">આ મહિને વપરાશ</th><th class="num">અંદાજિત ખર્ચ</th></tr></thead>
+    <thead><tr><th>Service</th><th class="num">Usage this month</th><th class="num">Estimated cost</th></tr></thead>
     <tbody>
-      <tr><td>🧠 Gemini AI (બોટ જવાબ + ફોટો ઓળખ + કેટેગરી ગોઠવણ)</td><td class="num"><?= $aiUsed2 + $aiCatCalls ?> calls (cap <?= $aiCap2 ?>)</td><td class="num"><strong>₹0</strong> <span class="muted">(ફ્રી ટિયર)</span></td></tr>
+      <tr><td>🧠 Gemini AI (bot replies + photo recognition + category sorting)</td><td class="num"><?= $aiUsed2 + $aiCatCalls ?> calls (cap <?= $aiCap2 ?>)</td><td class="num"><strong>₹0</strong> <span class="muted">(free tier)</span></td></tr>
       <?php $aiPaidCalls = (int)val("SELECT COUNT(*) FROM activity_log WHERE action = 'ai_paid_call' AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01')");
             if ($aiPaidCalls || setting('gemini_api_key_paid') !== ''): ?>
-      <tr><td>💳 Gemini Paid Backup (ફ્રી લિમિટ પતે ત્યારે આપોઆપ)</td><td class="num"><?= $aiPaidCalls ?> calls</td><td class="num"><strong>~₹<?= money($aiPaidCalls * 0.06) ?></strong></td></tr>
+      <tr><td>💳 Gemini paid backup (automatic when the free limit runs out)</td><td class="num"><?= $aiPaidCalls ?> calls</td><td class="num"><strong>~₹<?= money($aiPaidCalls * 0.06) ?></strong></td></tr>
       <?php endif; ?>
-      <tr><td>☁️ Meta WhatsApp Cloud API (Official)</td><td class="num"><?= $metaOut ?> મેસેજ</td><td class="num"><strong>વધુમાં વધુ ~₹<?= money($metaEst) ?></strong></td></tr>
-      <tr><td>📨 થર્ડ-પાર્ટી ગેટવે (bulk.akdwk.in)</td><td class="num">—</td><td class="num"><span class="muted">તમારું અલગ રિચાર્જ</span></td></tr>
+      <tr><td>☁️ Meta WhatsApp Cloud API (Official)</td><td class="num"><?= $metaOut ?> Message</td><td class="num"><strong>at most ~Rs <?= money($metaEst) ?></strong></td></tr>
+      <tr><td>📨 Third-party gateway (bulk.akdwk.in)</td><td class="num">—</td><td class="num"><span class="muted">your own separate recharge</span></td></tr>
     </tbody>
   </table></div>
-  <p class="muted" style="font-size:12.5px">📌 Meta નો હિસાબ: ગ્રાહકે છેલ્લા 24 કલાકમાં મેસેજ કર્યો હોય એની અંદરના બધા જવાબ (કેટલોગ, બોટ, ટેક્સ્ટ) <strong>ફ્રી</strong>; ફક્ત 24-કલાક બહાર જતા ટેમ્પ્લેટ મેસેજ (OTP/બિલ/રિમાઇન્ડર) આશરે <strong>₹0.12-0.13 પ્રતિ મેસેજ</strong> લાગે. ઉપરનો આંકડો બધા જ મેસેજ paid ગણીને કાઢેલો <em>મહત્તમ</em> અંદાજ છે — સાચું બિલ એનાથી ઓછું જ આવે (ચોક્કસ આંકડો business.facebook.com → Billing માં). Gemini AI હાલના વપરાશે ફ્રી-ટિયરમાં જ રહે છે = ₹0.</p>
+  <p class="muted" style="font-size:12.5px">📌 How Meta charges: every reply within 24 hours of the customer messaging you (catalogue, bot, text) <strong>Free</strong>; only template messages sent outside the 24 hours (OTP/bill/reminder) cost about <strong>Rs 0.12-0.13 per message</strong> each. The figure above assumes every message is paid <em>Maximum</em> is an estimate — the real bill comes out lower (the exact figure is at business.facebook.com → Billing). At current usage Gemini AI stays inside the free tier = Rs 0.</p>
 </div>
 <div class="card">
   <h3>🤖 WhatsApp Product Bot (auto-reply)</h3>
@@ -685,8 +685,8 @@ exit;
     <input type="hidden" name="wa_api_key" value="<?= e(setting('wa_api_key')) ?>">
     <input type="hidden" name="wa_shop_number" value="<?= e(setting('wa_shop_number')) ?>">
     <label class="check-inline"><input type="checkbox" name="wa_bot_enabled" value="1" <?= setting('wa_bot_enabled', '0') === '1' ? 'checked' : '' ?>> Bot ON — auto-reply to product questions</label>
-    <label class="check-inline" style="display:block;margin-top:6px"><input type="checkbox" name="wa_catalog_enabled" value="1" <?= setting('wa_catalog_enabled', '1') === '1' ? 'checked' : '' ?>> 📚 WhatsApp Catalog menu — "catalog" લખે (કે welcome બટન દબાવે) એટલે આખો કેટલોગ WhatsApp માં જ ખૂલે: કેટેગરી લિસ્ટ → પ્રોડક્ટ + ભાવ → 🛒 ઓર્ડર બટન (ઓર્ડર વેબસાઇટના Web Orders માં આવે)</label>
-    <p class="muted" style="font-size:12.5px;margin:4px 0 0 24px">Official Meta API કનેક્ટ હોય તો સાચા બટન/લિસ્ટ મેનુ જાય છે; નહીંતર એ જ મેનુ નંબરવાળા ટેક્સ્ટ તરીકે જાય છે (ગ્રાહક "1" લખીને જવાબ આપે).</p>
+    <label class="check-inline" style="display:block;margin-top:6px"><input type="checkbox" name="wa_catalog_enabled" value="1" <?= setting('wa_catalog_enabled', '1') === '1' ? 'checked' : '' ?>> 📚 WhatsApp Catalog menu — "catalog" types it (or taps the welcome button), the whole catalogue opens inside WhatsApp: category list → product + price → 🛒 order button (orders arrive in Web Orders on the website)</label>
+    <p class="muted" style="font-size:12.5px;margin:4px 0 0 24px">With the official Meta API connected, real button and list menus go out; otherwise the same menu goes as numbered text (the customer "1" replies by typing a number).</p>
     <div class="form-row cols-2 mt">
       <div><label>AI calls / month limit <span class="muted" style="font-weight:normal">(cost brake — most replies use 0 AI; 1500 stays inside Gemini's FREE tier = ₹0)</span></label>
         <input type="number" min="0" name="wa_bot_ai_monthly_cap" value="<?= (int)setting('wa_bot_ai_monthly_cap', '1500') ?>"></div>
@@ -716,22 +716,22 @@ exit;
 </div>
 <div class="card">
   <h3>🌐 Bot Menus, Keywords &amp; Languages</h3>
-  <p class="muted">"Hi" કે "Menu" જેવો કોઈપણ keyword ગ્રાહક ગમે ત્યારે લખે — જૂની ચેટ ગમે તેટલી જૂની હોય — તરત મુખ્ય મેનુ જાય છે. પહેલી વાર ગ્રાહકને ભાષા પુછાય છે (English / ગુજરાતી / हिंदी) અને પછી બધા મેનુ-જવાબ એ જ ભાષામાં જાય છે. બધું અહીંથી બદલી શકાય — કોડને હાથ લગાડ્યા વગર.</p>
+  <p class="muted">"Hi" or "Menu" whenever a customer types any of these keywords — however old the chat is — the main menu goes out at once. The first time, the customer is asked their language (English / Gujarati / Hindi) and every menu reply after that goes in it. All of it is changeable here, without touching code.</p>
   <?php require_once __DIR__ . '/includes/wa_bot.php'; ?>
   <form method="post" class="mt">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save_wabot">
     <div><label>Trigger keywords <span class="muted" style="font-weight:normal">(comma separated — any of these always opens the main menu)</span></label>
       <input type="text" name="wa_bot_keywords" value="<?= e(setting('wa_bot_keywords', '')) ?>" placeholder="<?= e(implode(',', array_slice(wa_kw_list(), 0, 12))) ?>,...">
-      <p class="muted" style="font-size:12px">ખાલી રાખો તો default લિસ્ટ ચાલે છે: hi, hello, menu, start, home, namaste, નમસ્તે, नमस्ते...</p></div>
+      <p class="muted" style="font-size:12px">Leave it blank for the default list: hi, hello, menu, start, home, namaste...</p></div>
     <div class="form-row cols-2 mt">
       <div><label>Languages offered to customers</label>
-        <?php $langsOn = wa_langs_enabled(); foreach (['en' => 'English', 'gu' => 'ગુજરાતી (Gujarati)', 'hi' => 'हिंदी (Hindi)'] as $lc => $ln): ?>
+        <?php $langsOn = wa_langs_enabled(); foreach (['en' => 'English', 'gu' => 'Gujarati', 'hi' => 'हिंदी (Hindi)'] as $lc => $ln): ?>
         <label class="check-inline" style="display:block"><input type="checkbox" name="wa_langs[]" value="<?= $lc ?>" <?= in_array($lc, $langsOn, true) ? 'checked' : '' ?>> <?= $ln ?></label>
         <?php endforeach; ?></div>
       <div><label>Default language <span class="muted" style="font-weight:normal">(before the customer picks)</span></label>
         <select name="wa_lang_default">
-          <?php foreach (['en' => 'English', 'gu' => 'ગુજરાતી', 'hi' => 'हिंदी'] as $lc => $ln): ?>
+          <?php foreach (['en' => 'English', 'gu' => 'Gujarati', 'hi' => 'हिंदी'] as $lc => $ln): ?>
           <option value="<?= $lc ?>" <?= wa_lang_default() === $lc ? 'selected' : '' ?>><?= $ln ?></option>
           <?php endforeach; ?>
         </select>
@@ -749,37 +749,37 @@ exit;
       <textarea name="wa_auto_replies" rows="3" placeholder="timing | We are open 9:30am - 8:30pm, Monday to Saturday.&#10;upi | Our UPI ID: shop@upi"><?= e(setting('wa_auto_replies', '')) ?></textarea></div>
     <details class="mt"><summary style="cursor:pointer;font-weight:600">✍️ Welcome &amp; fallback message text (per language — blank = built-in text)</summary>
       <div class="form-row cols-3 mt">
-      <?php foreach (['en' => 'English', 'gu' => 'ગુજરાતી', 'hi' => 'हिंदी'] as $lc => $ln): ?>
+      <?php foreach (['en' => 'English', 'gu' => 'Gujarati', 'hi' => 'हिंदी'] as $lc => $ln): ?>
         <div><label>Welcome — <?= $ln ?></label>
           <textarea name="wa_txt_welcome_<?= $lc ?>" rows="4" placeholder="<?= e(wa_strings()['welcome'][$lc] ?? '') ?>"><?= e(setting('wa_txt_welcome_' . $lc, '')) ?></textarea></div>
       <?php endforeach; ?>
       </div>
       <div class="form-row cols-3">
-      <?php foreach (['en' => 'English', 'gu' => 'ગુજરાતી', 'hi' => 'हिंदी'] as $lc => $ln): ?>
+      <?php foreach (['en' => 'English', 'gu' => 'Gujarati', 'hi' => 'हिंदी'] as $lc => $ln): ?>
         <div><label>Fallback — <?= $ln ?></label>
           <textarea name="wa_txt_fallback_<?= $lc ?>" rows="3" placeholder="<?= e(wa_strings()['fallback'][$lc] ?? '') ?>"><?= e(setting('wa_txt_fallback_' . $lc, '')) ?></textarea></div>
       <?php endforeach; ?>
       </div>
-      <p class="muted" style="font-size:12px">Placeholders: <code>{shop}</code> = દુકાનનું નામ. ખાલી છોડો એટલે સિસ્ટમનું તૈયાર લખાણ વપરાય.</p>
+      <p class="muted" style="font-size:12px">Placeholders: <code>{shop}</code> = the shop name. Leave it blank and the built-in wording is used.</p>
     </details>
     <button class="btn btn-sm mt" type="submit">Save Bot Settings</button>
   </form>
 </div>
 <div class="card">
   <h3>✈️ Telegram Management Bot</h3>
-  <p class="muted">Telegram પર બટન દબાવીને આખી દુકાન: આજનું વેચાણ, ઉધાર, કેશ+બેંક, સ્ટોક, વેબ ઓર્ડર, રિપેર, સ્ટાફ વોલેટ. બનાવવા: Telegram માં <strong>@BotFather</strong> ખોલો → /newbot → જે token મળે એ અહીં નાખો.</p>
+  <p class="muted">The whole shop from buttons in Telegram: today sales, credit, cash+bank, stock, web orders, repairs, staff wallet. To set up: in Telegram <strong>@BotFather</strong> open it → /newbot → put the token you get here.</p>
   <form method="post" class="mt">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="tg_save">
     <div class="form-row cols-2">
       <div><label>Bot Token</label><input type="password" name="tg_bot_token" value="<?= e(setting('tg_bot_token')) ?>" placeholder="123456:ABC-DEF..."></div>
-      <label class="check-inline"><input type="checkbox" name="set_webhook" value="1" checked> Save થતાં જ બોટ ચાલુ કરી દો (webhook auto-set)</label>
+      <label class="check-inline"><input type="checkbox" name="set_webhook" value="1" checked> Turn the bot on as soon as you save (webhook set automatically)</label>
     </div>
     <button class="btn btn-sm" type="submit">Save & Connect</button>
   </form>
   <?php if (setting('tg_bot_token')): ?>
-  <h4 class="mt">સ્ટાફ જોડાણ (કોણ બોટ વાપરી શકે)</h4>
-  <p class="muted" style="font-size:12.5px">દરેક સ્ટાફ Telegram માં બોટ ખોલીને <code>/link કોડ</code> મોકલે એટલે જોડાય. કોડ અહીંથી બનાવો:</p>
+  <h4 class="mt">Staff links (who may use the bot)</h4>
+  <p class="muted" style="font-size:12.5px">Each staff member opens the bot in Telegram and <code>/link code</code> sends it and they are linked. Make a code here:</p>
   <table class="table-sm">
     <thead><tr><th>Staff</th><th>Status</th><th>Link code</th><th></th></tr></thead>
     <tbody>
@@ -794,7 +794,7 @@ exit;
             <button class="btn btn-sm btn-outline" type="submit">Unlink</button></form>
           <?php else: ?>
           <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="tg_gencode"><input type="hidden" name="uid" value="<?= $tu['id'] ?>">
-            <button class="btn btn-sm btn-outline" type="submit">🔑 Code બનાવો</button></form>
+            <button class="btn btn-sm btn-outline" type="submit">🔑 Make a code</button></form>
           <?php endif; ?>
         </td>
       </tr>
@@ -806,7 +806,7 @@ exit;
 <div class="card">
   <h3>🛍️ WhatsApp / Facebook Catalog Feed</h3>
   <?php if (setting('catalog_feed_key', '') === '') set_setting('catalog_feed_key', bin2hex(random_bytes(10))); ?>
-  <p class="muted">વેબસાઇટ પર ON કરેલી બધી આઇટમની Meta-ફોર્મેટ CSV ફીડ. <strong>Meta Commerce Manager → Data Sources → Scheduled Feed</strong> માં આ URL નાખો એટલે WhatsApp Business / Facebook / Instagram નો કેટલોગ દુકાનના સ્ટોક-ભાવ સાથે આપોઆપ સિંક રહે (ભાવ બદલો → કેટલોગ પણ બદલાય).</p>
+  <p class="muted">A Meta-format CSV feed of every item switched on for the website. <strong>Meta Commerce Manager → Data Sources → Scheduled Feed</strong> put this URL in and the WhatsApp Business / Facebook / Instagram catalogue stays in step with the shop stock and prices automatically (change a price → the catalogue changes).</p>
   <input type="text" readonly value="<?= e(base_url('catalog_feed.php?key=' . setting('catalog_feed_key'))) ?>" onclick="this.select()" style="width:100%">
 </div>
 <div class="card">
@@ -829,39 +829,39 @@ exit;
 <?php if ($cat === 'store'): ?>
 <div class="card">
   <h3>🛍️ Online Store Design</h3>
-  <p class="muted">વેબસાઇટનું હોમપેજ અહીંથી કંટ્રોલ થાય છે — Save કરો એટલે તરત લાઈવ. કંઈ ખાલી છોડશો તો સરસ ડિફોલ્ટ ડિઝાઈન વપરાય છે.</p>
+  <p class="muted">The website home page is controlled from here — Save and it is live at once. Leave anything blank and a good default design is used.</p>
   <form method="post" class="mt">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save_store">
     <div class="field">
       <label class="check-inline">
         <input type="checkbox" name="store_show_qty" value="1" <?= setting('store_show_qty', '1') === '1' ? 'checked' : '' ?>>
-        📦 વેબસાઇટ પર <b>સ્ટોકની સંખ્યા</b> બતાવવી
+        📦 On the website <b>Stock quantity</b> Show
       </label>
       <p class="muted" style="font-size:12.5px">
-        ચાલુ હોય તો દરેક વસ્તુ પર "✔ 12 નંગ સ્ટોકમાં" લખાય. બંધ કરો તો ફક્ત "✔ In stock" લખાશે.<br>
-        ⚠️ ધ્યાન રાખજો: આ <b>જાહેર વેબસાઇટ</b> છે — હરીફ પણ જોઈ શકે કે તમારી પાસે કેટલો માલ પડ્યો છે.
-        <b>ખલાસ થઈ ગયેલી વસ્તુ "ખલાસ" જ લખાશે</b>, આ સ્વિચ ચાલુ હોય કે બંધ.
+        when on, against every item "✔ 12 in stock" is written. Switch it off and only "✔ In stock" is written.<br>
+        ⚠️ Careful: this <b>Public website</b> — a competitor can see how much stock you are holding too.
+        <b>Out-of-stock items "Out of stock" only is written</b>, whether this switch is on or off.
       </p>
     </div>
-    <div class="field"><label>📣 Announcement Bar (હેડરની નીચેની લાઈન)</label>
-      <input type="text" name="store_announce" value="<?= e(setting('store_announce')) ?>" placeholder="🚚 Dwarka-માં ઝડપી ડિલિવરી · ✅ Genuine Products..."></div>
-    <div class="field"><label>🖼️ Hero Banners <span class="muted" style="font-weight:normal">(એક લાઈન = એક બેનર · ફોર્મેટ: ટાઈટલ|સબટાઈટલ|ઇમોજી|કલર1|કલર2|લિંક)</span></label>
-      <textarea name="store_banners" rows="4" placeholder="દિવાળી ઓફર - 10% OFF|બધા CCTV કેમેરા પર|🪔|#7c3aed|#db2777|"><?= e(setting('store_banners')) ?></textarea></div>
+    <div class="field"><label>📣 Announcement bar (the line under the header)</label>
+      <input type="text" name="store_announce" value="<?= e(setting('store_announce')) ?>" placeholder="🚚 Fast delivery in Dwarka · ✅ Genuine products..."></div>
+    <div class="field"><label>🖼️ Hero Banners <span class="muted" style="font-weight:normal">(one line = one banner · format: title|subtitle|emoji|colour1|colour2|link)</span></label>
+      <textarea name="store_banners" rows="4" placeholder="Diwali offer - 10% OFF|on all CCTV cameras|🪔|#7c3aed|#db2777|"><?= e(setting('store_banners')) ?></textarea></div>
     <div class="form-row cols-2">
-      <div><label>⚡ Deal of the Day — Item ID <span class="muted" style="font-weight:normal">(Items પેજ પર ID દેખાય છે; 0 = બંધ)</span></label>
+      <div><label>⚡ Deal of the Day — Item ID <span class="muted" style="font-weight:normal">(the ID is shown on the Items page; 0 = off)</span></label>
         <input type="number" name="store_deal_item" value="<?= (int)setting('store_deal_item') ?>"></div>
-      <div><label>Deal ક્યાં સુધી? <span class="muted" style="font-weight:normal">(કાઉન્ટડાઉન ટાઈમર)</span></label>
+      <div><label>Deal until when? <span class="muted" style="font-weight:normal">(countdown timer)</span></label>
         <input type="datetime-local" name="store_deal_ends" value="<?= e(setting('store_deal_ends')) ?>"></div>
     </div>
-    <div class="field"><label>💬 Testimonials <span class="muted" style="font-weight:normal">(એક લાઈન = એક · ફોર્મેટ: નામ|વાત)</span></label>
+    <div class="field"><label>💬 Testimonials <span class="muted" style="font-weight:normal">(one line = one · format: name|text)</span></label>
       <textarea name="store_testimonials" rows="3"><?= e(setting('store_testimonials')) ?></textarea></div>
-    <div class="field"><label>❓ FAQ <span class="muted" style="font-weight:normal">(એક લાઈન = એક · ફોર્મેટ: સવાલ|જવાબ)</span></label>
+    <div class="field"><label>❓ FAQ <span class="muted" style="font-weight:normal">(one line = one · format: question|answer)</span></label>
       <textarea name="store_faqs" rows="4"><?= e(setting('store_faqs')) ?></textarea></div>
     <button class="btn" type="submit">Save</button>
-    <a class="btn btn-outline" href="<?= e(base_url('catalog.php')) ?>" target="_blank">🌐 વેબસાઇટ જુઓ</a>
+    <a class="btn btn-outline" href="<?= e(base_url('catalog.php')) ?>" target="_blank">🌐 View the website</a>
   </form>
-  <p class="muted mt" style="font-size:12.5px">Best Sellers / New Arrivals / Brands આપોઆપ બને છે (વેચાણ અને નવી પ્રોડક્ટ પરથી) — એ મેનેજ કરવાના નથી.</p>
+  <p class="muted mt" style="font-size:12.5px">Best Sellers / New Arrivals / Brands build themselves (from sales and new products) — there is nothing to manage.</p>
 </div>
 <?php endif; ?>
 
@@ -896,12 +896,12 @@ exit;
         <input type="text" name="google_review_link" value="<?= e(setting('google_review_link')) ?>" placeholder="https://g.page/r/xxxxxxx/review"></div>
     </div>
     <div class="form-row cols-2">
-      <div><label>🎁 તહેવારની ભેટનું બજેટ — નફાના કેટલા %</label>
+      <div><label>🎁 Festival gift budget — what % of profit</label>
         <input type="number" name="gift_pct" step="0.1" min="0" max="100" value="<?= (float)setting('gift_pct', 2) ?>">
-        <p class="muted" style="font-size:12.5px">Reports → 🏅 Party-wise Profit માં દરેક ગ્રાહક સામે સૂચવેલું બજેટ. 0 કરો તો સૂચન બંધ.</p></div>
-      <div><label>એક ગ્રાહક પર વધુમાં વધુ (₹)</label>
+        <p class="muted" style="font-size:12.5px">The suggested budget against each customer in Reports → 🏅 Party-wise Profit. Set 0 to turn the suggestion off.</p></div>
+      <div><label>Maximum per customer (Rs)</label>
         <input type="number" name="gift_cap" step="any" min="0" value="<?= (float)setting('gift_cap', 0) ?>">
-        <p class="muted" style="font-size:12.5px">0 = કોઈ મર્યાદા નહીં.</p></div>
+        <p class="muted" style="font-size:12.5px">0 = no limit.</p></div>
     </div>
     <div class="form-row cols-2">
       <div><label>Razorpay Key ID <span class="muted" style="font-weight:normal">(for the online payment link on bills, optional)</span></label><input type="text" name="razorpay_key_id" value="<?= e(setting('razorpay_key_id')) ?>" placeholder="rzp_live_..."></div>
@@ -919,8 +919,8 @@ exit;
       <div><label>Google Gemini API Key <span class="muted" style="font-weight:normal">(for Items &gt; AI Auto-Fill — category + description)</span>
         <br><span class="muted" style="font-weight:normal;font-size:12.5px">Free at <strong>aistudio.google.com/apikey</strong> — sign in with Google, press "Create API key", paste it here. The free tier covers this shop's whole item list at ₹0.</span></label>
         <input type="password" name="gemini_api_key" value="<?= e(setting('gemini_api_key')) ?>" placeholder="AIza..."></div>
-      <div><label>Paid Backup Gemini Key <span class="muted" style="font-weight:normal">(optional — કામ કદી ન અટકે)</span>
-        <br><span class="muted" style="font-weight:normal;font-size:12.5px">ફ્રી key ની દૈનિક લિમિટ પતી જાય કે કોઈ ભૂલ આવે તો સિસ્ટમ <strong>આપોઆપ</strong> આ key પર ચાલવા લાગે છે — કંઈ મેન્યુઅલ કરવાનું નહીં. બનાવવા: console.cloud.google.com પર એક પ્રોજેક્ટમાં Billing ચાલુ કરી એ પ્રોજેક્ટની Gemini API key અહીં નાખો. ખર્ચ: નાના call દીઠ પૈસા જ (મહિને ₹20-30 થી વધુ ભાગ્યે જ). Paid વપરાશ WhatsApp સેટિંગ્સના ખર્ચ-કાર્ડમાં દેખાય છે.</span></label>
+      <div><label>Paid Backup Gemini Key <span class="muted" style="font-weight:normal">(optional — so work never stops)</span>
+        <br><span class="muted" style="font-weight:normal;font-size:12.5px">If the free key daily limit runs out, or something errors, the system <strong>Automatic</strong> it switches to this key — nothing to do by hand. To make one: at console.cloud.google.com turn on Billing for a project and put that project Gemini API key here. Cost: paise per small call (rarely more than Rs 20-30 a month). Paid usage shows on the cost card in WhatsApp settings.</span></label>
         <input type="password" name="gemini_api_key_paid" value="<?= e(setting('gemini_api_key_paid')) ?>" placeholder="AIza... (billing-enabled project)"></div>
     </div>
     <div class="form-row cols-2">
@@ -944,43 +944,43 @@ exit;
 <div class="card">
   <h3>⏰ Auto Overdue Reminders (cron)</h3>
   <?php $cronUrl = base_url('cron.php?key=' . setting('cron_key')); ?>
-  <p class="muted mb">બિલની due-date આવે એ દિવસે "આજે પેમેન્ટની તારીખ છે" અને પછી બિલ ચૂકતે ન થાય ત્યાં સુધી રોજ "X દિવસ થઈ ગયા" નો WhatsApp મેસેજ કસ્ટમરને આપોઆપ જાય છે — નીચે સેટ કરેલા સમયે. Hosting ના cPanel → Cron Jobs માં આ URL <strong>દર 1 મિનિટે</strong> (<code>* * * * *</code>) ચાલે એમ મૂકો — આ એક જ cron થી આખી સિસ્ટમના બધા auto કામ (રિમાઇન્ડર, બેકઅપ, રિપોર્ટ, AMC...) ચાલે છે; મેસેજ તો સેટ કરેલા સમયે જ જશે, અને એક બિલને દિવસમાં એક જ વાર:</p>
+  <p class="muted mb">on the day a bill falls due "payment is due today" and then daily until the bill is settled "X days have passed" a WhatsApp message goes to the customer automatically — at the time set below. In your hosting cPanel → Cron Jobs, put this URL <strong>every minute</strong> (<code>* * * * *</code>) — this one cron runs every automatic job in the system (reminders, backups, reports, AMC...); messages still go only at the set time, and a bill is messaged only once a day:</p>
   <p class="mb"><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block">wget -qO- "<?= e($cronUrl) ?>"</code></p>
-  <p class="muted mb">🕹 બધા auto job નું સ્ટેટસ/હિસ્ટ્રી/મેન્યુઅલ રન: <a href="cron_manager.php"><strong>Cron Manager</strong></a></p>
+  <p class="muted mb">🕹 Status, history and manual runs for every auto job: <a href="cron_manager.php"><strong>Cron Manager</strong></a></p>
   <form method="post" class="filterbar">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="reminder_gap">
-    <div><label>રોજ કેટલા વાગ્યે મોકલવો? (કલાક, 0-23)</label><input type="number" name="hour" min="0" max="23" value="<?= (int)setting('reminder_hour', '10') ?>"></div>
-    <div><label>એક જ બિલ માટે કેટલા દિવસે ફરી મેસેજ? (1 = રોજ)</label><input type="number" name="gap" min="1" value="<?= (int)setting('reminder_gap_days', '1') ?>"></div>
+    <div><label>What time of day to send? (hour, 0-23)</label><input type="number" name="hour" min="0" max="23" value="<?= (int)setting('reminder_hour', '10') ?>"></div>
+    <div><label>How many days before messaging about the same bill again? (1 = daily)</label><input type="number" name="gap" min="1" value="<?= (int)setting('reminder_gap_days', '1') ?>"></div>
     <button class="btn btn-sm" type="submit">Save</button>
     <a class="btn btn-sm btn-outline" href="<?= e($cronUrl) ?>" target="_blank">▶ Test Run Now</a>
   </form>
 </div>
 
 <div class="card">
-  <h3>🪜 ઉઘરાણીની સીડી, વ્યાજ અને ખર્ચ મંજૂરી</h3>
-  <p class="muted mb">એક જ સરખો મેસેજ વારંવાર મોકલવાથી ગ્રાહક વાંચતો બંધ થઈ જાય છે. જેમ જેમ જૂનું થાય તેમ તેમ ભાષા બદલાય — અને છેલ્લે મેસેજ નહીં, ફોન. છેલ્લા પગથિયે કોઈ મેસેજ જતો નથી; માલિકની યાદીમાં "ફોન કરવાનો છે" આવી જાય છે.</p>
+  <h3>🪜 The collection ladder, interest and expense approval</h3>
+  <p class="muted mb">Sending the same message over and over makes a customer stop reading it. The wording hardens as the debt ages — and at the end it is a phone call, not a message. No message goes at the last step; it lands on the owner list "a phone call is due" arrives.</p>
   <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="collection_rules">
     <div class="form-row cols-3">
-      <div><label>🙏 નરમ યાદ — કેટલા દિવસે</label><input type="number" name="soft" min="1" value="<?= (int)setting('dun_soft_days', '7') ?>"></div>
-      <div><label>⚠️ કડક યાદ — કેટલા દિવસે</label><input type="number" name="firm" min="1" value="<?= (int)setting('dun_firm_days', '15') ?>"></div>
-      <div><label>📞 ફોન કરવાનો — કેટલા દિવસે</label><input type="number" name="call" min="1" value="<?= (int)setting('dun_call_days', '30') ?>"></div>
+      <div><label>🙏 Gentle reminder — after how many days</label><input type="number" name="soft" min="1" value="<?= (int)setting('dun_soft_days', '7') ?>"></div>
+      <div><label>⚠️ Firm reminder — after how many days</label><input type="number" name="firm" min="1" value="<?= (int)setting('dun_firm_days', '15') ?>"></div>
+      <div><label>📞 Phone call — after how many days</label><input type="number" name="call" min="1" value="<?= (int)setting('dun_call_days', '30') ?>"></div>
     </div>
-    <?php foreach (['soft' => '🙏 નરમ મેસેજ', 'firm' => '⚠️ કડક મેસેજ', 'call' => '📞 છેલ્લો મેસેજ'] as $t => $lbl): ?>
+    <?php foreach (['soft' => '🙏 Gentle message', 'firm' => '⚠️ Firm message', 'call' => '📞 Final message'] as $t => $lbl): ?>
     <div class="field"><label><?= $lbl ?></label>
       <textarea name="msg_<?= $t ?>" rows="3"><?= e(dunning_message($t, [])) ?></textarea></div>
     <?php endforeach; ?>
-    <p class="muted">વાપરી શકાય: <code>{shop} {customer} {amount} {days} {invoice_no}</code></p>
+    <p class="muted">can be used: <code>{shop} {customer} {amount} {days} {invoice_no}</code></p>
     <div class="form-row cols-3">
-      <div><label>મોડા પેમેન્ટ પર વ્યાજ (% વાર્ષિક)</label>
+      <div><label>Interest on late payment (% per year)</label>
         <input type="number" step="any" min="0" name="interest_pct" value="<?= 0 + (float)setting('late_interest_pct', '0') ?>">
-        <p class="muted mt" style="font-size:.8em">0 = વ્યાજ નહીં. પાર્ટીના પોતાના દર આના કરતાં ઉપર રહેશે.</p></div>
-      <div><label>કેટલા દિવસની છૂટ (grace)</label><input type="number" min="0" name="grace" value="<?= (int)setting('late_interest_grace_days', '0') ?>"></div>
-      <div><label>આટલાથી મોટો ખર્ચ મંજૂરી માગે (₹)</label>
+        <p class="muted mt" style="font-size:.8em">0 = no interest. A party own rate overrides this.</p></div>
+      <div><label>Grace period in days</label><input type="number" min="0" name="grace" value="<?= (int)setting('late_interest_grace_days', '0') ?>"></div>
+      <div><label>An expense above this needs approval (Rs)</label>
         <input type="number" step="any" min="0" name="exp_above" value="<?= 0 + (float)setting('expense_approval_above', '0') ?>">
-        <p class="muted mt" style="font-size:.8em">0 = મંજૂરી નહીં. એડમિનને લાગુ પડતું નથી.</p></div>
+        <p class="muted mt" style="font-size:.8em">0 = no approval needed. Does not apply to an admin.</p></div>
     </div>
     <button class="btn btn-sm" type="submit">Save</button>
   </form>
@@ -1084,59 +1084,59 @@ exit;
 <div class="card">
   <h2>🤖 AI</h2>
   <p class="muted mb" style="font-size:13px">
-    AI અહીં ફક્ત <strong>ભાષા સમજવાનું</strong> કામ કરે છે — વસ્તુ શોધવી, બિલનો ફોટો વાંચવો, કેટેગરી સૂચવવી.
-    <strong>પૈસાનો કોઈ આંકડો AI નક્કી કરતું નથી.</strong> ભાવ, માર્જિન, સ્ટોક અને ખાતાવહી બધું સિસ્ટમનો પોતાનો હિસાબ જ ગણે છે,
-    અને AI જે સૂચવે એ તમે મંજૂર કરો પછી જ કોઈ એન્ટ્રી થાય છે. AI બંધ કરી દો તો પણ બધી સ્ક્રીન ચાલુ રહેશે —
-    ફક્ત શોધવાનું જૂની રીતે (શબ્દ મેળવીને) થશે.
+    Here the AI only <strong>understanding the language</strong> does the work — finding an item, reading a photo of a bill, suggesting a category.
+    <strong>No money figure is ever decided by AI.</strong> Prices, margins, stock and the ledger are all worked out by the system own arithmetic,
+    and nothing is ever entered until you approve what the AI suggests. Switch the AI off and every screen still works —
+    searching simply falls back to the old way (matching words).
   </p>
   <div class="grid-stats">
-    <div class="stat"><div class="stat-label">આ મહિને કૉલ</div><div class="stat-value"><?= (int)$use['calls'] ?><?= $lim['calls_cap'] ? ' / ' . (int)$lim['calls_cap'] : '' ?></div></div>
-    <div class="stat"><div class="stat-label">આ મહિનાનો ખર્ચ</div>
+    <div class="stat"><div class="stat-label">Calls this month</div><div class="stat-value"><?= (int)$use['calls'] ?><?= $lim['calls_cap'] ? ' / ' . (int)$lim['calls_cap'] : '' ?></div></div>
+    <div class="stat"><div class="stat-label">This month cost</div>
       <div class="stat-value"><?= ($lim['rate_in'] > 0 || $lim['rate_out'] > 0) ? '₹' . money($use['cost']) : '—' ?></div></div>
-    <div class="stat"><div class="stat-label">બજેટ</div><div class="stat-value"><?= $lim['budget_rs'] > 0 ? '₹' . money($lim['budget_rs']) : 'નથી' ?></div></div>
-    <div class="stat <?= $lim['enabled'] ? 's-ok' : 's-bad' ?>"><div class="stat-label">સ્થિતિ</div>
-      <div class="stat-value" style="font-size:16px"><?= $lim['enabled'] ? 'ચાલુ' : 'બંધ' ?></div></div>
+    <div class="stat"><div class="stat-label">Budget</div><div class="stat-value"><?= $lim['budget_rs'] > 0 ? '₹' . money($lim['budget_rs']) : 'no' ?></div></div>
+    <div class="stat <?= $lim['enabled'] ? 's-ok' : 's-bad' ?>"><div class="stat-label">Status</div>
+      <div class="stat-value" style="font-size:16px"><?= $lim['enabled'] ? 'On' : 'Off' ?></div></div>
   </div>
   <form method="post">
     <?= csrf_field() ?><input type="hidden" name="do" value="save_ai">
     <label class="check-inline"><input type="checkbox" name="ai_enabled" value="1" <?= $lim['enabled'] ? 'checked' : '' ?>>
-      <strong>AI ચાલુ રાખો</strong> — બંધ કરશો તો એકેય AI કૉલ નહીં જાય</label>
-    <h3 class="mt">કઈ સુવિધા ચાલુ રાખવી</h3>
+      <strong>Keep AI on</strong> — switch it off and no AI call goes out at all</label>
+    <h3 class="mt">Which features to keep on</h3>
     <?php foreach (ai_features() as $k => $f): ?>
     <label class="check-inline"><input type="checkbox" name="feat_<?= e($k) ?>" value="1" <?= setting('ai_feat_' . $k, '1') === '1' ? 'checked' : '' ?>>
       <?= $f[0] ?> — <span class="muted"><?= e($f[1]) ?></span></label>
     <?php endforeach; ?>
-    <h3 class="mt">મર્યાદા</h3>
+    <h3 class="mt">Limit</h3>
     <div class="form-row cols-2">
-      <div><label>મહિનામાં વધુમાં વધુ કેટલા કૉલ (0 = મર્યાદા નહીં)</label>
+      <div><label>Maximum calls per month (0 = no limit)</label>
         <input type="number" name="ai_monthly_calls" min="0" value="<?= (int)$lim['calls_cap'] ?>"></div>
-      <div><label>મહિનાનું બજેટ ₹ (0 = મર્યાદા નહીં)</label>
+      <div><label>Monthly budget Rs (0 = no limit)</label>
         <input type="number" step="0.01" name="ai_monthly_budget" min="0" value="<?= 0 + $lim['budget_rs'] ?>"></div>
     </div>
-    <h3 class="mt">ભાવ (તમારા પોતાના બિલ પ્રમાણે)</h3>
+    <h3 class="mt">Price (from your own bill)</h3>
     <p class="muted mb" style="font-size:12px">
-      દર 10 લાખ ટોકનનો ભાવ. આ આંકડા <strong>તમારા AI પ્રોવાઇડરના બિલમાંથી</strong> ભરવાના છે —
-      સિસ્ટમ કોઈ ભાવ ધારીને મૂકતી નથી. ખાલી રાખશો તો ટોકનની ગણતરી થશે પણ રૂપિયામાં ખર્ચ નહીં દેખાય,
-      અને બજેટને બદલે કૉલની મર્યાદા તમને સાચવશે.
+      Price per million tokens. These figures come <strong>from your AI provider bill</strong> are due —
+      The system never assumes a price. Leave it blank and tokens are still counted, but no rupee cost is shown,
+      and a call limit rather than a budget is what protects you.
     </p>
     <div class="form-row cols-2">
-      <div><label>Input ટોકનનો ભાવ (₹ / 1M)</label>
+      <div><label>Input token price (Rs / 1M)</label>
         <input type="number" step="0.0001" name="ai_rate_in_per_m" min="0" value="<?= 0 + $lim['rate_in'] ?>"></div>
-      <div><label>Output ટોકનનો ભાવ (₹ / 1M)</label>
+      <div><label>Output token price (Rs / 1M)</label>
         <input type="number" step="0.0001" name="ai_rate_out_per_m" min="0" value="<?= 0 + $lim['rate_out'] ?>"></div>
     </div>
-    <button class="btn" type="submit">સાચવો</button>
+    <button class="btn" type="submit">Save</button>
   </form>
   <?php $byFeat = all("SELECT feature, COUNT(*) calls, COALESCE(SUM(units_in),0) tin,
                               COALESCE(SUM(units_out),0) tout, COALESCE(SUM(cost_paise),0) paise
                        FROM api_usage WHERE service = 'gemini' AND created_at >= ?
                        GROUP BY feature ORDER BY calls DESC", [date('Y-m-01 00:00:00')]);
     if ($byFeat): ?>
-  <h3 class="mt">આ મહિને કઈ સુવિધાએ કેટલું વાપર્યું</h3>
+  <h3 class="mt">What each feature used this month</h3>
   <div class="table-wrap"><table class="table-sm">
-    <thead><tr><th>સુવિધા</th><th class="num">કૉલ</th><th class="num">ટોકન (in/out)</th><th class="num">ખર્ચ</th></tr></thead>
+    <thead><tr><th>Feature</th><th class="num">Calls</th><th class="num">Tokens (in/out)</th><th class="num">Cost</th></tr></thead>
     <tbody>
-    <?php foreach ($byFeat as $b): $fk = $b['feature'] ?: '(જૂના કૉલ)'; ?>
+    <?php foreach ($byFeat as $b): $fk = $b['feature'] ?: '(older calls)'; ?>
       <tr><td><?= e(ai_features()[$b['feature']][0] ?? $fk) ?></td>
           <td class="num"><?= (int)$b['calls'] ?></td>
           <td class="num"><?= (int)$b['tin'] ?> / <?= (int)$b['tout'] ?></td>
@@ -1231,23 +1231,23 @@ exit;
 </div>
 
 <div class="card">
-  <h3>🔐 રોજનું ઓટોમેટિક બેકઅપ</h3>
-  <p class="muted mb">રોજનું બેકઅપ આખા ધંધાની નકલ છે — ગ્રાહકો, ભાવ, પાસવર્ડ, બધું. અહીં પાસફ્રેઝ નાખશો એટલે એ ફાઈલ <strong>લોક (AES-256)</strong> થઈને સેવ થશે અને તો જ Telegram પર મોકલાશે. પાસફ્રેઝ વગર ફાઈલ સર્વર પર જ રહે છે અને Telegram પર ફક્ત જાણ જાય છે — ખુલ્લી ફાઈલ ક્યારેય નહીં મોકલાય.</p>
-  <p class="muted mb"><strong>પાસફ્રેઝ સાચવીને રાખજો</strong> — એના વગર બેકઅપ ખૂલશે નહીં (ઉપરના "Decrypt a backup file" થી ખૂલે છે).</p>
+  <h3>🔐 Automatic daily backup</h3>
+  <p class="muted mb">The daily backup is a copy of the whole business — customers, prices, passwords, everything. Put a passphrase here and that file is <strong>locked (AES-256)</strong> and only then is it sent to Telegram. Without a passphrase the file stays on the server and Telegram gets a notice only — an unlocked file is never sent.</p>
+  <p class="muted mb"><strong>Keep the passphrase safe</strong> — without it the backup will not open (the "Decrypt a backup file" opens it).</p>
   <form method="post" action="settings.php" class="filterbar">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save_backup_auto">
-    <div><label>બેકઅપ પાસફ્રેઝ <span class="muted" style="font-weight:normal">(ખાલી = Telegram પર ફાઈલ નહીં)</span></label>
-      <input type="text" name="backup_passphrase" value="<?= e(setting('backup_passphrase')) ?>" placeholder="દા.ત. AkC-2026-Backup!"></div>
-    <label class="check-inline"><input type="checkbox" name="backup_telegram" value="1" <?= setting('backup_telegram', '1') === '1' ? 'checked' : '' ?>> એન્ક્રિપ્ટેડ ફાઈલ Telegram પર મોકલો</label>
-    <label class="check-inline"><input type="checkbox" name="error_alerts" value="1" <?= setting('error_alerts', '1') === '1' ? 'checked' : '' ?>> 🚨 ભૂલ (error) આવે તો Telegram પર તરત જાણ કરો</label>
+    <div><label>Backup passphrase <span class="muted" style="font-weight:normal">(blank = no file to Telegram)</span></label>
+      <input type="text" name="backup_passphrase" value="<?= e(setting('backup_passphrase')) ?>" placeholder="e.g. AkC-2026-Backup!"></div>
+    <label class="check-inline"><input type="checkbox" name="backup_telegram" value="1" <?= setting('backup_telegram', '1') === '1' ? 'checked' : '' ?>> Send the encrypted file to Telegram</label>
+    <label class="check-inline"><input type="checkbox" name="error_alerts" value="1" <?= setting('error_alerts', '1') === '1' ? 'checked' : '' ?>> 🚨 Tell me on Telegram the moment there is an error</label>
     <button class="btn" type="submit">Save</button>
   </form>
   <?php $elog = dirname(__FILE__) . '/uploads/logs/error.log';
         $eSize = is_file($elog) ? filesize($elog) : 0;
         $eLast = [];
         if ($eSize > 0) { $lines = @file($elog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []; $eLast = array_slice($lines, -8); } ?>
-  <h4 class="mt">🩺 Error log <span class="muted" style="font-weight:normal">(<?= $eSize ? round($eSize / 1024, 1) . ' KB' : 'ખાલી — કોઈ ભૂલ નથી ✅' ?>)</span></h4>
+  <h4 class="mt">🩺 Error log <span class="muted" style="font-weight:normal">(<?= $eSize ? round($eSize / 1024, 1) . ' KB' : 'Empty — no errors ✅' ?>)</span></h4>
   <?php if ($eLast): ?>
   <div class="table-wrap" style="box-shadow:none"><table class="table-sm"><tbody>
     <?php foreach (array_reverse($eLast) as $ln): ?>
@@ -1304,7 +1304,7 @@ exit;
   <?php endif; endif; ?>
   <?php $rps = function_exists('gh_restore_points') ? gh_restore_points() : []; if ($rps): ?>
   <h3 class="mt">🛟 Undo last update</h3>
-  <p class="muted mb">દરેક અપડેટ પહેલાં જૂની ફાઈલો અને ડેટાબેઝની નકલ આપોઆપ લેવાય છે. અપડેટ પછી કંઈ બગડે તો અહીંથી એક ક્લિકમાં જૂનું સોફ્ટવેર પાછું આવી જશે. <strong>ડેટાબેઝ બદલાતો નથી</strong> — વચ્ચે બનેલા બિલ સલામત રહે છે.</p>
+  <p class="muted mb">A copy of the old files and the database is taken automatically before every update. If something breaks afterwards, one click here brings the old software back. <strong>the database is not changed</strong> — bills made in the meantime are safe.</p>
   <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
     <thead><tr><th>Restore point</th><th>Taken</th><th>Files</th><th>DB backup</th><th></th></tr></thead>
     <tbody>
@@ -1315,7 +1315,7 @@ exit;
       <td class="num"><?= (int)($rp['files'] ?? 0) ?></td>
       <td><?= !empty($rp['db_encrypted']) ? '🔐 encrypted' : '📦 plain .gz' ?></td>
       <td class="right">
-        <form method="post" onsubmit="return confirm('જૂનું સોફ્ટવેર પાછું લાવવું છે? બધી application ફાઈલો આ restore point પ્રમાણે થઈ જશે (ડેટાબેઝ એમનો એમ રહેશે).')">
+        <form method="post" onsubmit="return confirm('Bring the old software back? Every application file goes back to this restore point (the database is left as it is).')">
           <?= csrf_field() ?><input type="hidden" name="do" value="gh_rollback"><input type="hidden" name="id" value="<?= e($rp['id']) ?>">
           <button class="btn btn-sm btn-outline btn-danger" type="submit">↩ Restore this version</button>
         </form>

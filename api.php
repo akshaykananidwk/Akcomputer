@@ -49,16 +49,16 @@ if ($r === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim((string)($b['username'] ?? ''));
     $password = (string)($b['password'] ?? '');
     $device = mb_substr(trim((string)($b['device'] ?? 'Android')), 0, 120);
-    if ($username === '' || $password === '') api_json(['error' => 'username અને password જોઈએ'], 422);
+    if ($username === '' || $password === '') api_json(['error' => 'A username and password are needed'], 422);
     if (function_exists('login_throttle_blocked') && login_throttle_blocked($username))
-        api_json(['error' => 'બહુ વાર ખોટો પ્રયત્ન — થોડી વાર પછી ફરી કરો'], 429);
+        api_json(['error' => 'Too many failed attempts — try again in a while'], 429);
 
     $usr = row('SELECT u.*, r.name role_name, r.permissions role_permissions, l.name location_name
                 FROM users u JOIN roles r ON r.id = u.role_id JOIN locations l ON l.id = u.location_id
                 WHERE u.username = ? AND u.is_active = 1', [$username]);
     if (!$usr || !password_verify($password, $usr['password'])) {
         if (function_exists('login_throttle_hit')) login_throttle_hit($username);
-        api_json(['error' => 'યુઝરનેમ કે પાસવર્ડ ખોટો છે'], 401);
+        api_json(['error' => 'The username or password is wrong'], 401);
     }
     if (function_exists('login_throttle_reset')) login_throttle_reset($username);
 
@@ -336,7 +336,7 @@ if ($r === 'menu' && $method === 'GET') {
 // for it the moment the owner taps a screen it does not do itself.
 if ($r === 'weblink' && $method === 'GET') {
     $nonce = app_link_make($u['id'], get('to', 'index.php'), 'app');
-    if ($nonce === '') api_json(['error' => 'એ પાનું નથી'], 422);
+    if ($nonce === '') api_json(['error' => 'That page does not exist'], 422);
     api_json(['url' => 'login.php?app=' . $nonce, 'ttl' => APP_LINK_TTL]);
 }
 
@@ -395,7 +395,7 @@ if ($r === 'sales') {
             $serials = array_values(array_filter(array_map(
                 fn($s) => trim((string)$s), (array)($it['serials'] ?? [])), fn($s) => $s !== ''));
             if ($item['serial_tracked'] && count($serials) > $qty) {
-                api_json(['error' => 'બહુ બધા સિરિયલ નંબર: ' . $item['name']], 422);
+                api_json(['error' => 'Too many serial numbers: ' . $item['name']], 422);
             }
             $lineRows[] = ['item_id' => $item['id'], 'qty' => $qty, 'price' => $price, 'total' => $lineTotal,
                            'serials' => $serials, 'warranty_months' => (int)$item['warranty_months']];

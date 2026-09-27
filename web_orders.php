@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'status') {
         if ($to && $to !== $earn['status']) {
             q('UPDATE referral_earnings SET status = ? WHERE id = ?', [$to, $earn['id']]);
             if ($to === 'approved' && $earn['r_mobile']) {
-                send_whatsapp($earn['r_mobile'], "✅ *" . setting('app_name', 'AK Computer') . "*\n\nતમારું કમિશન જમા થયું! 🎉\nOrder " . $earn['order_no'] . " પૂરો થયો.\n*₹" . money($earn['commission']) . "* તમારા ખાતામાં જમા.\n\nબેલેન્સ જુઓ: " . base_url('referral.php?t=' . $earn['r_token']));
+                send_whatsapp($earn['r_mobile'], "✅ *" . setting('app_name', 'AK Computer') . "*\n\nYour commission has been credited! 🎉\nOrder " . $earn['order_no'] . " is complete.\n*Rs " . money($earn['commission']) . "* credited to your account.\n\nSee the balance: " . base_url('referral.php?t=' . $earn['r_token']));
             }
         }
     }

@@ -7,7 +7,7 @@ $action = get('action', 'list');
 $id = (int)get('id');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // --- kit / combo parts: what "4 કેમેરાનું સેટ" is really made of.
+    // --- kit / combo parts: what "A set of 4 cameras" is really made of.
     // The kit itself is never stocked - selling one takes its parts down -
     // so this is the list that makes that possible.
     if (post('do') === 'kit_add') {
@@ -20,16 +20,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             q('INSERT INTO item_kit_parts (kit_item_id, part_item_id, qty) VALUES (?,?,?)
                ON DUPLICATE KEY UPDATE qty = VALUES(qty)', [$kit, $part, $qty]);
             log_activity('kit_part_add', "kit=$kit part=$part qty=$qty");
-            flash('કીટમાં પાર્ટ ઉમેર્યો.');
+            flash('Part added to the kit.');
         } else {
-            flash('પાર્ટ બરાબર પસંદ કરો (કીટ પોતે એનો જ પાર્ટ ન બની શકે).', 'error');
+            flash('Pick the part properly (a kit cannot be a part of itself).', 'error');
         }
         redirect('items.php?action=edit&id=' . $kit);
     }
     if (post('do') === 'kit_del') {
         require_perm('items.edit');
         q('DELETE FROM item_kit_parts WHERE id = ?', [(int)post('id')]);
-        flash('પાર્ટ કાઢ્યો.');
+        flash('Part removed.');
         redirect('items.php?action=edit&id=' . (int)post('kit_item_id'));
     }
     if (post('do') === 'save') {
@@ -69,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$data[1]) {
                 try {
                     list($aiRows, ) = ai_categorize_apply([['id' => $id, 'name' => trim(post('name') . ' ' . post('brand') . ' ' . post('model'))]]);
-                    if ($aiRows) flash('🤖 AI કેટેગરી લાગી: ' . $aiRows[0]['cat'] . ($aiRows[0]['sub'] !== '' ? ' › ' . $aiRows[0]['sub'] : ''));
+                    if ($aiRows) flash('🤖 AI category applied: ' . $aiRows[0]['cat'] . ($aiRows[0]['sub'] !== '' ? ' › ' . $aiRows[0]['sub'] : ''));
                 } catch (Exception $e) { /* pre-migrate DB / AI down - item is saved fine */ }
             }
         }
@@ -79,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         enforce_min_margin($id);
         $sellAfter = (float)val('SELECT selling_price FROM items WHERE id = ?', [$id]);
         if ($sellAfter > $sellBefore + 0.005) {
-            flash('વેચાણ-ભાવ ₹' . money($sellBefore) . ' થી વધારીને ₹' . money($sellAfter) . ' કર્યો — ખરીદ + ' . (0 + ((float)post('margin_pct') > 0 ? (float)post('margin_pct') : default_margin_pct())) . '% નો મિનિમમ નફો જળવાય એ માટે.', 'success');
+            flash('Selling price Rs ' . money($sellBefore) . ' raised to Rs ' . money($sellAfter) . ' set — cost + ' . (0 + ((float)post('margin_pct') > 0 ? (float)post('margin_pct') : default_margin_pct())) . '% so the minimum profit is kept.', 'success');
         }
         // photo-upload work log: feeds Reports > Photo Upload Log (daily
         // counts + minutes-per-photo per staff member)
@@ -103,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $inPurch = (int)val('SELECT COUNT(DISTINCT purchase_id) FROM purchase_items WHERE item_id = ?', [$iid]);
         if ($inSales || $inPurch) {
             q('UPDATE items SET is_active = 0, show_on_website = 0 WHERE id = ?', [$iid]);
-            flash("આ આઇટમ $inSales સેલ બિલ અને $inPurch પરચેસ બિલમાં લિંક છે — ડિલીટ કરવાને બદલે INACTIVE કરી છે (જૂનાં બિલ સલામત). પાછી જોઈએ તો Show Inactive માંથી Edit કરી Active કરો.", 'error');
+            flash("This item is linked to $inSales sale bills and $inPurch purchase bills — it has been made INACTIVE instead of deleted (the old bills stay safe). To bring it back, use Show Inactive, edit it and set it active.", 'error');
             log_activity('item_delete_blocked', "#$iid sales=$inSales purch=$inPurch -> deactivated");
         } else {
             q('DELETE FROM items WHERE id = ?', [$iid]);
@@ -191,13 +191,13 @@ if ($action === 'new' || $action === 'edit') {
     </div>
     <?php if ($action === 'edit' && $it): $kparts = kit_parts($it['id']); ?>
     <div class="card">
-      <h3>📦 કીટ / સેટ — આ આઇટમ શેમાંથી બને છે</h3>
-      <p class="muted">"4 કેમેરાનું સેટ" જેવી વસ્તુ એક લાઇનમાં વેચાય, પણ સ્ટોક અંદરના પાર્ટમાંથી કપાય.
-         અહીં પાર્ટ ઉમેરશો એટલે આ આઇટમ કીટ બની જશે — પછી એનો પોતાનો સ્ટોક નહીં ગણાય, પાર્ટનો ગણાશે.</p>
+      <h3>📦 Kit / set — what this item is made of</h3>
+      <p class="muted">"A set of 4 cameras" sells as a single line, but stock comes off the parts inside it.
+         Add a part here and this item becomes a kit — its own stock then stops counting and the parts count instead.</p>
       <?php if ($kparts): ?>
       <div class="table-wrap" style="box-shadow:none">
         <table class="table-sm">
-          <thead><tr><th>પાર્ટ</th><th class="num">એક કીટમાં કેટલા</th><th class="num">અત્યારે સ્ટોક</th><th></th></tr></thead>
+          <thead><tr><th>Part</th><th class="num">How many in one kit</th><th class="num">Stock right now</th><th></th></tr></thead>
           <tbody>
           <?php foreach ($kparts as $kp): ?>
             <tr>
@@ -219,17 +219,17 @@ if ($action === 'new' || $action === 'edit') {
         <?= csrf_field() ?>
         <input type="hidden" name="do" value="kit_add">
         <input type="hidden" name="kit_item_id" value="<?= (int)$it['id'] ?>">
-        <div><label>પાર્ટ</label>
+        <div><label>Part</label>
           <select name="part_item_id" id="part_item_id" required>
-            <option value="">-- પસંદ કરો --</option>
+            <option value="">-- choose --</option>
             <?php foreach (all("SELECT id, name FROM items WHERE is_active = 1 AND id <> ? AND item_type <> 'service' ORDER BY name", [$it['id']]) as $pi): ?>
             <option value="<?= (int)$pi['id'] ?>"><?= e($pi['name']) ?></option>
             <?php endforeach; ?>
           </select></div>
-        <div><label>એક કીટમાં કેટલા</label><input type="number" step="any" min="0.001" name="part_qty" value="1" required></div>
-        <div style="align-self:end"><button class="btn btn-sm" type="submit">+ પાર્ટ ઉમેરો</button></div>
+        <div><label>How many in one kit</label><input type="number" step="any" min="0.001" name="part_qty" value="1" required></div>
+        <div style="align-self:end"><button class="btn btn-sm" type="submit">+ Add a part</button></div>
       </form>
-      <script>SearchPick.init('part_item_id', 'આઇટમનું નામ ટાઇપ કરો…');</script>
+      <script>SearchPick.init('part_item_id', 'Type an item name…');</script>
     </div>
     <?php endif; ?>
     <div class="card">
@@ -261,7 +261,7 @@ if ($fCat) $w[] = 'i.category_id = ' . $fCat;
 if ($fWeb === 'on') $w[] = 'i.show_on_website = 1';
 if ($fWeb === 'off') $w[] = 'i.show_on_website = 0';
 // with a location picked, the Stock column and the stock filters both work
-// on THAT location's quantity - "ગોડાઉનમાં શું પડ્યું છે" in one tap
+// on THAT location's quantity - "ગોડાઉનin What પડ્યું છે" in one tap
 $stockExpr = $fLoc ? 'COALESCE(SUM(CASE WHEN s.location_id = ' . $fLoc . ' THEN s.qty END),0)' : 'COALESCE(SUM(s.qty),0)';
 $having = '';
 if ($fStock === 'in') $having = 'HAVING total_stock > 0';

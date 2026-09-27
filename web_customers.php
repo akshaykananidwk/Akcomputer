@@ -22,8 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'add') {
            max(0, min(90, (float)post('discount_pct'))), (int)post('party_id') ?: null]);
         log_activity('web_account_add', post('name') . " ($mobile)");
         if (post('send_wa')) {
-            send_whatsapp($mobile, "🔑 *" . setting('app_name', 'AK Computer') . "*\n\nતમારું ડીલર લોગિન તૈયાર છે!\n" .
-                base_url('catalog.php?dlogin=1') . "\n\nMobile: $mobile\nPassword: $pass\n\nલોગિન કરો એટલે તમારો સ્પેશિયલ ભાવ આપોઆપ દેખાશે. 🙏");
+            send_whatsapp($mobile, "🔑 *" . setting('app_name', 'AK Computer') . "*\n\nYour dealer login is ready!\n" .
+                base_url('catalog.php?dlogin=1') . "\n\nMobile: $mobile\nPassword: $pass\n\nLog in and your special price shows automatically. 🙏");
         }
         flash('Dealer account created. Password: ' . $pass . (post('send_wa') ? ' (WhatsApped to them)' : ' — note it down, it is not shown again.'));
     }
@@ -38,13 +38,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
       [max(0, min(90, (float)post('discount_pct'))), post('is_active') ? 1 : 0, $id]);
     // approving a self-registered dealer: tell them their login is live now
     if ($before && !$before['is_active'] && post('is_active')) {
-        send_whatsapp($before['mobile'], "✅ *" . setting('app_name', 'AK Computer') . "*\n\n" . $before['name'] . ", તમારું ડીલર એકાઉન્ટ મંજૂર થઈ ગયું! 🎉\nહવે લોગિન કરો એટલે તમારો સ્પેશિયલ ભાવ દેખાશે:\n" . base_url('catalog.php?dlogin=1'));
+        send_whatsapp($before['mobile'], "✅ *" . setting('app_name', 'AK Computer') . "*\n\n" . $before['name'] . ", your dealer account is approved! 🎉\nLog in now and your special price will show:\n" . base_url('catalog.php?dlogin=1'));
     }
     if (post('new_password') !== '') {
         q('UPDATE web_accounts SET password_hash = ? WHERE id = ?', [password_hash(post('new_password'), PASSWORD_DEFAULT), $id]);
         $acc = row('SELECT * FROM web_accounts WHERE id = ?', [$id]);
         if (post('send_wa') && $acc) {
-            send_whatsapp($acc['mobile'], "🔑 *" . setting('app_name', 'AK Computer') . "*\n\nતમારો નવો પાસવર્ડ: " . post('new_password') . "\n" . base_url('catalog.php?dlogin=1'));
+            send_whatsapp($acc['mobile'], "🔑 *" . setting('app_name', 'AK Computer') . "*\n\nYour new password: " . post('new_password') . "\n" . base_url('catalog.php?dlogin=1'));
         }
         flash('Account updated, password changed.');
     } else {

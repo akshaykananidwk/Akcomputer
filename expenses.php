@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     if ($amt > 0 && $eid) {
         $old = row('SELECT * FROM expenses WHERE id = ?', [$eid]);
         if (!$old) { flash('Expense not found.', 'error'); redirect('expenses.php'); }
-        if (!is_full_admin() && (int)$old['created_by'] !== (int)$u['id']) { flash('તમે ફક્ત તમારા પોતાના ખર્ચ જ એડિટ કરી શકો.', 'error'); redirect('expenses.php'); }
+        if (!is_full_admin() && (int)$old['created_by'] !== (int)$u['id']) { flash('You can only edit your own expenses.', 'error'); redirect('expenses.php'); }
         if (is_period_locked($old['exp_date'])) { flash(period_lock_message(), 'error'); redirect('expenses.php'); }
         q('UPDATE expenses SET exp_date=?, category=?, amount=?, mode=?, bank_account_id=?, payment_method_id=?, notes=? WHERE id=?',
           [post('exp_date', today()), post('category', 'General'), $amt, post('mode', 'cash'), $bankId, $pmId, post('notes'), $eid]);
@@ -39,9 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                             'location_id' => $u['location_id']], JSON_UNESCAPED_UNICODE),
                trim((string)post('notes')), $u['id']]);
             log_activity('expense_request', post('category') . ' ' . $amt);
-            try { tg_notify_admins("🧾 ખર્ચ મંજૂરી માટે\n" . $u['name'] . " — ₹" . money($amt) . ' (' . post('category') . ')'); }
+            try { tg_notify_admins("🧾 For expense approval\n" . $u['name'] . " — ₹" . money($amt) . ' (' . post('category') . ')'); }
             catch (Throwable $e) { /* telling the owner must never block the request */ }
-            flash('₹' . money($amt) . ' નો ખર્ચ મંજૂરી માટે મોકલ્યો — એડમિન મંજૂર કરે પછી ચોપડામાં ચડશે.', 'info');
+            flash('₹' . money($amt) . ' expense sent for approval — it goes into the books once an admin approves.', 'info');
             redirect('expenses.php');
         }
         q('INSERT INTO expenses (exp_date, category, amount, mode, bank_account_id, payment_method_id, notes, location_id, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
@@ -55,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('expenses.delete');
     $exp = row('SELECT * FROM expenses WHERE id = ?', [(int)post('id')]);
-    if ($exp && !is_full_admin() && (int)$exp['created_by'] !== (int)$u['id']) { flash('તમે ફક્ત તમારા પોતાના ખર્ચ જ ડિલીટ કરી શકો.', 'error'); redirect('expenses.php'); }
+    if ($exp && !is_full_admin() && (int)$exp['created_by'] !== (int)$u['id']) { flash('You can only delete your own expenses.', 'error'); redirect('expenses.php'); }
     if ($exp && is_period_locked($exp['exp_date'])) { flash(period_lock_message(), 'error'); redirect('expenses.php'); }
     q('DELETE FROM expenses WHERE id = ?', [(int)post('id')]);
     flash('Expense deleted.');
@@ -85,7 +85,7 @@ if ($edit && !$seeAllExp && (int)$edit['created_by'] !== (int)$u['id']) $edit = 
 // an older entry whose category is no longer on the list stays editable
 if ($edit && $edit['category'] && !in_array($edit['category'], $cats, true)) {
     $cats[] = $edit['category'];
-    $catGroups['જૂની નોંધ'] = [$edit['category']];
+    $catGroups['Older notes'] = [$edit['category']];
 }
 $pms = active_payment_methods();
 $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
@@ -167,7 +167,7 @@ foreach ($rows as $rw) { if (expense_is_home($rw['category'])) $homeTot += (floa
 ?>
 <div class="list-count"><?= count($rows) ?> entries · Total ₹<?= money($bizTot + $homeTot) ?>
   <?php if ($homeTot > 0.009): ?>
-    <span class="muted"> — 🏪 ધંધો ₹<?= money($bizTot) ?> · 🏠 ઘર ₹<?= money($homeTot) ?></span>
+    <span class="muted"> — 🏪 Business Rs <?= money($bizTot) ?> · 🏠 Household Rs <?= money($homeTot) ?></span>
   <?php endif; ?>
 </div>
 <div class="table-wrap">

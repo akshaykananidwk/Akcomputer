@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
     // split the same physical count across two sheets - reuse the open one
     $already = row("SELECT id, count_no FROM stock_counts WHERE location_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1", [$locId]);
     if ($already) {
-        flash('આ Location નું ઓડિટ ' . $already['count_no'] . ' પહેલેથી ચાલુ છે — એ જ ખોલ્યું છે. (નવું શરૂ કરવું હોય તો પહેલા આ Post કે Cancel કરો.)', 'error');
+        flash('An audit for this location ' . $already['count_no'] . ' is already open — that one has been opened. (To start a new one, post or cancel this first.)', 'error');
         redirect('stock_audit.php?action=count&id=' . $already['id']);
     }
     $onlyLow = post('only_low') === '1';
@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
     $added = 0;
     foreach ($items as $iid) {
         $sysQ = stock_qty($iid, $locId);
-        // Zero-stock items clutter a physical count sheet ("માનનીય એ આઇટમ
+        // Zero-stock items clutter a physical count sheet ("માનનીય એ Item
         // છે જ નહીં") - they're skipped unless the tick asks for them
         // (needed when hunting for stock the system doesn't know about).
         if (!$includeZero && abs($sysQ) < 0.001) continue;
@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
     }
     $pdo->commit();
     log_activity('stock_audit_start', doc_no('AUD', $cid));
-    flash('Count sheet ' . doc_no('AUD', $cid) . ' started with ' . $added . ' item(s)' . ($includeZero ? '' : ' (ઝીરો-સ્ટોકવાળી બહાર રાખી)') . '.');
+    flash('Count sheet ' . doc_no('AUD', $cid) . ' started with ' . $added . ' item(s)' . ($includeZero ? '' : ' (zero-stock ones left out)') . '.');
     redirect('stock_audit.php?action=count&id=' . $cid);
 }
 
@@ -64,10 +64,10 @@ function audit_net_adjustments($cid) {
 // sheet goes back to OPEN with every counted qty still filled in, and
 // staff can view/edit and post again (or cancel) as if nothing happened.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reopen') {
-    if (!is_full_admin()) { flash('ઓડિટ ફરી ખોલવાનું ફક્ત એડમિન જ કરી શકે.', 'error'); redirect('stock_audit.php'); }
+    if (!is_full_admin()) { flash('Only an admin can reopen an audit.', 'error'); redirect('stock_audit.php'); }
     $cid = (int)post('id');
     $count = row("SELECT * FROM stock_counts WHERE id = ? AND status = 'completed'", [$cid]);
-    if (!$count) { flash('આ ઓડિટ Completed નથી.', 'error'); redirect('stock_audit.php'); }
+    if (!$count) { flash('This audit is not completed.', 'error'); redirect('stock_audit.php'); }
     if (is_period_locked(today())) { flash(period_lock_message(), 'error'); redirect('stock_audit.php?action=count&id=' . $cid); }
     $pdo = db();
     $pdo->beginTransaction();
@@ -79,12 +79,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reopen') {
     q("UPDATE stock_counts SET status = 'open', completed_by = NULL, completed_at = NULL WHERE id = ?", [$cid]);
     $pdo->commit();
     log_activity('stock_audit_reopen', $count['count_no'] . ": $undone adjustment(s) reversed");
-    flash('ઓડિટ ' . $count['count_no'] . ' પાછું ખૂલી ગયું — ' . $undone . ' આઇટમના સ્ટોક-ફેરફાર પાછા વળ્યા, સ્ટોક પહેલા જેવો જ છે. ગણેલી સંખ્યા એમની એમ છે, સુધારીને ફરી Post કરી શકાય.');
+    flash('Audit ' . $count['count_no'] . ' reopened — ' . $undone . ' items had their stock changes reversed; stock is as it was. The counted quantities are unchanged and can be corrected and posted again.');
     redirect('stock_audit.php?action=count&id=' . $cid);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete_count') {
-    if (!is_full_admin()) { flash('ઓડિટ ડિલીટ ફક્ત એડમિન જ કરી શકે.', 'error'); redirect('stock_audit.php'); }
+    if (!is_full_admin()) { flash('Only an admin can delete an audit.', 'error'); redirect('stock_audit.php'); }
     $cid = (int)post('id');
     $count = row('SELECT * FROM stock_counts WHERE id = ?', [$cid]);
     if ($count) {
@@ -97,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete_count') {
         q('DELETE FROM stock_counts WHERE id = ?', [$cid]);
         $pdo->commit();
         log_activity('stock_audit_delete', $count['count_no']);
-        flash('ઓડિટ ' . $count['count_no'] . ' ડિલીટ થયું' . ($count['status'] === 'posted' ? ' — એના સ્ટોક-ફેરફાર પણ પાછા વાળ્યા' : '') . '.');
+        flash('Audit ' . $count['count_no'] . ' Deleted' . ($count['status'] === 'posted' ? ' — its stock changes were reversed too' : '') . '.');
     }
     redirect('stock_audit.php');
 }
@@ -110,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'change_loc') {
     $cid = (int)post('id');
     $count = row('SELECT * FROM stock_counts WHERE id = ?', [$cid]);
     $newLoc = (int)post('location_id');
-    if (locked_location_id()) { flash('Location બદલવાનું ફક્ત એડમિન કરી શકે.', 'error'); redirect('stock_audit.php?action=count&id=' . $cid); }
+    if (locked_location_id()) { flash('Only an admin can change the location.', 'error'); redirect('stock_audit.php?action=count&id=' . $cid); }
     if (!$count || $count['status'] !== 'open' || !$newLoc) { flash('This count is not open.', 'error'); redirect('stock_audit.php'); }
     if ($newLoc !== (int)$count['location_id']) {
         $pdo = db();
@@ -122,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'change_loc') {
         $pdo->commit();
         $ln = val('SELECT name FROM locations WHERE id = ?', [$newLoc]);
         log_activity('stock_audit_change_loc', $count['count_no'] . ' -> ' . $ln);
-        flash('ઓડિટ હવે "' . $ln . '" નું છે — દરેક આઇટમની System qty એ Location પ્રમાણે ફરી લેવાઈ ગઈ. ગણેલી સંખ્યા એમની એમ છે.');
+        flash('The audit is now "' . $ln . '"  — every item system quantity has been re-read for that location. The counted quantities are unchanged.');
     }
     redirect('stock_audit.php?action=count&id=' . $cid);
 }
@@ -194,7 +194,7 @@ if ($action === 'new') {
           <div><label>Notes</label><input type="text" name="notes" placeholder="e.g. Monthly audit - July"></div>
         </div>
         <label class="check-inline mb"><input type="checkbox" name="only_low" value="1"> Only items currently below minimum stock (faster spot-check instead of a full count)</label>
-        <label class="check-inline mb"><input type="checkbox" name="include_zero" value="1"> ઝીરો-સ્ટોકવાળી આઇટમ પણ યાદીમાં લેવી <span class="muted" style="font-weight:normal">(સામાન્ય રીતે જરૂર નથી — જે માલ છે એ જ ગણવાનો હોય; સિસ્ટમમાં 0 હોય પણ શેલ્ફ પર માલ મળે એ શોધવું હોય ત્યારે જ ટિક કરો)</span></label>
+        <label class="check-inline mb"><input type="checkbox" name="include_zero" value="1"> Include items with zero stock in the list <span class="muted" style="font-weight:normal">(not normally needed — you count what is there; tick this only when looking for goods on the shelf that the system shows as 0)</span></label>
         <button class="btn" type="submit">Start Count</button>
         <a class="btn btn-muted" href="stock_audit.php">Back</a>
       </form>
@@ -208,7 +208,7 @@ if ($action === 'count') {
     $cid = (int)get('id');
     $count = row('SELECT sc.*, l.name loc_name FROM stock_counts sc JOIN locations l ON l.id = sc.location_id WHERE sc.id = ?', [$cid]);
     if (!$count) { flash('Count sheet not found.', 'error'); redirect('stock_audit.php'); }
-    if (locked_location_id() && (int)$count['location_id'] !== locked_location_id()) { flash('આ ઓડિટ તમારી Location નું નથી.', 'error'); redirect('stock_audit.php'); }
+    if (locked_location_id() && (int)$count['location_id'] !== locked_location_id()) { flash('This audit is not for your location.', 'error'); redirect('stock_audit.php'); }
     $lines = all('SELECT sci.*, i.name, i.unit FROM stock_count_items sci JOIN items i ON i.id = sci.item_id WHERE sci.count_id = ? ORDER BY i.name', [$cid]);
     // old count sheets made before the zero-skip existed: same relief via a
     // view-time toggle (?zeros=1 shows them back)
@@ -225,31 +225,31 @@ if ($action === 'count') {
       <h2><?= e($count['count_no']) ?> <?= status_badge($count['status']) ?></h2>
       <div style="background:linear-gradient(100deg,var(--primary,#1a56db),#6D28D9);color:#fff;border-radius:12px;padding:12px 16px;margin:8px 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span style="font-size:22px">📍</span>
-        <span style="font-size:17px;font-weight:800">તમે "<?= e($count['loc_name']) ?>" નો સ્ટોક ગણો છો</span>
-        <span style="font-size:12.5px;opacity:.85">— System qty આ Location ની જ છે; બીજી જગ્યાનો માલ આમાં ન ગણવો</span>
+        <span style="font-size:17px;font-weight:800">You "<?= e($count['loc_name']) ?>" stock are you counting</span>
+        <span style="font-size:12.5px;opacity:.85">— the system quantity is for this location only; do not count goods from elsewhere</span>
         <?php if ($count['status'] === 'open' && can('stock_audit.edit') && !locked_location_id()): ?>
-        <form method="post" style="margin-left:auto;display:flex;gap:6px;align-items:center" onsubmit="return confirm('Location બદલવી? દરેક આઇટમની System qty નવી Location પ્રમાણે ફરી લેવાશે (ગણેલી સંખ્યા રહેશે).')">
+        <form method="post" style="margin-left:auto;display:flex;gap:6px;align-items:center" onsubmit="return confirm('Change the location? Every item system quantity is re-read for the new location (counted quantities stay).')">
           <?= csrf_field() ?><input type="hidden" name="do" value="change_loc"><input type="hidden" name="id" value="<?= $cid ?>">
           <select name="location_id" style="padding:6px 8px;border-radius:8px;border:0">
             <?php foreach (all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name') as $l): ?>
             <option value="<?= $l['id'] ?>" <?= $l['id'] == $count['location_id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option>
             <?php endforeach; ?>
           </select>
-          <button class="btn btn-sm" type="submit" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5)">બદલો</button>
+          <button class="btn btn-sm" type="submit" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5)">Change</button>
         </form>
         <?php endif; ?>
       </div>
       <p class="muted">started <?= dmyt($count['created_at']) ?><?= $count['notes'] ? ' · ' . e($count['notes']) : '' ?></p>
       <?php if ($zeroCount > 0 || $showZeros): ?>
       <p class="no-print"><a class="btn btn-sm btn-outline" href="stock_audit.php?action=count&id=<?= $cid ?><?= $showZeros ? '' : '&zeros=1' ?>">
-        <?= $showZeros ? '🙈 ઝીરોવાળી પાછી છુપાવો' : '👁 ઝીરો-સ્ટોકવાળી ' . $zeroCount . ' આઇટમ પણ દેખાડો' ?></a></p>
+        <?= $showZeros ? '🙈 Hide the zero ones again' : '👁 Zero-stock ones ' . $zeroCount . ' Show items too' ?></a></p>
       <?php endif; ?>
       <?php if ($count['status'] === 'completed'): ?>
       <p class="mt">Posted <?= dmyt($count['completed_at']) ?></p>
       <?php if (is_full_admin()): ?>
-      <form method="post" class="mt no-print" onsubmit="return confirm('ઓડિટ <?= e($count['count_no']) ?> પાછું ખોલવું? Post થયેલા બધા સ્ટોક-ફેરફાર પાછા વળી જશે (સ્ટોક પહેલા જેવો), ગણેલી સંખ્યા રહેશે અને શીટ ફરી Open થશે.')">
+      <form method="post" class="mt no-print" onsubmit="return confirm('Audit <?= e($count['count_no']) ?> Reopen it? Every posted stock change is reversed (stock as it was), the counted quantities stay, and the sheet opens again.')">
         <?= csrf_field() ?><input type="hidden" name="do" value="reopen"><input type="hidden" name="id" value="<?= $cid ?>">
-        <button class="btn btn-outline" type="submit">🔓 Un-complete (ફરી ખોલો)</button>
+        <button class="btn btn-outline" type="submit">🔓 Un-complete (reopen)</button>
       </form>
       <?php endif; ?>
       <?php endif; ?>
@@ -332,10 +332,10 @@ include __DIR__ . '/includes/header.php';
   <?php if (can('stock_audit.add')): ?><a class="btn" href="stock_audit.php?action=new">+ Start Count</a><?php endif; ?>
 </div>
 <div class="filterbar mb no-print" style="flex-wrap:wrap;gap:6px">
-  <a class="btn btn-sm <?= !$fLoc ? '' : 'btn-outline' ?>" href="stock_audit.php">બધી Location</a>
+  <a class="btn btn-sm <?= !$fLoc ? '' : 'btn-outline' ?>" href="stock_audit.php">All locations</a>
   <?php foreach ($allLocs as $l):
       $open = row("SELECT id, count_no FROM stock_counts WHERE location_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1", [$l['id']]); ?>
-  <a class="btn btn-sm <?= $fLoc === (int)$l['id'] ? '' : 'btn-outline' ?>" href="stock_audit.php?loc=<?= $l['id'] ?>">📍 <?= e($l['name']) ?><?= $open ? ' · 🟢 ચાલુ' : '' ?></a>
+  <a class="btn btn-sm <?= $fLoc === (int)$l['id'] ? '' : 'btn-outline' ?>" href="stock_audit.php?loc=<?= $l['id'] ?>">📍 <?= e($l['name']) ?><?= $open ? ' · 🟢 on' : '' ?></a>
   <?php endforeach; ?>
 </div>
 <div class="table-wrap">
@@ -350,7 +350,7 @@ include __DIR__ . '/includes/header.php';
       <td><?= status_badge($c['status']) ?></td>
       <td style="white-space:nowrap"><a class="btn btn-sm btn-outline" href="stock_audit.php?action=count&id=<?= $c['id'] ?>">Open</a>
         <?php if (is_full_admin()): ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('ઓડિટ <?= e($c['count_no']) ?> ડિલીટ કરવું? Posted હોય તો એના સ્ટોક-ફેરફાર પણ પાછા વળી જશે.')">
+        <form method="post" style="display:inline" onsubmit="return confirm('Audit <?= e($c['count_no']) ?> Delete it? If it was posted, its stock changes are reversed too.')">
           <?= csrf_field() ?><input type="hidden" name="do" value="delete_count"><input type="hidden" name="id" value="<?= $c['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit">✕</button>
         </form>

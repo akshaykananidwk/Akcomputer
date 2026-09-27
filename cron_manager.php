@@ -66,10 +66,10 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="card">
   <h3><?= $tickState[0] ?> Master Cron <span style="color:<?= $tickState[2] ?>;font-size:14px;font-weight:600"><?= e($tickState[1]) ?></span></h3>
-  <p class="muted mb">આખી સિસ્ટમ માટે સર્વર પર <strong>ફક્ત આ એક જ cron</strong> જોઈએ — <strong>દર 1 મિનિટે</strong>. બાકીના બધા કામ (રિમાઇન્ડર, બેકઅપ, રિપોર્ટ...) આ પેજ પરથી મેનેજ થાય છે; નવું job ઉમેરાય ત્યારે સર્વર પર કંઈ બદલવું પડતું નથી.</p>
+  <p class="muted mb">on the server for the whole system <strong>this one cron only</strong> needed — <strong>every minute</strong>. Everything else (reminders, backups, reports...) is managed from this page; adding a new job needs no change on the server.</p>
   <p class="mb"><strong>cPanel → Cron Jobs</strong> (Common Settings: <em>Once Per Minute</em> <code>* * * * *</code>):</p>
   <p class="mb"><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block">wget -qO- "<?= e($cronUrl) ?>"</code></p>
-  <p class="muted" style="font-size:12.5px">અથવા browser માં ટેસ્ટ કરવા: <a href="<?= e($cronUrl) ?>" target="_blank"><?= e($cronUrl) ?></a></p>
+  <p class="muted" style="font-size:12.5px">or to test it in a browser: <a href="<?= e($cronUrl) ?>" target="_blank"><?= e($cronUrl) ?></a></p>
 </div>
 
 <div class="card">
@@ -107,7 +107,7 @@ include __DIR__ . '/includes/header.php';
   <?php foreach ($JOBS as $id => $def): ?>
   <form method="post" id="run<?= e($id) ?>"><?= csrf_field() ?><input type="hidden" name="do" value="run"><input type="hidden" name="job" value="<?= e($id) ?>"></form>
   <?php endforeach; ?>
-  <p class="muted mt" style="font-size:12.5px">💡 Fail થયેલું job આપોઆપ 5 મિનિટમાં ફરી ટ્રાય થાય છે; "▶ Run" થી તરત પણ ચલાવી શકાય. ઘણા job અંદરથી "દિવસમાં એક જ વાર" જેવા ગાર્ડ રાખે છે એટલે વારંવાર ચલાવવાથી ડબલ મેસેજ કદી નહીં જાય.</p>
+  <p class="muted mt" style="font-size:12.5px">💡 A failed job retries itself within 5 minutes; "▶ Run" can also be run at once from here. Many jobs internally "only once a day" keep guards like this, so running them repeatedly never sends a double message.</p>
 </div>
 
 <div class="card">
@@ -121,7 +121,7 @@ include __DIR__ . '/includes/header.php';
     </select>
   </form>
   <?php if (!$history): ?>
-  <p class="muted">હજી કોઈ execution નોંધાયું નથી. (Migrate ચલાવ્યા પછી અહીં દરેક run દેખાશે.)</p>
+  <p class="muted">No execution recorded yet. (After running Migrate, every run shows here.)</p>
   <?php else: ?>
   <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
     <thead><tr><th>Started</th><th>Job</th><th>Status</th><th>Took</th><th>Detail</th></tr></thead>

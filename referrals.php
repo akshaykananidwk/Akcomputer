@@ -19,8 +19,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'resend') {
     require_perm('referrals.edit');
     $r = row('SELECT * FROM referrers WHERE id = ?', [(int)post('id')]);
     if ($r && $r['mobile']) {
-        $ok = send_whatsapp($r['mobile'], "🤝 *" . setting('app_name', 'AK Computer') . " Refer & Earn*\n\n🔗 તમારી લિંક:\n" . base_url('catalog.php?ref=' . $r['code']) .
-            "\n\n📊 ડેશબોર્ડ:\n" . base_url('referral.php?t=' . $r['token']));
+        $ok = send_whatsapp($r['mobile'], "🤝 *" . setting('app_name', 'AK Computer') . " Refer & Earn*\n\n🔗 Your link:\n" . base_url('catalog.php?ref=' . $r['code']) .
+            "\n\n📊 Dashboard:\n" . base_url('referral.php?t=' . $r['token']));
         flash($ok ? 'Link re-sent on WhatsApp.' : 'WhatsApp send failed. ' . whatsapp_last_error(), $ok ? 'success' : 'error');
     }
     redirect('referrals.php');
@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'payout') {
         $pdo->commit();
         log_activity('referral_payout', "{$r['name']} ₹$due $mode");
         if ($r['mobile']) {
-            send_whatsapp($r['mobile'], "💵 *" . setting('app_name', 'AK Computer') . "*\n\nતમારું કમિશન *₹" . money($due) . "* ચૂકવી દેવામાં આવ્યું છે. 🎉\nઆભાર — શેર કરતા રહો!\n\n📊 " . base_url('referral.php?t=' . $r['token']));
+            send_whatsapp($r['mobile'], "💵 *" . setting('app_name', 'AK Computer') . "*\n\nYour commission *Rs " . money($due) . "* has been paid out. 🎉\nThank you — keep sharing!\n\n📊 " . base_url('referral.php?t=' . $r['token']));
         }
         flash('Paid ₹' . money($due) . ' to ' . $r['name'] . ' — booked as a Referral Commission expense.');
     } catch (Exception $ex) {

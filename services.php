@@ -63,7 +63,7 @@ $metaDesc = $sv ? $sv['desc'] : 'Computer repair, laptop repair, CCTV installati
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
       <?php if ($waShop): ?>
-      <a class="btn btn-success" href="https://wa.me/<?= e($waShop) ?>?text=<?= rawurlencode('નમસ્તે! મારે ' . $sv['name'] . ' માટે વાત કરવી છે.') ?>" rel="noopener">💬 WhatsApp પર પૂછો</a>
+      <a class="btn btn-success" href="https://wa.me/<?= e($waShop) ?>?text=<?= rawurlencode('Hello! I would like ' . $sv['name'] . ' I would like to talk about it.') ?>" rel="noopener">💬 Ask on WhatsApp</a>
       <?php endif; ?>
       <?php if ($co['phone']): ?><a class="btn btn-outline" href="tel:<?= e(preg_replace('/\D/', '', $co['phone'])) ?>">📞 <?= e($co['phone']) ?></a><?php endif; ?>
     </div>
@@ -75,7 +75,7 @@ $metaDesc = $sv ? $sv['desc'] : 'Computer repair, laptop repair, CCTV installati
     <?php endforeach; ?>
   </div>
   <div class="scard">
-    <h2>બીજી સર્વિસ</h2>
+    <h2>Other services</h2>
     <div class="chips">
       <?php foreach ($services as $s2 => $d2): if ($s2 === $slug) continue; ?>
       <a href="<?= e(seo_service_url($s2)) ?>"><?= $d2['emoji'] ?> <?= e($d2['name']) ?></a>
@@ -85,7 +85,7 @@ $metaDesc = $sv ? $sv['desc'] : 'Computer repair, laptop repair, CCTV installati
 <?php else: ?>
   <div class="scard">
     <h1>🛠️ Our Services — <?= e($app_name) ?>, Dwarka</h1>
-    <p>Dwarka (દ્વારકા), Gujarat માં કમ્પ્યુટર, લેપટોપ, CCTV, પ્રિન્ટર અને નેટવર્કિંગની બધી સર્વિસ એક જ જગ્યાએ. નીચેની કોઈ પણ સર્વિસ પર ક્લિક કરી વિગત જુઓ.</p>
+    <p>Computers, laptops, CCTV, printers and all networking services in one place in Dwarka, Gujarat. Click any service below for details.</p>
   </div>
   <div class="pgrid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">
     <?php foreach ($services as $s2 => $d2): ?>

@@ -492,7 +492,7 @@ function party_profit($from, $to, $extraWhere = '', array $extraParams = [], $li
     $limit = max(1, (int)$limit);
     $cost = profit_cost_sql();
     $rows = all("SELECT COALESCE(CONCAT('p', s.party_id), s.customer_name) k, s.party_id,
-                        COALESCE(p.name, CONCAT(NULLIF(s.customer_name, ''), ' (છૂટક)'), 'છૂટક ગ્રાહક') pname,
+                        COALESCE(p.name, CONCAT(NULLIF(s.customer_name, ''), ' (retail)'), 'Retail customer') pname,
                         p.mobile, p.city,
                         COUNT(DISTINCT s.id) bills,
                         COALESCE(SUM(si.total), 0) revenue,

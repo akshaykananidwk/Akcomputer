@@ -39,7 +39,7 @@ try { $pendEditReq = row("SELECT er.*, u2.name requester FROM edit_requests er J
 $page_title = 'Purchase #' . $id;
 include __DIR__ . '/includes/header.php';
 if ($pendEditReq) {
-    echo '<div class="flash flash-info no-print">⏳ ' . e($pendEditReq['requester']) . ' નો ફેરફાર એડમિન મંજૂરી માટે બાકી છે (' . dmyt($pendEditReq['created_at']) . ').'
+    echo '<div class="flash flash-info no-print">⏳ ' . e($pendEditReq['requester']) . ' changes are waiting for admin approval (' . dmyt($pendEditReq['created_at']) . ').'
        . (is_full_admin() ? ' <a href="approvals.php">Review →</a>' : '') . '</div>';
 }
 ?>

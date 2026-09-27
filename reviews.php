@@ -38,7 +38,7 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="card">
   <h3>⭐ Product Reviews <?= $pendingN ? '<span class="badge" style="background:var(--bad);color:#fff;border-radius:99px;padding:2px 10px;font-size:12px">' . $pendingN . ' pending</span>' : '' ?></h3>
-  <p class="muted mb">ગ્રાહકોના સાચા રિવ્યૂ — Approve થાય એ જ વેબસાઈટ પર અને Google ના Product ડેટામાં જાય છે. ✓ Verified એટલે એ મોબાઈલ નંબર પર એ પ્રોડક્ટનું બિલ ખરેખર બનેલું છે (એ આપોઆપ Approve થાય છે).</p>
+  <p class="muted mb">Real customer reviews — only approved ones go to the website and into Google product data. ✓ Verified means a bill for that product really exists against that mobile number (those are approved automatically).</p>
   <div class="filterbar mb">
     <a class="btn btn-sm <?= $st === '' ? '' : 'btn-outline' ?>" href="reviews.php">All</a>
     <a class="btn btn-sm <?= $st === 'pending' ? '' : 'btn-outline' ?>" href="reviews.php?st=pending">Pending</a>
@@ -46,7 +46,7 @@ include __DIR__ . '/includes/header.php';
     <a class="btn btn-sm <?= $st === 'rejected' ? '' : 'btn-outline' ?>" href="reviews.php?st=rejected">Rejected</a>
   </div>
   <?php if (!$rows): ?>
-  <p class="muted">કોઈ રિવ્યૂ નથી<?= $st ? " ($st)" : '' ?>. (નવું v52 Migrate ચલાવેલું છે ને?)</p>
+  <p class="muted">No reviews<?= $st ? " ($st)" : '' ?>. (Have you run the new v52 migrate?)</p>
   <?php else: ?>
   <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
     <thead><tr><th>Date</th><th>Product</th><th>Customer</th><th>Rating</th><th>Comment</th><th>Status</th><th></th></tr></thead>

@@ -81,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $need_otp = true;
                         } else {
                             // surfacing the real reason beats a silent OTP box
-                            $err = 'OTP WhatsApp પર મોકલી શકાયો નથી. (' . whatsapp_last_error() . ')';
+                            $err = 'The OTP could not be sent on WhatsApp. (' . whatsapp_last_error() . ')';
                         }
                     } else {
                         establish_session($user['id']);

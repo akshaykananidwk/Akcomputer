@@ -55,7 +55,7 @@ if ($action === 'new' || $action === 'edit') {
               <option value="<?= $it['id'] ?>" <?= ($b['item_id'] ?? 0) == $it['id'] ? 'selected' : '' ?>><?= e($it['name']) ?></option>
               <?php endforeach; ?>
             </select>
-            <script>SearchPick.init('item_id', 'આઇટમનું નામ ટાઇપ કરો…');</script></div>
+            <script>SearchPick.init('item_id', 'Type an item name…');</script></div>
           <div><label>Location</label>
             <select name="location_id"><?php foreach ($locations as $l): ?><option value="<?= $l['id'] ?>" <?= ($b['location_id'] ?? $u['location_id']) == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option><?php endforeach; ?></select></div>
         </div>

@@ -43,22 +43,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     foreach ($rows as $r) {
         $item = row('SELECT name, serial_tracked FROM items WHERE id = ?', [$r['item_id']]);
         if ($r['sns'] && count($r['sns']) != (int)$r['qty']) {
-            flash(($item['name'] ?? '#' . $r['item_id']) . ': ' . count($r['sns']) . ' સિરિયલ પસંદ કર્યા છે પણ જથ્થો '
-                . (0 + $r['qty']) . ' છે — બંને સરખા હોવા જોઈએ.', 'error');
+            flash(($item['name'] ?? '#' . $r['item_id']) . ': ' . count($r['sns']) . ' serials chosen but the quantity is '
+                . (0 + $r['qty']) . ' — the two should be the same.', 'error');
             redirect('sales_return.php?action=new');
         }
         if (!empty($item['serial_tracked']) && !$r['sns']) {
-            flash(($item['name'] ?? '#' . $r['item_id']) . ': આ આઇટમ સિરિયલવાળી છે — કયો સિરિયલ પાછો આવ્યો એ પસંદ કરો.', 'error');
+            flash(($item['name'] ?? '#' . $r['item_id']) . ': this item is serial-tracked — choose which serial came back.', 'error');
             redirect('sales_return.php?action=new');
         }
         foreach ($r['sns'] as $sn) {
             $srow = row('SELECT status FROM item_serials WHERE item_id = ? AND serial_no = ?', [$r['item_id'], $sn]);
             if (!$srow) {
-                flash('સિરિયલ ' . $sn . ' આ આઇટમનો નથી (નોંધાયેલો જ નથી).', 'error');
+                flash('Serial ' . $sn . ' does not belong to this item (it is not recorded at all).', 'error');
                 redirect('sales_return.php?action=new');
             }
             if ($srow['status'] !== 'sold') {
-                flash('સિરિયલ ' . $sn . ' વેચાયેલો નથી (અત્યારે: ' . $srow['status'] . ') — એટલે પાછો લઈ શકાય નહીં.', 'error');
+                flash('Serial ' . $sn . ' has not been sold (currently: ' . $srow['status'] . ') — so it cannot be taken back.', 'error');
                 redirect('sales_return.php?action=new');
             }
         }
@@ -116,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $pdo->commit();
         log_activity('sales_return', doc_no('SR', $rid));
         $msg = 'Sales return saved, stock restored.';
-        if ($backSns) $msg .= ' સિરિયલ પાછા સ્ટોકમાં: ' . implode(', ', $backSns) . '.';
+        if ($backSns) $msg .= ' Serials back in stock: ' . implode(', ', $backSns) . '.';
         if ($creditedTo) {
             $bits = [];
             foreach ($creditedTo as $t) $bits[] = $t['label'] . ' ₹' . money($t['amount']);
@@ -181,7 +181,7 @@ if ($action === 'new') {
         <h3>Returned items</h3>
         <div class="bill-items" id="billItems"></div>
         <button type="button" class="btn btn-outline btn-sm" id="addRowBtn">+ Add item</button>
-        <p class="muted mt">સિરિયલવાળી આઇટમ ઉમેરશો એટલે નીચે એની વેચાયેલી સિરિયલ યાદી આવશે — કયો પીસ પાછો આવ્યો એ ટિક કરો. દરેક સિરિયલ સાથે એ કયા બિલમાં ગયો હતો એ પણ દેખાશે.</p>
+        <p class="muted mt">Add a serial-tracked item and the list of its sold serials appears below — tick whichever piece came back. Each serial also shows which bill it went out on.</p>
       </div>
       <div class="card">
         <div class="bill-totals">
@@ -193,7 +193,7 @@ if ($action === 'new') {
     </form>
     <script>Bill.init({mode: 'sale', serials: true, returnMode: true, locSel: 'location_id', gst: false});
     ReturnMoney.init({dir: 'in', partySel: 'select[name=party_id]'});
-    SearchPick.init('party_id', 'ગ્રાહકનું નામ કે મોબાઇલ ટાઇપ કરો…');</script>
+    SearchPick.init('party_id', 'Type a customer name or mobile…');</script>
     <?php
     include __DIR__ . '/includes/footer.php';
     exit;

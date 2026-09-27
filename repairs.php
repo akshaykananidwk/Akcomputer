@@ -341,7 +341,7 @@ if ($action === 'new' || $action === 'edit') {
             <option value="">-- select part --</option>
             <?php foreach ($repairItems as $it): ?><option value="<?= $it['id'] ?>"><?= e($it['name']) ?> (₹<?= money($it['selling_price']) ?>)</option><?php endforeach; ?>
           </select>
-          <script>SearchPick.init('item_id', 'પાર્ટનું નામ ટાઇપ કરો…');</script></div>
+          <script>SearchPick.init('item_id', 'Type a part name…');</script></div>
         <div><label>Qty</label><input type="number" step="any" min="0.01" name="qty" value="1" required></div>
         <div style="align-self:end"><button class="btn btn-sm" type="submit">+ Add Part</button></div>
       </form>

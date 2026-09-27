@@ -140,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'staff_cancel') {
 // All balances (wallets, cash total, bank) are COMPUTED from the tables, so
 // deleting the row is a clean reversal - nothing else to unwind.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'mt_delete') {
-    if (!is_full_admin()) { flash('ફક્ત એડમિન જ આ એન્ટ્રી ડિલીટ કરી શકે.', 'error'); redirect('cash_bank.php'); }
+    if (!is_full_admin()) { flash('Only an admin can delete this entry.', 'error'); redirect('cash_bank.php'); }
     $t = row('SELECT * FROM money_transfers WHERE id = ?', [(int)post('id')]);
     if ($t && $t['status'] !== 'pending') {
         q('DELETE FROM money_transfers WHERE id = ?', [$t['id']]);
@@ -155,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'mt_delete') {
 // accounts/wallets involved cannot - for that, delete and re-enter. Balances
 // recompute from the row, so an UPDATE is as clean as the delete above.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'mt_update') {
-    if (!is_full_admin()) { flash('ફક્ત એડમિન જ આ એન્ટ્રી એડિટ કરી શકે.', 'error'); redirect('cash_bank.php'); }
+    if (!is_full_admin()) { flash('Only an admin can edit this entry.', 'error'); redirect('cash_bank.php'); }
     $t = row('SELECT * FROM money_transfers WHERE id = ?', [(int)post('id')]);
     $amount = round((float)post('amount'), 2);
     if (!$t || $t['status'] !== 'done' || $amount <= 0) { flash('Entry not found or not editable.', 'error'); redirect('cash_bank.php'); }
@@ -253,7 +253,7 @@ if (get('action') === 'cash_ledger') {
     // tapping it re-opens the ledger from day one, so the full break-up of
     // that carried-over amount is one tap away
     $fullUrl = 'cash_bank.php?action=cash_ledger&from=2020-01-01&to=' . e(today()) . '&staff=' . $fStaff;
-    $rows[] = ['date' => $from, 'desc' => '🏦 Opening Balance (' . dmy($from) . ' પહેલાંનું — આગલા મહિનેથી આવેલું) · ટૅપ કરો: આખી વિગત', 'staff' => '',
+    $rows[] = ['date' => $from, 'desc' => '🏦 Opening Balance (' . dmy($from) . ' earlier — carried in from the previous month) · tap for the full detail', 'staff' => '',
                'in' => 0, 'out' => 0, 'bal' => $opening, 'open' => $fullUrl, 'del' => null, 'opening' => true];
 
     $liveBal = $fStaff ? staff_cash($fStaff) : total_cash_in_hand();
@@ -280,7 +280,7 @@ if (get('action') === 'cash_ledger') {
         </select></div>
       <?php endif; ?>
       <button class="btn btn-sm" type="submit">Show</button>
-      <a class="btn btn-sm btn-outline" href="<?= e($fullUrl) ?>">📜 આખો હિસાબ</a>
+      <a class="btn btn-sm btn-outline" href="<?= e($fullUrl) ?>">📜 Full statement</a>
     </form>
     <div class="table-wrap list-style-table">
     <table>
@@ -360,7 +360,7 @@ $page_title = 'Cash & Bank';
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="duo-cards"<?= $seeAll ? '' : ' style="grid-template-columns:1fr"' ?>>
-  <a class="duo-card duo-get" href="cash_bank.php?action=cash_ledger"><div class="duo-label">💵 <?= $seeAll ? 'Cash in Hand (total)' : 'My Cash (મારી કેશ)' ?></div><div class="duo-value">₹ <?= money($cashInHand) ?></div><div class="muted" style="font-size:12px;margin-top:4px">Tap for the full ledger →</div></a>
+  <a class="duo-card duo-get" href="cash_bank.php?action=cash_ledger"><div class="duo-label">💵 <?= $seeAll ? 'Cash in Hand (total)' : 'My Cash' ?></div><div class="duo-value">₹ <?= money($cashInHand) ?></div><div class="muted" style="font-size:12px;margin-top:4px">Tap for the full ledger →</div></a>
   <?php if ($seeAll): ?>
   <a class="duo-card" style="background:#e0f2fe" href="reports.php?r=bank_ledger"><div class="duo-label" style="color:#075985">🏦 Total Bank Balance</div><div class="duo-value" style="color:#0369a1">₹ <?= money($totalBankBal) ?></div><div class="muted" style="font-size:12px;margin-top:4px">Tap for the passbook →</div></a>
   <?php endif; ?>
@@ -458,7 +458,7 @@ include __DIR__ . '/includes/header.php';
             'dir' => (string)$t['adjust_dir'],
         ], JSON_UNESCAPED_UNICODE | JSON_HEX_APOS | JSON_HEX_TAG) ?>)'>✏️</button>
         <?php endif; ?>
-        <form method="post" style="display:inline" onsubmit="return confirm('આ એન્ટ્રી ડિલીટ કરવી છે? બેલેન્સ ફરી ગણાઈ જશે.')">
+        <form method="post" style="display:inline" onsubmit="return confirm('Delete this entry? The balances are recalculated.')">
           <?= csrf_field() ?><input type="hidden" name="do" value="mt_delete"><input type="hidden" name="id" value="<?= $t['id'] ?>">
           <button class="btn btn-sm btn-danger" type="submit">✕</button></form>
       </td>
@@ -466,7 +466,7 @@ include __DIR__ . '/includes/header.php';
     </tr>
     <?php endforeach; ?></tbody>
   </table>
-  <?php if ($isAdminMt): ?><p class="muted mt" style="font-size:12.5px">✏️/✕ ફક્ત એડમિનને દેખાય છે — એન્ટ્રી બદલો/કાઢો એટલે બધા બેલેન્સ આપોઆપ ફરી ગણાય છે.</p><?php endif; ?>
+  <?php if ($isAdminMt): ?><p class="muted mt" style="font-size:12.5px">✏️/✕ are visible only to an admin — change or remove an entry and every balance is recalculated.</p><?php endif; ?>
 </div>
 
 <?php if ($isAdminMt): ?>
@@ -484,7 +484,7 @@ include __DIR__ . '/includes/header.php';
         <div><label>Date</label><input type="date" name="txn_date" id="mtEditDate"></div>
       </div>
       <div class="field"><label>Note</label><input type="text" name="notes" id="mtEditNotes"></div>
-      <p class="muted" style="font-size:12.5px">બેંક/વોલેટ બદલવું હોય તો આ એન્ટ્રી ✕ થી કાઢીને નવી બનાવો.</p>
+      <p class="muted" style="font-size:12.5px">To change the bank or wallet, remove this entry with ✕ and make a new one.</p>
       <div class="modal-actions">
         <button type="button" class="btn btn-outline" onclick="cbHide('cbMtEdit')">Cancel</button>
         <button class="btn" type="submit">Save changes</button>
