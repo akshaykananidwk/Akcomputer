@@ -91,7 +91,7 @@ await p.route('**/api.php?r=sales', route => route.fulfill({
 await p.click('#syncBtn'); await p.waitForTimeout(3000);
 const att = await p.evaluate(async () => (await DB.all('outbox')).filter(r => r.state === 'attention'));
 ok('parked as "needs attention", not retried for ever', att.length === 1, att.length ? att[0].last_error : '(none)');
-await p.click('[data-go="sync"]'); await p.waitForTimeout(700);
+await p.evaluate(() => App.go('sync')); await p.waitForTimeout(700);
 ok('the owner is shown it, with the server\'s own words', (await p.locator('body').textContent()).includes('Invalid item_id'));
 ok('and the bill itself is still on the phone', (await p.evaluate(async () => (await DB.all('docs')).length)) >= 2);
 await p.unroute('**/api.php?r=sales');

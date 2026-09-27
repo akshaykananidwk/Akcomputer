@@ -102,6 +102,15 @@ var Sync = {
         return Promise.all([
           DB.putMany('items', d.items || []),
           DB.putMany('parties', d.parties || []),
+          // the server's own copy: replaced, not merged. A serial sold on the
+          // website, or a bill cancelled there, has to VANISH from the phone,
+          // and only a replace does that.
+          DB.replaceAll('serials', d.serials || []),
+          DB.replaceAll('stock', (d.stock || []).map(function (s) {
+            s.key = s.item_id + ':' + s.location_id; return s;
+          })),
+          DB.replaceAll('ssales', d.sales || []),
+          DB.replaceAll('spayments', d.payments || []),
           DB.setMeta('locations', d.locations || []),
           DB.setMeta('companies', d.companies || []),
           DB.setMeta('modes', d.payment_modes || []),
@@ -114,6 +123,37 @@ var Sync = {
           return { items: (d.items || []).length, parties: (d.parties || []).length, full: !!d.full };
         });
       });
+  },
+
+  /** The list of every screen the shop has, straight from the website's own
+   *  menu. Cached, so the list is there with no signal even though opening
+   *  one of those screens is not. Its own call and its own failure: a shop
+   *  whose menu did not come down must still be able to write a bill. */
+  pullMenu: function () {
+    var self = this;
+    return Promise.all([this.base(), this.headers()]).then(function (a) {
+      if (!a[0]) return null;
+      return self.fetchJson(a[0] + '/api.php?r=menu', { headers: a[1] }, 20000);
+    }).then(function (res) {
+      if (!res || !res.ok || !res.data || !res.data.groups) return null;
+      return DB.setMeta('menu', res.data.groups).then(function () { return res.data.groups; });
+    }).catch(function () { return null; });
+  },
+
+  /** A one-time url that opens a website screen already logged in. Needs the
+   *  network by its nature - there is nothing to open without it. */
+  webLink: function (to) {
+    var self = this, base;
+    return this.base().then(function (b) {
+      base = b;
+      return self.headers();
+    }).then(function (hdr) {
+      return self.fetchJson(base + '/api.php?r=weblink&to=' + encodeURIComponent(to), { headers: hdr }, 15000);
+    }).then(function (res) {
+      if (res.status === 401) { return DB.setMeta('token_bad', 1).then(function () { throw new Error('ફરી લોગિન કરવું પડશે'); }); }
+      if (!res.ok || !res.data || !res.data.url) throw new Error((res.data && res.data.error) || 'ખૂલ્યું નહીં');
+      return base + '/' + res.data.url;
+    });
   },
 
   // ---- push ----------------------------------------------------------------
@@ -210,7 +250,8 @@ var Sync = {
     var out = {};
     return this.push(force)
       .then(function (p) { out.push = p; return self.pull(); })
-      .then(function (p) { out.pull = p; out.ok = true; return out; })
+      .then(function (p) { out.pull = p; return self.pullMenu(); })
+      .then(function () { out.ok = true; return out; })
       .catch(function (e) { out.ok = false; out.error = (e && e.message) || 'ભૂલ'; return out; })
       .then(function (res) { self.running = false; return res; });
   },

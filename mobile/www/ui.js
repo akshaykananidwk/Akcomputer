@@ -145,7 +145,9 @@ var App = {
     Sync.login(srv, usr, pwd, 'Android').then(function (d) {
       self.user = d.user;
       btn.textContent = 'ડેટા લાવી રહ્યા છીએ…';
-      return Sync.pull();
+      // masters first - the app is usable the moment they land - then the
+      // list of screens, which is nice to have and must not hold up login
+      return Sync.pull().then(function () { return Sync.pullMenu(); });
     }).then(function () {
       btn.disabled = false; btn.textContent = 'લોગિન કરો';
       self.toast('આવકાર, ' + (self.user.name || ''));
@@ -160,24 +162,38 @@ var App = {
   scr_home: function () {
     var self = this;
     this.chrome('AK Computer', false);
-    Promise.all([DB.all('docs'), Sync.status(), DB.count('items'), DB.count('parties')])
+    Promise.all([DB.all('docs'), Sync.status(), DB.count('items'), DB.count('parties'),
+                 DB.all('ssales'), DB.all('spayments')])
       .then(function (a) {
         var docs = a[0], st = a[1];
         var today = self.today();
-        var sales = docs.filter(function (d) { return d.kind === 'sale' && d.date === today; });
-        var pays = docs.filter(function (d) { return d.kind === 'payment' && d.date === today; });
-        var total = sales.reduce(function (s, d) { return s + (d.total || 0); }, 0);
-        var got = sales.reduce(function (s, d) { return s + (d.paid || 0); }, 0)
-                + pays.reduce(function (s, d) { return s + (d.amount || 0); }, 0);
+        // the SHOP's day, not this phone's - plus whatever this phone has
+        // written and not yet sent, which the server's copy cannot know about
+        var unsent = docs.filter(function (d) { return !d.synced; });
+        var sales = a[4].filter(function (s) { return s.sale_date === today && s.is_cancelled != 1; })
+          .concat(unsent.filter(function (d) { return d.kind === 'sale' && d.date === today; }));
+        var total = sales.reduce(function (s, d) { return s + (parseFloat(d.total) || 0); }, 0);
+        var got = a[5].filter(function (p) { return p.pay_date === today && p.direction === 'in'; })
+                      .reduce(function (s, p) { return s + (parseFloat(p.amount) || 0); }, 0)
+                + unsent.filter(function (d) { return d.date === today; })
+                        .reduce(function (s, d) { return s + (d.kind === 'payment' ? (d.amount || 0) : (d.paid || 0)); }, 0);
         self.el('main').innerHTML =
           '<div class="card">' +
-          '<div class="muted">આજનું વેચાણ (આ ફોનથી)</div>' +
+          '<div class="muted">આજનું વેચાણ</div>' +
           '<div class="big">₹' + self.money(total) + '</div>' +
           '<div class="stat"><span>બિલ</span><strong>' + sales.length + '</strong></div>' +
           '<div class="stat"><span>આજે પૈસા આવ્યા</span><strong>₹' + self.money(got) + '</strong></div>' +
           '</div>' +
           '<button class="btn" id="h_new">🧾 નવું બિલ બનાવો</button>' +
           '<button class="btn sec" id="h_pay">₹ પૈસા લીધા નોંધો</button>' +
+          '<div class="row" style="margin-top:8px">' +
+          '<button class="btn sec" id="h_dues">📋 બાકી ઉઘરાણી</button>' +
+          '<button class="btn sec" id="h_stock">📦 સ્ટોક</button>' +
+          '</div>' +
+          '<div class="row" style="margin-top:8px">' +
+          '<button class="btn sec" id="h_rep">📊 રિપોર્ટ</button>' +
+          '<button class="btn sec" id="h_all">☰ બધું</button>' +
+          '</div>' +
           '<div class="card" style="margin-top:12px">' +
           '<div class="stat"><span>મોકલવાનું બાકી</span><strong>' +
             (st.pending ? '<span class="pill wait">' + st.pending + '</span>' : '<span class="pill done">0</span>') + '</strong></div>' +
@@ -189,6 +205,10 @@ var App = {
             ' · ' + self.esc((self.user && self.user.location) || '') + '</p>';
         self.el('h_new').addEventListener('click', function () { self.go('newbill'); });
         self.el('h_pay').addEventListener('click', function () { self.go('collect'); });
+        self.el('h_dues').addEventListener('click', function () { self.go('dues'); });
+        self.el('h_stock').addEventListener('click', function () { self.go('stock'); });
+        self.el('h_rep').addEventListener('click', function () { self.go('reports'); });
+        self.el('h_all').addEventListener('click', function () { self.go('all'); });
       });
   },
 
@@ -202,10 +222,43 @@ var App = {
 
   // --- NEW BILL -------------------------------------------------------------
   bill: null,
+
+  /** Keep what has been typed so far ON DISK, not just in a variable.
+   *
+   *  A half-written bill is the easiest thing in the world to lose - the
+   *  owner steps away to look up a serial, Android reclaims the app's
+   *  memory, and twenty minutes of typing is gone. Saving the draft on
+   *  every change costs nothing and means the bill is still there when the
+   *  app comes back, however it came back. */
+  saveDraft: function () {
+    if (!this.bill) return Promise.resolve();
+    this.stashHeader();
+    return DB.setMeta('draft', this.bill);
+  },
+
+  /** The boxes at the top are only in the DOM; copy them into the draft
+   *  before anything can navigate away from them. */
+  stashHeader: function () {
+    if (!this.bill) return;
+    var c = this.el('b_cust'), m = this.el('b_mob'), p = this.el('b_paid'), md = this.el('b_mode');
+    if (c) this.bill.customer = c.value.trim();
+    if (m) this.bill.mobile = m.value.trim();
+    if (p) this.bill.paid = parseFloat(p.value) || 0;
+    if (md) this.bill.mode = md.value;
+  },
+
   scr_newbill: function () {
     var self = this;
     this.chrome('નવું બિલ', true);
-    if (!this.bill) this.bill = { lines: [], party: null, customer: '', mobile: '', paid: 0, mode: 'cash' };
+    if (!this.bill) {
+      // nothing in memory: pick up a draft left behind by a restart before
+      // starting a blank one
+      return DB.meta('draft', null).then(function (d) {
+        self.bill = (d && d.lines) ? d : { lines: [], party: null, customer: '', mobile: '', paid: 0, mode: 'cash' };
+        if (d && d.lines && d.lines.length) self.toast('અધૂરું બિલ પાછું મળ્યું');
+        self.scr_newbill();
+      });
+    }
     this.el('main').innerHTML =
       '<div class="card">' +
       '<label>ગ્રાહક</label>' +
@@ -225,6 +278,7 @@ var App = {
       '<label>કઈ રીતે</label><select id="b_mode"></select>' +
       '<div class="err" id="b_err"></div>' +
       '<button class="btn ok" id="b_save">💾 બિલ સેવ કરો</button>' +
+      (this.bill.lines.length ? '<button class="btn ghost" id="b_clear">બિલ રદ કરો</button>' : '') +
       '</div>';
 
     DB.meta('modes', []).then(function (modes) {
@@ -243,10 +297,22 @@ var App = {
     this.wirePick('b_item', 'b_itemres', function (q) { return self.findItems(q); },
       function (it) { self.addLine(it); self.el('b_item').value = ''; });
 
+    this.el('b_cust').value = this.bill.customer || '';
+    this.el('b_mob').value = this.bill.mobile || '';
+    this.el('b_paid').value = this.bill.paid || 0;
     this.el('b_full').addEventListener('click', function () {
       self.el('b_paid').value = self.billTotal().toFixed(2);
+      self.saveDraft();
+    });
+    ['b_cust', 'b_mob', 'b_paid'].forEach(function (id) {
+      self.el(id).addEventListener('change', function () { self.saveDraft(); });
     });
     this.el('b_save').addEventListener('click', function () { self.saveBill(); });
+    if (this.el('b_clear')) this.el('b_clear').addEventListener('click', function () {
+      if (!confirm('આખું બિલ ભૂંસી નાખવું?')) return;
+      self.bill = null;
+      DB.setMeta('draft', null).then(function () { self.go('home'); });
+    });
     this.renderLines();
   },
 
@@ -316,8 +382,103 @@ var App = {
     var ex = null;
     this.bill.lines.forEach(function (l) { if (l.item_id === it.id) ex = l; });
     if (ex) ex.qty += 1;
-    else this.bill.lines.push({ item_id: it.id, name: it.name, qty: 1, price: parseFloat(it.selling_price) || 0, stock: parseFloat(it.stock) || 0 });
+    else this.bill.lines.push({ item_id: it.id, name: it.name, qty: 1,
+                                price: parseFloat(it.selling_price) || 0, stock: parseFloat(it.stock) || 0,
+                                serial_tracked: it.serial_tracked == 1, serials: [] });
     this.renderLines();
+    this.saveDraft();
+  },
+
+  /** The serials of this item that are on the shelf, minus the ones already
+   *  put on another line of THIS bill - a camera cannot be sold twice on the
+   *  same invoice any more than on two invoices. */
+  freeSerials: function (itemId) {
+    var used = {};
+    (this.bill.lines || []).forEach(function (l) {
+      (l.serials || []).forEach(function (s) { used[s] = 1; });
+    });
+    return DB.by('serials', 'item_id', itemId).then(function (rows) {
+      return rows.filter(function (r) { return !used[r.serial_no]; });
+    });
+  },
+
+  /** Pick the serial numbers for one line. Offered from the shelf, and
+   *  typeable too: a piece billed the day it arrives is often not in the
+   *  books yet, and the counter must not be stuck waiting for the purchase
+   *  entry. The server treats a typed-in serial the same way the billing
+   *  screen does. */
+  scr_serials: function (idx) {
+    var self = this;
+    var line = this.bill && this.bill.lines[idx];
+    if (!line) { this.go('newbill'); return; }
+    this.chrome('સિરિયલ નંબર', true);
+    this.freeSerials(line.item_id).then(function (shelf) {
+      var draw = function () {
+        self.el('main').innerHTML =
+          '<div class="card"><div class="muted">' + self.esc(line.name) + '</div>' +
+          '<div class="big">' + line.serials.length + ' / ' + line.qty + '</div>' +
+          '<div class="muted">પસંદ કરેલા સિરિયલ નંબર</div></div>' +
+          (line.serials.length
+            ? '<div class="card"><h3>પસંદ કરેલા</h3><ul class="list">' + line.serials.map(function (s, i) {
+                return '<li><div class="nm" style="font-family:monospace">' + self.esc(s) + '</div>' +
+                  '<button class="x" data-rm="' + i + '">✕</button></li>';
+              }).join('') + '</ul></div>'
+            : '') +
+          '<div class="card"><h3>શેલ્ફ પરના</h3>' + (shelf.length
+            ? '<input type="search" id="sn_q" placeholder="સિરિયલ શોધો"><ul class="list" id="sn_list"></ul>'
+            : '<p class="muted">આ આઇટમના કોઈ સિરિયલ સ્ટોકમાં નોંધાયેલા નથી.</p>') + '</div>' +
+          '<div class="card"><h3>અથવા જાતે લખો</h3>' +
+          '<p class="muted" style="margin-top:0">નવો માલ હજી ખરીદીમાં ન નોંધાયો હોય તો અહીં લખો.</p>' +
+          '<input type="text" id="sn_new" placeholder="સિરિયલ નંબર" autocapitalize="characters" autocomplete="off">' +
+          '<button class="btn sec" id="sn_add">+ ઉમેરો</button></div>' +
+          '<button class="btn ok" id="sn_done">✓ થઈ ગયું</button>';
+
+        var list = self.el('sn_list');
+        if (list) {
+          var drawList = function (q) {
+            var rows = q ? shelf.filter(function (r) { return self.match(r.serial_no, q); }) : shelf;
+            list.innerHTML = rows.slice(0, 100).map(function (r) {
+              return '<li data-add="' + self.esc(r.serial_no) + '">' +
+                '<div class="nm" style="font-family:monospace">' + self.esc(r.serial_no) + '</div>' +
+                '<div class="right muted">+</div></li>';
+            }).join('') || '<li class="muted">કંઈ મળ્યું નહીં</li>';
+            list.querySelectorAll('[data-add]').forEach(function (li) {
+              li.addEventListener('click', function () { add(li.dataset.add); });
+            });
+          };
+          drawList('');
+          self.el('sn_q').addEventListener('input', function () { drawList(this.value.trim()); });
+        }
+        self.el('main').querySelectorAll('[data-rm]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            var s = line.serials.splice(parseInt(b.dataset.rm, 10), 1)[0];
+            DB.by('serials', 'item_id', line.item_id).then(function (rows) {
+              rows.forEach(function (r) {
+                if (r.serial_no === s && !shelf.some(function (x) { return x.serial_no === s; })) shelf.push(r);
+              });
+              self.saveDraft(); draw();
+            });
+          });
+        });
+        self.el('sn_add').addEventListener('click', function () {
+          add(self.el('sn_new').value.trim().toUpperCase());
+        });
+        self.el('sn_done').addEventListener('click', function () { self.go('newbill'); });
+      };
+      var add = function (sn) {
+        if (!sn) return;
+        if (line.serials.indexOf(sn) >= 0) { self.toast('એ સિરિયલ પહેલેથી છે', true); return; }
+        // the count must match the quantity, or the bill says one thing and
+        // the serial records say another
+        if (line.serials.length >= line.qty) { self.toast('નંગ ' + line.qty + ' છે, એટલા જ સિરિયલ ચાલશે', true); return; }
+        line.serials.push(sn);
+        var i = shelf.findIndex(function (r) { return r.serial_no === sn; });
+        if (i >= 0) shelf.splice(i, 1);
+        self.saveDraft();
+        draw();
+      };
+      draw();
+    });
   },
 
   billTotal: function () {
@@ -333,17 +494,48 @@ var App = {
     } else {
       box.innerHTML = this.bill.lines.map(function (l, i) {
         var short = l.qty > l.stock;
+        var need = l.serial_tracked ? (l.serials || []).length + '/' + l.qty : '';
         return '<div class="line">' +
           '<div style="flex:1"><div class="nm">' + self.esc(l.name) + '</div>' +
             '<div class="sub">₹' + self.money(l.price) + ' × ' + l.qty +
-            (short ? ' <span class="pill bad">સ્ટોક ' + l.stock + '</span>' : '') + '</div></div>' +
-          '<div class="right"><strong>₹' + self.money(l.qty * l.price) + '</strong></div>' +
-          '<button class="x" data-x="' + i + '">✕</button></div>';
+            (short ? ' <span class="pill bad">સ્ટોક ' + l.stock + '</span>' : '') + '</div>' +
+            '<div class="row" style="margin-top:6px;gap:6px">' +
+              '<input type="number" inputmode="decimal" step="any" min="0" value="' + l.qty + '" data-q="' + i + '" style="margin:0" aria-label="નંગ">' +
+              '<input type="number" inputmode="decimal" step="any" min="0" value="' + l.price + '" data-p="' + i + '" style="margin:0" aria-label="ભાવ">' +
+            '</div>' +
+            (l.serial_tracked
+              ? '<button class="btn sec" style="margin-top:6px" data-sn="' + i + '">🔢 સિરિયલ ' + need + '</button>'
+              : '') +
+          '</div>' +
+          '<div class="right"><strong>₹' + self.money(l.qty * l.price) + '</strong>' +
+          '<br><button class="x" data-x="' + i + '">✕</button></div></div>';
       }).join('');
       box.querySelectorAll('[data-x]').forEach(function (b) {
         b.addEventListener('click', function () {
           self.bill.lines.splice(parseInt(b.dataset.x, 10), 1);
-          self.renderLines();
+          self.renderLines(); self.saveDraft();
+        });
+      });
+      box.querySelectorAll('[data-q]').forEach(function (inp) {
+        inp.addEventListener('change', function () {
+          var l = self.bill.lines[parseInt(inp.dataset.q, 10)];
+          l.qty = Math.max(0, parseFloat(inp.value) || 0);
+          // fewer pieces than serials already picked would bill one thing
+          // and hand over another
+          if (l.serials && l.serials.length > l.qty) l.serials = l.serials.slice(0, l.qty);
+          self.renderLines(); self.saveDraft();
+        });
+      });
+      box.querySelectorAll('[data-p]').forEach(function (inp) {
+        inp.addEventListener('change', function () {
+          self.bill.lines[parseInt(inp.dataset.p, 10)].price = Math.max(0, parseFloat(inp.value) || 0);
+          self.renderLines(); self.saveDraft();
+        });
+      });
+      box.querySelectorAll('[data-sn]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          self.stashHeader();
+          self.go('serials', parseInt(b.dataset.sn, 10));
         });
       });
     }
@@ -357,6 +549,20 @@ var App = {
     var err = this.el('b_err');
     err.textContent = '';
     if (!this.bill.lines.length) { err.textContent = 'ઓછામાં ઓછી એક આઇટમ ઉમેરો'; this.el('b_item').focus(); return; }
+    // EVERY check before the first write, so a refusal leaves nothing behind
+    var bad = null;
+    this.bill.lines.forEach(function (l, i) {
+      if (bad) return;
+      if (!(l.qty > 0)) bad = { msg: l.name + ': નંગ ભરો', line: i };
+      else if (l.serial_tracked && (l.serials || []).length !== l.qty) {
+        bad = { msg: l.name + ': ' + l.qty + ' માંથી ' + (l.serials || []).length + ' સિરિયલ નંબર ભર્યા છે', line: i, sn: true };
+      }
+    });
+    if (bad) {
+      err.textContent = bad.msg;
+      if (bad.sn) { this.stashHeader(); this.go('serials', bad.line); }
+      return;
+    }
     var total = this.billTotal();
     var paid = Math.max(0, Math.min(parseFloat(this.el('b_paid').value) || 0, total));
     var mode = this.el('b_mode').value;
@@ -374,43 +580,119 @@ var App = {
       customer_name: doc.customer, customer_mobile: doc.mobile,
       sale_date: doc.date, paid: paid, payment_mode: mode,
       notes: 'મોબાઇલ એપથી',
-      items: doc.lines.map(function (l) { return { item_id: l.item_id, qty: l.qty, price: l.price }; })
+      items: doc.lines.map(function (l) {
+        return { item_id: l.item_id, qty: l.qty, price: l.price, serials: l.serials || [] };
+      })
     };
     // SAVED FIRST, SENT AFTERWARDS. If the phone dies in the next second the
     // bill is already on it; if the network is gone it simply waits.
     DB.put('docs', doc)
       .then(function () { return Sync.queue({ uuid: uuid, kind: 'sale', body: body, created_at: doc.created_at }); })
+      .then(function () { return DB.setMeta('draft', null); })
       .then(function () {
         self.bill = null;
         self.toast('બિલ સેવ થઈ ગયું ₹' + self.money(total));
-        self.go('bills');
+        self.go('done', uuid);
         if (navigator.onLine) self.syncNow(false);
       })
       .catch(function (e) { err.textContent = 'સેવ થયું નહીં: ' + ((e && e.message) || ''); });
   },
 
+  /** Straight after saving: what a shop actually does next. Send it on
+   *  WhatsApp, or start the next bill. The invoice number is not here yet if
+   *  the phone is offline, and the screen says so rather than inventing
+   *  one - the customer's copy gets the number once it exists. */
+  scr_done: function (uuid) {
+    var self = this;
+    this.chrome('બિલ થઈ ગયું', true);
+    Promise.all([DB.get('docs', uuid), DB.meta('shop', 'AK Computer')]).then(function (a) {
+      var d = a[0], shop = a[1];
+      if (!d) { self.go('bills'); return; }
+      var due = (d.total || 0) - (d.paid || 0);
+      self.el('main').innerHTML =
+        '<div class="card center">' +
+        '<div style="font-size:42px">✅</div>' +
+        '<div class="big">₹' + self.money(d.total) + '</div>' +
+        '<div class="muted">' + self.esc(d.customer || 'વોક-ઇન') + '</div>' +
+        (due > 0.009 ? '<div class="muted" style="color:var(--bad)">બાકી ₹' + self.money(due) + '</div>' : '') +
+        '<div class="muted" style="font-size:13px;margin-top:6px">' +
+          (d.invoice_no ? self.esc(d.invoice_no) : '⏳ નંબર સિંક પછી મળશે') + '</div>' +
+        '</div>' +
+        (d.mobile ? '<button class="btn ok" id="dn_wa">📲 WhatsApp પર મોકલો</button>' : '') +
+        '<button class="btn" id="dn_new">🧾 નવું બિલ</button>' +
+        '<button class="btn sec" id="dn_list">📄 બધાં બિલ</button>';
+      if (self.el('dn_wa')) self.el('dn_wa').addEventListener('click', function () {
+        More.wa(d.mobile, More.billText(d, shop));
+      });
+      self.el('dn_new').addEventListener('click', function () { self.bill = null; self.go('newbill'); });
+      self.el('dn_list').addEventListener('click', function () { self.go('bills'); });
+    });
+  },
+
   // --- BILLS ----------------------------------------------------------------
+  /** The shop's bills, not just this phone's. An owner looking up "what did
+   *  I sell that man last week" does not care which device it was typed on.
+   *  This phone's unsent ones come first and are marked, because those are
+   *  the only ones anybody has to do anything about. */
   scr_bills: function () {
     var self = this;
     this.chrome('બિલ', true);
-    DB.all('docs').then(function (docs) {
-      var rows = docs.filter(function (d) { return d.kind === 'sale'; })
-                     .sort(function (a, b) { return (b.created_at || '').localeCompare(a.created_at || ''); })
-                     .slice(0, 200);
-      self.el('main').innerHTML = '<div class="card">' + (rows.length
-        ? '<ul class="list">' + rows.map(function (d) {
-            return '<li><div><div class="nm">' + self.esc(d.customer || 'વોક-ઇન') + '</div>' +
-              '<div class="sub">' + self.esc(d.invoice_no || 'નંબર સિંક પછી') + ' · ' + self.esc(d.date) + '</div></div>' +
-              '<div class="right"><strong>₹' + self.money(d.total) + '</strong><br>' +
-              (d.synced ? '<span class="pill done">મોકલાઈ ગયું</span>' : '<span class="pill wait">બાકી</span>') +
-              '</div></li>';
-          }).join('') + '</ul>'
-        : '<p class="muted">હજી કોઈ બિલ આ ફોનથી બન્યું નથી.</p>') + '</div>';
+    Promise.all([DB.all('docs'), DB.all('ssales'), DB.meta('shop', 'AK Computer')]).then(function (a) {
+      var shop = a[2];
+      var mine = a[0].filter(function (d) { return d.kind === 'sale'; });
+      var sentUuids = {};
+      mine.forEach(function (d) { if (d.synced) sentUuids[d.uuid] = 1; });
+      var rows = mine.filter(function (d) { return !d.synced; }).map(function (d) {
+        return { key: d.uuid, local: true, name: d.customer || 'વોક-ઇન', mobile: d.mobile,
+                 no: d.invoice_no, date: d.date, total: d.total, paid: d.paid, doc: d };
+      });
+      a[1].forEach(function (s) {
+        rows.push({ key: 'S' + s.id, local: false, name: s.customer_name || 'વોક-ઇન', mobile: s.customer_mobile,
+                    no: s.invoice_no, date: s.sale_date, total: parseFloat(s.total) || 0,
+                    paid: parseFloat(s.paid) || 0, cancelled: s.is_cancelled == 1 });
+      });
+      rows.sort(function (x, y) {
+        if (x.local !== y.local) return x.local ? -1 : 1;
+        return (y.date || '').localeCompare(x.date || '') || String(y.no || '').localeCompare(String(x.no || ''));
+      });
+
+      self.el('main').innerHTML =
+        '<div class="card"><input type="search" id="bl_q" placeholder="ગ્રાહક કે બિલ નંબર શોધો"></div>' +
+        '<div class="card" id="bl_box"></div>';
+      var draw = function (q) {
+        var list = q ? rows.filter(function (r) { return self.match(r.name + ' ' + (r.no || '') + ' ' + (r.mobile || ''), q); }) : rows;
+        self.el('bl_box').innerHTML = list.length
+          ? '<ul class="list">' + list.slice(0, 200).map(function (r, i) {
+              var due = r.total - r.paid;
+              return '<li data-i="' + i + '"><div><div class="nm">' + self.esc(r.name) +
+                (r.cancelled ? ' <span class="pill bad">રદ</span>' : '') + '</div>' +
+                '<div class="sub">' + self.esc(r.no || 'નંબર સિંક પછી') + ' · ' + self.esc(r.date || '') +
+                (due > 0.009 ? ' · બાકી ₹' + self.money(due) : '') + '</div></div>' +
+                '<div class="right"><strong>₹' + self.money(r.total) + '</strong><br>' +
+                (r.local ? '<span class="pill wait">મોકલવાનું બાકી</span>'
+                         : (r.mobile ? '<span class="pill done">📲</span>' : '')) +
+                '</div></li>';
+            }).join('') + '</ul>'
+          : '<p class="muted">કોઈ બિલ મળ્યું નહીં.</p>';
+        self.el('bl_box').querySelectorAll('[data-i]').forEach(function (li) {
+          li.addEventListener('click', function () {
+            var r = list[parseInt(li.dataset.i, 10)];
+            if (r.local) { self.go('done', r.key); return; }
+            if (!r.mobile) { self.toast('આ બિલમાં મોબાઇલ નંબર નથી', true); return; }
+            More.wa(r.mobile, shop + '\nબિલ ' + (r.no || '') + ' · ' + (r.date || '') +
+              '\nકુલ: ₹' + self.money(r.total) +
+              ((r.total - r.paid) > 0.009 ? '\nબાકી: ₹' + self.money(r.total - r.paid) : '\n(ચૂકતે)') +
+              '\n\nઆભાર 🙏');
+          });
+        });
+      };
+      draw('');
+      self.el('bl_q').addEventListener('input', function () { draw(this.value.trim()); });
     });
   },
 
   // --- COLLECT --------------------------------------------------------------
-  scr_collect: function () {
+  scr_collect: function (partyId) {
     var self = this;
     this.chrome('પૈસા લીધા', true);
     this.el('main').innerHTML =
@@ -424,13 +706,17 @@ var App = {
       '<button class="btn ok" id="c_save">💾 નોંધી લો</button>' +
       '</div>';
     var picked = null;
-    this.wirePick('c_party', 'c_res', function (q) { return self.findParties(q); }, function (p) {
+    var show = function (p) {
       picked = p;
       self.el('c_party').value = p.name;
       var b = parseFloat(p.balance) || 0;
       self.el('c_bal').textContent = b > 0.009 ? ('બાકી ₹' + self.money(b))
                                    : (b < -0.009 ? ('એડવાન્સ ₹' + self.money(-b)) : 'હિસાબ ચોખ્ખો');
-    });
+      if (b > 0.009) self.el('c_amt').value = b.toFixed(2);   // the usual answer, still editable
+    };
+    this.wirePick('c_party', 'c_res', function (q) { return self.findParties(q); }, show);
+    // arrived from a party's own screen: it is already known who is paying
+    if (partyId) DB.get('parties', partyId).then(function (p) { if (p) show(p); });
     this.el('c_save').addEventListener('click', function () {
       var err = self.el('c_err');
       err.textContent = '';

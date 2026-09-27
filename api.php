@@ -22,6 +22,11 @@ require_once __DIR__ . '/includes/init.php';
 // to a "*" origin at all. A stranger's web page still needs a token it does
 // not have.
 // ---------------------------------------------------------------------------
+// A cached API reply is a lie with a timestamp on it: a phone served a
+// stale ?r=sync from the browser cache would show a serial as on the shelf
+// after it was sold, and bill it a second time. Nothing here may be cached.
+header('Cache-Control: no-store, no-cache, must-revalidate');
+header('Pragma: no-cache');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Headers: Authorization, Content-Type');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');

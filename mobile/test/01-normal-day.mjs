@@ -68,7 +68,10 @@ await p.waitForTimeout(200);
 const grand = await p.locator('#b_grand').textContent();
 await p.click('#b_save');
 await p.waitForTimeout(800);
-ok('bill saved while offline', (await p.locator('.list li').count()) > 0, 'total ' + grand);
+// saving now lands on the "done" screen - what a shop does next is send it
+ok('bill saved while offline', (await p.locator('#dn_new').count()) > 0, 'total ' + grand);
+ok('...and the number is honestly shown as pending, not invented',
+   /નંબર સિંક પછી/.test(await p.locator('#main').textContent()));
 const q1 = await p.evaluate(async () => (await DB.all('outbox')).length);
 ok('it is queued to send', q1 === 1, 'queue=' + q1);
 

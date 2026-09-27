@@ -27,7 +27,38 @@ import android.app.Activity;
  */
 public class MainActivity extends Activity {
 
+    private static final String HOME = "file:///android_asset/www/index.html";
+
     private WebView web;
+
+    /**
+     * The shop's own web address, learned rather than compiled in - the owner
+     * types it at login and it is nobody's business but theirs.
+     *
+     * It is learned from the one place it can be trusted: the handover link
+     * the app itself asks the API for, which is always "<shop>/login.php?app=".
+     * That link can only have come from a server this app already holds a
+     * token for. From then on that host's pages open inside the app and every
+     * other address is handed to the phone.
+     */
+    private String shopHost = null;
+
+    private void shopHostSeen(String host) {
+        if (host != null && !host.isEmpty()) shopHost = host;
+    }
+
+    private boolean isShopUrl(String url) {
+        if (url == null) return false;
+        if (!url.startsWith("http://") && !url.startsWith("https://")) return false;
+        android.net.Uri u = android.net.Uri.parse(url);
+        String host = u.getHost();
+        if (host == null) return false;
+        if (shopHost != null && shopHost.equalsIgnoreCase(host)) return true;
+        // the handover link itself - the only way a host becomes "the shop"
+        String path = u.getPath() == null ? "" : u.getPath();
+        return path.endsWith("/login.php") || path.equals("login.php")
+               ? u.getQueryParameter("app") != null : false;
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -57,10 +88,16 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest rq) {
-                // everything that is not our own bundled page opens in the
-                // real browser instead of replacing the app
                 String url = rq.getUrl().toString();
+                // our own bundled page: the app itself
                 if (url.startsWith("file:///android_asset/")) return false;
+                // the shop's own website: the eighty screens the app does not
+                // do itself open HERE, inside the app, already logged in, and
+                // Back brings the owner home. Sending them to Chrome instead
+                // would mean logging in again in a different browser.
+                if (isShopUrl(url)) { shopHostSeen(rq.getUrl().getHost()); return false; }
+                // anything else - WhatsApp, a payment link, a stranger's site -
+                // is somebody else's job
                 try {
                     startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, rq.getUrl()));
                 } catch (Exception ignored) { }
@@ -75,15 +112,29 @@ public class MainActivity extends Activity {
             }
         });
 
-        web.loadUrl("file:///android_asset/www/index.html");
+        // the website sets cookies for the handover session; without this the
+        // page opens and immediately asks to log in again
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
+        }
+        android.webkit.CookieManager.getInstance().setAcceptCookie(true);
+
+        web.loadUrl(HOME);
         setContentView(web);
     }
 
     @Override
     public boolean onKeyDown(int code, KeyEvent ev) {
-        if (code == KeyEvent.KEYCODE_BACK && web != null && web.canGoBack()) {
-            web.goBack();
-            return true;
+        if (code == KeyEvent.KEYCODE_BACK && web != null) {
+            if (web.canGoBack()) { web.goBack(); return true; }
+            // on a website page with nothing behind it: go back to the app
+            // rather than shutting down - the owner pressed Back to leave the
+            // report, not to leave the shop
+            String url = web.getUrl();
+            if (url != null && !url.startsWith("file:///android_asset/")) {
+                web.loadUrl(HOME);
+                return true;
+            }
         }
         return super.onKeyDown(code, ev);
     }
