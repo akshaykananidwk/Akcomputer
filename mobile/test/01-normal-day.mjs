@@ -24,12 +24,14 @@ const ok = (label, cond, extra) => { if (!cond) bad++; console.log((cond ? '  �
 await p.goto('http://127.0.0.1:8099/index.html');
 await p.waitForTimeout(600);
 
-console.log('=== 1. લોગિન ===');
+console.log('=== 1. Login ===');
 ok('login screen shows', await p.locator('#l_go').count() > 0);
+// the shop address now lives behind the "Server:" link, as it does for a real user
+await p.click('#l_adv');
 await p.fill('#l_srv', 'http://127.0.0.1:8088');
 await p.click('#l_go');
 await p.waitForTimeout(400);
-ok('empty username is refused, nothing sent', (await p.locator('#l_err').textContent()).includes('યુઝરનેમ'));
+ok('empty username is refused, nothing sent', (await p.locator('#l_err').textContent()).includes('username'));
 await p.fill('#l_user', 'admin');
 await p.fill('#l_pass', 'wrongpass');
 await p.click('#l_go');
@@ -49,7 +51,7 @@ ok('items cached', counts.items > 0);
 ok('parties cached', counts.parties > 0);
 ok('sync cursor is the SERVER time', !!counts.since, counts.since);
 
-console.log('\n=== 2. ઓફલાઇન બિલ ===');
+console.log('\n=== 2. A bill with no network ===');
 await ctx.setOffline(true);
 await p.evaluate(() => window.dispatchEvent(new Event('offline')));
 await p.waitForTimeout(300);
@@ -62,7 +64,7 @@ const found = await p.locator('#b_itemres div').count();
 ok('items searchable with NO network', found > 0, found + ' results');
 await p.locator('#b_itemres div').first().click();
 await p.waitForTimeout(300);
-await p.fill('#b_cust', 'ઓફલાઇન ગ્રાહક');
+await p.fill('#b_cust', 'Offline Customer');
 await p.click('#b_full');
 await p.waitForTimeout(200);
 const grand = await p.locator('#b_grand').textContent();
@@ -71,11 +73,11 @@ await p.waitForTimeout(800);
 // saving now lands on the "done" screen - what a shop does next is send it
 ok('bill saved while offline', (await p.locator('#dn_new').count()) > 0, 'total ' + grand);
 ok('...and the number is honestly shown as pending, not invented',
-   /નંબર સિંક પછી/.test(await p.locator('#main').textContent()));
+   /Number comes after syncing/.test(await p.locator('#main').textContent()));
 const q1 = await p.evaluate(async () => (await DB.all('outbox')).length);
 ok('it is queued to send', q1 === 1, 'queue=' + q1);
 
-console.log('\n=== 3. નેટ આવે એટલે આપોઆપ ===');
+console.log('\n=== 3. Network back — it goes by itself ===');
 await ctx.setOffline(false);
 await p.evaluate(() => window.dispatchEvent(new Event('online')));
 await p.waitForTimeout(4000);

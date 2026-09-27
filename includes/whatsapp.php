@@ -213,3 +213,56 @@ function send_otp_whatsapp($mobile, $code, $reason = 'verification') {
     wa_context(['kind' => 'otp', 'code' => $code]);
     return send_whatsapp($mobile, wa_template('otp', ['otp' => $code, 'reason' => $reason]));
 }
+
+/**
+ * Send a bill on WhatsApp — the one place that decides what a customer
+ * receives.
+ *
+ * Two callers now: the invoice screen's "WhatsApp" button, and the phone
+ * app through api.php. They must produce the identical message, the
+ * identical PDF and the identical pay link, or the same shop starts
+ * sending two different things depending on which device the bill happened
+ * to be made on.
+ *
+ * Returns ['ok' => bool, 'error' => string, 'mobile' => string, 'pdf' => url].
+ */
+function sale_whatsapp_send($saleId, $mobile = null) {
+    require_once __DIR__ . '/pdf.php';
+    $sale = row('SELECT s.*, c.name company_name FROM sales s
+                 LEFT JOIN companies c ON c.id = s.company_id WHERE s.id = ?', [(int)$saleId]);
+    if (!$sale) return ['ok' => false, 'error' => 'Bill not found', 'mobile' => '', 'pdf' => ''];
+    $mobile = trim((string)($mobile !== null && $mobile !== '' ? $mobile : $sale['customer_mobile']));
+    if ($mobile === '') return ['ok' => false, 'error' => 'No mobile number on this bill', 'mobile' => '', 'pdf' => ''];
+
+    $items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name FROM sale_items si
+                  LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ?", [$sale['id']]);
+    $link = base_url('sale_view.php?id=' . $sale['id'] . '&token=' . $sale['share_token']);
+
+    // A real PDF document, not a picture: WhatsApp only treats it as a
+    // document if the URL itself ends in .pdf, which is why the bytes are
+    // written to a static file instead of linking to sale_pdf.php.
+    $pdfDir = __DIR__ . '/../uploads/invoices';
+    if (!is_dir($pdfDir)) mkdir($pdfDir, 0755, true);
+    $pdfName = preg_replace('/[^A-Za-z0-9\-]/', '_', $sale['invoice_no']) . '_' . substr($sale['share_token'], 0, 10) . '.pdf';
+    file_put_contents($pdfDir . '/' . $pdfName, invoice_pdf($sale, $items));
+    $pdfUrl = base_url('uploads/invoices/' . $pdfName);
+
+    $due = $sale['total'] - $sale['paid'];
+    $payLink = $due > 0.009 ? invoice_pay_url($sale) : null;
+    $msg = wa_template('bill', [
+        'firm' => $sale['company_name'], 'invoice_no' => $sale['invoice_no'], 'date' => dmy($sale['sale_date']),
+        'total' => money($sale['total']),
+        'due_line' => $due > 0.009 ? 'Balance due: Rs ' . money($due) : 'Paid ✔',
+        'pay_link' => $payLink ? "💳 Pay online: $payLink\n" : '',
+        'link' => $link, 'customer' => $sale['customer_name'],
+    ]);
+    wa_context(['kind' => 'bill', 'invoice' => $sale['invoice_no'], 'total' => money($sale['total']),
+                'firm' => $sale['company_name'], 'link' => $link]);
+
+    if (send_whatsapp($mobile, $msg, $pdfUrl)) {
+        log_activity('sale_whatsapp', $sale['invoice_no'] . ' to ' . $mobile);
+        return ['ok' => true, 'error' => '', 'mobile' => $mobile, 'pdf' => $pdfUrl];
+    }
+    return ['ok' => false, 'error' => whatsapp_last_error() ?: 'WhatsApp send failed',
+            'mobile' => $mobile, 'pdf' => $pdfUrl];
+}

@@ -154,6 +154,34 @@ function login_throttle_reset($key) {
     q('DELETE FROM login_throttle WHERE bucket_key = ?', [$key]);
 }
 
+/**
+ * A general rate limit, for doors that anyone may knock on.
+ *
+ * The login throttle above counts FAILURES and is about guessing a
+ * password. This counts every call, and is about the doors that need no
+ * password at all - the app's public product catalogue, for one. Without
+ * it, one script can walk the whole price list a thousand times a minute.
+ *
+ * Returns true if the call is allowed. Same storage as the login throttle,
+ * with its own key prefix, so there is nothing new to install or clean up.
+ */
+function api_rate_ok($key, $max = 60, $seconds = 60) {
+    $key = 'rate:' . $key;
+    $row = row('SELECT attempt_count, window_start FROM login_throttle WHERE bucket_key = ?', [$key]);
+    if ($row && strtotime($row['window_start']) >= time() - $seconds) {
+        if ((int)$row['attempt_count'] >= $max) return false;
+        q('UPDATE login_throttle SET attempt_count = attempt_count + 1 WHERE bucket_key = ?', [$key]);
+        return true;
+    }
+    q('INSERT INTO login_throttle (bucket_key, attempt_count, window_start) VALUES (?,1,NOW())
+       ON DUPLICATE KEY UPDATE attempt_count = 1, window_start = NOW()', [$key]);
+    // old buckets are worthless once their window has passed
+    if (random_int(1, 50) === 1) {
+        q('DELETE FROM login_throttle WHERE bucket_key LIKE ? AND window_start < DATE_SUB(NOW(), INTERVAL 1 DAY)', ['rate:%']);
+    }
+    return true;
+}
+
 // ---------- Login history ----------
 function record_login_history($userId, $usernameAttempted, $success, $reason = '') {
     q('INSERT INTO login_history (user_id, username_attempted, success, reason, ip_address, user_agent) VALUES (?,?,?,?,?,?)',

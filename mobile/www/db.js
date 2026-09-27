@@ -32,7 +32,7 @@
 var DB = {
   _db: null,
   NAME: 'akshop',
-  VERSION: 2,
+  VERSION: 3,
 
   open: function () {
     var self = this;
@@ -71,6 +71,9 @@ var DB = {
           var ss = db.createObjectStore('ssales', { keyPath: 'id' });
           ss.createIndex('party_id', 'party_id', { unique: false });
         }
+        // v3 - the customer's side: the published product list, kept on the
+        // phone so a customer can look up a price with no signal
+        if (!db.objectStoreNames.contains('catalog')) db.createObjectStore('catalog', { keyPath: 'id' });
         if (!db.objectStoreNames.contains('spayments')) {
           var sp = db.createObjectStore('spayments', { keyPath: 'id' });
           sp.createIndex('party_id', 'party_id', { unique: false });
@@ -187,7 +190,7 @@ var DB = {
   clearAll: function () {
     return this.open().then(function (db) {
       return new Promise(function (res, rej) {
-        var names = ['meta', 'items', 'parties', 'docs', 'outbox', 'serials', 'stock', 'ssales', 'spayments'];
+        var names = ['meta', 'items', 'parties', 'docs', 'outbox', 'serials', 'stock', 'ssales', 'spayments', 'catalog'];
         var tx = db.transaction(names, 'readwrite');
         names.forEach(function (n) { tx.objectStore(n).clear(); });
         tx.oncomplete = function () { res(); };

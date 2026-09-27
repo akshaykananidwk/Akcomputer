@@ -13,34 +13,50 @@
 var More = {
 
   // --- WhatsApp -------------------------------------------------------------
-  /** Hand the message to WhatsApp.
+  /**
+   * Send through the SHOP's WhatsApp account, not the phone's.
    *
-   *  whatsapp:// and not wa.me on purpose: the wa.me link is a web page, so
-   *  with no signal it is a browser error. The app link opens WhatsApp
-   *  itself, which takes the message and sends it when the phone next has a
-   *  network - exactly what a shop wants after billing somebody at a site
-   *  visit with no coverage. */
-  wa: function (mobile, text) {
-    var n = String(mobile || '').replace(/[^0-9]/g, '');
-    if (n.length === 10) n = '91' + n;            // a bare Indian number
-    if (!n) { App.toast('આ ગ્રાહકનો મોબાઇલ નંબર નથી', true); return; }
-    var url = 'whatsapp://send?phone=' + n + '&text=' + encodeURIComponent(text);
-    try { window.location.href = url; }
-    catch (e) { window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(text), '_blank'); }
+   * Handing the message to the handset's own WhatsApp looked easier, and
+   * was wrong: it goes out from whichever staff member's personal number
+   * made the bill, with no PDF attached, nothing in the shop's chat log,
+   * and no record that it was ever sent. The shop already has a WhatsApp
+   * API set up - this uses it.
+   *
+   * The phone never sends the WORDS, only which bill or which party. What a
+   * customer receives is decided on the server, in the same one place the
+   * website decides it, so the shop speaks with one voice whatever device
+   * the bill came from.
+   *
+   * And it is queued, not fired: with no signal the errand waits in the
+   * outbox behind the bill it belongs to and goes out by itself later.
+   */
+  send: function (kind, body, what) {
+    var uuid = newUuid();
+    return Sync.queue({ uuid: uuid, kind: kind, body: body, created_at: new Date().toISOString() })
+      .then(function () {
+        if (!navigator.onLine) { App.toast(what + ' will be sent when the network is back'); return; }
+        App.toast('Sending ' + what + '…');
+        return Sync.push(true).then(function () {
+          return DB.get('outbox', uuid).then(function (still) {
+            if (!still) { App.toast(what + ' sent ✔'); return; }
+            if (still.state === 'attention') App.toast(still.last_error || 'Could not send', true);
+            else App.toast('Will be sent shortly');
+            App.syncNow(false);
+          });
+        });
+      });
   },
 
-  billText: function (d, shop) {
-    var lines = (d.lines || []).map(function (l) {
-      return '• ' + l.name + '  ' + l.qty + ' × ₹' + App.money(l.price) + ' = ₹' + App.money(l.qty * l.price);
-    }).join('\n');
-    var due = (d.total || 0) - (d.paid || 0);
-    return (shop || 'AK Computer') + '\n' +
-      'બિલ ' + (d.invoice_no || '(નંબર સિંક પછી)') + ' · ' + (d.date || '') + '\n\n' +
-      lines + '\n\n' +
-      'કુલ: ₹' + App.money(d.total) + '\n' +
-      'મળ્યા: ₹' + App.money(d.paid) +
-      (due > 0.009 ? '\nબાકી: ₹' + App.money(due) : '') +
-      '\n\nઆભાર 🙏';
+  sendBill: function (doc) {
+    if (!doc.mobile && !doc.customer_mobile) { App.toast('This bill has no mobile number', true); return; }
+    return this.send('whatsapp', {
+      client_uuid: doc.uuid || null, sale_id: doc.server_id || doc.sale_id || 0,
+      mobile: doc.mobile || doc.customer_mobile
+    }, 'the bill');
+  },
+
+  sendReminder: function (partyId) {
+    return this.send('reminder', { party_id: partyId }, 'the reminder');
   },
 
   // --- one party: balance, statement, and what to do about it ---------------
@@ -57,19 +73,19 @@ var More = {
       var rows = [];
       a[0].forEach(function (s) {
         if (s.is_cancelled == 1) return;
-        rows.push({ date: s.sale_date, what: 'બિલ ' + (s.invoice_no || ''), debit: parseFloat(s.total) || 0,
+        rows.push({ date: s.sale_date, what: 'Bill ' + (s.invoice_no || ''), debit: parseFloat(s.total) || 0,
                     credit: 0, id: 'S' + s.id });
       });
       a[1].forEach(function (p) {
         var amt = parseFloat(p.amount) || 0;
-        rows.push({ date: p.pay_date, what: (p.direction === 'out' ? 'ચૂકવ્યા' : 'જમા') + (p.mode ? ' (' + p.mode + ')' : ''),
+        rows.push({ date: p.pay_date, what: (p.direction === 'out' ? 'Paid out' : 'Received') + (p.mode ? ' (' + p.mode + ')' : ''),
                     debit: p.direction === 'out' ? amt : 0, credit: p.direction === 'out' ? 0 : amt, id: 'P' + p.id });
       });
       // not yet sent - shown, and marked, so nobody is surprised later
       a[2].forEach(function (d) {
         if (d.synced || d.party_id != partyId) return;
-        if (d.kind === 'sale') rows.push({ date: d.date, what: 'બિલ (મોકલવાનું બાકી)', debit: d.total || 0, credit: 0, id: d.uuid, pending: true });
-        else rows.push({ date: d.date, what: 'જમા (મોકલવાનું બાકી)', debit: 0, credit: d.amount || 0, id: d.uuid, pending: true });
+        if (d.kind === 'sale') rows.push({ date: d.date, what: 'Bill (not sent yet)', debit: d.total || 0, credit: 0, id: d.uuid, pending: true });
+        else rows.push({ date: d.date, what: 'Received (not sent yet)', debit: 0, credit: d.amount || 0, id: d.uuid, pending: true });
       });
       rows.sort(function (x, y) { return (y.date || '').localeCompare(x.date || ''); });
       return rows;
@@ -78,34 +94,33 @@ var More = {
 
   scr_party: function (partyId) {
     var self = this;
-    App.chrome('પાર્ટીનો હિસાબ', true);
+    App.chrome('Party account', true);
     Promise.all([DB.get('parties', partyId), this.partyRows(partyId), DB.meta('shop', 'AK Computer')])
       .then(function (a) {
         var p = a[0], rows = a[1], shop = a[2];
-        if (!p) { App.el('main').innerHTML = '<div class="card"><p class="muted">આ પાર્ટી ફોનમાં નથી. એક વાર સિંક કરો.</p></div>'; return; }
+        if (!p) { App.el('main').innerHTML = '<div class="card"><p class="muted">This party is not on the phone yet. Sync once.</p></div>'; return; }
         var bal = parseFloat(p.balance) || 0;
         App.el('main').innerHTML =
           '<div class="card">' +
           '<div class="muted">' + App.esc(p.name) + (p.mobile ? ' · ' + App.esc(p.mobile) : '') + '</div>' +
           '<div class="big" style="color:' + (bal > 0.009 ? 'var(--bad)' : 'var(--ok)') + '">₹' + App.money(Math.abs(bal)) + '</div>' +
-          '<div class="muted">' + (bal > 0.009 ? 'બાકી લેવાના' : (bal < -0.009 ? 'એડવાન્સ જમા' : 'હિસાબ ચોખ્ખો')) + '</div>' +
+          '<div class="muted">' + (bal > 0.009 ? 'To receive' : (bal < -0.009 ? 'Advance held' : 'All settled')) + '</div>' +
           '</div>' +
           '<div class="row" style="margin-bottom:10px">' +
-          '<button class="btn ok" id="p_collect">₹ પૈસા લીધા</button>' +
-          '<button class="btn sec" id="p_bill">🧾 બિલ</button>' +
+          '<button class="btn ok" id="p_collect">₹ Take money</button>' +
+          '<button class="btn sec" id="p_bill">🧾 New bill</button>' +
           '</div>' +
-          (p.mobile ? '<div class="row" style="margin-bottom:10px">' +
-            '<button class="btn sec" id="p_remind">📩 ઉઘરાણી યાદ</button>' +
-            '<button class="btn sec" id="p_stmt">📄 હિસાબ મોકલો</button></div>' : '') +
-          '<div class="card"><h3>છેલ્લો હિસાબ</h3>' + (rows.length
+          (p.mobile && bal > 0.009
+            ? '<button class="btn sec" id="p_remind" style="margin-bottom:10px">📩 Send payment reminder</button>' : '') +
+          '<div class="card"><h3>Recent account</h3>' + (rows.length
             ? '<ul class="list">' + rows.slice(0, 100).map(function (r) {
-                return '<li><div><div class="nm">' + App.esc(r.what) + (r.pending ? ' <span class="pill wait">બાકી</span>' : '') + '</div>' +
+                return '<li><div><div class="nm">' + App.esc(r.what) + (r.pending ? ' <span class="pill wait">pending</span>' : '') + '</div>' +
                   '<div class="sub">' + App.esc(r.date || '') + '</div></div><div class="right">' +
                   (r.debit ? '<strong>₹' + App.money(r.debit) + '</strong>' : '<strong style="color:var(--ok)">− ₹' + App.money(r.credit) + '</strong>') +
                   '</div></li>';
               }).join('') + '</ul>'
-            : '<p class="muted">આ ગાળામાં કોઈ એન્ટ્રી નથી.</p>') +
-          '<p class="muted" style="font-size:12px;margin-bottom:0">છેલ્લે સિંક થયેલો ગાળો બતાવે છે.</p></div>';
+            : '<p class="muted">No entries in this period.</p>') +
+          '<p class="muted" style="font-size:12px;margin-bottom:0">Showing the period that was last synced.</p></div>';
 
         App.el('p_collect').addEventListener('click', function () { App.go('collect', p.id); });
         App.el('p_bill').addEventListener('click', function () {
@@ -115,16 +130,8 @@ var More = {
         });
         if (App.el('p_remind')) {
           App.el('p_remind').addEventListener('click', function () {
-            self.wa(p.mobile, shop + '\n\nનમસ્તે ' + p.name + ',\nઆપના ₹' + App.money(Math.abs(bal)) +
-              ' બાકી છે. અનુકૂળતાએ ચૂકવી આપશો.\n\nઆભાર 🙏');
-          });
-          App.el('p_stmt').addEventListener('click', function () {
-            var txt = shop + '\nહિસાબ — ' + p.name + '\n\n' +
-              rows.slice(0, 25).map(function (r) {
-                return r.date + '  ' + r.what + '  ' + (r.debit ? '₹' + App.money(r.debit) : '− ₹' + App.money(r.credit));
-              }).join('\n') +
-              '\n\nબાકી: ₹' + App.money(Math.abs(bal));
-            self.wa(p.mobile, txt);
+            if (bal <= 0.009) { App.toast('Nothing is owed by this party', true); return; }
+            self.sendReminder(p.id);
           });
         }
       });
@@ -133,23 +140,23 @@ var More = {
   // --- who owes what --------------------------------------------------------
   scr_dues: function () {
     var self = this;
-    App.chrome('બાકી ઉઘરાણી', true);
+    App.chrome('Dues', true);
     DB.all('parties').then(function (rows) {
       var due = rows.filter(function (p) { return (parseFloat(p.balance) || 0) > 0.009; })
                     .sort(function (a, b) { return (parseFloat(b.balance) || 0) - (parseFloat(a.balance) || 0); });
       var tot = due.reduce(function (s, p) { return s + (parseFloat(p.balance) || 0); }, 0);
       App.el('main').innerHTML =
-        '<div class="card"><div class="muted">કુલ બાકી લેવાના</div>' +
+        '<div class="card"><div class="muted">Total to receive</div>' +
         '<div class="big">₹' + App.money(tot) + '</div>' +
-        '<div class="muted">' + due.length + ' પાર્ટી</div></div>' +
-        '<div class="card"><input type="search" id="d_q" placeholder="પાર્ટી શોધો"><ul class="list" id="d_list"></ul></div>';
+        '<div class="muted">' + due.length + ' parties</div></div>' +
+        '<div class="card"><input type="search" id="d_q" placeholder="Search a party"><ul class="list" id="d_list"></ul></div>';
       var draw = function (q) {
         var list = q ? due.filter(function (p) { return App.match(p.name + ' ' + (p.mobile || ''), q); }) : due;
         App.el('d_list').innerHTML = list.slice(0, 200).map(function (p) {
           return '<li data-p="' + p.id + '"><div><div class="nm">' + App.esc(p.name) + '</div>' +
             '<div class="sub">' + App.esc(p.mobile || '') + '</div></div>' +
             '<div class="right"><strong>₹' + App.money(p.balance) + '</strong></div></li>';
-        }).join('') || '<li class="muted">કોઈ મળ્યું નહીં</li>';
+        }).join('') || '<li class="muted">Nothing found</li>';
         App.el('d_list').querySelectorAll('[data-p]').forEach(function (li) {
           li.addEventListener('click', function () { App.go('party', parseInt(li.dataset.p, 10)); });
         });
@@ -165,7 +172,7 @@ var More = {
    *  quietly means something narrower than its label is worse than no
    *  number. */
   scr_reports: function () {
-    App.chrome('રિપોર્ટ', true);
+    App.chrome('Reports', true);
     Promise.all([DB.all('ssales'), DB.all('spayments'), DB.all('docs'), DB.all('parties'), Sync.status()])
       .then(function (a) {
         var ss = a[0], sp = a[1], docs = a[2], parties = a[3], st = a[4];
@@ -201,32 +208,32 @@ var More = {
         var block = function (label, from) {
           var s = sum(from);
           return '<div class="stat"><span>' + label + '</span><strong>₹' + App.money(s.total) +
-                 ' <span class="muted" style="font-weight:400">· ' + s.n + ' બિલ</span></strong></div>';
+                 ' <span class="muted" style="font-weight:400">· ' + s.n + ' bills</span></strong></div>';
         };
         App.el('main').innerHTML =
-          '<div class="card"><div class="muted">આજનું વેચાણ</div>' +
+          '<div class="card"><div class="muted">Today\'s sales</div>' +
           '<div class="big">₹' + App.money(sum(today).total) + '</div>' +
-          '<div class="stat"><span>આજે પૈસા આવ્યા</span><strong>₹' + App.money(cashIn(today)) + '</strong></div></div>' +
-          '<div class="card"><h3>વેચાણ</h3>' +
-          block('આજે', today) + block('છેલ્લા 7 દિવસ', week) + block('આ મહિનો', month) + '</div>' +
-          '<div class="card"><h3>ઉઘરાણી</h3>' +
-          '<div class="stat"><span>લેવાના બાકી</span><strong style="color:var(--bad)">₹' + App.money(outstanding) + '</strong></div>' +
-          '<div class="stat"><span>આપવાના બાકી</span><strong>₹' + App.money(payable) + '</strong></div>' +
-          '<div class="stat"><span>આ અઠવાડિયે આવ્યા</span><strong>₹' + App.money(cashIn(week)) + '</strong></div>' +
-          '<button class="btn sec" style="margin-top:10px" id="r_dues">બાકીની યાદી જુઓ</button></div>' +
-          '<p class="center muted" style="font-size:13px">આ આંકડા ફોનમાં ઊતરેલા ડેટામાંથી છે' +
-          (st.last_pull ? ' (છેલ્લે સિંક ' + App.ago(st.last_pull) + ')' : '') +
-          '.<br>આખા વરસના રિપોર્ટ "બધું" માંથી ખૂલે છે — એને નેટ જોઈએ.</p>';
+          '<div class="stat"><span>Received today</span><strong>₹' + App.money(cashIn(today)) + '</strong></div></div>' +
+          '<div class="card"><h3>Sales</h3>' +
+          block('Today', today) + block('Last 7 days', week) + block('This month', month) + '</div>' +
+          '<div class="card"><h3>Money owed</h3>' +
+          '<div class="stat"><span>To receive</span><strong style="color:var(--bad)">₹' + App.money(outstanding) + '</strong></div>' +
+          '<div class="stat"><span>To pay</span><strong>₹' + App.money(payable) + '</strong></div>' +
+          '<div class="stat"><span>Received this week</span><strong>₹' + App.money(cashIn(week)) + '</strong></div>' +
+          '<button class="btn sec" style="margin-top:10px" id="r_dues">See who owes what</button></div>' +
+          '<p class="center muted" style="font-size:13px">These figures come from the data on this phone' +
+          (st.last_pull ? ' (last synced ' + App.ago(st.last_pull) + ')' : '') +
+          '.<br>Full-year reports open from "Everything" — those need a network.</p>';
         App.el('r_dues').addEventListener('click', function () { App.go('dues'); });
       });
   },
 
   // --- what is on the shelf -------------------------------------------------
   scr_stock: function () {
-    App.chrome('સ્ટોક', true);
+    App.chrome('Stock', true);
     App.el('main').innerHTML =
       '<div class="card"><div class="pick">' +
-      '<input type="text" id="k_q" placeholder="આઇટમનું નામ ટાઇપ કરો" autocomplete="off">' +
+      '<input type="text" id="k_q" placeholder="Type an item name" autocomplete="off">' +
       '<div class="res" id="k_res"></div></div></div><div id="k_out"></div>';
     App.wirePick('k_q', 'k_res', function (q) { return App.findItems(q); }, function (it) {
       App.el('k_q').value = it.name;
@@ -237,15 +244,15 @@ var More = {
           App.el('k_out').innerHTML =
             '<div class="card"><div class="muted">' + App.esc(it.name) + '</div>' +
             '<div class="big">' + (parseFloat(it.stock) || 0) + '</div>' +
-            '<div class="muted">કુલ નંગ · વેચાણ ભાવ ₹' + App.money(it.selling_price) + '</div></div>' +
-            '<div class="card"><h3>ક્યાં કેટલો</h3>' + (rows.length
+            '<div class="muted">in stock · selling price ₹' + App.money(it.selling_price) + '</div></div>' +
+            '<div class="card"><h3>Where it is</h3>' + (rows.length
               ? '<ul class="list">' + rows.map(function (s) {
-                  return '<li><div class="nm">' + App.esc(locs[s.location_id] || ('જગ્યા ' + s.location_id)) + '</div>' +
+                  return '<li><div class="nm">' + App.esc(locs[s.location_id] || ('Location ' + s.location_id)) + '</div>' +
                     '<div class="right"><strong>' + (parseFloat(s.qty) || 0) + '</strong></div></li>';
                 }).join('') + '</ul>'
-              : '<p class="muted">કોઈ જગ્યાએ સ્ટોક નથી.</p>') + '</div>' +
+              : '<p class="muted">No stock anywhere.</p>') + '</div>' +
             (a[1].length
-              ? '<div class="card"><h3>સિરિયલ નંબર (' + a[1].length + ')</h3><ul class="list">' +
+              ? '<div class="card"><h3>Serial numbers (' + a[1].length + ')</h3><ul class="list">' +
                 a[1].slice(0, 200).map(function (s) {
                   return '<li><div class="nm" style="font-family:monospace">' + App.esc(s.serial_no) + '</div>' +
                     '<div class="right sub">' + App.esc(locs[s.location_id] || '') + '</div></li>';
@@ -258,20 +265,20 @@ var More = {
   // --- every screen the shop has -------------------------------------------
   scr_all: function () {
     var self = this;
-    App.chrome('બધું', true);
+    App.chrome('Everything', true);
     Promise.all([DB.meta('menu', null), Sync.status()]).then(function (a) {
       var groups = a[0], st = a[1];
       if (!groups) {
-        App.el('main').innerHTML = '<div class="card"><p class="muted">યાદી હજી ઊતરી નથી. એક વાર નેટ સાથે સિંક કરો.</p>' +
-          '<button class="btn" id="a_sync">⟳ સિંક કરો</button></div>';
+        App.el('main').innerHTML = '<div class="card"><p class="muted">The list has not been downloaded yet. Sync once with a network.</p>' +
+          '<button class="btn" id="a_sync">⟳ Sync</button></div>';
         App.el('a_sync').addEventListener('click', function () { App.syncNow(true); });
         return;
       }
       App.el('main').innerHTML =
-        '<div class="card"><input type="search" id="a_q" placeholder="ફંક્શન શોધો (દા.ત. રિપેર, ચેક, રિપોર્ટ)"></div>' +
-        (st.online ? '' : '<div class="card"><p class="muted" style="margin:0">📴 નેટ નથી. નીચે 🟢 વાળાં ફંક્શન અત્યારે પણ ચાલશે; બાકીનાં નેટ આવે ત્યારે.</p></div>') +
+        '<div class="card"><input type="search" id="a_q" placeholder="Search a function (repair, cheque, report…)"></div>' +
+        (st.online ? '' : '<div class="card"><p class="muted" style="margin:0">📴 No network. The 🟢 ones below still work; the rest need a connection.</p></div>') +
         '<div id="a_out"></div>' +
-        '<div class="card"><button class="btn ghost" id="a_sync2">⟳ સિંક / લોગઆઉટ</button></div>';
+        '<div class="card"><button class="btn ghost" id="a_sync2">⟳ Sync &amp; settings</button></div>';
 
       var draw = function (q) {
         var out = '';
@@ -282,11 +289,11 @@ var More = {
             items.map(function (it) {
               return '<li data-h="' + App.esc(it.href) + '" data-n="' + App.esc(it.native || '') + '">' +
                 '<div><div class="nm">' + (it.native ? '🟢 ' : '') + App.esc(it.label) + '</div>' +
-                '<div class="sub">' + (it.native ? 'નેટ વગર ચાલે' : 'વેબસાઈટ પર ખૂલશે') + '</div></div>' +
+                '<div class="sub">' + (it.native ? 'Works offline' : 'Opens the website') + '</div></div>' +
                 '<div class="right muted">›</div></li>';
             }).join('') + '</ul></div>';
         });
-        App.el('a_out').innerHTML = out || '<div class="card"><p class="muted">કંઈ મળ્યું નહીં.</p></div>';
+        App.el('a_out').innerHTML = out || '<div class="card"><p class="muted">Nothing found.</p></div>';
         App.el('a_out').querySelectorAll('[data-h]').forEach(function (li) {
           li.addEventListener('click', function () {
             if (li.dataset.n) { App.go(li.dataset.n); return; }
@@ -302,13 +309,13 @@ var More = {
 
   /** Open a website screen inside the app, already logged in. */
   openWeb: function (href) {
-    if (!navigator.onLine) { App.toast('આ ફંક્શન માટે નેટ જોઈએ', true); return; }
-    App.toast('ખોલી રહ્યા છીએ…');
+    if (!navigator.onLine) { App.toast('This one needs a network', true); return; }
+    App.toast('Opening…');
     Sync.webLink(href).then(function (url) {
       window.location.href = url;
     }).catch(function (e) {
-      App.toast((e && e.message) || 'ખૂલ્યું નહીં', true);
-      if (e && /લોગિન/.test(e.message || '')) App.go('login');
+      App.toast((e && e.message) || 'Could not open it', true);
+      if (e && /log in again/.test(e.message || '')) App.go('login');
     });
   }
 };

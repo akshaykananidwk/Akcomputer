@@ -26,11 +26,13 @@ const healApi = () => p.unroute('**/api.php**');
 
 await p.goto('http://127.0.0.1:8099/index.html');
 await p.waitForTimeout(500);
+// the shop address now lives behind the "Server:" link, as it does for a real user
+await p.click('#l_adv');
 await p.fill('#l_srv', API);
 await p.fill('#l_user', 'admin'); await p.fill('#l_pass', 'Test@1234');
 await p.click('#l_go'); await p.waitForTimeout(5000);
 
-console.log('=== 1. બધું ફોનમાં ઊતર્યું ===');
+console.log('=== 1. Everything landed on the phone ===');
 const got = await p.evaluate(async () => ({
   items: await DB.count('items'), parties: await DB.count('parties'),
   serials: await DB.count('serials'), stock: await DB.count('stock'),
@@ -45,7 +47,7 @@ ok('the shop\'s own bills, not just this phone\'s', got.ssales > 0, got.ssales);
 ok('its payments too', got.spayments > 0, got.spayments);
 ok('and every screen the website has', got.menu >= 10, got.menu + ' groups');
 
-console.log('\n=== 2. નેટ કાપો — બધું ચાલવું જોઈએ ===');
+console.log('\n=== 2. Cut the network — it must all still work ===');
 await ctx.setOffline(true);
 await p.evaluate(() => window.dispatchEvent(new Event('offline')));
 await cutApi();
@@ -54,7 +56,7 @@ await p.waitForTimeout(300);
 // --- who owes what
 await p.click('.tabs button[data-go=dues]'); await p.waitForTimeout(700);
 const duesTxt = await p.locator('#main').textContent();
-ok('બાકી ઉઘરાણી opens with no signal', /કુલ બાકી લેવાના/.test(duesTxt));
+ok('Dues opens with no signal', /Total to receive/.test(duesTxt));
 const dueCount = await p.locator('#d_list li').count();
 ok('...and lists the parties who owe', dueCount > 0, dueCount + ' parties');
 
@@ -63,38 +65,52 @@ if (dueCount > 0) {
   await p.locator('#d_list li').first().click();
   await p.waitForTimeout(700);
   const t = await p.locator('#main').textContent();
-  ok('a party\'s balance shows, offline', /બાકી લેવાના|એડવાન્સ|હિસાબ ચોખ્ખો/.test(t));
-  ok('...with the statement under it', /છેલ્લો હિસાબ/.test(t));
+  ok('a party\'s balance shows, offline', /To receive|Advance held|All settled/.test(t));
+  ok('...with the statement under it', /Recent account/.test(t));
   ok('...and a WhatsApp reminder button', await p.locator('#p_remind').count() + await p.locator('#p_collect').count() > 0);
 }
 
 // --- reports
 await p.evaluate(() => App.go('reports')); await p.waitForTimeout(700);
 const rep = await p.locator('#main').textContent();
-ok('the day\'s figures work out offline', /આજનું વેચાણ/.test(rep));
-ok('...sales for today, the week and the month', /છેલ્લા 7 દિવસ/.test(rep) && /આ મહિનો/.test(rep));
-ok('...and what is owed both ways', /લેવાના બાકી/.test(rep) && /આપવાના બાકી/.test(rep));
-ok('...honestly labelled as coming from the last sync', /છેલ્લે સિંક/.test(rep));
+ok('the day\'s figures work out offline', /Today's sales/.test(rep));
+ok('...sales for today, the week and the month', /Last 7 days/.test(rep) && /This month/.test(rep));
+ok('...and what is owed both ways', /To receive/.test(rep) && /To pay/.test(rep));
+ok('...honestly labelled as coming from the last sync', /last synced/.test(rep));
 
 // --- stock
 await p.evaluate(() => App.go('stock')); await p.waitForTimeout(500);
-await p.fill('#k_q', 'Test Mouse'); await p.waitForTimeout(600);
+const stockItem = await p.evaluate(async () => {
+  const ser = await DB.all('serials');
+  const it = ser.length ? await DB.get('items', ser[0].item_id) : null;
+  return it ? it.name : '';
+});
+await p.fill('#k_q', stockItem); await p.waitForTimeout(600);
 const nres = await p.locator('#k_res div').count();
 ok('an item is findable offline', nres > 0, nres + ' results');
 if (nres) {
   await p.locator('#k_res div').first().click();
   await p.waitForTimeout(600);
   const st = await p.locator('#k_out').textContent();
-  ok('...it says how much and where', /ક્યાં કેટલો/.test(st));
-  ok('...and lists the serial numbers on the shelf', /સિરિયલ નંબર/.test(st));
+  ok('...it says how much and where', /Where it is/.test(st));
+  ok('...and lists the serial numbers on the shelf', /Serial numbers/.test(st));
 }
 
-console.log('\n=== 3. સિરિયલ નંબર સાથે બિલ (નેટ વગર) ===');
+console.log('\n=== 3. A bill with serial numbers, offline ===');
 await p.evaluate(() => { App.bill = null; return DB.setMeta('draft', null); });
 await p.evaluate(() => App.go('newbill')); await p.waitForTimeout(600);
-await p.fill('#b_cust', 'સિરિયલ ટેસ્ટ ' + Date.now().toString().slice(-6));
+await p.fill('#b_cust', 'Serial Test ' + Date.now().toString().slice(-6));
 await p.fill('#b_mob', '9876500000');
-await p.fill('#b_item', 'Test Mouse'); await p.waitForTimeout(600);
+// pick whatever serial-tracked item actually has serials on the shelf,
+// rather than naming one: an earlier run may have sold them all
+const snItem = await p.evaluate(async () => {
+  const ser = await DB.all('serials');
+  if (!ser.length) return null;
+  const it = await DB.get('items', ser[0].item_id);
+  return it ? it.name : null;
+});
+ok('there is a serial-tracked item with stock to test with', !!snItem, snItem);
+await p.fill('#b_item', snItem || 'Test Mouse'); await p.waitForTimeout(600);
 await p.locator('#b_itemres div').first().click();
 await p.waitForTimeout(600);
 const snBtn = await p.locator('[data-sn="0"]').count();
@@ -103,8 +119,9 @@ ok('a serial-tracked item asks for its serial numbers', snBtn > 0);
 // the bill must REFUSE to save while the serial is missing
 await p.click('#b_save'); await p.waitForTimeout(800);
 const errTxt = await p.locator('#main').textContent();
-ok('saving is refused while a serial is missing', /સિરિયલ નંબર ભર્યા છે|સિરિયલ નંબર$/m.test(errTxt) || /સિરિયલ/.test(errTxt));
-ok('...and it takes you straight to the box to fill', /શેલ્ફ પરના/.test(errTxt));
+const queuedEarly = await p.evaluate(async () => (await DB.all('outbox')).length);
+ok('saving is refused while a serial is missing — nothing was written', queuedEarly === 0, 'queue=' + queuedEarly);
+ok('...and it takes you straight to the box to fill', /On the shelf/.test(errTxt));
 
 // pick one off the shelf
 const shelf = await p.locator('#sn_list li[data-add]').count();
@@ -119,14 +136,14 @@ if (shelf > 0) {
 }
 await p.click('#sn_done'); await p.waitForTimeout(600);
 
-console.log('\n=== 4. અધૂરું બિલ ખોવાય નહીં ===');
+console.log('\n=== 4. The half-written bill is not lost ===');
 const draft = await p.evaluate(async () => {
   const d = await DB.meta('draft', null);
   return d ? { lines: d.lines.length, serials: (d.lines[0].serials || []).length, cust: d.customer } : null;
 });
 ok('the half-written bill is on disk, not just in memory', draft && draft.lines === 1, JSON.stringify(draft));
 ok('...with the serial it had already been given', draft && draft.serials === 1);
-ok('...and the customer name typed at the top', draft && /સિરિયલ ટેસ્ટ/.test(draft.cust || ''));
+ok('...and the customer name typed at the top', draft && /Serial Test/.test(draft.cust || ''));
 
 // Simulate Android killing the app mid-bill. The real app's page lives in
 // the apk, so it reloads with no network; a desktop browser has to fetch it
@@ -139,20 +156,20 @@ await ctx.setOffline(true);
 await p.evaluate(() => window.dispatchEvent(new Event('offline')));
 await p.evaluate(() => App.go('newbill')); await p.waitForTimeout(900);
 const after = await p.locator('#main').textContent();
-ok('after the app is killed and reopened, the bill is still there', /Test Mouse/.test(after));
-ok('...and so is the serial on it', /સિરિયલ 1\/1/.test(after));
+ok('after the app is killed and reopened, the bill is still there', after.includes(snItem));
+ok('...and so is the serial on it', /Serials 1\/1/.test(after));
 
-console.log('\n=== 5. બિલ સેવ + WhatsApp ===');
+console.log('\n=== 5. Save the bill + WhatsApp ===');
 await p.fill('#b_paid', '100');
 await p.click('#b_save'); await p.waitForTimeout(1200);
 const done = await p.locator('#main').textContent();
-ok('the bill saved offline', /બિલ થઈ ગયું|✅/.test(done) || (await p.locator('#dn_new').count()) > 0);
-ok('...and says the number comes after syncing, rather than inventing one', /નંબર સિંક પછી/.test(done));
+ok('the bill saved offline', /Bill done|✅/.test(done) || (await p.locator('#dn_new').count()) > 0);
+ok('...and says the number comes after syncing, rather than inventing one', /Number comes after syncing/.test(done));
 ok('...with a WhatsApp button ready', (await p.locator('#dn_wa').count()) > 0);
 const q = await p.evaluate(async () => (await DB.all('outbox')).length);
 ok('...and it is queued to send', q === 1, 'queue=' + q);
 
-console.log('\n=== 6. નેટ પાછું — સિરિયલ સાથે ચડે ===');
+console.log('\n=== 6. Network back — it goes up with its serial ===');
 await healApi();
 await ctx.setOffline(false);
 await p.evaluate(() => window.dispatchEvent(new Event('online')));
@@ -180,13 +197,13 @@ const stillOnShelf = await p.evaluate(async (sn) => {
 }, soldSn);
 ok('the serial picked offline is now sold on the server, not on the shelf', !stillOnShelf, soldSn);
 
-console.log('\n=== 7. બધું — વેબસાઈટનું દરેક સ્ક્રીન ===');
+console.log('\n=== 7. Everything — every website screen ===');
 await p.evaluate(() => App.go('all')); await p.waitForTimeout(900);
 const groups = await p.locator('#a_out .card').count();
 const links = await p.locator('#a_out li[data-h]').count();
 ok('every group of the website menu is listed', groups >= 10, groups + ' groups');
 ok('...and every screen under them', links >= 50, links + ' screens');
-ok('the ones that work offline are marked', (await p.locator('#a_out li:has-text("નેટ વગર ચાલે")').count()) > 0);
+ok('the ones that work offline are marked', (await p.locator('#a_out li:has-text("Works offline")').count()) > 0);
 await p.fill('#a_q', 'repair'); await p.waitForTimeout(400);
 ok('the list is searchable', (await p.locator('#a_out li[data-h]').count()) < links);
 await p.fill('#a_q', ''); await p.waitForTimeout(400);
@@ -215,14 +232,14 @@ ok('the same link a second time does NOT log anybody in',
 // back into the app
 await p.goto('http://127.0.0.1:8099/index.html'); await p.waitForTimeout(1500);
 
-console.log('\n=== 8. નેટ વગર વેબસાઈટ સ્ક્રીન માગો ===');
+console.log('\n=== 8. Ask for a website screen with no network ===');
 await ctx.setOffline(true);
 await p.evaluate(() => window.dispatchEvent(new Event('offline')));
 await p.evaluate(() => App.go('all')); await p.waitForTimeout(700);
 await p.evaluate(() => More.openWeb('reports.php'));
 await p.waitForTimeout(700);
 const toast = await p.locator('#toast').textContent();
-ok('it says plainly that this one needs a network', /નેટ જોઈએ/.test(toast), toast);
+ok('it says plainly that this one needs a network', /needs a network/.test(toast), toast);
 ok('...and the app is still on its own screen, not a browser error', (await p.locator('#a_out').count()) > 0);
 
 await b.close();

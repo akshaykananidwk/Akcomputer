@@ -40,6 +40,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') { http_response_code(204);
 // these two do not, because getting one is the point.
 // ---------------------------------------------------------------------------
 $r = get('r');
+// needed by the public shop routes below too, which run before api_require()
+$method = $_SERVER['REQUEST_METHOD'];
 if ($r === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // Same throttle the website's login uses - an API door must not be the
     // soft way in. A phone that keeps guessing is locked out like a browser.
@@ -77,12 +79,132 @@ if ($r === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     ], 'shop' => setting('app_name', 'AK Computer'), 'server_time' => date('c')]);
 }
 
+// ---------------------------------------------------------------------------
+// THE CUSTOMER'S SIDE OF THE APP.
+//
+// The same app, handed to a customer or a dealer instead of to staff. They
+// get what catalog.php gives them on the website and nothing else: the
+// products the shop has chosen to publish, their price, whether it is on
+// the shelf, and a way to place an order.
+//
+// These three need no staff token - a customer has none - so each is rate
+// limited by address, and each shows exactly what the public website
+// already shows. There is no new information here, only a second way in.
+// ---------------------------------------------------------------------------
+if (in_array($r, ['catalog', 'wlogin', 'worder'], true)) {
+    if (!api_rate_ok('shop:' . client_ip(), 120, 60)) api_json(['error' => 'Too many requests - try again in a minute'], 429);
+
+    // A dealer's own token, from ?r=wlogin. Optional: without it this is a
+    // walk-in customer and the price is the ordinary one.
+    $acct = null;
+    $wtok = api_bearer_token();
+    if ($wtok !== '') {
+        $acct = row('SELECT a.* FROM web_accounts a JOIN api_tokens t ON t.label = CONCAT("web:", a.id)
+                     WHERE t.token_hash = ? AND t.revoked = 0 AND a.is_active = 1', [api_token_hash($wtok)]);
+    }
+    $pct = $acct ? (float)$acct['discount_pct'] : 0;
+
+    if ($r === 'catalog' && $method === 'GET') {
+        $stock = web_stock_map();
+        $showQty = web_show_qty();
+        $rows = [];
+        foreach (all('SELECT i.*, c.name cat_name FROM items i LEFT JOIN categories c ON c.id = i.category_id
+                      WHERE i.is_active = 1 AND i.show_on_website = 1 ORDER BY c.name, i.name LIMIT 2000') as $it) {
+            list($cls, $txt, $note) = web_stock_line($it, $stock, $showQty);
+            $rows[] = [
+                'id' => (int)$it['id'], 'name' => $it['name'], 'category' => $it['cat_name'],
+                'brand' => trim($it['brand'] . ' ' . $it['model']), 'unit' => $it['unit'],
+                'photo' => $it['photo'] ? base_url($it['photo']) : '',
+                'price' => round(dealer_price($it['selling_price'], $pct), 2),
+                'mrp' => $pct > 0 ? round((float)$it['selling_price'], 2) : 0,
+                'stock_class' => $cls, 'stock_text' => $txt, 'stock_note' => $note,
+            ];
+        }
+        api_json(['shop' => setting('app_name', 'AK Computer'),
+                  'dealer' => $acct ? ['name' => $acct['name'], 'discount_pct' => $pct] : null,
+                  'whatsapp' => setting('shop_whatsapp', setting('shop_mobile', '')),
+                  'items' => $rows, 'server_time' => date('c')]);
+    }
+
+    // A dealer signing in with the mobile and password the shop gave them -
+    // the same web_accounts login the website uses, not a staff account.
+    if ($r === 'wlogin' && $method === 'POST') {
+        $b = api_body();
+        $mob = preg_replace('/\D/', '', (string)($b['mobile'] ?? ''));
+        $pwd = (string)($b['password'] ?? '');
+        if ($mob === '' || $pwd === '') api_json(['error' => 'Enter your mobile number and password'], 422);
+        if (login_throttle_blocked('wapp:' . $mob)) api_json(['error' => 'Too many attempts - try again in a few minutes'], 429);
+        $a = row('SELECT * FROM web_accounts WHERE mobile = ? AND is_active = 1', [$mob]);
+        if (!$a || !password_verify($pwd, $a['password_hash'])) {
+            login_throttle_hit('wapp:' . $mob);
+            api_json(['error' => 'Mobile or password is wrong. Not approved yet? The shop will confirm on WhatsApp.'], 401);
+        }
+        login_throttle_reset('wapp:' . $mob);
+        q('UPDATE api_tokens SET revoked = 1 WHERE label = ? AND revoked = 0', ['web:' . $a['id']]);
+        $tok = bin2hex(random_bytes(32));
+        // user_id 0: this token belongs to a web account, not a staff user,
+        // and must never resolve through api_auth_user()
+        q('INSERT INTO api_tokens (user_id, label, token_hash, device, last_seen) VALUES (0,?,?,?,NOW())',
+          ['web:' . $a['id'], api_token_hash($tok), 'Customer app']);
+        q('UPDATE web_accounts SET last_login = NOW() WHERE id = ?', [$a['id']]);
+        api_json(['token' => $tok, 'name' => $a['name'], 'discount_pct' => (float)$a['discount_pct']]);
+    }
+
+    // An order from the app, landing in the same web_orders queue the
+    // website's cart lands in - one inbox for the shop, not two.
+    if ($r === 'worder' && $method === 'POST') {
+        $b = api_body();
+        $name = trim((string)($b['name'] ?? ($acct['name'] ?? '')));
+        $mobile = preg_replace('/\D/', '', (string)($b['mobile'] ?? ($acct['mobile'] ?? '')));
+        $cart = (array)($b['items'] ?? []);
+        if ($name === '' || $mobile === '') api_json(['error' => 'Name and mobile number are needed'], 422);
+        if (!$cart) api_json(['error' => 'Your cart is empty'], 422);
+
+        $cuuid = trim((string)($b['client_uuid'] ?? ''));
+        if ($cuuid !== '') {
+            if (!preg_match('/^[0-9a-f-]{16,36}$/i', $cuuid)) api_json(['error' => 'bad client_uuid'], 422);
+            $dupe = row('SELECT id, order_no FROM web_orders WHERE client_uuid = ?', [$cuuid]);
+            if ($dupe) api_json(['id' => (int)$dupe['id'], 'order_no' => $dupe['order_no'], 'duplicate' => true], 200);
+        }
+        // every line priced HERE, from the item master. A price posted by a
+        // phone is a price a customer can edit.
+        $clean = []; $total = 0;
+        foreach ($cart as $line) {
+            $it = row('SELECT id, name, selling_price FROM items WHERE id = ? AND is_active = 1 AND show_on_website = 1',
+                      [(int)($line['item_id'] ?? 0)]);
+            if (!$it) continue;
+            $qty = max(1, (int)($line['qty'] ?? 1));
+            $unit = round(dealer_price($it['selling_price'], $pct), 2);
+            $clean[] = ['id' => (int)$it['id'], 'name' => $it['name'], 'qty' => $qty, 'price' => $unit];
+            $total += $unit * $qty;
+        }
+        if (!$clean) api_json(['error' => 'Nothing in the cart is available any more'], 422);
+        q('INSERT INTO web_orders (customer_name, mobile, address, notes, items_json, total, web_account_id, client_uuid)
+           VALUES (?,?,?,?,?,?,?,?)',
+          [$name, $mobile, (string)($b['address'] ?? ''), trim((string)($b['notes'] ?? '')),
+           json_encode($clean, JSON_UNESCAPED_UNICODE), $total, $acct ? (int)$acct['id'] : null,
+           $cuuid !== '' ? $cuuid : null]);
+        $oid = insert_id();
+        $ono = doc_no('WEB', $oid);
+        q('UPDATE web_orders SET order_no = ? WHERE id = ?', [$ono, $oid]);
+        $waShop = setting('shop_whatsapp', setting('shop_mobile', ''));
+        if ($waShop) {
+            send_whatsapp($waShop, wa_template('weborder', [
+                'order_no' => $ono, 'customer' => $name, 'mobile' => $mobile,
+                'total' => money($total), 'link' => base_url('web_orders.php'),
+            ]));
+        }
+        log_activity('app_web_order', $ono . ' from ' . $name);
+        api_json(['id' => $oid, 'order_no' => $ono, 'total' => round($total, 2)], 201);
+    }
+    api_json(['error' => 'Unsupported method'], 405);
+}
+
 $u = api_require();
 // a token that spoke today is a phone still in somebody's hand
 try { q('UPDATE api_tokens SET last_seen = NOW() WHERE token_hash = ?', [api_token_hash(api_bearer_token())]); } catch (Throwable $e) {}
 
 $id = (int)get('id');
-$method = $_SERVER['REQUEST_METHOD'];
 
 if ($r === 'me') {
     api_json(['id' => $u['id'], 'name' => $u['name'], 'username' => $u['username'], 'role' => $u['role_name'], 'location' => $u['location_name'], 'perms' => $u['perms']]);
@@ -409,6 +531,61 @@ if ($r === 'payments' && $method === 'POST') {
     log_activity('api_payment_add', "P-$pid via API token");
     fire_webhook('payment.recorded', ['payment_id' => $pid, 'direction' => $dir, 'amount' => $amount, 'source' => 'api']);
     api_json(['id' => $pid], 201);
+}
+
+// ---------------------------------------------------------------------------
+// SEND A BILL ON WHATSAPP — through the shop's own WhatsApp account.
+//
+// Not through the phone's WhatsApp. That would send from whichever staff
+// member's personal number happened to make the bill, with no PDF, nothing
+// in the chat log, and no record that it went. This goes out from the shop,
+// with the same message and the same PDF the website sends, and it is
+// logged the same way.
+//
+// The phone sends the bill's id, never the text: the words a customer
+// receives are the shop's, decided in one place (sale_whatsapp_send), not
+// composed on a handset.
+// ---------------------------------------------------------------------------
+if ($r === 'whatsapp' && $method === 'POST') {
+    api_require('sales.view');
+    $b = api_body();
+    $saleId = (int)($b['sale_id'] ?? 0);
+    if (!$saleId && !empty($b['client_uuid'])) {
+        // the phone knows the bill by the uuid it made; the server id only
+        // exists after the bill has gone up
+        $saleId = (int)val('SELECT id FROM sales WHERE client_uuid = ?', [trim((string)$b['client_uuid'])]);
+    }
+    // 409, not 404: the bill is on its way up and this errand should WAIT
+    // for it, not be thrown on the "needs attention" pile. Every other 4xx
+    // means "this will never work"; this one means "not yet".
+    if (!$saleId) api_json(['error' => 'This bill has not reached the shop yet'], 409);
+    $sale = row('SELECT created_by FROM sales WHERE id = ?', [$saleId]);
+    if (!$sale) api_json(['error' => 'Bill not found'], 404);
+    if (!in_array('*', $u['perms'], true) && !in_array('sales.all', $u['perms'], true)
+        && $sale['created_by'] != $u['id']) api_json(['error' => 'Forbidden'], 403);
+
+    $res = sale_whatsapp_send($saleId, $b['mobile'] ?? null);
+    if (!$res['ok']) api_json(['error' => $res['error']], 422);
+    api_json(['sent' => true, 'mobile' => $res['mobile']]);
+}
+
+// A payment reminder, through the shop's WhatsApp and through the SAME rule
+// the website's collection screens use - the amount is worked out here from
+// the ledger, never taken from the phone, so a stale balance on a handset
+// cannot ask a customer for the wrong money.
+if ($r === 'reminder' && $method === 'POST') {
+    api_require('payments.view');
+    $b = api_body();
+    $pid = (int)($b['party_id'] ?? 0);
+    $party = $pid ? row('SELECT id, name, mobile FROM parties WHERE id = ?', [$pid]) : null;
+    if (!$party) api_json(['error' => 'Party not found'], 404);
+    if (trim((string)$party['mobile']) === '') api_json(['error' => 'This party has no mobile number'], 422);
+    $bal = round((float)party_balance($pid), 2);
+    if ($bal <= 0.009) api_json(['error' => 'Nothing is owed by this party'], 422);
+    if (!collection_reminder_send($party['mobile'], $bal, $party['name']))
+        api_json(['error' => whatsapp_last_error() ?: 'WhatsApp send failed'], 422);
+    log_activity('collection_reminder', $party['name'] . ' Rs ' . money($bal) . ' (app)');
+    api_json(['sent' => true, 'amount' => $bal, 'mobile' => $party['mobile']]);
 }
 
 if ($r === 'stock' && $method === 'GET') {

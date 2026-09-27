@@ -14,24 +14,26 @@
 <header id="top" class="top" hidden>
   <button class="icon" id="backBtn" hidden>←</button>
   <div class="ttl" id="title">AK Computer</div>
-  <button class="icon" id="syncBtn" title="સિંક">⟳</button>
+  <button class="icon" id="syncBtn" title="Sync">⟳</button>
 </header>
 
 <main id="main"></main>
 
 <nav id="tabs" class="tabs" hidden>
-  <button data-go="home"><span>🏠</span>ઘર</button>
-  <button data-go="newbill"><span>🧾</span>નવું બિલ</button>
-  <button data-go="bills"><span>📄</span>બિલ</button>
-  <button data-go="dues"><span>₹</span>ઉઘરાણી</button>
-  <button data-go="all"><span>☰</span>બધું</button>
+  <button data-go="home"><span>🏠</span>Home</button>
+  <button data-go="newbill"><span>🧾</span>New bill</button>
+  <button data-go="bills"><span>📄</span>Bills</button>
+  <button data-go="dues"><span>₹</span>Dues</button>
+  <button data-go="all"><span>☰</span>All</button>
 </nav>
 
+<div id="cartbar" class="cartbar" hidden></div>
 <div id="toast" class="toast" hidden></div>
 
 <script src="db.js"></script>
 <script src="sync.js"></script>
 <script src="ui.js"></script>
 <script src="more.js"></script>
+<script src="shop.js"></script>
 </body>
 </html>

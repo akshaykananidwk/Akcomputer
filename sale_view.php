@@ -83,44 +83,14 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signatu
 
 // ---------- WhatsApp send ----------
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
-    require_once __DIR__ . '/includes/pdf.php';
-    $mobile = post('mobile') ?: $sale['customer_mobile'];
-    $link = base_url('sale_view.php?id=' . $id . '&token=' . $sale['share_token']);
-    // Sent as a real PDF document (includes/pdf.php's invoice_pdf() - the
-    // same renderer behind the "Download PDF" button - genuine PDF text,
-    // selectable/searchable, crisp at any zoom, not a picture). WhatsApp
-    // needs the URL itself to end in .pdf to recognise it as a document
-    // (same reason images need a URL ending in .jpg), so the bytes are
-    // saved to a static file rather than linked straight to sale_pdf.php.
-    $pdfDir = __DIR__ . '/uploads/invoices';
-    if (!is_dir($pdfDir)) mkdir($pdfDir, 0755, true);
-    $pdfName = preg_replace('/[^A-Za-z0-9\-]/', '_', $sale['invoice_no']) . '_' . substr($sale['share_token'], 0, 10) . '.pdf';
-    file_put_contents($pdfDir . '/' . $pdfName, invoice_pdf($sale, $items));
-    $imgUrl = base_url('uploads/invoices/' . $pdfName);
-    $due = $sale['total'] - $sale['paid'];
-    // The shop's OWN UPI, on our own page - the money lands straight in the
-    // bank with nothing taken out of it. A raw upi:// string is not tappable
-    // in WhatsApp, which is why the link sent is a normal web address that
-    // fires the UPI intent from a button (see pay.php).
-    $payLink = $due > 0.009 ? invoice_pay_url($sale) : null;
-    $msg = wa_template('bill', [
-        'firm' => $sale['company_name'], 'invoice_no' => $sale['invoice_no'], 'date' => dmy($sale['sale_date']),
-        'total' => money($sale['total']),
-        'due_line' => $due > 0.009 ? 'Balance due: Rs ' . money($due) : 'Paid ✔',
-        'pay_link' => $payLink ? "💳 Pay online: $payLink\n" : '',
-        'link' => $link, 'customer' => $sale['customer_name'],
-    ]);
-    // bill goes as a PDF document with the message as caption
-    wa_context(['kind' => 'bill', 'invoice' => $sale['invoice_no'], 'total' => money($sale['total']),
-                'firm' => $sale['company_name'], 'link' => $link]);
-    if ($mobile && send_whatsapp($mobile, $msg, $imgUrl)) {
-        log_activity('sale_whatsapp', $sale['invoice_no'] . ' to ' . $mobile);
-        flash('Bill (PDF) sent on WhatsApp to ' . $mobile);
+    // one rule, two callers: this button and the phone app (api.php?r=whatsapp)
+    $res = sale_whatsapp_send($id, post('mobile'));
+    if ($res['ok']) {
+        flash('Bill (PDF) sent on WhatsApp to ' . $res['mobile']);
     } else {
-        // Include the exact PDF URL that was sent to the gateway - lets
-        // you paste it straight into a browser (or the bulk.akdwk.in test
-        // link) to check whether it's actually reachable from outside.
-        flash('WhatsApp send failed' . ($mobile ? '' : ' - missing mobile number') . '. ' . whatsapp_last_error() . ' | PDF URL: ' . $imgUrl, 'error');
+        // the exact PDF URL that was handed to the gateway, so it can be
+        // pasted into a browser to check it is reachable from outside
+        flash('WhatsApp send failed. ' . $res['error'] . ' | PDF URL: ' . $res['pdf'], 'error');
     }
     redirect('sale_view.php?id=' . $id);
 }

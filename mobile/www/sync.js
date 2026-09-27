@@ -74,7 +74,7 @@ var Sync = {
       body: JSON.stringify({ username: username, password: password, device: device || 'Android' })
     }, 25000).then(function (res) {
       if (!res.ok || !res.data || !res.data.token) {
-        throw new Error((res.data && res.data.error) || ('લોગિન થયું નહીં (' + res.status + ')'));
+        throw new Error((res.data && res.data.error) || ('Could not log in (' + res.status + ')'));
       }
       return Promise.all([
         DB.setMeta('server', server),
@@ -91,13 +91,13 @@ var Sync = {
     return Promise.all([this.base(), this.headers(), DB.meta('since', '')])
       .then(function (a) {
         var base = a[0], hdr = a[1], since = a[2];
-        if (!base) throw new Error('સર્વરનું સરનામું નથી');
+        if (!base) throw new Error('No shop address set');
         var url = base + '/api.php?r=sync' + (since ? '&since=' + encodeURIComponent(since) : '');
         return self.fetchJson(url, { headers: hdr }, 45000);
       })
       .then(function (res) {
-        if (res.status === 401) { return DB.setMeta('token_bad', 1).then(function () { throw new Error('ફરી લોગિન કરવું પડશે'); }); }
-        if (!res.ok || !res.data) throw new Error('સર્વર જવાબ આપતું નથી (' + res.status + ')');
+        if (res.status === 401) { return DB.setMeta('token_bad', 1).then(function () { throw new Error('Please log in again'); }); }
+        if (!res.ok || !res.data) throw new Error('The shop is not answering (' + res.status + ')');
         var d = res.data;
         return Promise.all([
           DB.putMany('items', d.items || []),
@@ -150,8 +150,8 @@ var Sync = {
     }).then(function (hdr) {
       return self.fetchJson(base + '/api.php?r=weblink&to=' + encodeURIComponent(to), { headers: hdr }, 15000);
     }).then(function (res) {
-      if (res.status === 401) { return DB.setMeta('token_bad', 1).then(function () { throw new Error('ફરી લોગિન કરવું પડશે'); }); }
-      if (!res.ok || !res.data || !res.data.url) throw new Error((res.data && res.data.error) || 'ખૂલ્યું નહીં');
+      if (res.status === 401) { return DB.setMeta('token_bad', 1).then(function () { throw new Error('Please log in again'); }); }
+      if (!res.ok || !res.data || !res.data.url) throw new Error((res.data && res.data.error) || 'Could not open it');
       return base + '/' + res.data.url;
     });
   },
@@ -168,14 +168,41 @@ var Sync = {
     });
   },
 
+  KINDS: { payment: 'payments', sale: 'sales', whatsapp: 'whatsapp', reminder: 'reminder', order: 'worder' },
+
   pushOne: function (row) {
     var self = this;
-    var path = row.kind === 'payment' ? 'payments' : 'sales';
-    return Promise.all([this.base(), this.headers()]).then(function (a) {
+    var path = this.KINDS[row.kind] || 'sales';
+    // a customer's order goes up as the CUSTOMER - with the dealer's token
+    // if they have one, and with none at all if they are a walk-in. Sending
+    // it with a staff token would price it as staff.
+    var auth = row.kind === 'order'
+      ? DB.meta('wtoken', '').then(function (t) {
+          return t ? { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + t }
+                   : { 'Content-Type': 'application/json' };
+        })
+      : this.headers();
+    return Promise.all([this.base(), auth]).then(function (a) {
       return self.fetchJson(a[0] + '/api.php?r=' + path, {
         method: 'POST', headers: a[1], body: JSON.stringify(row.body)
       }, 30000);
     }).then(function (res) {
+      if (res.ok && res.data && (res.data.order_no || (row.kind === 'order' && res.data.duplicate))) {
+        return DB.get('docs', row.uuid).then(function (doc) {
+          if (doc) { doc.synced = true; doc.order_no = res.data.order_no; return DB.put('docs', doc); }
+        }).then(function () { return DB.del('outbox', row.uuid); })
+          .then(function () { return { ok: true }; });
+      }
+      // an errand, not a document: nothing to write back, it is simply done
+      if (res.ok && res.data && res.data.sent) {
+        return DB.del('outbox', row.uuid).then(function () { return { ok: true }; });
+      }
+      // 409 means "not yet" - a WhatsApp send whose bill is still in the
+      // queue ahead of it. That is a wait, not a failure, so it goes round
+      // again instead of onto the "needs attention" pile.
+      if (res.status === 409) {
+        throw new Error((res.data && res.data.error) || 'Waiting for the bill to go up first');
+      }
       // 200 with duplicate:true is the happy ending of a retry - the server
       // had it all along and nothing was written twice
       if (res.ok && res.data && (res.data.id || res.data.duplicate)) {
@@ -192,21 +219,21 @@ var Sync = {
         }).then(function () { return { ok: true, duplicate: !!(res.data && res.data.duplicate) }; });
       }
       if (res.status === 401) {
-        return DB.setMeta('token_bad', 1).then(function () { return { ok: false, stop: true, error: 'ફરી લોગિન કરવું પડશે' }; });
+        return DB.setMeta('token_bad', 1).then(function () { return { ok: false, stop: true, error: 'Please log in again' }; });
       }
       // 4xx that is not 401 = this document will never be accepted as it is
       if (res.status >= 400 && res.status < 500) {
         row.state = 'attention';
-        row.last_error = (res.data && res.data.error) || ('સર્વરે ના પાડી (' + res.status + ')');
+        row.last_error = (res.data && res.data.error) || ('The shop refused it (' + res.status + ')');
         return DB.put('outbox', row).then(function () { return { ok: false, error: row.last_error }; });
       }
-      throw new Error((res.data && res.data.error) || ('સર્વર (' + res.status + ')'));
+      throw new Error((res.data && res.data.error) || ('Server (' + res.status + ')'));
     }).catch(function (err) {
       if (err && err.__handled) throw err;
       // network / timeout / 5xx - not this document's fault, so it waits
       row.attempts = (row.attempts || 0) + 1;
       row.state = 'pending';
-      row.last_error = (err && err.message) || 'નેટવર્ક મળ્યું નહીં';
+      row.last_error = (err && err.message) || 'No network';
       var wait = Sync.BACKOFF[Math.min(row.attempts, Sync.BACKOFF.length - 1)];
       row.next_try = Date.now() + wait * 1000;
       return DB.put('outbox', row).then(function () { return { ok: false, retry: true, error: row.last_error }; });
@@ -252,7 +279,7 @@ var Sync = {
       .then(function (p) { out.push = p; return self.pull(); })
       .then(function (p) { out.pull = p; return self.pullMenu(); })
       .then(function () { out.ok = true; return out; })
-      .catch(function (e) { out.ok = false; out.error = (e && e.message) || 'ભૂલ'; return out; })
+      .catch(function (e) { out.ok = false; out.error = (e && e.message) || 'Something went wrong'; return out; })
       .then(function (res) { self.running = false; return res; });
   },
 

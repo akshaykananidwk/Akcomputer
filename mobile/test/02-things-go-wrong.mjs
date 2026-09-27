@@ -20,6 +20,8 @@ const ok = (l, c, x) => { if (!c) bad++; console.log((c ? '  ✔ ' : '  ✘ ') +
 
 await p.goto('http://127.0.0.1:8099/index.html');
 await p.waitForTimeout(500);
+// the shop address now lives behind the "Server:" link, as it does for a real user
+await p.click('#l_adv');
 await p.fill('#l_srv', 'http://127.0.0.1:8088');
 await p.fill('#l_user', 'admin'); await p.fill('#l_pass', 'Test@1234');
 await p.click('#l_go'); await p.waitForTimeout(4000);
@@ -38,8 +40,8 @@ async function makeBill(customer) {
 const cutApi = async () => p.route('**/api.php**', r => r.abort('failed'));
 const healApi = async () => p.unroute('**/api.php**');
 
-console.log('=== 4. જવાબ ખોવાઈ જાય (સૌથી ખતરનાક કેસ) ===');
-const NAME4 = 'જવાબ ખોવાયો ' + RUN;
+console.log('=== 4. The reply is lost (the dangerous one) ===');
+const NAME4 = 'Lost Reply ' + RUN;
 let killed = 0;
 await p.route('**/api.php?r=sales', async route => {
   if (killed++ === 0) {
@@ -70,9 +72,9 @@ const list = await (await fetch('http://127.0.0.1:8088/api.php?r=sales&from=2000
 const dupes = (list.data || []).filter(s => s.customer_name === NAME4);
 ok('the server has exactly ONE such bill (not two)', dupes.length === 1, dupes.length + ' found');
 
-console.log('\n=== 5. એપ બંધ કરીને ફરી ખોલો ===');
+console.log('\n=== 5. Kill the app and reopen it ===');
 await cutApi();
-await makeBill('બંધ-ખોલ ' + RUN);
+await makeBill('Restart ' + RUN);
 await p.reload();                    // app killed and reopened
 await p.waitForTimeout(1500);
 const after = await p.evaluate(async () => ({
@@ -84,7 +86,7 @@ ok('every bill is still on the phone', after.docs >= 2, after.docs + ' docs');
 ok('it opened straight to Home — no login again', after.onHome);
 await healApi();
 
-console.log('\n=== 6. સર્વર કાયમ માટે ના પાડે ===');
+console.log('\n=== 6. The server refuses it for good ===');
 await p.route('**/api.php?r=sales', route => route.fulfill({
   status: 422, contentType: 'application/json', body: JSON.stringify({ error: 'Invalid item_id 999' })
 }));
@@ -96,15 +98,15 @@ ok('the owner is shown it, with the server\'s own words', (await p.locator('body
 ok('and the bill itself is still on the phone', (await p.evaluate(async () => (await DB.all('docs')).length)) >= 2);
 await p.unroute('**/api.php?r=sales');
 
-console.log('\n=== 7. ટોકન રદ થાય ===');
+console.log('\n=== 7. The token is revoked ===');
 await cutApi();                       // so the bill really sits in the queue
-await makeBill('ટોકન ટેસ્ટ ' + RUN);
+await makeBill('Token Test ' + RUN);
 await healApi();
 await p.evaluate(() => DB.setMeta('token', 'deadtokendeadtokendeadtokendead'));
 await p.click('#syncBtn'); await p.waitForTimeout(3000);
 const q7 = await p.evaluate(async () => (await DB.all('outbox')).filter(r => r.state === 'pending').length);
 ok('the queue is NOT thrown away when the token dies', q7 >= 1, 'pending=' + q7);
-ok('and it asks to log in again', (await p.locator('body').textContent()).includes('લોગિન'));
+ok('and it asks to log in again', (await p.locator('body').textContent()).includes('Log in'));
 
 await b.close();
 console.log(bad ? `\n\u2717 ${bad} FAILED` : '\n\u2713 ALL PASS');
