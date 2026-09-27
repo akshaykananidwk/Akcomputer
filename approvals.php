@@ -16,16 +16,16 @@ if (!is_full_admin()) {
 }
 $u = current_user();
 
-// ખર્ચની મંજૂરી. Approving WRITES the expense - until then it exists only as
+// ખર્ચની Approveી. Approving WRITES the expense - until then it exists only as
 // a request, so no report, no profit figure and no cash book has ever seen it.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'expense_decide') {
     $r = row("SELECT * FROM expense_requests WHERE id = ? AND status = 'pending'", [(int)post('id')]);
-    if (!$r) { flash('વિનંતી મળી નહીં અથવા નિર્ણય લેવાઈ ગયો છે.', 'error'); redirect('approvals.php'); }
+    if (!$r) { flash('Request not found, or already decided.', 'error'); redirect('approvals.php'); }
     if (post('decision') === 'reject') {
         q("UPDATE expense_requests SET status = 'rejected', decided_by = ?, decided_at = NOW(), decide_note = ? WHERE id = ?",
           [$u['id'], trim((string)post('note')), $r['id']]);
         log_activity('expense_request_reject', '₹' . money($r['amount']) . ' ' . $r['category']);
-        flash('ખર્ચ નામંજૂર — ચોપડામાં કંઈ ચડ્યું નથી.');
+        flash('Expense rejected — nothing went into the books.');
         redirect('approvals.php');
     }
     $d = json_decode($r['payload'], true) ?: [];
@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'expense_decide') {
     q("UPDATE expense_requests SET status = 'approved', decided_by = ?, decided_at = NOW(), expense_id = ?, decide_note = ? WHERE id = ?",
       [$u['id'], $eid, trim((string)post('note')), $r['id']]);
     log_activity('expense_request_approve', '₹' . money($r['amount']) . ' ' . $r['category']);
-    flash('ખર્ચ મંજૂર — ₹' . money($r['amount']) . ' ચોપડામાં ચડી ગયો.');
+    flash('Expense approved — Rs ' . money($r['amount']) . ' recorded in the books.');
     redirect('approvals.php');
 }
 
@@ -99,7 +99,7 @@ function er_diff($req) {
     if (array_key_exists('party_id', $p) && (int)$p['party_id'] !== (int)$doc['party_id']) {
         $oldP = $doc['party_id'] ? (val('SELECT name FROM parties WHERE id = ?', [$doc['party_id']]) ?: '#' . $doc['party_id']) : 'Walk-in';
         $newP = (int)$p['party_id'] ? (val('SELECT name FROM parties WHERE id = ?', [(int)$p['party_id']]) ?: '#' . (int)$p['party_id']) : 'Walk-in';
-        $out['fields'][] = ['પાર્ટી', $oldP, $newP];
+        $out['fields'][] = ['Party', $oldP, $newP];
     }
     if (array_key_exists('discount_val', $p)) {
         $oldT = $doc['discount_type'] ?: 'flat';
@@ -107,14 +107,14 @@ function er_diff($req) {
         $oldV = $oldT === 'pct' ? (float)($doc['discount_pct'] ?? 0) : (float)$doc['discount'];
         $newV = (float)$p['discount_val'];
         if ($oldT !== $newT || abs($oldV - $newV) > 0.009) {
-            $out['fields'][] = ['ડિસ્કાઉન્ટ', $oldT === 'pct' ? er_qty($oldV) . '%' : '₹' . money($oldV), $newT === 'pct' ? er_qty($newV) . '%' : '₹' . money($newV)];
+            $out['fields'][] = ['Discount', $oldT === 'pct' ? er_qty($oldV) . '%' : '₹' . money($oldV), $newT === 'pct' ? er_qty($newV) . '%' : '₹' . money($newV)];
         }
     }
     $map = $isPur
-        ? [['bill_no', 'Bill No', 's'], ['purchase_date', 'તારીખ', 'd'], ['paid', 'ચૂકવેલ', 'n'], ['notes', 'નોંધ', 's']]
-        : [['customer_name', 'ગ્રાહક નામ', 's'], ['customer_mobile', 'મોબાઈલ', 's'], ['sale_date', 'તારીખ', 'd'],
-           ['due_date', 'Due date', 'd'], ['payment_mode', 'પેમેન્ટ મોડ', 's'], ['paid', 'ચૂકવેલ', 'n'],
-           ['shipping', 'શિપિંગ', 'n'], ['adjustment', 'એડજસ્ટમેન્ટ', 'n'], ['notes', 'નોંધ', 's']];
+        ? [['bill_no', 'Bill No', 's'], ['purchase_date', 'Date', 'd'], ['paid', 'Paid', 'n'], ['notes', 'Note', 's']]
+        : [['customer_name', 'Customer name', 's'], ['customer_mobile', 'Mobile', 's'], ['sale_date', 'Date', 'd'],
+           ['due_date', 'Due date', 'd'], ['payment_mode', 'Payment mode', 's'], ['paid', 'Paid', 'n'],
+           ['shipping', 'Shipping', 'n'], ['adjustment', 'Adjustment', 'n'], ['notes', 'Note', 's']];
     foreach ($map as [$k, $label, $type]) {
         if (!array_key_exists($k, $p) || !array_key_exists($k, $doc)) continue;
         $old = $doc[$k]; $new = $p[$k];
@@ -157,8 +157,8 @@ function er_diff($req) {
             $out['items'][] = ['add', e($name) . ' × ' . er_qty($nl['qty']) . ' @ ₹' . money($nl['price'])];
         } elseif (abs($old[$iid]['qty'] - $nl['qty']) > 0.009 || abs($old[$iid]['price'] - $nl['price']) > 0.009) {
             $ch = [];
-            if (abs($old[$iid]['qty'] - $nl['qty']) > 0.009) $ch[] = 'જથ્થો ' . er_qty($old[$iid]['qty']) . ' → ' . er_qty($nl['qty']);
-            if (abs($old[$iid]['price'] - $nl['price']) > 0.009) $ch[] = 'ભાવ ₹' . money($old[$iid]['price']) . ' → ₹' . money($nl['price']);
+            if (abs($old[$iid]['qty'] - $nl['qty']) > 0.009) $ch[] = 'Qty ' . er_qty($old[$iid]['qty']) . ' → ' . er_qty($nl['qty']);
+            if (abs($old[$iid]['price'] - $nl['price']) > 0.009) $ch[] = 'Price Rs ' . money($old[$iid]['price']) . ' → ₹' . money($nl['price']);
             $out['items'][] = ['chg', e($name) . ': ' . implode(' · ', $ch)];
         } else {
             $out['same']++;
@@ -174,28 +174,28 @@ $page_title = 'Edit Approvals';
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="card">
-  <h2>🧾 ખર્ચની મંજૂરી બાકી (<?= count($expPending) ?>)</h2>
-  <p class="muted" style="font-size:13px">Settings માં નક્કી કરેલી રકમથી મોટો ખર્ચ સ્ટાફ નાખે તો સીધો ચોપડામાં નથી ચડતો — અહીં આવે છે. મંજૂર કરો ત્યારે જ ખર્ચ નોંધાય છે.</p>
-  <?php if (!$expPending): ?><p class="muted">🎉 કોઈ ખર્ચ મંજૂરી બાકી નથી.</p><?php endif; ?>
+  <h2>🧾 Expense approvals pending (<?= count($expPending) ?>)</h2>
+  <p class="muted" style="font-size:13px">An expense above the limit set in Settings does not go straight into the books when staff enter it — it comes here. It is recorded only when you approve it.</p>
+  <?php if (!$expPending): ?><p class="muted">🎉 No expense approvals pending.</p><?php endif; ?>
   <?php foreach ($expPending as $r): ?>
   <div class="list-row" style="display:block;cursor:default;border:1px solid rgba(128,128,128,.25);border-radius:12px;padding:12px;margin-bottom:10px">
     <div><strong>₹<?= money($r['amount']) ?></strong> · <?= e($r['category']) ?> · <?= dmy($r['exp_date']) ?></div>
     <div class="muted"><?= e($r['requester'] ?: '-') ?> · <?= dmyt($r['created_at']) ?><?= $r['reason'] ? ' · ' . e($r['reason']) : '' ?></div>
     <form method="post" class="page-actions" style="margin-top:8px">
       <?= csrf_field() ?><input type="hidden" name="do" value="expense_decide"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
-      <input type="text" name="note" placeholder="નોંધ (વૈકલ્પિક)" style="width:200px">
-      <button class="btn btn-sm btn-success" type="submit" name="decision" value="approve">✔ મંજૂર</button>
+      <input type="text" name="note" placeholder="Note (optional)" style="width:200px">
+      <button class="btn btn-sm btn-success" type="submit" name="decision" value="approve">✔ Approve</button>
       <button class="btn btn-sm btn-danger" type="submit" name="decision" value="reject"
-              onclick="return confirm('નામંજૂર કરવો છે?')">✕ નામંજૂર</button>
+              onclick="return confirm('Reject this?')">✕ Reject</button>
     </form>
   </div>
   <?php endforeach; ?>
   <?php if ($expDecided): ?>
-  <details><summary class="muted">છેલ્લા નિર્ણય</summary>
+  <details><summary class="muted">Recent decisions</summary>
     <table class="table-sm mt"><tbody>
     <?php foreach ($expDecided as $r): ?>
       <tr><td>₹<?= money($r['amount']) ?> · <?= e($r['category']) ?></td>
-          <td><span class="badge <?= $r['status'] === 'approved' ? 'badge-ok' : 'badge-bad' ?>"><?= $r['status'] === 'approved' ? 'મંજૂર' : 'નામંજૂર' ?></span></td>
+          <td><span class="badge <?= $r['status'] === 'approved' ? 'badge-ok' : 'badge-bad' ?>"><?= $r['status'] === 'approved' ? 'Approve' : 'Reject' ?></span></td>
           <td class="muted"><?= e($r['decider'] ?: '-') ?> · <?= $r['decided_at'] ? dmyt($r['decided_at']) : '-' ?></td></tr>
     <?php endforeach; ?>
     </tbody></table>
@@ -205,20 +205,20 @@ include __DIR__ . '/includes/header.php';
 
 <div class="card">
   <h2>⏳ Pending bill-edit approvals</h2>
-  <p class="muted" style="font-size:13px">24 કલાકથી જૂના બિલમાં સ્ટાફે કરેલા ફેરફાર અહીં આવે છે — Approve કરો એટલે ફેરફાર બિલમાં લાગુ થઈ જાય, Reject કરો એટલે બિલ જેમ છે એમ જ રહે.</p>
-  <?php if (!$pending): ?><p class="muted">🎉 કોઈ મંજૂરી બાકી નથી.</p><?php endif; ?>
+  <p class="muted" style="font-size:13px">Staff edits to bills older than 24 hours land here — Approve applies the change to the bill, Reject leaves the bill exactly as it is.</p>
+  <?php if (!$pending): ?><p class="muted">🎉 No approvals pending.</p><?php endif; ?>
   <?php foreach ($pending as $req): $doc = er_doc($req); $diff = er_diff($req); ?>
   <div class="list-row" style="display:block;cursor:default;border:1px solid rgba(128,128,128,.25);border-radius:12px;padding:12px;margin-bottom:10px">
     <div><strong><?= $req['doc_type'] === 'purchase' ? '📦 Purchase' : '🧾 Sale' ?>
-      <?php if ($doc): ?><a href="<?= e($doc['url']) ?>"><?= e($doc['no']) ?></a> · <?= e($doc['party']) ?> · હાલ ₹<?= money($doc['total']) ?><?php else: ?>#<?= (int)$req['doc_id'] ?> (bill deleted?)<?php endif; ?></strong>
-      <div class="muted list-row-sub"><?= e($req['requester']) ?> માંગે છે · <?= dmyt($req['created_at']) ?></div></div>
+      <?php if ($doc): ?><a href="<?= e($doc['url']) ?>"><?= e($doc['no']) ?></a> · <?= e($doc['party']) ?> · now Rs <?= money($doc['total']) ?><?php else: ?>#<?= (int)$req['doc_id'] ?> (bill deleted?)<?php endif; ?></strong>
+      <div class="muted list-row-sub"><?= e($req['requester']) ?> wants · <?= dmyt($req['created_at']) ?></div></div>
 
     <?php if ($diff['fields'] || $diff['items']): ?>
     <div style="margin-top:10px;background:var(--bg);border-radius:10px;padding:10px 12px;font-size:13.5px">
-      <strong>🔍 શું બદલાય છે?</strong>
+      <strong>🔍 What changes?</strong>
       <?php if ($diff['fields']): ?>
       <table class="table-sm" style="margin-top:6px">
-        <thead><tr><th></th><th>જૂનું</th><th>નવું</th></tr></thead>
+        <thead><tr><th></th><th>Old</th><th>New</th></tr></thead>
         <tbody>
         <?php foreach ($diff['fields'] as $f): ?>
         <tr><td class="muted"><?= e($f[0]) ?></td>
@@ -231,24 +231,24 @@ include __DIR__ . '/includes/header.php';
       <?php if ($diff['items']): ?>
       <div style="margin-top:6px">
         <?php foreach ($diff['items'] as [$kind, $txt]): ?>
-        <div style="margin:2px 0"><?= $kind === 'add' ? '<span style="color:var(--ok);font-weight:700">➕ નવી:</span>' : ($kind === 'del' ? '<span style="color:var(--bad);font-weight:700">➖ કાઢી:</span>' : '<span style="color:#d97706;font-weight:700">✏️ બદલી:</span>') ?> <?= $txt ?></div>
+        <div style="margin:2px 0"><?= $kind === 'add' ? '<span style="color:var(--ok);font-weight:700">➕ New:</span>' : ($kind === 'del' ? '<span style="color:var(--bad);font-weight:700">➖ Removed:</span>' : '<span style="color:#d97706;font-weight:700">✏️ Changed:</span>') ?> <?= $txt ?></div>
         <?php endforeach; ?>
-        <?php if ($diff['same']): ?><div class="muted" style="font-size:12.5px;margin-top:3px">બીજી <?= (int)$diff['same'] ?> આઇટમ એમની એમ જ છે.</div><?php endif; ?>
+        <?php if ($diff['same']): ?><div class="muted" style="font-size:12.5px;margin-top:3px">Other <?= (int)$diff['same'] ?> The items are unchanged.</div><?php endif; ?>
       </div>
       <?php endif; ?>
       <?php if ($diff['items'] && abs($diff['old_sum'] - $diff['new_sum']) > 0.009): ?>
-      <div style="margin-top:6px;font-weight:700">લાઈન ટોટલ: <span style="color:var(--bad);text-decoration:line-through">₹<?= money($diff['old_sum']) ?></span> → <span style="color:var(--ok)">₹<?= money($diff['new_sum']) ?></span> <span class="muted" style="font-weight:normal;font-size:12px">(ટેક્સ/ડિસ્કાઉન્ટ પહેલાં)</span></div>
+      <div style="margin-top:6px;font-weight:700">Line total: <span style="color:var(--bad);text-decoration:line-through">₹<?= money($diff['old_sum']) ?></span> → <span style="color:var(--ok)">₹<?= money($diff['new_sum']) ?></span> <span class="muted" style="font-weight:normal;font-size:12px">(before tax/discount)</span></div>
       <?php endif; ?>
     </div>
     <?php else: ?>
-    <div class="muted" style="margin-top:8px;font-size:13px">કોઈ દેખીતો ફેરફાર નથી — વિગત હાલના બિલ જેવી જ લાગે છે (કદાચ ફક્ત ફરી-સેવ છે).</div>
+    <div class="muted" style="margin-top:8px;font-size:13px">No visible change — the details look the same as the current bill (probably just a re-save).</div>
     <?php endif; ?>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-      <form method="post" onsubmit="return confirm('આ ફેરફાર બિલમાં લાગુ કરવો છે?')">
+      <form method="post" onsubmit="return confirm('Apply this change to the bill?')">
         <?= csrf_field() ?><input type="hidden" name="do" value="decide"><input type="hidden" name="id" value="<?= $req['id'] ?>"><input type="hidden" name="decision" value="approve">
         <button class="btn btn-sm" type="submit">✅ Approve &amp; Apply</button>
       </form>
-      <form method="post" onsubmit="return confirm('ફેરફાર નામંજૂર કરવો છે? બિલ જેમ છે એમ રહેશે.')">
+      <form method="post" onsubmit="return confirm('Reject this change? The bill stays exactly as it is.')">
         <?= csrf_field() ?><input type="hidden" name="do" value="decide"><input type="hidden" name="id" value="<?= $req['id'] ?>"><input type="hidden" name="decision" value="reject">
         <button class="btn btn-sm btn-outline" type="submit">✕ Reject</button>
       </form>

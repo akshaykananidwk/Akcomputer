@@ -589,23 +589,23 @@ function dash_actions(array $ctx) {
     $cs = $ctx['collection_sum'] ?? null;
     if (!empty($ctx['promises_broken'])) {
         $a[] = ['icon' => '❌', 'sev' => 'bad', 'group' => 'Collections',
-                'text' => $ctx['promises_broken'] . ' ગ્રાહકે આપેલો ચૂકવણીનો વાયદો પાળ્યો નથી',
-                'link' => 'collection.php', 'cta' => 'સંપર્ક કરો'];
+                'text' => $ctx['promises_broken'] . ' customers broke a payment promise',
+                'link' => 'collection.php', 'cta' => 'Get in touch'];
     }
     if (!empty($ctx['promises_due'])) {
         $a[] = ['icon' => '📅', 'sev' => 'info', 'group' => 'Collections',
-                'text' => $ctx['promises_due'] . ' ગ્રાહકે આજે પૈસા આપવાનું કહ્યું છે',
-                'link' => 'collection.php', 'cta' => 'યાદ કરાવો'];
+                'text' => $ctx['promises_due'] . ' customers said they would pay today',
+                'link' => 'collection.php', 'cta' => 'Remind'];
     }
     if ($cs && $cs['critical'] > 0) {
         $a[] = ['icon' => '🔴', 'sev' => 'bad', 'group' => 'Collections',
-                'text' => $cs['critical'] . ' ગ્રાહક પાસે તાત્કાલિક ઉઘરાણી કરવા જેવી છે — ₹' . money($cs['overdue']) . ' બાકી'
-                          . ($cs['contactable'] < $cs['customers'] ? ' (' . (int)$cs['contactable'] . ' ને અત્યારે મેસેજ કરી શકાય)' : ''),
-                'link' => 'collection.php', 'cta' => 'યાદી ખોલો'];
+                'text' => $cs['critical'] . ' customers should be chased for payment right away — Rs ' . money($cs['overdue']) . ' Outstanding'
+                          . ($cs['contactable'] < $cs['customers'] ? ' (' . (int)$cs['contactable'] . ' can be messaged right now)' : ''),
+                'link' => 'collection.php', 'cta' => 'Open the list'];
     } elseif ($col && $col['overdue_customers'] > 0) {
         $a[] = ['icon' => '💰', 'sev' => 'bad', 'group' => 'Collections',
-                'text' => $col['overdue_customers'] . ' ગ્રાહકોનું પેમેન્ટ મુદત વીતી ગયું છે — ₹' . money($col['overdue']) . ' ઉઘરાવવાનું બાકી',
-                'link' => 'collection.php', 'cta' => 'ઉઘરાણી કરો'];
+                'text' => $col['overdue_customers'] . ' customers are past their payment date — Rs ' . money($col['overdue']) . ' still to collect',
+                'link' => 'collection.php', 'cta' => 'Chase payment'];
     }
     // Stock actions point at Purchase Intelligence rather than the plain Low
     // Stock list: an owner opening this wants to ORDER, and that screen
@@ -613,32 +613,32 @@ function dash_actions(array $ctx) {
     $pi = $ctx['purchase'] ?? null;
     if ($stock && dash_n($stock, 'out')) {
         $a[] = ['icon' => '🚫', 'sev' => 'bad', 'group' => 'Stock',
-                'text' => dash_n($stock, 'out') . ' પ્રોડક્ટનો સ્ટોક ખલાસ થઈ ગયો છે',
-                'link' => 'purchase_intel.php', 'cta' => 'મંગાવો'];
+                'text' => dash_n($stock, 'out') . ' products are out of stock',
+                'link' => 'purchase_intel.php', 'cta' => 'Order'];
     }
     if ($pi && $pi['reorder_items'] > 0) {
         $a[] = ['icon' => '🛒', 'sev' => 'warn', 'group' => 'Purchases',
-                'text' => $pi['reorder_items'] . ' વસ્તુ ડિલિવરી આવે એ પહેલાં ખલાસ થઈ જશે — અંદાજે ₹' . money($pi['reorder_cost']) . ' નો ઓર્ડર',
-                'link' => 'purchase_intel.php', 'cta' => 'યાદી જુઓ'];
+                'text' => $pi['reorder_items'] . ' items will run out before the delivery arrives — roughly Rs ' . money($pi['reorder_cost']) . ' order',
+                'link' => 'purchase_intel.php', 'cta' => 'See the list'];
     } elseif ($stock && dash_n($stock, 'low')) {
         $a[] = ['icon' => '📉', 'sev' => 'warn', 'group' => 'Stock',
-                'text' => dash_n($stock, 'low') . ' પ્રોડક્ટ થોડા દિવસમાં ખલાસ થઈ જશે',
-                'link' => 'purchase_intel.php', 'cta' => 'ઓર્ડર કરો'];
+                'text' => dash_n($stock, 'low') . ' products will run out within a few days',
+                'link' => 'purchase_intel.php', 'cta' => 'Place an order'];
     }
     if ($pi && $pi['price_alerts'] > 0) {
         $a[] = ['icon' => '📈', 'sev' => 'warn', 'group' => 'Purchases',
-                'text' => $pi['price_alerts'] . ' વસ્તુના ખરીદ ભાવ વધ્યા છે',
-                'link' => 'purchase_intel.php?tab=price', 'cta' => 'તપાસો'];
+                'text' => $pi['price_alerts'] . ' items have gone up in cost',
+                'link' => 'purchase_intel.php?tab=price', 'cta' => 'Check'];
     }
     if ($pi && $pi['thin_margin'] > 0) {
         $a[] = ['icon' => '🏷️', 'sev' => 'warn', 'group' => 'Pricing',
-                'text' => $pi['thin_margin'] . ' વસ્તુ ટાર્ગેટ કરતાં પાતળા માર્જિને વેચાય છે',
-                'link' => 'purchase_intel.php?tab=margin', 'cta' => 'ભાવ સુધારો'];
+                'text' => $pi['thin_margin'] . ' items are selling on a thinner margin than the target',
+                'link' => 'purchase_intel.php?tab=margin', 'cta' => 'Fix the price'];
     }
     if ($stock && $stock['dead_value'] > 0.009) {
         $a[] = ['icon' => '🐌', 'sev' => 'warn', 'group' => 'Dead Stock',
-                'text' => '₹' . money($stock['dead_value']) . ' નો માલ ' . dash_dead_days() . '+ દિવસથી વેચાયો નથી',
-                'link' => 'reports.php?r=dead_stock', 'cta' => 'જુઓ'];
+                'text' => '₹' . money($stock['dead_value']) . ' of goods ' . dash_dead_days() . '+ days without a sale',
+                'link' => 'reports.php?r=dead_stock', 'cta' => 'See'];
     }
     // The margin and reorder lines that used to live here have moved above,
     // where they are driven by pi_summary() - which measures margin against
@@ -647,23 +647,23 @@ function dash_actions(array $ctx) {
     // delivery could arrive. Both send the owner somewhere they can act.
     if (!$pi && !empty($ctx['low_margin'])) {
         $a[] = ['icon' => '🏷️', 'sev' => 'warn', 'group' => 'Pricing',
-                'text' => count($ctx['low_margin']) . ' પ્રોડક્ટનું માર્જિન ટાર્ગેટ કરતાં નીચે છે',
-                'link' => 'reports.php?r=profit', 'cta' => 'ભાવ તપાસો'];
+                'text' => count($ctx['low_margin']) . ' products have a margin below target',
+                'link' => 'reports.php?r=profit', 'cta' => 'Check the price'];
     }
     if (!empty($ctx['repairs_ready'])) {
         $a[] = ['icon' => '🛠️', 'sev' => 'info', 'group' => 'Repairs',
-                'text' => $ctx['repairs_ready'] . ' રિપેર તૈયાર છે પણ ગ્રાહકને જાણ કરી નથી',
-                'link' => 'repairs.php', 'cta' => 'જાણ કરો'];
+                'text' => $ctx['repairs_ready'] . ' repairs are ready but the customer has not been told',
+                'link' => 'repairs.php', 'cta' => 'Tell them'];
     }
     if (!empty($ctx['new_orders'])) {
         $a[] = ['icon' => '🌐', 'sev' => 'info', 'group' => 'Orders',
-                'text' => $ctx['new_orders'] . ' નવા વેબસાઇટ ઓર્ડર આવ્યા છે',
-                'link' => 'web_orders.php', 'cta' => 'જુઓ'];
+                'text' => $ctx['new_orders'] . ' new website orders have come in',
+                'link' => 'web_orders.php', 'cta' => 'See'];
     }
     if (!empty($ctx['health_issues'])) {
         $a[] = ['icon' => '🩺', 'sev' => 'warn', 'group' => 'Data',
-                'text' => count($ctx['health_issues']) . ' ડેટા ચેકમાં ધ્યાન આપવા જેવું છે',
-                'link' => 'reports.php?r=health', 'cta' => 'તપાસો'];
+                'text' => count($ctx['health_issues']) . ' items in the data check need attention',
+                'link' => 'reports.php?r=health', 'cta' => 'Check'];
     }
     return $a;
 }
@@ -677,22 +677,22 @@ function dash_alerts(array $ctx) {
     if ($k && $prev) {
         $d = dash_delta($k['sales'], $prev['sales']);
         if ($d !== null && $d <= -20)
-            $al[] = ['sev' => 'bad', 'text' => 'વેચાણ ' . abs($d) . '% ઓછું છે (' . e($ctx['compare_label'] ?? '') . ' કરતાં)', 'link' => 'reports.php?r=daily'];
+            $al[] = ['sev' => 'bad', 'text' => 'Sales ' . abs($d) . '% down (' . e($ctx['compare_label'] ?? '') . ' than)', 'link' => 'reports.php?r=daily'];
         if ($d !== null && $d >= 20)
-            $al[] = ['sev' => 'ok', 'text' => 'વેચાણ ' . $d . '% વધ્યું છે (' . e($ctx['compare_label'] ?? '') . ' કરતાં)', 'link' => 'reports.php?r=daily'];
+            $al[] = ['sev' => 'ok', 'text' => 'Sales ' . $d . '% up (' . e($ctx['compare_label'] ?? '') . ' than)', 'link' => 'reports.php?r=daily'];
     }
     if ($k && $k['margin_pct'] > 0 && $k['margin_pct'] < (float)setting('target_margin_pct', 10))
-        $al[] = ['sev' => 'warn', 'text' => 'આ સમયગાળાનું માર્જિન ' . $k['margin_pct'] . '% — ટાર્ગેટ કરતાં નીચે', 'link' => 'reports.php?r=profit'];
+        $al[] = ['sev' => 'warn', 'text' => 'the margin for this period ' . $k['margin_pct'] . '% — below target', 'link' => 'reports.php?r=profit'];
     if (!empty($ctx['collection']) && $ctx['collection']['overdue'] > 0.009)
-        $al[] = ['sev' => 'bad', 'text' => '₹' . money($ctx['collection']['overdue']) . ' ની ઉઘરાણી મુદત વીતી ગઈ છે', 'link' => 'reports.php?r=aging'];
+        $al[] = ['sev' => 'bad', 'text' => '₹' . money($ctx['collection']['overdue']) . ' of receivables is past due', 'link' => 'reports.php?r=aging'];
     if (!empty($ctx['stock']) && dash_n($ctx['stock'], 'low') + dash_n($ctx['stock'], 'out') > 0)
-        $al[] = ['sev' => 'warn', 'text' => (dash_n($ctx['stock'], 'low') + dash_n($ctx['stock'], 'out')) . ' પ્રોડક્ટ રીઓર્ડર લેવલથી નીચે', 'link' => 'reports.php?r=low'];
+        $al[] = ['sev' => 'warn', 'text' => (dash_n($ctx['stock'], 'low') + dash_n($ctx['stock'], 'out')) . ' products are below their reorder level', 'link' => 'reports.php?r=low'];
     // only when purchase intelligence is not driving the Action Center -
     // otherwise the owner is told about rising prices twice on one screen
     if (empty($ctx['purchase']) && !empty($ctx['price_up']))
-        $al[] = ['sev' => 'warn', 'text' => count($ctx['price_up']) . ' પ્રોડક્ટના ખરીદ ભાવ વધ્યા છે', 'link' => 'reports.php?r=purchase'];
+        $al[] = ['sev' => 'warn', 'text' => count($ctx['price_up']) . ' products have gone up in cost', 'link' => 'reports.php?r=purchase'];
     if (!empty($ctx['health_issues']))
-        $al[] = ['sev' => 'warn', 'text' => 'Data Health Check માં ' . count($ctx['health_issues']) . ' warning', 'link' => 'reports.php?r=health'];
+        $al[] = ['sev' => 'warn', 'text' => 'in the Data Health Check ' . count($ctx['health_issues']) . ' warning', 'link' => 'reports.php?r=health'];
     return $al;
 }
 
@@ -738,26 +738,26 @@ function dash_summary(array $ctx) {
     $bits = [];
     $d = $prev ? dash_delta($k['sales'], $prev['sales']) : null;
     if ($k['sales'] <= 0.009) {
-        $bits[] = 'હજી સુધી કોઈ વેચાણ નોંધાયું નથી.';
+        $bits[] = 'No sales have been recorded yet.';
     } elseif ($d === null) {
-        $bits[] = 'વેચાણ ₹' . money($k['sales']) . ' (' . $k['bills'] . ' બિલ).';
+        $bits[] = 'Sales Rs ' . money($k['sales']) . ' (' . $k['bills'] . ' bills).';
     } else {
-        $word = $d >= 10 ? 'સારું છે' : ($d <= -10 ? 'ઓછું છે' : 'લગભગ સરખું છે');
-        $bits[] = 'વેચાણ ₹' . money($k['sales']) . ' — ' . $ctx['compare_label'] . ' કરતાં ' .
-                  ($d > 0 ? '↑' : ($d < 0 ? '↓' : '')) . abs($d) . '%, એટલે ' . $word . '.';
+        $word = $d >= 10 ? 'Good' : ($d <= -10 ? 'is lower' : 'about the same');
+        $bits[] = 'Sales Rs ' . money($k['sales']) . ' — ' . $ctx['compare_label'] . ' than ' .
+                  ($d > 0 ? '↑' : ($d < 0 ? '↓' : '')) . abs($d) . '%, so ' . $word . '.';
     }
     if (!empty($ctx['collection'])) {
         $c = $ctx['collection'];
-        if ($c['overdue'] > 0.009) $bits[] = 'ઉઘરાણી ₹' . money($c['overdue']) . ' પાછળ છે (' . $c['overdue_customers'] . ' ગ્રાહક).';
-        elseif ($c['total'] > 0.009) $bits[] = 'બાકી ₹' . money($c['total']) . ' છે, પણ કોઈની મુદત વીતી નથી.';
+        if ($c['overdue'] > 0.009) $bits[] = 'Receivable Rs ' . money($c['overdue']) . ' behind (' . $c['overdue_customers'] . ' customers).';
+        elseif ($c['total'] > 0.009) $bits[] = 'Due Rs ' . money($c['total']) . ' is outstanding, but none of it is overdue.';
     }
     if (!empty($ctx['stock'])) {
         $s = $ctx['stock'];
         $short = count($s['out']) + count($s['low']);
-        if ($short) $bits[] = $short . ' પ્રોડક્ટ ખલાસ થવાની નજીક છે.';
-        if ($s['dead_value'] > 0.009) $bits[] = '₹' . money($s['dead_value']) . ' નો માલ પડી રહ્યો છે.';
+        if ($short) $bits[] = $short . ' products are close to running out.';
+        if ($s['dead_value'] > 0.009) $bits[] = '₹' . money($s['dead_value']) . ' of goods is sitting unsold.';
     }
-    if ($k['profit'] > 0.009) $bits[] = 'નફો ₹' . money($k['profit']) . ' (' . $k['margin_pct'] . '%).';
+    if ($k['profit'] > 0.009) $bits[] = 'Profit Rs ' . money($k['profit']) . ' (' . $k['margin_pct'] . '%).';
     return implode(' ', $bits);
 }
 

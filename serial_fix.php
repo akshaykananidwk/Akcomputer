@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remove_serials') {
         $n += q("UPDATE item_serials SET status = 'adjusted_out' WHERE id = ? AND item_id = ? AND status = 'in_stock'", [$sidRow, $iid])->rowCount();
     }
     log_activity('serial_fix_remove', "item=$iid removed=$n");
-    flash($n ? "$n સિરિયલ સ્ટોકમાંથી કાઢ્યા (adjusted out) — સ્ટોકનો આંકડો બદલાયો નથી." : 'કોઈ સિરિયલ પસંદ નહોતો.', $n ? 'success' : 'error');
+    flash($n ? "$n serials taken out of stock (adjusted out) — the stock figure has not changed." : 'No serial was selected.', $n ? 'success' : 'error');
     redirect('serial_fix.php');
 }
 
@@ -44,11 +44,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'add_serials') {
     }
     log_activity('serial_fix_add', "item=$iid added=$n restored=" . count($restored) . ($liveBack ? ' live=' . implode('|', $liveBack) : ''));
     $bits = [];
-    if ($n) $bits[] = "$n નવા સિરિયલ ઉમેર્યા";
-    if ($restored) $bits[] = count($restored) . ' સિરિયલ પાછા સ્ટોકમાં લીધા';
-    if ($already) $bits[] = "$already પહેલેથી સ્ટોકમાં જ હતા";
-    $msg = $bits ? implode(', ', $bits) . ' — સ્ટોકનો આંકડો બદલાયો નથી.' : 'કોઈ નવો સિરિયલ નહોતો.';
-    if ($liveBack) $msg .= ' ⚠️ આ સિરિયલ બીજે નોંધાયેલા હતા અને હવે સ્ટોકમાં લીધા છે: ' . implode(', ', $liveBack) . '. બિલ સાથેની કડી કપાઈ ગઈ છે — ખાતરી કરી લેજો.';
+    if ($n) $bits[] = "$n new serials added";
+    if ($restored) $bits[] = count($restored) . ' serials taken back into stock';
+    if ($already) $bits[] = "$already were already in stock";
+    $msg = $bits ? implode(', ', $bits) . ' — the stock figure has not changed.' : 'There was no new serial.';
+    if ($liveBack) $msg .= ' ⚠️ These serials were recorded elsewhere and have now been taken into stock: ' . implode(', ', $liveBack) . '. The link to the bill has been cut — please check.';
     flash($msg, $bits ? 'success' : 'error');
     redirect('serial_fix.php');
 }
@@ -61,9 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'match_stock') {
     if (abs($delta) > 0.001) {
         adjust_stock($iid, stock_home_location(0, $iid), $delta, 'serial_fix', null, 'Stock matched to in-stock serial count');
         log_activity('serial_fix_match', "item=$iid delta=$delta");
-        flash('સ્ટોક ' . money($stockNow) . ' → ' . $serialCount . ' કરી દીધો (સિરિયલ પ્રમાણે).');
+        flash('Stock ' . money($stockNow) . ' → ' . $serialCount . ' done (as per the serials).');
     } else {
-        flash('સ્ટોક પહેલેથી સિરિયલ સાથે મળે છે.');
+        flash('Stock already agrees with the serials.');
     }
     redirect('serial_fix.php');
 }
@@ -78,20 +78,20 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="card">
   <h2>🔧 Serial ↔ Stock Repair</h2>
-  <p class="muted">જે આઇટમમાં "in stock" સિરિયલની સંખ્યા અને સ્ટોકનો આંકડો જુદા છે એ બધી અહીં છે. <strong>પહેલા ફિઝિકલ શેલ્ફ જુઓ</strong>, પછી નક્કી કરો:<br>
-  · જે સિરિયલ ખરેખર દુકાનમાં <strong>નથી</strong> (વેચાઈ ગયેલા) → ટિક કરીને <em>Remove</em> કરો<br>
-  · જે માલ પડ્યો છે પણ સિરિયલ નોંધાયો <strong>નથી</strong> → નીચે સિરિયલ ટાઈપ/સ્કેન કરીને <em>Add</em> કરો<br>
-  · સિરિયલ યાદી જ સાચી છે અને આંકડો ખોટો → <em>Match stock to serials</em> દબાવો (સ્ટોક એડજસ્ટ થાય છે, લેજરમાં નોંધ સાથે)</p>
+  <p class="muted">for items where "in stock" Everything where the serial count and the stock figure disagree is here. <strong>Check the physical shelf first</strong>, then decide:<br>
+  · serials really in the shop <strong>no</strong> (already sold) → tick them and <em>Remove</em> Do<br>
+  · goods on the shelf whose serial was not recorded <strong>no</strong> → type or scan the serials below and <em>Add</em> Do<br>
+  · the serial list is right and the figure is wrong → <em>Match stock to serials</em> press it (stock is adjusted, with a note in the ledger)</p>
 </div>
 <?php if (!$items): ?>
-<div class="card"><p>✅ બધી સિરિયલવાળી આઇટમમાં સિરિયલ અને સ્ટોક બરાબર મળે છે — કંઈ સુધારવાનું નથી.</p></div>
+<div class="card"><p>✅ For every serial-tracked item the serials and the stock figure agree — nothing to fix.</p></div>
 <?php endif; ?>
 <?php foreach ($items as $it):
     $serials = all("SELECT id, serial_no, created_at FROM item_serials WHERE item_id = ? AND status = 'in_stock' ORDER BY id", [$it['id']]); ?>
 <div class="card">
   <h3><a href="item_view.php?id=<?= $it['id'] ?>"><?= e($it['name']) ?></a></h3>
-  <p>સ્ટોકનો આંકડો: <strong><?= 0 + $it['stock_qty'] ?></strong> · In-stock સિરિયલ: <strong><?= (int)$it['serial_cnt'] ?></strong>
-    <span class="badge badge-bad">ફેર: <?= 0 + ($it['serial_cnt'] - $it['stock_qty']) ?></span></p>
+  <p>Stock figure: <strong><?= 0 + $it['stock_qty'] ?></strong> · In-stock serials: <strong><?= (int)$it['serial_cnt'] ?></strong>
+    <span class="badge badge-bad">Diff: <?= 0 + ($it['serial_cnt'] - $it['stock_qty']) ?></span></p>
   <?php if ($serials): ?>
   <form method="post">
     <?= csrf_field() ?>
@@ -101,20 +101,20 @@ include __DIR__ . '/includes/header.php';
       <label class="sp-row"><input type="checkbox" name="serial_ids[]" value="<?= $s['id'] ?>"> <?= e($s['serial_no']) ?> <span class="muted">(<?= dmy($s['created_at']) ?>)</span></label>
       <?php endforeach; ?>
     </div>
-    <button class="btn btn-sm btn-danger mt" type="submit" onclick="return confirm('ટિક કરેલા સિરિયલ સ્ટોકમાંથી નીકળી જશે (adjusted out). ચાલુ રાખવું?')">🗑 ટિક કરેલા સિરિયલ Remove કરો</button>
+    <button class="btn btn-sm btn-danger mt" type="submit" onclick="return confirm('The ticked serials will be taken out of stock (adjusted out). Continue?')">🗑 Remove the ticked serials</button>
   </form>
   <?php endif; ?>
   <form method="post" class="mt">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="add_serials"><input type="hidden" name="item_id" value="<?= $it['id'] ?>">
-    <label>ખૂટતા સિરિયલ ઉમેરો (એક લાઇનમાં એક — બારકોડ ગનથી સ્કેન પણ ચાલે)</label>
+    <label>Add the missing serials (one per line — a barcode gun works too)</label>
     <textarea name="serials" rows="2" placeholder="SN001&#10;SN002"></textarea>
     <button class="btn btn-sm mt" type="submit">➕ Add serials</button>
   </form>
   <form method="post" class="mt">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="match_stock"><input type="hidden" name="item_id" value="<?= $it['id'] ?>">
-    <button class="btn btn-sm btn-outline" type="submit" onclick="return confirm('સ્ટોકનો આંકડો <?= (int)$it['serial_cnt'] ?> કરી દેવો (સિરિયલ પ્રમાણે)?')">⚖️ Match stock to serials (<?= 0 + $it['stock_qty'] ?> → <?= (int)$it['serial_cnt'] ?>)</button>
+    <button class="btn btn-sm btn-outline" type="submit" onclick="return confirm('Stock figure <?= (int)$it['serial_cnt'] ?> set it (as per the serials)?')">⚖️ Match stock to serials (<?= 0 + $it['stock_qty'] ?> → <?= (int)$it['serial_cnt'] ?>)</button>
   </form>
 </div>
 <?php endforeach; ?>

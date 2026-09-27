@@ -32,17 +32,17 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'inst_ma
     $n = (int)post('inst_count');
     $gap = max(1, (int)post('inst_gap'));
     if ($n < 2 || $n > 60) {
-        flash('હપ્તા 2 થી 60 વચ્ચે રાખો.', 'error');
+        flash('Keep instalments between 2 and 60.', 'error');
     } else {
         installment_create($id, $n, $gap, post('inst_start') ?: $sale['sale_date']);
         log_activity('installments', $sale['invoice_no'] . " x$n");
-        flash($n . ' હપ્તા બનાવી દીધા — દરેક તારીખે ગ્રાહકને આપોઆપ યાદ અપાશે.');
+        flash($n . ' Instalments created — the customer is reminded automatically on each date.');
     }
     redirect('sale_view.php?id=' . $id);
 }
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'inst_clear' && can('payments.add')) {
     q('DELETE FROM installments WHERE sale_id = ?', [$id]);
-    flash('હપ્તાનું આયોજન કાઢી નાખ્યું.');
+    flash('Instalment plan deleted.');
     redirect('sale_view.php?id=' . $id);
 }
 
@@ -54,13 +54,13 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'inst_cl
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signature' && can('sales.edit')) {
     $data = (string)post('sig');
     if (!preg_match('#^data:image/png;base64,([A-Za-z0-9+/=]+)$#', $data, $m)) {
-        flash('સહી બરાબર આવી નથી — ફરી પ્રયત્ન કરો.', 'error');
+        flash('The signature did not come through — please try again.', 'error');
         redirect('sale_view.php?id=' . $id);
     }
     $png = base64_decode($m[1], true);
     // a signature is a few KB; anything much larger is not a signature
     if ($png === false || strlen($png) > 400000 || substr($png, 0, 8) !== "\x89PNG\r\n\x1a\n") {
-        flash('સહી બરાબર આવી નથી — ફરી પ્રયત્ન કરો.', 'error');
+        flash('The signature did not come through — please try again.', 'error');
         redirect('sale_view.php?id=' . $id);
     }
     $dir = __DIR__ . '/uploads/signatures';
@@ -70,14 +70,14 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signatu
     if (!empty($sale['signature']) && is_file($dir . '/' . basename($sale['signature']))) unlink($dir . '/' . basename($sale['signature']));
     q('UPDATE sales SET signature = ? WHERE id = ?', [$name, $id]);
     log_activity('sale_signature', $sale['invoice_no']);
-    flash('સહી સાચવી લીધી.');
+    flash('Signature saved.');
     redirect('sale_view.php?id=' . $id);
 }
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signature_clear' && can('sales.edit')) {
     $f = __DIR__ . '/uploads/signatures/' . basename((string)$sale['signature']);
     if ($sale['signature'] && is_file($f)) unlink($f);
     q('UPDATE sales SET signature = NULL WHERE id = ?', [$id]);
-    flash('સહી કાઢી નાખી.');
+    flash('Signature cleared.');
     redirect('sale_view.php?id=' . $id);
 }
 
@@ -158,7 +158,7 @@ if (!$public) {
 $page_title = 'Invoice ' . $sale['invoice_no'];
 include __DIR__ . '/includes/header.php';
 if ($pendEditReq) {
-    echo '<div class="flash flash-info no-print">⏳ ' . e($pendEditReq['requester']) . ' નો ફેરફાર એડમિન મંજૂરી માટે બાકી છે (' . dmyt($pendEditReq['created_at']) . ').'
+    echo '<div class="flash flash-info no-print">⏳ ' . e($pendEditReq['requester']) . ' changes are waiting for admin approval (' . dmyt($pendEditReq['created_at']) . ').'
        . (is_full_admin() ? ' <a href="approvals.php">Review →</a>' : '') . '</div>';
 }
 $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
@@ -169,8 +169,8 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
 <script>
 function copyPay() {
   var u = <?= json_encode(invoice_pay_url($sale)) ?>;
-  if (navigator.clipboard) navigator.clipboard.writeText(u).then(function () { alert('લિંક કૉપી થઈ:\n' + u); }, function () { window.prompt('આ લિંક કૉપી કરો:', u); });
-  else window.prompt('આ લિંક કૉપી કરો:', u);
+  if (navigator.clipboard) navigator.clipboard.writeText(u).then(function () { alert('Link copied:\n' + u); }, function () { window.prompt('Copy this link:', u); });
+  else window.prompt('Copy this link:', u);
 }
 </script>
 <?php endif; ?>
@@ -178,8 +178,8 @@ function copyPay() {
   <a class="btn" href="sale_pdf.php?id=<?= $id ?>" target="_blank" rel="noopener">🖨️ Print / PDF</a>
   <?php $payUrl = ($sale['total'] - $sale['paid']) > 0.009 ? invoice_pay_url($sale) : null; ?>
   <?php if ($payUrl): ?>
-    <a class="btn btn-outline" href="<?= e($payUrl) ?>" target="_blank" rel="noopener">💳 પેમેન્ટ લિંક ખોલો</a>
-    <button class="btn btn-outline" type="button" onclick="copyPay()">🔗 લિંક કૉપી કરો</button>
+    <a class="btn btn-outline" href="<?= e($payUrl) ?>" target="_blank" rel="noopener">💳 Open the payment link</a>
+    <button class="btn btn-outline" type="button" onclick="copyPay()">🔗 Copy the link</button>
   <?php endif; ?>
   <form method="post" style="display:inline-flex;gap:6px">
     <?= csrf_field() ?>
@@ -198,7 +198,7 @@ function copyPay() {
   <a class="btn btn-outline" href="sales.php">← Back</a>
   <?php if (can('sales.edit') && !$sale['is_cancelled']): ?>
   <a class="btn btn-outline" href="sales.php?action=edit&id=<?= $id ?>">✏️ Edit</a>
-  <?php if (can('sales.add')): ?><a class="btn btn-outline" href="sales.php?action=new&copy=<?= $id ?>" title="આ જ પાર્ટી+આઇટમ સાથે નવું બિલ">🧬 Duplicate</a><?php endif; ?>
+  <?php if (can('sales.add')): ?><a class="btn btn-outline" href="sales.php?action=new&copy=<?= $id ?>" title="A new bill with the same party and items">🧬 Duplicate</a><?php endif; ?>
   <?php endif; ?>
   <?php if (can('sales.delete')): ?>
   <?php if (!$sale['is_cancelled']): ?>
@@ -239,10 +239,10 @@ function copyPay() {
 $planPub = $public ? installment_plan($id) : [];
 if ($planPub): ?>
 <div class="card">
-  <h3>📆 તમારા હપ્તા</h3>
+  <h3>📆 Your instalments</h3>
   <div class="table-wrap" style="box-shadow:none">
     <table class="table-sm">
-      <thead><tr><th>હપ્તો</th><th>તારીખ</th><th class="num">રકમ</th><th class="num">બાકી</th><th></th></tr></thead>
+      <thead><tr><th>Instalment</th><th>Date</th><th class="num">Amount</th><th class="num">Due</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($planPub as $ins): ?>
         <tr>
@@ -250,7 +250,7 @@ if ($planPub): ?>
           <td class="num">₹<?= money($ins['amount']) ?></td>
           <td class="num">₹<?= money($ins['pending']) ?></td>
           <td><span class="badge <?= $ins['state'] === 'paid' ? 'badge-ok' : ($ins['state'] === 'late' ? 'badge-bad' : 'badge-info') ?>">
-            <?= $ins['state'] === 'paid' ? 'ભરાઈ ગયો' : ($ins['state'] === 'late' ? 'મોડો' : 'બાકી') ?></span></td>
+            <?= $ins['state'] === 'paid' ? 'filled' : ($ins['state'] === 'late' ? 'Late' : 'Due') ?></span></td>
         </tr>
       <?php endforeach; ?>
       </tbody>
@@ -261,11 +261,11 @@ if ($planPub): ?>
 
 <?php if (!$public && can('payments.add') && !$sale['is_cancelled']): $plan = installment_plan($id); ?>
 <div class="card no-print">
-  <h3>📆 હપ્તા</h3>
+  <h3>📆 Instalments</h3>
   <?php if ($plan): ?>
     <div class="table-wrap" style="box-shadow:none">
       <table class="table-sm">
-        <thead><tr><th>હપ્તો</th><th>તારીખ</th><th class="num">રકમ</th><th class="num">ભરાયા</th><th class="num">બાકી</th><th>સ્થિતિ</th></tr></thead>
+        <thead><tr><th>Instalment</th><th>Date</th><th class="num">Amount</th><th class="num">filled</th><th class="num">Due</th><th>Status</th></tr></thead>
         <tbody>
         <?php foreach ($plan as $ins): ?>
           <tr>
@@ -275,24 +275,24 @@ if ($planPub): ?>
             <td class="num">₹<?= money($ins['paid']) ?></td>
             <td class="num">₹<?= money($ins['pending']) ?></td>
             <td><span class="badge <?= $ins['state'] === 'paid' ? 'badge-ok' : ($ins['state'] === 'late' ? 'badge-bad' : 'badge-info') ?>">
-              <?= $ins['state'] === 'paid' ? 'ભરાઈ ગયો' : ($ins['state'] === 'late' ? 'મોડો' : 'બાકી') ?></span></td>
+              <?= $ins['state'] === 'paid' ? 'filled' : ($ins['state'] === 'late' ? 'Late' : 'Due') ?></span></td>
           </tr>
         <?php endforeach; ?>
         </tbody>
       </table>
     </div>
-    <form method="post" style="margin-top:8px" onsubmit="return confirm('હપ્તાનું આયોજન કાઢી નાખવું?')">
+    <form method="post" style="margin-top:8px" onsubmit="return confirm('Delete the instalment plan?')">
       <?= csrf_field() ?><input type="hidden" name="do" value="inst_clear">
-      <button class="btn btn-sm btn-muted" type="submit">આયોજન કાઢો</button>
+      <button class="btn btn-sm btn-muted" type="submit">Delete the plan</button>
     </form>
   <?php else: ?>
-    <p class="muted">મોટું બિલ ભાગે-ભાગે લેવાનું હોય તો હપ્તા બનાવો. દરેક હપ્તાની તારીખે ગ્રાહકને આપોઆપ યાદ અપાશે.</p>
+    <p class="muted">Set up instalments when a big bill is to be collected in parts. The customer is reminded automatically on each instalment date.</p>
     <form method="post" class="form-row cols-4">
       <?= csrf_field() ?><input type="hidden" name="do" value="inst_make">
-      <div><label>કેટલા હપ્તા</label><input type="number" min="2" max="60" name="inst_count" value="3" required></div>
-      <div><label>કેટલા દિવસે એક</label><input type="number" min="1" name="inst_gap" value="30" required></div>
-      <div><label>ક્યારથી ગણવું</label><input type="date" name="inst_start" value="<?= e($sale['sale_date']) ?>"></div>
-      <div style="align-self:end"><button class="btn btn-sm" type="submit">હપ્તા બનાવો</button></div>
+      <div><label>How many instalments</label><input type="number" min="2" max="60" name="inst_count" value="3" required></div>
+      <div><label>Every how many days</label><input type="number" min="1" name="inst_gap" value="30" required></div>
+      <div><label>Count from when</label><input type="date" name="inst_start" value="<?= e($sale['sale_date']) ?>"></div>
+      <div style="align-self:end"><button class="btn btn-sm" type="submit">Create instalments</button></div>
     </form>
   <?php endif; ?>
 </div>
@@ -300,22 +300,22 @@ if ($planPub): ?>
 
 <?php if (!$public && can('sales.edit')): ?>
 <div class="card no-print">
-  <h3>✍️ ગ્રાહકની સહી</h3>
+  <h3>✍️ Customer signature</h3>
   <?php if (!empty($sale['signature']) && is_file(__DIR__ . '/uploads/signatures/' . basename($sale['signature']))): ?>
     <img src="<?= e(base_url('uploads/signatures/' . $sale['signature'])) ?>" alt="signature"
          style="max-width:320px;border:1px solid var(--line);border-radius:8px;background:#fff">
-    <form method="post" onsubmit="return confirm('સહી કાઢી નાખવી?')" style="margin-top:8px">
+    <form method="post" onsubmit="return confirm('Clear the signature?')" style="margin-top:8px">
       <?= csrf_field() ?><input type="hidden" name="do" value="signature_clear">
-      <button class="btn btn-sm btn-muted" type="submit">સહી કાઢો / ફરી લો</button>
+      <button class="btn btn-sm btn-muted" type="submit">Clear / redo the signature</button>
     </form>
   <?php else: ?>
-    <p class="muted">માલ લેનાર આંગળીથી અહીં સહી કરે — બિલ સાથે સચવાઈ જશે અને પ્રિન્ટમાં પણ આવશે.</p>
+    <p class="muted">The person collecting signs here with a finger — it is saved with the bill and appears on the print.</p>
     <canvas id="sigPad" width="600" height="180"
             style="border:1px dashed var(--line);border-radius:8px;background:#fff;touch-action:none;max-width:100%"></canvas>
     <form method="post" id="sigForm" style="margin-top:8px">
       <?= csrf_field() ?><input type="hidden" name="do" value="signature"><input type="hidden" name="sig" id="sigData">
-      <button class="btn btn-sm" type="submit">સહી સાચવો</button>
-      <button class="btn btn-sm btn-outline" type="button" onclick="sigClear()">ભૂંસો</button>
+      <button class="btn btn-sm" type="submit">Save the signature</button>
+      <button class="btn btn-sm btn-outline" type="button" onclick="sigClear()">Clear</button>
     </form>
     <script>
     (function () {
@@ -335,7 +335,7 @@ if ($planPub): ?>
       ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(function (e) { c.addEventListener(e, end); });
       window.sigClear = function () { ctx.clearRect(0, 0, c.width, c.height); used = false; };
       document.getElementById('sigForm').addEventListener('submit', function (ev) {
-        if (!used) { ev.preventDefault(); alert('પહેલાં સહી કરો.'); return; }
+        if (!used) { ev.preventDefault(); alert('Please sign first.'); return; }
         document.getElementById('sigData').value = c.toDataURL('image/png');
       });
     })();

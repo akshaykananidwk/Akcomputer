@@ -142,19 +142,19 @@ include __DIR__ . '/includes/header.php';
 ?>
 <?php if ($reorder && $reorder['needed']): ?>
 <div class="card" style="border-left:4px solid var(--warn)">
-  <h3 style="margin:0 0 6px">🛒 આ વસ્તુ મંગાવવા જેવી છે</h3>
+  <h3 style="margin:0 0 6px">🛒 This is worth ordering</h3>
   <p class="muted" style="margin:0 0 8px;font-size:13px">
-    અત્યારે <strong><?= (float)$reorder['stock'] ?> <?= e($reorder['unit']) ?></strong> છે,
-    રોજ આશરે <strong><?= $reorder['per_day'] ?></strong> વેચાય છે
-    <?php if ($reorder['days_left'] !== null): ?>— એટલે લગભગ <strong><?= (int)$reorder['days_left'] ?> દિવસ</strong> ચાલશે<?php endif; ?>,
-    અને ડિલિવરીમાં <strong><?= (int)$reorder['lead_days'] ?> દિવસ</strong> લાગે છે.
-    સૂચવેલો ઓર્ડર: <strong><?= (int)$reorder['suggest_qty'] ?> <?= e($reorder['unit']) ?></strong>.
+    right now <strong><?= (float)$reorder['stock'] ?> <?= e($reorder['unit']) ?></strong> ,
+    about per day <strong><?= $reorder['per_day'] ?></strong> sells
+    <?php if ($reorder['days_left'] !== null): ?>— so roughly <strong><?= (int)$reorder['days_left'] ?> days</strong> works too<?php endif; ?>,
+    and delivery takes <strong><?= (int)$reorder['lead_days'] ?> days</strong> it seems.
+    Suggested order: <strong><?= (int)$reorder['suggest_qty'] ?> <?= e($reorder['unit']) ?></strong>.
     <?php if ($reorder['best_supplier']): ?>
-      સૌથી સસ્તું <a href="parties.php?action=ledger&id=<?= (int)$reorder['best_supplier']['party_id'] ?>"><?= e($reorder['best_supplier']['name']) ?></a>
-      પાસે ₹<?= money($reorder['best_supplier']['best_price']) ?> માં મળ્યું હતું.
+      Cheapest <a href="parties.php?action=ledger&id=<?= (int)$reorder['best_supplier']['party_id'] ?>"><?= e($reorder['best_supplier']['name']) ?></a>
+      holds Rs <?= money($reorder['best_supplier']['best_price']) ?> it was found in.
     <?php endif; ?>
   </p>
-  <a class="btn btn-sm" href="purchase_intel.php">🛒 મંગાવવાની આખી યાદી</a>
+  <a class="btn btn-sm" href="purchase_intel.php">🛒 The full buying list</a>
 </div>
 <?php endif; ?>
 
@@ -183,7 +183,7 @@ include __DIR__ . '/includes/header.php';
   <?php $transit = stock_in_transit($item['id']); $transitQty = 0;
         foreach ($transit as $t) $transitQty += (float)$t['qty'];
         if ($transitQty > 0): ?>
-  <div class="stat s-warn"><div class="stat-label">રસ્તામાં (સ્વીકારવાનું બાકી)</div>
+  <div class="stat s-warn"><div class="stat-label">In transit (awaiting acceptance)</div>
     <div class="stat-value"><?= rtrim(rtrim(number_format($transitQty, 2), '0'), '.') ?> <?= e($item['unit']) ?></div></div>
   <?php endif; ?>
   <?php endif; ?>
@@ -191,14 +191,14 @@ include __DIR__ . '/includes/header.php';
 
 <?php if (!$isService && !empty($transit)): ?>
 <div class="card">
-  <h3>⏳ રસ્તામાં પડેલો માલ</h3>
+  <h3>⏳ Goods in transit</h3>
   <p class="muted mb" style="font-size:13px">
-    હેન્ડઓવર બનતાં જ માલ મોકલનારી જગ્યામાંથી <b>ઓછો થઈ જાય છે</b>, અને સામેવાળો OTP થી સ્વીકારે
-    ત્યારે જ એની જગ્યાએ ઉમેરાય છે. વચ્ચેના સમયમાં એ <b>કોઈ પણ જગ્યાના સ્ટોકમાં ગણાતો નથી</b> —
-    એટલે એ ખોવાયો નથી, અહીં નીચે જ છે.
+    The moment a handover is created, the goods leave the sending location <b>goes down</b>, and the other side accepts with an OTP
+    is added at its destination only then. In between it <b>is not counted in the stock of any location</b> —
+    so it is not lost, it is right here below.
   </p>
   <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
-    <thead><tr><th>હેન્ડઓવર</th><th class="num">નંગ</th><th>ક્યાંથી</th><th>કોની પાસે જવાનું</th><th>ક્યારથી</th></tr></thead>
+    <thead><tr><th>Handover</th><th class="num">Qty</th><th>From where</th><th>Who to go to</th><th>From when</th></tr></thead>
     <tbody>
     <?php foreach ($transit as $t): ?>
       <tr>
@@ -206,7 +206,7 @@ include __DIR__ . '/includes/header.php';
         <td class="num"><?= rtrim(rtrim(number_format((float)$t['qty'], 2), '0'), '.') ?></td>
         <td class="muted"><?= e($t['from_loc']) ?></td>
         <td><?= e(transit_destination($t)) ?></td>
-        <td class="muted"><?= dmy($t['created_at']) ?> (<?= (int)days_between(date('Y-m-d', strtotime($t['created_at']))) ?> દિવસ)</td>
+        <td class="muted"><?= dmy($t['created_at']) ?> (<?= (int)days_between(date('Y-m-d', strtotime($t['created_at']))) ?> days)</td>
       </tr>
     <?php endforeach; ?>
     </tbody>
@@ -231,7 +231,7 @@ include __DIR__ . '/includes/header.php';
 
 <?php if ($suppHist): ?>
 <div class="card">
-  <h3>🏷️ Supplier Price Comparison <span class="muted" style="font-weight:normal;font-size:12px">— આ આઇટમ કોણ કેટલામાં આપે છે</span></h3>
+  <h3>🏷️ Supplier Price Comparison <span class="muted" style="font-weight:normal;font-size:12px">— who supplies this item and at what price</span></h3>
   <div class="table-wrap" style="box-shadow:none">
   <table>
     <thead><tr><th>Supplier</th><th class="num">Last Price</th><th class="num">Lowest Ever</th><th class="num">Bought</th><th>Last Purchase</th><th></th></tr></thead>
@@ -243,7 +243,7 @@ include __DIR__ . '/includes/header.php';
       <td class="num">₹<?= money($sh['min_price']) ?></td>
       <td class="num"><?= (float)$sh['qty'] ?> (<?= (int)$sh['bills'] ?> bill<?= $sh['bills'] > 1 ? 's' : '' ?>)</td>
       <td><?= dmy($sh['last_date']) ?></td>
-      <td><?= $i2 === 0 && count($suppHist) > 1 ? '<span class="badge badge-ok">💰 સૌથી સસ્તું</span>' : '' ?></td>
+      <td><?= $i2 === 0 && count($suppHist) > 1 ? '<span class="badge badge-ok">💰 Cheapest</span>' : '' ?></td>
     </tr>
     <?php endforeach; ?>
     </tbody>
@@ -276,7 +276,7 @@ include __DIR__ . '/includes/header.php';
         <td><strong><?= e($sn['serial_no']) ?></strong></td>
         <td><span class="badge <?= $sn['status'] === 'in_stock' ? 'badge-ok' : ($sn['status'] === 'sold' ? 'badge-info' : 'badge-bad') ?>"><?= e($sn['status']) ?></span></td>
         <td><?php if ($sn['loc_name']): ?><?= e($sn['loc_name']) ?>
-            <?php elseif ($sn['status'] === 'in_stock'): ?><span class="badge badge-bad" title="આ સિરિયલ સ્ટોકમાં ગણાય છે પણ કોઈ લોકેશનમાં નથી — બિલ કે રિટર્નમાં પસંદ નહીં થઈ શકે. Serial/Stock Repair ટૂલથી સુધારો.">લોકેશન નથી ⚠</span>
+            <?php elseif ($sn['status'] === 'in_stock'): ?><span class="badge badge-bad" title="These serials count as in stock but sit at no location — they cannot be picked on a bill or a return. Fix them with the Serial/Stock Repair tool.">No location ⚠</span>
             <?php else: ?><span class="muted">-</span><?php endif; ?></td>
         <td><?= $sn['purchase_date'] ? dmy($sn['purchase_date']) . ($sn['pid'] ? ' · <a href="purchase_view.php?id=' . $sn['pid'] . '">' . e($sn['bill_no'] ?: '#' . $sn['pid']) . '</a>' : '') : '<span class="muted">-</span>' ?></td>
         <td><?= $sn['sale_date'] ? dmy($sn['sale_date']) . ($sn['sid'] ? ' · <a href="sale_view.php?id=' . $sn['sid'] . '">' . e($sn['invoice_no']) . '</a>' : '') : '<span class="muted">-</span>' ?></td>

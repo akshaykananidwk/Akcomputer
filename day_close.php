@@ -1,5 +1,5 @@
 <?php
-// દિવસનું ક્લોઝિંગ - count the drawer, put it next to what the books say.
+// Day closing - count the drawer, put it next to what the books say.
 //
 // The whole screen is a comparison of two numbers: what the cash rule says
 // should be in the drawer at the end of this date, and what was physically
@@ -17,7 +17,7 @@ $u = current_user();
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('dayclose.add');
     $date = post('close_date', today());
-    if ($date > today()) { flash('આવતી કાલનું ક્લોઝિંગ આજે ન થાય.', 'error'); redirect('day_close.php'); }
+    if ($date > today()) { flash('Tomorrow cannot be closed today.', 'error'); redirect('day_close.php'); }
     if (is_period_locked($date)) { flash(period_lock_message(), 'error'); redirect('day_close.php'); }
 
     // the count is rebuilt from the note boxes on the server - a total typed
@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         q("INSERT INTO money_transfers (txn_type, amount, adjust_dir, from_user_id, txn_date, notes, status, created_by)
            VALUES ('cash_adjust', ?, ?, ?, ?, ?, 'done', ?)",
           [abs($diff), $diff > 0 ? 'add' : 'reduce', $u['id'], $date,
-           'દિવસ ક્લોઝિંગ ' . dmy($date) . ' — ગણતરીનો ફરક', $u['id']]);
+           'days closed ' . dmy($date) . ' — counting difference', $u['id']]);
         $adjustId = insert_id();
     }
 
@@ -54,11 +54,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
          adjust_id = COALESCE(VALUES(adjust_id), adjust_id), closed_by = VALUES(closed_by)",
       [$date, money_r($counted), $f['expected'], $diff, implode(',', $denoms), trim((string)post('notes')), $adjustId, $u['id']]);
 
-    log_activity('day_close', dmy($date) . ' ગણ્યા ₹' . money($counted) . ' / ચોપડે ₹' . money($f['expected'])
-        . ' ફરક ₹' . money($diff) . ($adjustId ? ' (સરખું કર્યું)' : ''));
+    log_activity('day_close', dmy($date) . ' Counted Rs ' . money($counted) . ' / books Rs ' . money($f['expected'])
+        . ' Difference Rs ' . money($diff) . ($adjustId ? ' (squared off)' : ''));
     flash(abs($diff) <= 0.009
-        ? '✅ ' . dmy($date) . ' — ગલ્લો અને ચોપડો બરાબર મળે છે.'
-        : '⚠️ ' . dmy($date) . ' — ફરક ₹' . money(abs($diff)) . ' ' . ($diff > 0 ? 'વધારે' : 'ઓછા') . ' છે.',
+        ? '✅ ' . dmy($date) . ' — the till and the books agree.'
+        : '⚠️ ' . dmy($date) . ' — difference Rs ' . money(abs($diff)) . ' ' . ($diff > 0 ? 'more' : 'fewer') . ' .',
         abs($diff) <= 0.009 ? 'success' : 'error');
     redirect('day_close.php?d=' . $date);
 }
@@ -76,50 +76,50 @@ $openDays = (int)val("SELECT COUNT(DISTINCT d) FROM (
         UNION SELECT exp_date FROM expenses WHERE mode='cash' AND exp_date < ? AND exp_date >= DATE_SUB(?, INTERVAL 30 DAY)
     ) x WHERE d NOT IN (SELECT close_date FROM day_closes)", [$date, $date, $date, $date]);
 
-$page_title = 'દિવસનું ક્લોઝિંગ';
+$page_title = 'Day closing';
 include __DIR__ . '/includes/header.php';
 $denomSaved = $saved ? cash_denom_parse($saved['denoms']) : [];
 ?>
 <div class="card">
   <div class="page-actions no-print" style="margin:0 0 10px;justify-content:space-between">
-    <h2 style="margin:0">🌙 દિવસનું ક્લોઝિંગ</h2>
+    <h2 style="margin:0">🌙 Day closing</h2>
     <form method="get" style="display:inline-flex;gap:6px;align-items:center">
       <input type="date" name="d" value="<?= e($date) ?>" max="<?= today() ?>" onchange="this.form.submit()">
     </form>
   </div>
   <?php if ($openDays): ?>
-    <p class="flash flash-error" style="margin:0 0 10px">⚠️ છેલ્લા 30 દિવસમાં <strong><?= $openDays ?></strong> દિવસ એવા છે જેમાં રોકડ હાલી છે પણ ક્લોઝિંગ થયું નથી.</p>
+    <p class="flash flash-error" style="margin:0 0 10px">⚠️ In the last 30 days <strong><?= $openDays ?></strong> days had cash movement but no closing.</p>
   <?php endif; ?>
 
   <div class="grid-stats mb">
-    <div class="stat"><div class="stat-label">સવારે હતા</div><div class="stat-value">₹<?= money($f['opening']) ?></div></div>
-    <div class="stat s-ok"><div class="stat-label">⬇ આજે આવ્યા</div><div class="stat-value">₹<?= money($f['in'] + $f['from_bank']) ?></div></div>
-    <div class="stat s-bad"><div class="stat-label">⬆ આજે ગયા</div><div class="stat-value">₹<?= money($f['out'] + $f['expense'] + $f['to_bank']) ?></div></div>
-    <div class="stat"><div class="stat-label">ચોપડા પ્રમાણે હોવા જોઈએ</div><div class="stat-value">₹<?= money($f['expected']) ?></div></div>
+    <div class="stat"><div class="stat-label">was there in the morning</div><div class="stat-value">₹<?= money($f['opening']) ?></div></div>
+    <div class="stat s-ok"><div class="stat-label">⬇ Came in today</div><div class="stat-value">₹<?= money($f['in'] + $f['from_bank']) ?></div></div>
+    <div class="stat s-bad"><div class="stat-label">⬆ Went out today</div><div class="stat-value">₹<?= money($f['out'] + $f['expense'] + $f['to_bank']) ?></div></div>
+    <div class="stat"><div class="stat-label">should be, per the books</div><div class="stat-value">₹<?= money($f['expected']) ?></div></div>
   </div>
 
   <div class="table-wrap" style="box-shadow:none">
     <table class="table-sm">
       <tbody>
-        <tr><td>સવારે ગલ્લામાં હતા</td><td class="num">₹<?= money($f['opening']) ?></td></tr>
-        <tr><td>+ ગ્રાહકો પાસેથી રોકડ મળી</td><td class="num">₹<?= money($f['in']) ?></td></tr>
-        <tr><td>+ બેંકમાંથી ઉપાડ્યા</td><td class="num">₹<?= money($f['from_bank']) ?></td></tr>
-        <tr><td>− રોકડમાં ચૂકવ્યા (સપ્લાયર/પાર્ટી)</td><td class="num">₹<?= money($f['out']) ?></td></tr>
-        <tr><td>− ખર્ચ રોકડમાં</td><td class="num">₹<?= money($f['expense']) ?></td></tr>
-        <tr><td>− બેંકમાં ભર્યા</td><td class="num">₹<?= money($f['to_bank']) ?></td></tr>
+        <tr><td>in the till this morning</td><td class="num">₹<?= money($f['opening']) ?></td></tr>
+        <tr><td>+ Cash received from customers</td><td class="num">₹<?= money($f['in']) ?></td></tr>
+        <tr><td>+ Withdrawn from the bank</td><td class="num">₹<?= money($f['from_bank']) ?></td></tr>
+        <tr><td>− Paid out in cash (supplier/party)</td><td class="num">₹<?= money($f['out']) ?></td></tr>
+        <tr><td>− Expenses in cash</td><td class="num">₹<?= money($f['expense']) ?></td></tr>
+        <tr><td>− Deposited in the bank</td><td class="num">₹<?= money($f['to_bank']) ?></td></tr>
         <?php if ($f['adj_add'] > 0.009 || $f['adj_less'] > 0.009): ?>
-        <tr><td>± સુધારા</td><td class="num">₹<?= money($f['adj_add'] - $f['adj_less']) ?></td></tr>
+        <tr><td>± Adjustments</td><td class="num">₹<?= money($f['adj_add'] - $f['adj_less']) ?></td></tr>
         <?php endif; ?>
-        <tr class="ag-total"><td><strong>ચોપડા પ્રમાણે હોવા જોઈએ</strong></td><td class="num"><strong>₹<?= money($f['expected']) ?></strong></td></tr>
+        <tr class="ag-total"><td><strong>should be, per the books</strong></td><td class="num"><strong>₹<?= money($f['expected']) ?></strong></td></tr>
       </tbody>
     </table>
   </div>
 </div>
 
 <div class="card no-print">
-  <h3>💵 ગલ્લો ગણો</h3>
+  <h3>💵 Count the till</h3>
   <?php if ($saved): ?>
-    <p class="muted">આ દિવસનું ક્લોઝિંગ <?= e($saved['closed_name'] ?: '-') ?> એ <?= dmyt($saved['created_at']) ?> એ કર્યું હતું. ફરી ગણીને સેવ કરશો તો બદલાઈ જશે.</p>
+    <p class="muted">Closed by <?= e($saved['closed_name'] ?: '-') ?> on <?= dmyt($saved['created_at']) ?>. Recounting and saving will change it.</p>
   <?php endif; ?>
   <form method="post" id="dcForm">
     <?= csrf_field() ?>
@@ -127,33 +127,33 @@ $denomSaved = $saved ? cash_denom_parse($saved['denoms']) : [];
     <input type="hidden" name="close_date" value="<?= e($date) ?>">
     <div class="form-row cols-3">
       <?php foreach (cash_denominations() as $v): ?>
-      <div><label>₹<?= $v ?> ની નોટ</label>
+      <div><label>₹<?= $v ?> notes</label>
         <input type="number" min="0" step="1" name="d<?= $v ?>" class="dcn" data-v="<?= $v ?>"
                value="<?= isset($denomSaved[$v]) ? (int)$denomSaved[$v] : '' ?>" oninput="dcSum()" placeholder="0"></div>
       <?php endforeach; ?>
-      <div><label>છૂટા (₹)</label>
+      <div><label>Change (Rs)</label>
         <input type="number" step="any" min="0" name="loose" id="dcLoose" value="" oninput="dcSum()" placeholder="0"></div>
     </div>
     <div class="grid-stats mb">
-      <div class="stat"><div class="stat-label">ગણતરી પ્રમાણે</div><div class="stat-value" id="dcCounted">₹0.00</div></div>
-      <div class="stat" id="dcDiffBox"><div class="stat-label">ફરક</div><div class="stat-value" id="dcDiff">₹0.00</div></div>
+      <div class="stat"><div class="stat-label">As counted</div><div class="stat-value" id="dcCounted">₹0.00</div></div>
+      <div class="stat" id="dcDiffBox"><div class="stat-label">Difference</div><div class="stat-value" id="dcDiff">₹0.00</div></div>
     </div>
-    <div class="field"><label>નોંધ</label><input type="text" name="notes" maxlength="200"
-      value="<?= e($saved['notes'] ?? '') ?>" placeholder="દા.ત. ₹500 કાલે પાછા મુકાશે"></div>
+    <div class="field"><label>Note</label><input type="text" name="notes" maxlength="200"
+      value="<?= e($saved['notes'] ?? '') ?>" placeholder="e.g. Rs 500 to be put back tomorrow"></div>
     <?php if (can('cashbank.adjust')): ?>
     <label class="check-inline mb"><input type="checkbox" name="post_adjust" value="1">
-      ફરક હોય તો ચોપડામાં પણ સરખું કરી દો (Cash & Bank માં સુધારો નોંધાશે)</label>
+      If there is a difference, square the books too (an adjustment is recorded in Cash & Bank)</label>
     <?php endif; ?>
-    <button class="btn" type="submit">દિવસ બંધ કરો</button>
+    <button class="btn" type="submit">Snooze for days</button>
   </form>
 </div>
 
 <?php if ($hist): ?>
 <div class="card">
-  <h3>🗓️ છેલ્લાં ક્લોઝિંગ</h3>
+  <h3>🗓️ Recent closings</h3>
   <div class="table-wrap" style="box-shadow:none">
     <table class="table-sm">
-      <thead><tr><th>તારીખ</th><th class="num">ચોપડે</th><th class="num">ગણ્યા</th><th class="num">ફરક</th><th>કોણે</th><th>નોંધ</th></tr></thead>
+      <thead><tr><th>Date</th><th class="num">on the books</th><th class="num">Counted</th><th class="num">Difference</th><th>Who</th><th>Note</th></tr></thead>
       <tbody>
       <?php foreach ($hist as $h): $bad = abs((float)$h['diff']) > 0.009; ?>
         <tr>
@@ -162,7 +162,7 @@ $denomSaved = $saved ? cash_denom_parse($saved['denoms']) : [];
           <td class="num">₹<?= money($h['counted']) ?></td>
           <td class="num" style="font-weight:700;color:<?= $bad ? 'var(--bad)' : 'var(--ok)' ?>">
             <?= $bad ? ((float)$h['diff'] > 0 ? '+' : '−') . '₹' . money(abs($h['diff'])) : '✔' ?>
-            <?= $h['adjust_id'] ? ' <span class="badge badge-info">સરખું કર્યું</span>' : '' ?></td>
+            <?= $h['adjust_id'] ? ' <span class="badge badge-info">Squared off</span>' : '' ?></td>
           <td class="muted"><?= e($h['closed_name'] ?: '-') ?></td>
           <td class="muted"><?= e($h['notes']) ?></td>
         </tr>

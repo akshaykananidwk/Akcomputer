@@ -29,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if (strlen($mob10) === 10 && !post('force_dupe')) {
             $dupe = row("SELECT id, name FROM parties WHERE is_active = 1 AND RIGHT(REPLACE(REPLACE(mobile,' ',''),'-',''),10) = ? LIMIT 1", [$mob10]);
             if ($dupe) {
-                flash('⚠️ આ મોબાઇલ નંબરની પાર્ટી પહેલેથી છે: "' . $dupe['name'] . '". એની જ લેજરમાં એન્ટ્રી કરો, અથવા ખરેખર નવી બનાવવી હોય તો ફોર્મમાં "એ જ નંબર છતાં નવી પાર્ટી બનાવવી" ટિક કરીને ફરી Save કરો.', 'error');
+                flash('⚠️ A party with this mobile number already exists: "' . $dupe['name'] . '". Make the entry in that ledger, or if you really want a new one, in the form "Create a new party despite the same number" Tick them and save again.', 'error');
                 redirect('parties.php?action=new');
             }
         }
@@ -66,12 +66,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'statement_wa') {
     $fn = 'statement_' . $spid . '_' . substr(md5(microtime()), 0, 8) . '.pdf';
     file_put_contents($dir . '/' . $fn, $bytes);
     $balNow = (float)$sp['opening_balance'] + array_sum(array_map(fn($e2) => $e2['dr'] - $e2['cr'], $ent));
-    $msg = "🙏 *" . setting('app_name', 'AK Computer') . "*\n\n" . $sp['name'] . ", તમારો હિસાબ (Account Statement) આ PDF માં છે.\n"
-         . ($balNow > 0.009 ? "બાકી રકમ: *₹" . money($balNow) . "*" : ($balNow < -0.009 ? "તમારી જમા: ₹" . money(abs($balNow)) : "હિસાબ ચૂકતે ✔"))
+    $msg = "🙏 *" . setting('app_name', 'AK Computer') . "*\n\n" . $sp['name'] . ", your account statement is in this PDF.\n"
+         . ($balNow > 0.009 ? "Amount due: *Rs " . money($balNow) . "*" : ($balNow < -0.009 ? "Your credit: Rs " . money(abs($balNow)) : "Account settled ✔"))
          . "\n\nThank you! 🙏";
     if (send_whatsapp($sp['mobile'], $msg, base_url('uploads/statements/' . $fn))) {
         log_activity('party_statement_wa', $sp['name']);
-        flash('Statement (PDF) WhatsApp પર મોકલ્યું: ' . $sp['mobile']);
+        flash('Statement (PDF) sent on WhatsApp to: ' . $sp['mobile']);
     } else {
         flash('WhatsApp send failed. ' . whatsapp_last_error(), 'error');
     }
@@ -115,7 +115,7 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Mobile (WhatsApp)</label><input type="tel" name="mobile" value="<?= e($p['mobile'] ?? '') ?>"></div>
         </div>
         <?php if (empty($p['id'])): ?>
-        <label class="check-inline"><input type="checkbox" name="force_dupe" value="1"> એ જ મોબાઇલ નંબરની પાર્ટી હોવા છતાં નવી બનાવવી (સામાન્ય રીતે જરૂર નથી)</label>
+        <label class="check-inline"><input type="checkbox" name="force_dupe" value="1"> Create a new party even though one has this mobile number (not normally needed)</label>
         <?php endif; ?>
         <div class="form-row cols-2">
           <div><label>Email</label><input type="email" name="email" value="<?= e($p['email'] ?? '') ?>"></div>
@@ -137,12 +137,12 @@ if ($action === 'new' || $action === 'edit') {
               <?php endforeach; ?>
             </select></div>
           <div><label>Opening balance (+ receivable / - payable)</label><input type="number" step="any" name="opening_balance" value="<?= e($p['opening_balance'] ?? '0') ?>"></div>
-          <div><label>ક્રેડિટ લિમિટ (₹)</label>
+          <div><label>Credit limit (Rs)</label>
             <input type="number" step="any" min="0" name="credit_limit" value="<?= e($p['credit_limit'] ?? '0') ?>">
-            <p class="muted mt" style="font-size:.8em">આટલાથી વધુ બાકી થાય તો બિલ બનાવતી વખતે ચેતવણી આવશે. 0 = હદ નહીં.</p></div>
-          <div><label>મોડું ચૂકવે તો વ્યાજ (% વાર્ષિક)</label>
+            <p class="muted mt" style="font-size:.8em">A warning appears while billing if dues go above this. 0 = no limit.</p></div>
+          <div><label>Interest if they pay late (% per year)</label>
             <input type="number" step="any" min="0" name="interest_pct" value="<?= e($p['interest_pct'] ?? '0') ?>">
-            <p class="muted mt" style="font-size:.8em">0 રાખશો તો Settings નો ડિફોલ્ટ દર લાગશે.</p></div>
+            <p class="muted mt" style="font-size:.8em">Leave 0 to use the default rate from Settings.</p></div>
         </div>
         <button class="btn" type="submit">Save Party</button>
         <a class="btn btn-muted" href="parties.php">Cancel</a>
@@ -176,12 +176,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'charge_interest' &&
     $pid = (int)post('id');
     $info = interest_due_for_party($pid);
     if ($info['amount'] <= 0.009) {
-        flash('અત્યારે વ્યાજ લેવા જેવું કંઈ નથી.', 'error');
+        flash('There is no interest to charge right now.', 'error');
     } else {
         try {
             $sid = interest_charge_bill($pid, $info['amount'],
-                '(' . count($info['bills']) . ' બિલ, ' . (0 + $info['rate']) . '% વાર્ષિક)');
-            flash($sid ? '₹' . money($info['amount']) . ' નું વ્યાજનું બિલ બની ગયું.' : 'બિલ બન્યું નહીં.', $sid ? 'success' : 'error');
+                '(' . count($info['bills']) . ' bill, ' . (0 + $info['rate']) . '% per year)');
+            flash($sid ? '₹' . money($info['amount']) . ' interest bill created.' : 'The bill was not created.', $sid ? 'success' : 'error');
         } catch (Exception $e) {
             flash('Error: ' . $e->getMessage(), 'error');
         }
@@ -199,14 +199,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'collection_reminder
     $mobile = trim((string)(post('mobile') ?: ($p['mobile'] ?? '')));
     $due = $p ? party_balance_side($pid, 'in') : 0.0;   // what THEY owe US
     if (!$p || !$mobile) {
-        flash('મોબાઇલ નંબર નથી.', 'error');
+        flash('No mobile number.', 'error');
     } elseif ($due <= 0.009) {
-        flash('આ પાર્ટી પાસેથી કંઈ લેવાનું બાકી નથી — રિમાઇન્ડર મોકલ્યું નથી.', 'error');
+        flash('Nothing is owed by this party — no reminder was sent.', 'error');
     } elseif (collection_reminder_send($mobile, $due, $p['name'])) {
         log_activity('aging_reminder_whatsapp', $p['name'] . ' ' . $mobile . ' ₹' . money($due) . ' (ledger)');
-        flash('₹' . money($due) . ' નું રિમાઇન્ડર ' . $mobile . ' પર WhatsApp કરી દીધું.');
+        flash('₹' . money($due) . ' reminder ' . $mobile . ' sent on WhatsApp.');
     } else {
-        flash('WhatsApp મોકલાયું નહીં. ' . whatsapp_last_error(), 'error');
+        flash('WhatsApp was not sent. ' . whatsapp_last_error(), 'error');
     }
     redirect('parties.php?action=ledger&id=' . $pid);
 }
@@ -264,7 +264,7 @@ if ($action === 'ledger' && $id) {
         <h2 style="margin:0"><?= e($p['name']) ?></h2>
         <span>
           <?php if ($p['mobile']): ?>
-          <form method="post" style="display:inline" onsubmit="return confirm('આખો હિસાબ (statement PDF) <?= e($p['mobile']) ?> પર WhatsApp કરવો?')">
+          <form method="post" style="display:inline" onsubmit="return confirm('Full statement (PDF) <?= e($p['mobile']) ?> Send on WhatsApp to')">
             <?= csrf_field() ?><input type="hidden" name="do" value="statement_wa"><input type="hidden" name="id" value="<?= $p['id'] ?>">
             <button class="btn btn-sm btn-wa" type="submit">📲 Statement WhatsApp</button>
           </form>
@@ -274,9 +274,9 @@ if ($action === 'ledger' && $id) {
           // for - a party who owes nothing must never get one by accident
           $remDue = can('payments.view') ? party_balance_side($p['id'], 'in') : 0.0;
           if ($p['mobile'] && $remDue > 0.009): ?>
-          <form method="post" style="display:inline" onsubmit="return confirm('₹<?= money($remDue) ?> નું પેમેન્ટ રિમાઇન્ડર <?= e($p['mobile']) ?> પર મોકલવું?')">
+          <form method="post" style="display:inline" onsubmit="return confirm('₹<?= money($remDue) ?> payment reminder <?= e($p['mobile']) ?> Send it to')">
             <?= csrf_field() ?><input type="hidden" name="do" value="collection_reminder"><input type="hidden" name="id" value="<?= $p['id'] ?>">
-            <button class="btn btn-sm btn-wa" type="submit">🔔 રિમાઇન્ડર ₹<?= money($remDue) ?></button>
+            <button class="btn btn-sm btn-wa" type="submit">🔔 Reminder Rs <?= money($remDue) ?></button>
           </form>
           <?php endif; ?>
           <a class="btn btn-sm btn-outline" href="customer.php?id=<?= $p['id'] ?>">👤 Customer 360</a>
@@ -294,21 +294,21 @@ if ($action === 'ledger' && $id) {
       $intr = can('sales.view') ? interest_due_for_party($id) : ['amount' => 0.0, 'rate' => 0, 'bills' => []];
       ?>
       <?php if ($advHeld > 0.009): ?>
-        <p class="flash flash-info" style="margin:6px 0">💰 આ પાર્ટીના <strong>₹<?= money($advHeld) ?></strong> આપણી પાસે જમા છે (એડવાન્સ) — નવું બિલ બનશે એટલે એની સામે વપરાઈ જશે.</p>
+        <p class="flash flash-info" style="margin:6px 0">💰 This party has <strong>₹<?= money($advHeld) ?></strong> is held with us (advance) — it is used against the next bill.</p>
       <?php endif; ?>
       <?php if ($clim && $clim['set']): ?>
         <p class="<?= $clim['over'] ? 'flash flash-error' : 'muted' ?>" style="margin:6px 0">
-          ક્રેડિટ લિમિટ ₹<?= money($clim['limit']) ?> · અત્યારે બાકી ₹<?= money($clim['owed']) ?>
-          <?= $clim['over'] ? ' — ₹' . money($clim['excess']) . ' વધારે થઈ ગયું છે.' : '' ?></p>
+          Credit limit Rs <?= money($clim['limit']) ?> · currently due Rs <?= money($clim['owed']) ?>
+          <?= $clim['over'] ? ' — ₹' . money($clim['excess']) . ' has been exceeded.' : '' ?></p>
       <?php endif; ?>
       <?php if ($intr['amount'] > 0.009): ?>
         <div class="flash flash-info no-print" style="margin:6px 0">
-          ⏳ મોડા પેમેન્ટનું વ્યાજ અત્યાર સુધી <strong>₹<?= money($intr['amount']) ?></strong>
-          (<?= count($intr['bills']) ?> બિલ પર, <?= 0 + $intr['rate'] ?>% વાર્ષિક)
+          ⏳ Interest on late payment so far <strong>₹<?= money($intr['amount']) ?></strong>
+          (<?= count($intr['bills']) ?> on the bill, <?= 0 + $intr['rate'] ?>% per year)
           <?php if (can('sales.add')): ?>
-          <form method="post" style="display:inline" onsubmit="return confirm('₹<?= money($intr['amount']) ?> નું વ્યાજનું બિલ બનાવવું?')">
+          <form method="post" style="display:inline" onsubmit="return confirm('₹<?= money($intr['amount']) ?> Create the interest bill?')">
             <?= csrf_field() ?><input type="hidden" name="do" value="charge_interest"><input type="hidden" name="id" value="<?= $id ?>">
-            <button class="btn btn-sm btn-outline" type="submit">વ્યાજનું બિલ બનાવો</button>
+            <button class="btn btn-sm btn-outline" type="submit">Create the interest bill</button>
           </form>
           <?php endif; ?>
         </div>
@@ -437,9 +437,9 @@ elseif ($balFilter === 'give') $parties = array_values(array_filter($parties, fn
 // carried through to the row, because "At Risk" means nothing on its own.
 $segFilter = get('seg');
 $segWhy = [];
-$segNames = ['vip' => 'VIP ગ્રાહકો', 'high_value' => 'મોટા ગ્રાહકો', 'regular' => 'નિયમિત ગ્રાહકો',
-             'new' => 'નવા ગ્રાહકો', 'at_risk' => 'છૂટી રહેલા ગ્રાહકો', 'inactive' => 'બંધ થઈ ગયેલા ગ્રાહકો',
-             'overdue' => 'મુદત વીતી ગયેલા ગ્રાહકો', 'credit_risk' => 'ઉધાર જોખમવાળા ગ્રાહકો'];
+$segNames = ['vip' => 'VIP customers', 'high_value' => 'Big customers', 'regular' => 'Regular customers',
+             'new' => 'New customers', 'at_risk' => 'Customers slipping away', 'inactive' => 'Customers who have stopped',
+             'overdue' => 'Overdue customers', 'credit_risk' => 'Customers who are a credit risk'];
 if ($segFilter && isset($segNames[$segFilter])) {
     $segRows = cust_segment_rows();
     $keep = [];
@@ -498,7 +498,7 @@ include __DIR__ . '/includes/header.php';
             // net hides that there is something to settle - but as a quiet
             // marker, not a second amount competing with the first
       if ($p['recv_due'] > 0.009 && $p['pay_due'] > 0.009): ?>
-        <span class="bal-sub" title="Sale side ₹<?= money($p['recv_due']) ?> · Purchase side ₹<?= money($p['pay_due']) ?>">↔ બંને બાજુ</span>
+        <span class="bal-sub" title="Sale side ₹<?= money($p['recv_due']) ?> · Purchase side ₹<?= money($p['pay_due']) ?>">↔ both sides</span>
       <?php endif; ?>
     </div>
   </a>

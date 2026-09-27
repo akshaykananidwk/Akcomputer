@@ -99,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         }
         if ($discount > 0.009) {
             q("INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, pay_date, notes, created_by) VALUES (?,?,?,'discount',NULL,NULL,?,?,?)",
-              [$party_id, $dir, $discount, post('pay_date', today()), trim('છૂટ / Settlement discount' . ($notes !== '' ? ' — ' . $notes : '')), $u['id']]);
+              [$party_id, $dir, $discount, post('pay_date', today()), trim('Settlement discount' . ($notes !== '' ? ' — ' . $notes : '')), $u['id']]);
             $dpid = insert_id();
             $pid = $pid ?: $dpid;
             foreach ($discAlloc as $a) {
@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
             cheque_add(['direction' => $dir, 'party_id' => $party_id, 'payment_id' => $pid,
                         'cheque_no' => post('cheque_no'), 'bank_name' => post('cheque_bank'),
                         'cheque_date' => post('cheque_date', post('pay_date', today())),
-                        'amount' => $amount, 'notes' => 'પેમેન્ટ P-' . $pid . ' સાથે']);
+                        'amount' => $amount, 'notes' => 'Payment P-' . $pid . ' with']);
         }
         // What the bank or the gateway quietly took off this payment. It is a
         // real cost, so it becomes an ordinary expense in the category the
@@ -131,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         if ($dir === 'in' && post('send_wa') && $party['mobile']) {
             $bal = party_balance($party_id);
             $balTxt = $bal > 0.009 ? '₹' . money($bal) . ' (due)' : ($bal < -0.009 ? '₹' . money(-$bal) . ' (advance)' : '₹0.00 (clear)');
-            $discLine = $discount > 0.009 ? 'છૂટ / Discount: ₹' . money($discount) . "\n" : '';
+            $discLine = $discount > 0.009 ? 'Discount: Rs ' . money($discount) . "\n" : '';
             wa_context(['kind' => 'receipt', 'amount' => money($amount), 'date' => dmy(post('pay_date', today())), 'balance' => $balTxt]);
             send_whatsapp($party['mobile'], wa_template('payment_receipt', [
                 'amount' => money($amount), 'mode' => post('mode', 'cash'), 'date' => dmy(post('pay_date', today())),
@@ -140,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
             ]));
         }
         flash(($dir === 'in' ? 'Payment-In' : 'Payment-Out') . ' of ₹' . money($amount) . ' saved'
-            . ($discount > 0.009 ? ' + છૂટ ₹' . money($discount) : '')
+            . ($discount > 0.009 ? ' + discount Rs ' . money($discount) : '')
             . ($allocNotes ? ' & linked to ' . count($allocNotes) . ' bill(s).' : '.'));
         redirect('payments.php');
     } catch (Exception $ex) {
@@ -182,8 +182,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'backfill_alloc') {
         $pdo->commit();
         log_activity('payments_backfill_alloc', "payments=$fixedPays bills=$billsTouched amount=$fixedAmt");
         flash($fixedPays
-            ? "✅ $fixedPays જૂના પેમેન્ટ કુલ ₹" . money($fixedAmt) . " માટે $billsTouched બિલ સાથે જોડાઈ ગયા — હવે યાદી સાચી બાકી જ બતાવે છે."
-            : 'બધું પહેલેથી બરાબર છે — કોઈ છૂટું પેમેન્ટ બાકી નથી.');
+            ? "✅ $fixedPays old payments totalling Rs " . money($fixedAmt) . " were linked to $billsTouched bills — the list now shows the true dues."
+            : 'Everything is already in order — no unlinked payment is left.');
     } catch (Exception $ex) {
         $pdo->rollBack();
         flash('Error: ' . $ex->getMessage(), 'error');
@@ -196,7 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remind') {
     $s = row('SELECT s.*, c.name company_name FROM sales s JOIN companies c ON c.id = s.company_id WHERE s.id = ?', [(int)post('sale_id')]);
     $trueDue = $s ? sale_true_due($s) : 0;
     if ($s && $trueDue <= 0.009) {
-        flash('આ બિલનું ખરેખર કંઈ બાકી નથી (ખાતામાં પેમેન્ટ આવી ગયેલું છે) — રિમાઇન્ડર ન મોકલ્યું. "🧹 જૂના પેમેન્ટ બિલ સાથે જોડો" દબાવશો તો બિલ પણ ચૂકતે દેખાશે.', 'error');
+        flash('Nothing is really outstanding on this bill (the payment is already in the account) — no reminder sent. "🧹 Link old payments to bills" pressing it also marks the bill settled.', 'error');
     } elseif ($s && $s['customer_mobile']) {
         wa_context(['kind' => 'reminder']);
         send_whatsapp($s['customer_mobile'], wa_template('reminder', [
@@ -494,9 +494,9 @@ if ($action === 'new') {
         <div class="form-row cols-3">
           <div><label><?= $dir === 'in' ? 'Received amount (₹) *' : 'Paid amount (₹) *' ?></label>
             <input type="number" step="any" min="0" name="amount" id="pay_amount" required></div>
-          <div><label>છૂટ / Discount (₹)</label>
+          <div><label>Discount (Rs)</label>
             <input type="number" step="any" min="0" name="discount" id="pay_discount" value="0">
-            <p class="muted mt" style="font-size:.8em">બાકી માંડી વાળવા — કેશ/બેંકમાં નહીં ગણાય. દા.ત. બિલ ₹7,040, મળ્યા ₹7,000 → છૂટ ₹40</p></div>
+            <p class="muted mt" style="font-size:.8em">To write off the remainder — not counted in cash or bank. E.g. bill Rs 7,040, received Rs 7,000 → discount Rs 40</p></div>
           <div id="bankAccBox" style="display:none"><label>Bank Account</label>
             <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?></select></div>
           <div><label>Notes</label><input type="text" name="notes"></div>
@@ -504,16 +504,16 @@ if ($action === 'new') {
         <!-- what the bank / UPI took off this payment: a real cost, recorded
              as an expense so the year's total is visible -->
         <div class="form-row cols-3" id="chargeBox" style="display:none">
-          <div><label>બેંક / UPI ચાર્જ (₹)</label>
+          <div><label>Bank / UPI charges (Rs)</label>
             <input type="number" step="any" min="0" name="bank_charge" id="bank_charge" value="0">
-            <p class="muted mt" style="font-size:.8em">બેંકે કાપી લીધા હોય એ. ખર્ચમાં "Bank Charges" તરીકે નોંધાશે.</p></div>
+            <p class="muted mt" style="font-size:.8em">What the bank deducted. In expenses "Bank Charges" will be recorded as.</p></div>
         </div>
         <!-- the cheque itself, when one is handed over -->
         <div class="form-row cols-3" id="chqBox" style="display:none">
-          <div><label>ચેક નંબર</label><input type="text" name="cheque_no" maxlength="40"></div>
-          <div><label>કઈ બેંકનો</label><input type="text" name="cheque_bank" maxlength="120"></div>
-          <div><label>ચેકની તારીખ</label><input type="date" name="cheque_date" value="<?= today() ?>"></div>
-          <p class="muted" style="grid-column:1/-1;margin:0">ચેક રજિસ્ટરમાં આપોઆપ ચડી જશે. બાઉન્સ થાય તો ત્યાંથી નિશાની કરજો — પેમેન્ટ પાછું ખેંચાઈ જશે.</p>
+          <div><label>Cheque number</label><input type="text" name="cheque_no" maxlength="40"></div>
+          <div><label>Which bank</label><input type="text" name="cheque_bank" maxlength="120"></div>
+          <div><label>Cheque date</label><input type="date" name="cheque_date" value="<?= today() ?>"></div>
+          <p class="muted" style="grid-column:1/-1;margin:0">It goes into the cheque register automatically. If it bounces, mark it there — the payment is reversed.</p>
         </div>
         <?php if ($dir === 'in'): ?>
         <label class="check-inline"><input type="checkbox" name="send_wa" value="1" checked> Send WhatsApp receipt to party</label>
@@ -712,7 +712,7 @@ if ($action === 'view' && $id) {
     $links = [];
     foreach (all('SELECT * FROM payment_allocations WHERE payment_id = ?', [$id]) as $a) {
         if ($a['ref_type'] === 'opening') {
-            $links[] = ['label' => '📜 Opening Balance / જૂનો હિસાબ', 'amt' => $a['amount'],
+            $links[] = ['label' => '📜 Opening balance / old account', 'amt' => $a['amount'],
                         'link' => 'parties.php?action=ledger&id=' . $a['ref_id']];
             continue;
         }
@@ -754,7 +754,7 @@ if ($action === 'view' && $id) {
         <tr><td class="muted">Recorded by</td><td><?= e($pay['by_name']) ?></td></tr>
       </table>
       <?php if ($pay['mode'] === 'contra'): ?><p class="muted mt">🔄 This is a contra settlement (no cash moved). To change it, delete it and record a fresh one.</p><?php endif; ?>
-      <?php if ($pay['mode'] === 'discount'): ?><p class="muted mt">🏷️ છૂટ / Settlement discount (no cash moved) — it only clears the party's balance. To change it, delete it and record a fresh one.</p><?php endif; ?>
+      <?php if ($pay['mode'] === 'discount'): ?><p class="muted mt">🏷️ Settlement discount (no cash moved) — it only clears the party's balance. To change it, delete it and record a fresh one.</p><?php endif; ?>
     </div>
     <?php if ($links): ?>
     <div class="card list-card">
@@ -794,7 +794,7 @@ if ($action === 'edit' && $id) {
         $refT = $pay['direction'] === 'in' ? 'sale' : 'purchase';
         $opMine = $curAlloc['opening:' . $pay['party_id']] ?? 0.0;
         $opDue = round(opening_due((int)$pay['party_id'], $pay['direction']) + $opMine, 2);
-        if ($opDue > 0.009) $editBills[] = ['id' => 'op', 'no' => '📜 Opening Balance / જૂનો હિસાબ', 'date' => '—', 'due' => $opDue, 'mine' => $opMine];
+        if ($opDue > 0.009) $editBills[] = ['id' => 'op', 'no' => '📜 Opening balance / old account', 'date' => '—', 'due' => $opDue, 'mine' => $opMine];
         $tblE = $pay['direction'] === 'in' ? 'sales' : 'purchases';
         foreach (all("SELECT * FROM $tblE WHERE party_id = ? AND is_cancelled = 0 ORDER BY due_date IS NULL, due_date, id", [$pay['party_id']]) as $b) {
             $mine = $curAlloc[$refT . ':' . $b['id']] ?? 0.0;
@@ -835,10 +835,10 @@ if ($action === 'edit' && $id) {
       <?php if ($pay['party_id']): ?>
       <div class="card">
         <h3>🔗 Link to a Bill</h3>
-        <p class="muted mb">આ પેમેન્ટ કયા બિલ સામે ગણવું એ અહીંથી ગમે ત્યારે બદલો — સ્ટાફે લિંક કર્યા વગર સેવ કર્યું હોય તો પણ. હાલની લિંક ભરેલી દેખાય છે; રકમ બદલો/0 કરો/બીજા બિલમાં નાખો. જે રકમ કોઈ બિલમાં ન નાખો એ આપોઆપ જૂનામાં જૂના બાકી બિલમાં જશે.</p>
+        <p class="muted mb">Change which bills this payment counts against, any time — even if staff saved it without linking. The current links are filled in; change an amount, set it to 0, or move it to another bill. Anything not put against a bill goes automatically to the oldest outstanding bill.</p>
         <input type="hidden" name="alloc_ui" value="1">
         <?php if (!$editBills): ?>
-        <p class="muted">આ પાર્ટીનું કોઈ બાકી બિલ નથી — પેમેન્ટ ફક્ત ખાતામાં રહેશે.</p>
+        <p class="muted">This party has no outstanding bill — the payment simply stays in the account.</p>
         <?php else: ?>
         <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
           <thead><tr><th>Bill</th><th>Date</th><th class="num">Due ₹</th><th style="width:130px">Link ₹</th></tr></thead>
@@ -896,11 +896,11 @@ include __DIR__ . '/includes/header.php';
 $advList = parties_with_advance(20);
 if ($advList): $advTot = array_sum(array_map(fn($x) => (float)$x['adv'], $advList)); ?>
 <div class="card">
-  <h3>💰 એડવાન્સ / જમા પડેલા પૈસા — ₹<?= money($advTot) ?></h3>
-  <p class="muted">આ પાર્ટીઓના પૈસા આપણી પાસે જમા છે. એમનું નવું બિલ બનશે એટલે આપોઆપ સામે વપરાઈ જશે.</p>
+  <h3>💰 Advance / money held — Rs <?= money($advTot) ?></h3>
+  <p class="muted">We are holding money for these parties. It is used automatically against their next bill.</p>
   <div class="table-wrap" style="box-shadow:none">
     <table class="table-sm">
-      <thead><tr><th>પાર્ટી</th><th>મોબાઇલ</th><th class="num">જમા</th></tr></thead>
+      <thead><tr><th>Party</th><th>Mobile</th><th class="num">Credit</th></tr></thead>
       <tbody>
       <?php foreach ($advList as $a): ?>
         <tr>
@@ -921,9 +921,9 @@ if ($advList): $advTot = array_sum(array_map(fn($x) => (float)$x['adv'], $advLis
   <a class="btn btn-outline" href="payments.php?action=contra">🔄 Contra / Settle</a>
   <?php endif; ?>
   <?php if (is_full_admin()): ?>
-  <form method="post" style="display:inline" onsubmit="return confirm('જૂના (બિલ સાથે ન જોડાયેલા) બધા પેમેન્ટ એમની પાર્ટીના જૂનામાં જૂના બાકી બિલ સાથે આપોઆપ જોડી દેવા છે? હિસાબ બદલાતો નથી — ફક્ત બિલની બાકી સાચી થાય છે.')">
+  <form method="post" style="display:inline" onsubmit="return confirm('Link every old unlinked payment to its party oldest outstanding bills automatically? No balance changes — only the per-bill dues become correct.')">
     <?= csrf_field() ?><input type="hidden" name="do" value="backfill_alloc">
-    <button class="btn btn-outline" type="submit">🧹 જૂના પેમેન્ટ બિલ સાથે જોડો</button>
+    <button class="btn btn-outline" type="submit">🧹 Link old payments to bills</button>
   </form>
   <?php endif; ?>
 </div>

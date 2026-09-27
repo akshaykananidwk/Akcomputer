@@ -281,13 +281,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                 foreach ($payload['items'] as $it) $amount += $it['qty'] * $it['price'];
                 q('INSERT INTO parked_bills (label, customer_name, amount, items, payload, location_id, created_by)
                    VALUES (?,?,?,?,?,?,?)',
-                  [mb_substr(trim((string)post('customer_name')) ?: 'સેવ ન થયેલું બિલ', 0, 120),
+                  [mb_substr(trim((string)post('customer_name')) ?: 'Unsaved bill', 0, 120),
                    post('customer_name'), round($amount, 2), count($payload['items']),
                    json_encode($payload, JSON_UNESCAPED_UNICODE), $loc_id, $u['id']]);
                 $keep = insert_id();
             }
         } catch (Throwable $e) { /* keeping the draft must never hide the real error */ }
-        flash('Error: ' . $ex->getMessage() . ($keep ? ' — બિલ ખોવાયું નથી, નીચે એમનું એમ છે. સુધારીને ફરી સેવ કરો.' : ''), 'error');
+        flash('Error: ' . $ex->getMessage() . ($keep ? ' — the bill is not lost, it is still below. Correct it and save again.' : ''), 'error');
         redirect('sales.php?action=new' . ($keep ? '&park=' . $keep : ''));
     }
 }
@@ -296,10 +296,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'park') {
     require_perm('sales.add');
     $payload = sale_park_payload();
-    if (!$payload['items']) { flash('બિલમાં એકેય આઇટમ નથી — હોલ્ડ કરવા જેવું કંઈ નથી.', 'error'); redirect('sales.php?action=new'); }
+    if (!$payload['items']) { flash('There is no item on the bill — nothing to hold.', 'error'); redirect('sales.php?action=new'); }
     $amount = 0.0;
     foreach ($payload['items'] as $it) $amount += $it['qty'] * $it['price'];
-    $label = trim((string)post('park_label')) ?: (trim((string)post('customer_name')) ?: 'ગ્રાહક');
+    $label = trim((string)post('park_label')) ?: (trim((string)post('customer_name')) ?: 'Customer');
     $old = (int)post('park_id');
     if ($old) q('DELETE FROM parked_bills WHERE id = ?', [$old]);   // resumed and parked again
     q('INSERT INTO parked_bills (label, customer_name, amount, items, payload, location_id, created_by)
@@ -307,13 +307,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'park') {
       [mb_substr($label, 0, 120), post('customer_name'), round($amount, 2), count($payload['items']),
        json_encode($payload, JSON_UNESCAPED_UNICODE), (int)post('location_id') ?: $u['location_id'], $u['id']]);
     log_activity('sale_park', $label . ' ₹' . money($amount));
-    flash('બિલ હોલ્ડ કરી દીધું — "હોલ્ડ કરેલાં બિલ" માંથી પાછું ખોલી શકશો.');
+    flash('Bill parked — "Parked bills" you can reopen it from there.');
     redirect('sales.php?action=new');
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'park_delete') {
     require_perm('sales.add');
     q('DELETE FROM parked_bills WHERE id = ?', [(int)post('id')]);
-    flash('હોલ્ડ કરેલું બિલ કાઢી નાખ્યું.');
+    flash('Parked bill deleted.');
     redirect('sales.php');
 }
 
@@ -386,7 +386,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
               ['sale', $sid, json_encode($_POST, JSON_UNESCAPED_UNICODE), $u['id']]);
             log_activity('edit_request', 'sale ' . $sale['invoice_no']);
             try { tg_notify_admins('✏️ Bill edit approval\n' . $u['name'] . ' wants to change ' . $sale['invoice_no'] . "\n" . base_url('approvals.php')); } catch (Exception $e) { /* optional */ }
-            flash('બિલ 24 કલાકથી જૂનું છે, એટલે તમારો ફેરફાર એડમિનની મંજૂરી માટે મોકલાયો છે. મંજૂર થાય એટલે આપોઆપ લાગુ થઈ જશે.', 'info');
+            flash('This bill is more than 24 hours old, so your change has been sent for admin approval. It will apply automatically once approved.', 'info');
         } catch (Exception $e) {
             flash('Edit request could not be saved - run Settings → Migrate first.', 'error');
         }
@@ -671,7 +671,7 @@ if ($action === 'new' || $action === 'edit') {
             $src['sale_date'] = today();
             $src['paid'] = 0;
             $preSale = $src;
-            flash('બિલ ' . $src['invoice_no'] . ' ની નકલ છે — તપાસીને સેવ કરો.', 'info');
+            flash('Bill ' . $src['invoice_no'] . ' is a copy — check it and save.', 'info');
         }
     } elseif ((int)get('park')) {
         $pk = row('SELECT * FROM parked_bills WHERE id = ?', [(int)get('park')]);
@@ -725,10 +725,10 @@ if ($action === 'new' || $action === 'edit') {
     $page_title = $isEdit ? 'Edit Bill ' . $editSale['invoice_no'] : 'New Bill';
     include __DIR__ . '/includes/header.php';
     ?>
-    <?php if ($est && ($est['src'] ?? '') === 'assistant'): ?><div class="flash flash-info">🧑‍💼 Sales Assistant માંથી <?= count($estItems) ?> વસ્તુ ભરી છે — નંગ અને ભાવ ચકાસીને સેવ કરો.</div>
+    <?php if ($est && ($est['src'] ?? '') === 'assistant'): ?><div class="flash flash-info">🧑‍💼 From Sales Assistant <?= count($estItems) ?> items filled in — check the quantities and prices, then save.</div>
     <?php elseif ($est): ?><div class="flash flash-info">Converting <?= e($est['estimate_no']) ?> — serial-tracked items will need their serial re-selected.</div><?php endif; ?>
     <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serials'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers will need to be re-selected.</div><?php endif; ?>
-    <?php if ($isEdit && !is_full_admin() && strtotime($editSale['created_at']) < time() - 86400): ?><div class="flash flash-info">⏳ આ બિલ 24 કલાકથી જૂનું છે — સેવ કરશો એટલે ફેરફાર સીધો લાગુ નહીં થાય, એડમિનની મંજૂરી માટે જશે.</div><?php endif; ?>
+    <?php if ($isEdit && !is_full_admin() && strtotime($editSale['created_at']) < time() - 86400): ?><div class="flash flash-info">⏳ This bill is more than 24 hours old — saving will not apply the change directly, it goes for admin approval.</div><?php endif; ?>
     <form method="post" id="billForm">
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">
@@ -769,7 +769,7 @@ if ($action === 'new' || $action === 'edit') {
             <select name="credit_days" id="credit_days">
               <?php foreach ($terms as $t): ?><option value="<?= $t['days'] ?>"><?= e($t['label']) ?></option><?php endforeach; ?>
             </select></div>
-          <div><label>Due On <span class="muted" style="font-weight:normal">(તારીખ જાતે પણ નાખી શકો)</span></label>
+          <div><label>Due On <span class="muted" style="font-weight:normal">(you can type a date too)</span></label>
             <input type="date" name="due_date" id="due_date"></div>
         </div>
         <div class="field"><label>Price type</label>
@@ -883,18 +883,18 @@ if ($action === 'new' || $action === 'edit') {
              to write. They open when they are wanted, and a bill that HAS
              one opens with it already showing. -->
         <details class="more-opts no-print"<?= ($tiRows || !empty($preSale['delivery_address'])) ? ' open' : '' ?>>
-          <summary>⚙️ વધુ વિકલ્પ — બીજું પેમેન્ટ, જૂનું લઈને નવું, ડિલિવરી સરનામું</summary>
+          <summary>⚙️ More options — a second payment, a trade-in, a delivery address</summary>
         <?php if (!$isEdit): ?>
-        <!-- ₹2,000 રોકડા + ₹3,000 UPI: the second way to pay, hidden until asked for -->
+        <!-- Rs 2,000 cash + Rs 3,000 UPI: the second way to pay, hidden until asked for -->
         <div class="no-print">
-          <a href="javascript:splitToggle()" id="splitLink">➕ બીજી રીતે પણ પેમેન્ટ (રોકડ + UPI)</a>
+          <a href="javascript:splitToggle()" id="splitLink">➕ A second way to pay too (cash + UPI)</a>
           <div class="form-row cols-3" id="splitBox" style="display:none;margin-top:8px">
-            <div><label>બીજું પેમેન્ટ (₹)</label><input type="number" step="any" min="0" name="paid2" id="paid2" value="0" oninput="Bill.totals()"></div>
-            <div><label>એનો મોડ</label>
+            <div><label>Second payment (Rs)</label><input type="number" step="any" min="0" name="paid2" id="paid2" value="0" oninput="Bill.totals()"></div>
+            <div><label>its mode</label>
               <select name="payment_mode2" id="payment_mode2" onchange="pm2Change()">
                 <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
               </select></div>
-            <div id="bankAccBox2" style="display:none"><label>બેંક ખાતું</label>
+            <div id="bankAccBox2" style="display:none"><label>Bank account</label>
               <select name="bank_account_id2">
                 <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
               </select></div>
@@ -902,20 +902,20 @@ if ($action === 'new' || $action === 'edit') {
         </div>
         <?php endif; ?>
 
-        <!-- #4 જૂનું લઈને નવું: the old part comes in, its value goes off the bill -->
+        <!-- #4 Trade-in: the old part comes in, its value goes off the bill -->
         <div class="no-print mt">
-          <a href="javascript:tiToggle()" id="tiLink">🔄 જૂનું લઈને નવું (Exchange)</a>
+          <a href="javascript:tiToggle()" id="tiLink">🔄 Trade-in (exchange)</a>
           <div id="tiBox" style="display:<?= $tiRows ? 'block' : 'none' ?>;margin-top:8px">
             <div id="tiRows"></div>
-            <button type="button" class="btn btn-sm btn-outline" onclick="tiAdd()">+ બીજું ઉમેરો</button>
-            <p class="muted" style="margin:6px 0 0">જે વસ્તુ પાછી લીધી એની કિંમત બિલમાંથી બાદ થશે. આઇટમ પસંદ કરશો તો એ સ્ટોકમાં પણ ચડી જશે.</p>
+            <button type="button" class="btn btn-sm btn-outline" onclick="tiAdd()">+ Add another</button>
+            <p class="muted" style="margin:6px 0 0">The value of what was taken back comes off the bill. Pick an item and it also goes into stock.</p>
           </div>
         </div>
 
-        <!-- #5 બિલ એક જગ્યાએ, માલ બીજી જગ્યાએ -->
-        <div class="field no-print"><label>ડિલિવરીનું સરનામું <span class="muted" style="font-weight:normal">(બિલના સરનામાથી અલગ હોય તો)</span></label>
+        <!-- #5 Bill at one place, goods at another -->
+        <div class="field no-print"><label>Delivery address <span class="muted" style="font-weight:normal">(if different from the billing address)</span></label>
           <input type="text" name="delivery_address" id="delivery_address" maxlength="250"
-                 value="<?= e($preSale['delivery_address'] ?? '') ?>" placeholder="સાઇટનું સરનામું / જ્યાં માલ પહોંચાડવાનો છે"></div>
+                 value="<?= e($preSale['delivery_address'] ?? '') ?>" placeholder="Site address / where the goods are to be delivered"></div>
         </details>
         <div class="field"><label>Notes</label><input type="text" name="notes" value="<?= e($preSale['notes'] ?? '') ?>"></div>
         <div class="bill-totals">
@@ -925,7 +925,7 @@ if ($action === 'new' || $action === 'edit') {
           <div class="t-line"><span>GST</span><span>₹ <span id="t_tax">0.00</span></span></div>
           <div class="t-line"><span>Shipping</span><span>₹ <span id="t_ship">0.00</span></span></div>
           <div class="t-line" id="adjRow" style="display:none"><span>Adjustment</span><span>₹ <span id="t_adj">0.00</span></span></div>
-          <div class="t-line" id="tiRow" style="display:none"><span>🔄 જૂનું લીધું</span><span>- ₹ <span id="t_tradein">0.00</span></span></div>
+          <div class="t-line" id="tiRow" style="display:none"><span>🔄 Trade-in taken</span><span>- ₹ <span id="t_tradein">0.00</span></span></div>
           <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
           <div class="t-line" id="loyaltyRow" style="display:none"><span>⭐ Points Discount</span><span>- ₹ <span id="t_loyalty">0.00</span></span></div>
           <?php endif; ?>
@@ -946,7 +946,7 @@ if ($action === 'new' || $action === 'edit') {
           <button class="btn btn-outline" type="submit" name="save_new" value="1">Save & New</button>
           <button class="btn" type="submit">💾 Save</button>
           <button class="btn btn-muted" type="submit" name="do" value="park"
-                  title="ગ્રાહક પાછો આવે ત્યાં સુધી બિલ બાજુ પર મૂકો">⏸️ હોલ્ડ કરો</button>
+                  title="Park the bill until the customer comes back">⏸️ Park it</button>
           <?php endif; ?>
         </div>
       </div>
@@ -971,7 +971,7 @@ if ($action === 'new' || $action === 'edit') {
         box.style.display = t === 'bank' ? '' : 'none';
       }
 
-      // --- જૂનું લઈને નવું -----------------------------------------------
+      // --- Old લઈને New -----------------------------------------------
       var TI_SEEDED = <?= json_encode(array_map(fn($t) => [
           'item_id' => (int)($t['item_id'] ?? 0), 'descr' => $t['descr'] ?? '',
           'serial' => $t['serial_no'] ?? '', 'qty' => (float)($t['qty'] ?? 1), 'value' => (float)($t['value'] ?? 0),
@@ -988,19 +988,19 @@ if ($action === 'new' || $action === 'edit') {
         var wrap = document.getElementById('tiRows');
         var div = document.createElement('div');
         div.className = 'form-row cols-4 ti-row';
-        var opts = '<option value="">— સ્ટોકમાં ન ચડાવવું —</option>';
+        var opts = '<option value="">— do not put into stock —</option>';
         TI_ITEMS.forEach(function (it) {
           opts += '<option value="' + it.id + '"' + (seed.item_id == it.id ? ' selected' : '') + '>' +
                   it.name.replace(/[<>&]/g, '') + '</option>';
         });
         div.innerHTML =
-          '<div><label>શું પાછું લીધું</label><input type="text" name="ti_descr[]" maxlength="160" value="' +
-            (seed.descr || '').replace(/"/g, '&quot;') + '" placeholder="દા.ત. જૂની બેટરી"></div>' +
-          '<div><label>કઈ આઇટમ તરીકે સ્ટોકમાં</label><select name="ti_item_id[]" class="ti-item">' + opts + '</select></div>' +
-          '<div><label>નંગ</label><input type="number" step="any" min="1" name="ti_qty[]" value="' + (seed.qty || 1) + '"></div>' +
-          '<div><label>કિંમત (₹, બિલમાંથી બાદ)</label><input type="number" step="any" min="0" name="ti_value[]" class="ti-val" value="' +
+          '<div><label>What was taken back</label><input type="text" name="ti_descr[]" maxlength="160" value="' +
+            (seed.descr || '').replace(/"/g, '&quot;') + '" placeholder="e.g. old battery"></div>' +
+          '<div><label>Into stock as which item</label><select name="ti_item_id[]" class="ti-item">' + opts + '</select></div>' +
+          '<div><label>Qty</label><input type="number" step="any" min="1" name="ti_qty[]" value="' + (seed.qty || 1) + '"></div>' +
+          '<div><label>Value (Rs, taken off the bill)</label><input type="number" step="any" min="0" name="ti_value[]" class="ti-val" value="' +
             (seed.value || 0) + '" oninput="tiTotal()"></div>' +
-          '<div><label>સિરિયલ નં. (હોય તો)</label><input type="text" name="ti_serial[]" value="' +
+          '<div><label>Serial no. (if any)</label><input type="text" name="ti_serial[]" value="' +
             (seed.serial || '').replace(/"/g, '&quot;') + '"></div>';
         wrap.appendChild(div);
         tiTotal();
@@ -1029,7 +1029,7 @@ if ($action === 'new' || $action === 'edit') {
         });
       }
       // "Due On" auto-fills from Date + Pmt. Terms, but it's a real date
-      // field: if the customer promises a specific day ("15 તારીખે આપીશ"),
+      // field: if the customer promises a specific day ("15 Dateે આપીશ"),
       // type that date and it becomes the bill's due date for the auto
       // overdue reminders. Changing the terms recomputes it again.
       function updateDueOn() {
@@ -1289,7 +1289,7 @@ if ($action === 'new' || $action === 'edit') {
       };
       // type-to-search over the party list (hundreds of them now) - the select
       // itself is untouched, so everything below still reads it the same way
-      SearchPick.init('party_id', 'ગ્રાહકનું નામ કે મોબાઇલ ટાઇપ કરો…');
+      SearchPick.init('party_id', 'Type a customer name or mobile…');
       document.getElementById('party_id').addEventListener('change', function () {
         var o = this.options[this.selectedIndex];
         if (this.value) {
@@ -1318,15 +1318,15 @@ if ($action === 'new' || $action === 'edit') {
             if (!d) { box.style.display = 'none'; return; }
             var bits = [];
             if (d.advance > 0.009)
-              bits.push('<span style="color:var(--ok)">💰 આ પાર્ટીના ₹' + d.advance.toFixed(2) +
-                        ' આપણી પાસે જમા છે — બિલ સામે વપરાઈ જશે.</span>');
+              bits.push('<span style="color:var(--ok)">💰 This party has Rs ' + d.advance.toFixed(2) +
+                        ' is held with us — it will be used against a bill.</span>');
             if (d.set && d.over)
-              bits.push('<span style="color:var(--bad)">⚠️ ક્રેડિટ લિમિટ ₹' + d.limit.toFixed(2) +
-                        ' છે. આ બિલ પછી બાકી ₹' + d.after.toFixed(2) +
-                        ' થશે — ₹' + d.excess.toFixed(2) + ' વધારે.</span>');
+              bits.push('<span style="color:var(--bad)">⚠️ Credit limit Rs ' + d.limit.toFixed(2) +
+                        ' . After this bill the due is Rs ' + d.after.toFixed(2) +
+                        ' will be — Rs ' + d.excess.toFixed(2) + ' more.</span>');
             else if (d.set)
-              bits.push('<span class="muted">ક્રેડિટ લિમિટ ₹' + d.limit.toFixed(2) +
-                        ' · અત્યારે બાકી ₹' + d.owed.toFixed(2) + '</span>');
+              bits.push('<span class="muted">Credit limit Rs ' + d.limit.toFixed(2) +
+                        ' · currently due Rs ' + d.owed.toFixed(2) + '</span>');
             box.innerHTML = bits.join('<br>');
             box.style.display = bits.length ? '' : 'none';
           })
@@ -1378,10 +1378,10 @@ $parked = can('sales.add') ? all('SELECT pb.*, us.name staff FROM parked_bills p
         LEFT JOIN users us ON us.id = pb.created_by ORDER BY pb.id DESC LIMIT 20') : [];
 if ($parked): ?>
 <div class="card">
-  <h3>⏸️ હોલ્ડ કરેલાં બિલ (<?= count($parked) ?>)</h3>
+  <h3>⏸️ Parked bills (<?= count($parked) ?>)</h3>
   <div class="table-wrap" style="box-shadow:none">
   <table class="table-sm">
-    <thead><tr><th>ગ્રાહક</th><th class="num">આઇટમ</th><th class="num">અંદાજે</th><th>ક્યારે</th><th>કોણે</th><th></th></tr></thead>
+    <thead><tr><th>Customer</th><th class="num">Item</th><th class="num">about</th><th>When</th><th>Who</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($parked as $pb): ?>
       <tr>
@@ -1391,8 +1391,8 @@ if ($parked): ?>
         <td class="muted"><?= dmyt($pb['created_at']) ?></td>
         <td class="muted"><?= e($pb['staff'] ?: '-') ?></td>
         <td style="white-space:nowrap">
-          <a class="btn btn-sm" href="sales.php?action=new&park=<?= (int)$pb['id'] ?>">▶️ પાછું ખોલો</a>
-          <form method="post" style="display:inline" onsubmit="return confirm('આ હોલ્ડ કરેલું બિલ કાઢી નાખવું?')">
+          <a class="btn btn-sm" href="sales.php?action=new&park=<?= (int)$pb['id'] ?>">▶️ Reopen</a>
+          <form method="post" style="display:inline" onsubmit="return confirm('Delete this parked bill?')">
             <?= csrf_field() ?><input type="hidden" name="do" value="park_delete"><input type="hidden" name="id" value="<?= (int)$pb['id'] ?>">
             <button class="btn btn-sm btn-danger" type="submit">✕</button>
           </form>
@@ -1424,7 +1424,7 @@ if ($parked): ?>
       <td class="num">₹<?= money($s['total']) ?></td>
       <td><?= $s['is_cancelled'] ? '<span class="badge badge-bad">CANCELLED</span>' : status_badge($s['status']) ?></td>
       <td style="white-space:nowrap"><a class="btn btn-sm btn-outline" href="sale_view.php?id=<?= $s['id'] ?>">View</a>
-        <?php if (can('sales.add')): ?><a class="btn btn-sm btn-outline" href="sales.php?action=new&copy=<?= $s['id'] ?>" title="આ જ બિલ ફરીથી બનાવો">⧉</a><?php endif; ?></td>
+        <?php if (can('sales.add')): ?><a class="btn btn-sm btn-outline" href="sales.php?action=new&copy=<?= $s['id'] ?>" title="Make this same bill again">⧉</a><?php endif; ?></td>
     </tr>
   <?php endforeach; ?>
   </tbody>

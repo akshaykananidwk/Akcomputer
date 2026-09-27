@@ -311,12 +311,12 @@ function handover_accepting_for_other(array $h, $u = null) {
  * that half is honesty, not a display preference.
  */
 function web_stock_line($it, array $stockMap, $showQty = true) {
-    if (($it['item_type'] ?? '') === 'service') return ['svc', '🛠️ સેવા', ''];
+    if (($it['item_type'] ?? '') === 'service') return ['svc', '🛠️ Service', ''];
     $q = (float)($stockMap[(int)$it['id']] ?? 0);
-    if ($q <= 0) return ['out', '✖ અત્યારે ખલાસ', 'ઓર્ડર પર મંગાવી આપીશું'];
+    if ($q <= 0) return ['out', '✖ Out of stock', 'We can order it for you'];
     $n = rtrim(rtrim(number_format($q, 2), '0'), '.');
     $unit = trim((string)($it['unit'] ?? ''));
-    return ['in', $showQty ? '✔ ' . $n . ' ' . ($unit !== '' ? $unit : 'નંગ') . ' સ્ટોકમાં' : '✔ In stock', ''];
+    return ['in', $showQty ? '✔ ' . $n . ' ' . ($unit !== '' ? $unit : 'Qty') . ' in stock' : '✔ In stock', ''];
 }
 
 /** Stock for every item in ONE query - the website lists hundreds of products
@@ -360,9 +360,9 @@ function stock_in_transit($item_id = null) {
 
 /** Where a transit row is headed, in the owner's words. */
 function transit_destination(array $t) {
-    if ($t['type'] === 'issue') return trim((string)$t['staff_name']) !== '' ? $t['staff_name'] : 'સ્ટાફ';
-    if ($t['type'] === 'transfer') return trim((string)$t['to_loc']) !== '' ? $t['to_loc'] : 'બીજી જગ્યા';
-    return trim((string)$t['from_loc']) !== '' ? $t['from_loc'] : 'દુકાન';
+    if ($t['type'] === 'issue') return trim((string)$t['staff_name']) !== '' ? $t['staff_name'] : 'Staff';
+    if ($t['type'] === 'transfer') return trim((string)$t['to_loc']) !== '' ? $t['to_loc'] : 'Other location';
+    return trim((string)$t['from_loc']) !== '' ? $t['from_loc'] : 'Shop';
 }
 
 function adjust_staff_stock($user_id, $item_id, $delta, $ref_type, $ref_id = null, $note = '') {
@@ -1005,7 +1005,7 @@ function razorpay_payment_link($amount, $description, $customerName = '', $custo
  *  and neither is taken away from the other. */
 function expense_category_groups() {
     return [
-        'ધંધાનો ખર્ચ' => [
+        'Business spending' => [
             'Office Rent', 'Salary & Wages', 'Staff Advance',
             'Petrol & Vehicle', 'Vehicle Repair', 'Courier & Transport',
             'Internet & Telecom', 'Hosting & Domain', 'Electricity',
@@ -1016,7 +1016,7 @@ function expense_category_groups() {
             'EMI / Loan', 'GST & Government', 'Business Travel',
             'Customer/Staff Expense', 'Business Miscellaneous',
         ],
-        'ઘર / અંગત ખર્ચ' => [
+        'Household / personal' => [
             'Money Given Home', 'Home Rent', 'Home Electricity',
             'Home Gas & Water', 'Home Groceries', 'Home Mobile & DTH',
             'School & Children', 'Medical / Personal', 'Insurance / LIC',
@@ -1028,7 +1028,7 @@ function expense_category_groups() {
 }
 
 /** The name of the home group, so nothing has to repeat the Gujarati string. */
-function expense_home_group() { return 'ઘર / અંગત ખર્ચ'; }
+function expense_home_group() { return 'Household / personal'; }
 
 /** Flat list, for anything that just needs the names. */
 function expense_categories() {
@@ -1085,7 +1085,7 @@ function serial_live_statuses() { return ['sold', 'with_staff', 'claim']; }
  *  AT the location being worked at. So a serial left with location 0, NULL, or
  *  a location that has since been deleted is in stock and un-pickable at the
  *  same time: the item page counts it and shows it "In stock", while the
- *  pickers all say "આ લોકેશનમાં આ આઇટમનો કોઈ સિરિયલ સ્ટોકમાં નથી". The stock
+ *  pickers all say "આ લોકેશનમાં આ આઇટમનો કોઈ Serial in stock નથી". The stock
  *  figure and the serial list then disagree with no way to fix it from the
  *  screens, because nothing can pick what nothing can see.
  *
@@ -1278,7 +1278,7 @@ function warranty_send_out(array $claim) {
     adjust_stock((int)$s['item_id'], $loc, -1, 'warranty_out', $claim['id'] ?? null,
                  'Sent to the company on claim ' . ($claim['claim_no'] ?? ''));
     q('UPDATE warranty_claims SET stock_out = 1 WHERE id = ?', [$claim['id'] ?? 0]);
-    return 'સિરિયલ ' . $sn . ' કંપનીમાં ગયો — વેચાણના સ્ટોકમાંથી કાઢ્યો.';
+    return 'Serial ' . $sn . ' Sent to the company — taken out of sale stock.';
 }
 
 /** The SAME piece came back repaired (no replacement). Put it back on the
@@ -1295,7 +1295,7 @@ function warranty_take_back(array $claim) {
     adjust_stock((int)$s['item_id'], $loc, 1, 'warranty_back', $claim['id'] ?? null,
                  'Repaired and returned on claim ' . ($claim['claim_no'] ?? ''));
     q('UPDATE warranty_claims SET stock_out = 0 WHERE id = ?', [$claim['id'] ?? 0]);
-    return 'સિરિયલ ' . $sn . ' રિપેર થઈને પાછો સ્ટોકમાં આવ્યો.';
+    return 'Serial ' . $sn . ' Repaired and back in stock.';
 }
 
 /** A warranty claim that came back as MONEY instead of a part.
@@ -1323,9 +1323,9 @@ function warranty_apply_credit(array $claim, $amount, $preferBillId = 0, $userId
 
     if ($amount <= MONEY_EPS) {
         q('UPDATE warranty_claims SET credit_amount = 0, credit_bill_id = NULL, credit_payment_id = NULL WHERE id = ?', [$claimId]);
-        return $had ? 'વોરંટીનું ક્રેડિટ કાઢી નાખ્યું — બિલ પાછાં બાકી થયાં.' : '';
+        return $had ? 'Warranty credit removed — the bills are outstanding again.' : '';
     }
-    if (!$party) return 'ક્રેડિટ નોંધવા માટે પહેલાં Company / Supplier પસંદ કરો.';
+    if (!$party) return 'Choose a Company / Supplier first to record a credit.';
 
     $when = $claim['back_date'] ?: ($claim['received_date'] ?: today());
     q("INSERT INTO payments (party_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, created_by)
@@ -1359,11 +1359,11 @@ function warranty_apply_credit(array $claim, $amount, $preferBillId = 0, $userId
     q('UPDATE warranty_claims SET credit_amount = ?, credit_bill_id = ?, credit_payment_id = ? WHERE id = ?',
       [$amount, $preferBillId ?: null, $payId, $claimId]);
 
-    if (!$done) return 'વોરંટીનું ક્રેડિટ ₹' . money($amount) . ' સપ્લાયરના ખાતામાં જમા — અત્યારે એમનું કોઈ બિલ બાકી નથી.';
+    if (!$done) return 'Warranty credit Rs ' . money($amount) . ' credited to the supplier account — none of their bills are outstanding right now.';
     $bits = [];
     foreach ($done as $t) $bits[] = $t['label'] . ' ₹' . money($t['amount']);
-    $msg = 'વોરંટીનું ક્રેડિટ ₹' . money($amount) . ' જમા થયું: ' . implode(', ', $bits) . '.';
-    if ($left > MONEY_EPS) $msg .= ' બાકીના ₹' . money($left) . ' સપ્લાયરના ખાતામાં જમા રહ્યા.';
+    $msg = 'Warranty credit Rs ' . money($amount) . ' Credited: ' . implode(', ', $bits) . '.';
+    if ($left > MONEY_EPS) $msg .= ' the remaining Rs ' . money($left) . ' left as credit in the supplier account.';
     return $msg;
 }
 
@@ -1470,9 +1470,9 @@ function warranty_apply_replacement(array $claim, $origSn, $repl, $fallbackLoc =
           [$itemId, $repl, $old['purchase_id'] ?? null, $old['sale_id'] ?? null, $months, $expiry, $rootId]);
         $newId = insert_id();
         if ($old) q("UPDATE item_serials SET status = 'replaced', replaced_by_id = ?, claim_id = NULL WHERE id = ?", [$newId, $old['id']]);
-        return 'સિરિયલ ' . $repl . ' ગ્રાહકના નામે નોંધ્યો (જૂનો ' . $origSn . ' replaced). '
-             . 'આ ગ્રાહકનો માલ છે એટલે સ્ટોકમાં ઉમેર્યો નથી.'
-             . ($expiry ? ' વોરંટી ' . dmy($expiry) . ' સુધી.' : '');
+        return 'Serial ' . $repl . ' recorded in the customer name (old ' . $origSn . ' replaced). '
+             . 'This belongs to the customer, so it was not added to stock.'
+             . ($expiry ? ' Warranty ' . dmy($expiry) . ' so far.' : '');
     }
 
     // the shop's own piece: the faulty one leaves the shelf, the good one lands.
@@ -1491,9 +1491,9 @@ function warranty_apply_replacement(array $claim, $origSn, $repl, $fallbackLoc =
         adjust_stock($itemId, $locId, 1, 'warranty_replace', $claim['id'] ?? null,
                      'Replacement ' . $repl . ' received from the company');
     if (!empty($claim['id'])) q('UPDATE warranty_claims SET stock_out = 0 WHERE id = ?', [$claim['id']]);
-    return 'સિરિયલ ' . $repl . ' સ્ટોકમાં ઉમેરી દીધો'
-         . ($origSn !== '' ? ' (જૂનો ' . $origSn . ' replaced)' : '') . '.'
-         . ($expiry ? ' વોરંટી ' . dmy($expiry) . ' સુધી.' : '');
+    return 'Serial ' . $repl . ' Added back to stock'
+         . ($origSn !== '' ? ' (old ' . $origSn . ' replaced)' : '') . '.'
+         . ($expiry ? ' Warranty ' . dmy($expiry) . ' so far.' : '');
 }
 
 /** How long the replacement is covered for. 'continue' (the default) keeps the
@@ -1615,7 +1615,7 @@ function sale_trade_in_rows() {
         $qty = max(1.0, (float)(post('ti_qty', [])[$i] ?? 1));
         $itemId = (int)(post('ti_item_id', [])[$i] ?? 0);
         if ($descr === '' && $value <= 0.009) continue;
-        if ($descr === '') $descr = 'જૂનો માલ';
+        if ($descr === '') $descr = 'Old stock';
         $out[] = ['item_id' => $itemId ?: null, 'descr' => mb_substr($descr, 0, 160),
                   'serial_no' => trim((string)(post('ti_serial', [])[$i] ?? '')) ?: null,
                   'qty' => $qty, 'value' => max(0.0, $value)];
@@ -1710,9 +1710,9 @@ function sale_park_payload() {
  *  Days are counted from the bill's own date, the same as the Aging report. */
 function dunning_steps() {
     return [
-        ['days' => (int)setting('dun_soft_days', '7'),  'tone' => 'soft',  'label' => '🙏 નરમ યાદ',  'call' => false],
-        ['days' => (int)setting('dun_firm_days', '15'), 'tone' => 'firm',  'label' => '⚠️ કડક યાદ',  'call' => false],
-        ['days' => (int)setting('dun_call_days', '30'), 'tone' => 'call',  'label' => '📞 ફોન કરો',  'call' => true],
+        ['days' => (int)setting('dun_soft_days', '7'),  'tone' => 'soft',  'label' => '🙏 Gentle reminder',  'call' => false],
+        ['days' => (int)setting('dun_firm_days', '15'), 'tone' => 'firm',  'label' => '⚠️ Firm reminder',  'call' => false],
+        ['days' => (int)setting('dun_call_days', '30'), 'tone' => 'call',  'label' => '📞 Call',  'call' => true],
     ];
 }
 
@@ -1728,9 +1728,9 @@ function dunning_step($lateDays) {
  *  change the tone without anybody touching the code. */
 function dunning_message($tone, array $vars) {
     $def = [
-        'soft' => "🙏 {shop}\nનમસ્તે {customer},\nતમારું ₹{amount} નું પેમેન્ટ {days} દિવસથી બાકી છે.\nસમય મળે ત્યારે ચૂકવી દેશો. આભાર!",
-        'firm' => "⚠️ {shop}\n{customer},\nતમારું ₹{amount} નું પેમેન્ટ {days} દિવસથી બાકી છે.\nકૃપા કરીને આ અઠવાડિયામાં ચૂકવી દેશો.\nકંઈ મુશ્કેલી હોય તો જણાવશો — વાત કરી લઈએ.",
-        'call' => "📞 {shop}\n{customer},\nતમારું ₹{amount} નું પેમેન્ટ {days} દિવસથી બાકી છે. અમે તમને ફોન કરીશું.",
+        'soft' => "🙏 {shop}\nHello {customer},\nYour payment of Rs {amount} has been due for {days} days.\nPlease settle it when you can. Thank you!",
+        'firm' => "⚠️ {shop}\n{customer},\nYour payment of Rs {amount} has been due for {days} days.\nPlease settle it this week.\nIf there is any difficulty, do tell us — we can work it out.",
+        'call' => "📞 {shop}\n{customer},\nYour payment of Rs {amount} has been due for {days} days. We will call you.",
     ];
     $tpl = setting('dun_msg_' . $tone, $def[$tone] ?? $def['soft']);
     foreach ($vars as $k => $v) $tpl = str_replace('{' . $k . '}', (string)$v, $tpl);
@@ -1797,10 +1797,10 @@ function interest_charge_bill($partyId, $amount, $note = '') {
     if (!$company) return 0;
 
     // one standing service item for interest, made the first time it is needed
-    $item = row("SELECT * FROM items WHERE name = 'વ્યાજ / Late Fee' LIMIT 1");
+    $item = row("SELECT * FROM items WHERE name = 'Interest / late fee' LIMIT 1");
     if (!$item) {
         q("INSERT INTO items (name, selling_price, purchase_price, is_active, item_type, show_on_website)
-           VALUES ('વ્યાજ / Late Fee', 0, 0, 1, 'service', 0)");
+           VALUES ('Interest / late fee', 0, 0, 1, 'service', 0)");
         $item = row('SELECT * FROM items WHERE id = ?', [insert_id()]);
     }
     $loc = stock_home_location(0, (int)$item['id']);
@@ -1815,14 +1815,14 @@ function interest_charge_bill($partyId, $amount, $note = '') {
            VALUES (?,?,?,?,?,?, ?,0,?,0,0,0,0,0,?, 0,?,?,?,?,?)',
           [$company['id'], (int)$partyId, $party['name'], $party['mobile'], $loc, $date,
            'retail', $amount, $amount, 'credit', 'due',
-           trim('મોડા પેમેન્ટનું વ્યાજ ' . $note),
+           trim('Interest on late payment ' . $note),
            $_SESSION['user_id'] ?? (int)val('SELECT id FROM users ORDER BY id LIMIT 1'), share_token()]);
         $saleId = insert_id();
         $invoiceNo = doc_next_no($company['id'], $date, $company['invoice_prefix']);
         q('UPDATE sales SET invoice_no = ? WHERE id = ?', [$invoiceNo, $saleId]);
         q('INSERT INTO sale_items (sale_id, item_id, qty, price, cost_price, tax_rate, total, description)
            VALUES (?,?,1,?,0,0,?,?)',
-          [$saleId, (int)$item['id'], $amount, $amount, trim('વ્યાજ ' . $note)]);
+          [$saleId, (int)$item['id'], $amount, $amount, trim('Interest ' . $note)]);
         if ($own) $pdo->commit();
         log_activity('interest_charge', $party['name'] . ' ₹' . money($amount) . ' ' . $invoiceNo);
         return $saleId;
@@ -1916,7 +1916,7 @@ function installment_create($saleId, $count, $gapDays = 30, $startDate = null) {
 
 // ---------- Cheques ----------
 
-function cheque_statuses() { return ['in_hand' => 'હાથમાં', 'deposited' => 'બેંકમાં નાખ્યો', 'cleared' => 'પાસ થયો', 'bounced' => 'બાઉન્સ', 'cancelled' => 'રદ']; }
+function cheque_statuses() { return ['in_hand' => 'on hand', 'deposited' => 'Deposited in the bank', 'cleared' => 'passed', 'bounced' => 'Bounced', 'cancelled' => 'Cancelled']; }
 
 /** Record a cheque against a payment. The payment row is the money; this is
  *  the piece of paper, which can still bounce. */
@@ -1952,7 +1952,7 @@ function bank_charge_post($amount, $date, $bankAccountId, $mode, $note = '') {
     q('INSERT INTO expenses (exp_date, category, amount, mode, bank_account_id, notes, location_id, created_by)
        VALUES (?,?,?,?,?,?,?,?)',
       [$date ?: today(), $cat, $amount, 'bank', $bankAccountId ?: null,
-       trim('બેંક/UPI ચાર્જ ' . $note), current_user()['location_id'] ?? null, $_SESSION['user_id'] ?? null]);
+       trim('Bank/UPI charges ' . $note), current_user()['location_id'] ?? null, $_SESSION['user_id'] ?? null]);
     return insert_id();
 }
 

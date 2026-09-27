@@ -257,15 +257,15 @@ include __DIR__ . '/includes/header.php';
 
 <?php // the handful of things the owner opens every single day ?>
 <div class="range-bar no-print" style="margin-bottom:12px">
-  <?php if (can('sales.add')): ?><a class="rchip" href="sales.php?action=new">🧾 નવું બિલ</a><?php endif; ?>
-  <?php if (can('purchases.add')): ?><a class="rchip" href="purchases.php?action=new">📦 નવી ખરીદી</a><?php endif; ?>
-  <?php if (can('payments.add')): ?><a class="rchip" href="payments.php?action=new&dir=in">💵 પેમેન્ટ લો</a><?php endif; ?>
-  <?php if ($canMoney): ?><a class="rchip" href="reports.php?r=aging">💰 ઉઘરાણી</a><?php endif; ?>
-  <?php if ($seeStock): ?><a class="rchip" href="reports.php?r=low">📉 ઓછો સ્ટોક</a><?php endif; ?>
-  <?php if (can('repairs.view')): ?><a class="rchip" href="repairs.php">🛠️ રિપેર<?= $repairsReady ? ' (' . $repairsReady . ')' : '' ?></a><?php endif; ?>
-  <?php if (can('weborders.view')): ?><a class="rchip" href="web_orders.php">🌐 ઓર્ડર<?= $newOrders ? ' (' . $newOrders . ')' : '' ?></a><?php endif; ?>
-  <a class="rchip" href="reports.php">📊 રિપોર્ટ</a>
-  <?php if (is_full_admin()): ?><a class="rchip" href="reports.php?r=health">🩺 ડેટા ચેક</a><?php endif; ?>
+  <?php if (can('sales.add')): ?><a class="rchip" href="sales.php?action=new">🧾 New bill</a><?php endif; ?>
+  <?php if (can('purchases.add')): ?><a class="rchip" href="purchases.php?action=new">📦 New purchase</a><?php endif; ?>
+  <?php if (can('payments.add')): ?><a class="rchip" href="payments.php?action=new&dir=in">💵 Take payment</a><?php endif; ?>
+  <?php if ($canMoney): ?><a class="rchip" href="reports.php?r=aging">💰 Collections</a><?php endif; ?>
+  <?php if ($seeStock): ?><a class="rchip" href="reports.php?r=low">📉 Low stock</a><?php endif; ?>
+  <?php if (can('repairs.view')): ?><a class="rchip" href="repairs.php">🛠️ Repairs<?= $repairsReady ? ' (' . $repairsReady . ')' : '' ?></a><?php endif; ?>
+  <?php if (can('weborders.view')): ?><a class="rchip" href="web_orders.php">🌐 Orders<?= $newOrders ? ' (' . $newOrders . ')' : '' ?></a><?php endif; ?>
+  <a class="rchip" href="reports.php">📊 Reports</a>
+  <?php if (is_full_admin()): ?><a class="rchip" href="reports.php?r=health">🩺 Data check</a><?php endif; ?>
 </div>
 
 <?php if ($myHandovers): ?>
@@ -275,11 +275,11 @@ include __DIR__ . '/includes/header.php';
 <?php if (is_full_admin()):
     try { $pendEditReq = (int)val("SELECT COUNT(*) FROM edit_requests WHERE status = 'pending'"); } catch (Exception $e) { $pendEditReq = 0; }
     if ($pendEditReq): ?>
-<div class="flash flash-info">✏️ <?= $pendEditReq ?> બિલ-એડિટ મંજૂરી બાકી છે. <a href="approvals.php">Review &amp; approve →</a></div>
+<div class="flash flash-info">✏️ <?= $pendEditReq ?> bill-edit approvals are waiting. <a href="approvals.php">Review &amp; approve →</a></div>
 <?php endif;
     try { $waUnread = (int)val("SELECT COUNT(*) FROM wa_chats WHERE direction = 'in' AND is_read = 0"); } catch (Exception $e) { $waUnread = 0; }
     if ($waUnread): ?>
-<div class="flash flash-info">💬 WhatsApp માં <?= $waUnread ?> નવા મેસેજ છે. <a href="wa_inbox.php">Inbox ખોલો →</a></div>
+<div class="flash flash-info">💬 In WhatsApp <?= $waUnread ?> new messages. <a href="wa_inbox.php">Open Inbox →</a></div>
 <?php endif; endif; ?>
 
 <div class="page-actions no-print" style="margin-bottom:10px">
@@ -295,11 +295,11 @@ include __DIR__ . '/includes/header.php';
   <a class="btn btn-sm btn-outline" href="dashboard_customize.php">⚙️ Customize Dashboard</a>
 </div>
 
-<?php // ---------- આજે શું ચાલે છે (always on top) ---------- ?>
+<?php // ---------- What is happening today (always on top) ---------- ?>
 <?php if ($sSummary): ?>
 <div class="card smart-summary">
   <div class="ss-head">
-    <h2 style="margin:0">આજે દુકાનની સ્થિતિ <span class="muted" style="font-weight:400;font-size:13px">· <?= e($dLabel) ?></span></h2>
+    <h2 style="margin:0">The shop today <span class="muted" style="font-weight:400;font-size:13px">· <?= e($dLabel) ?></span></h2>
     <?php if ($sHealth): ?>
     <a class="hchip h-<?= e($sHealth['state']) ?>" href="reports.php?r=health" title="Data Health Check">
       <?= $sHealth['state'] === 'ok' ? '🟢' : ($sHealth['state'] === 'warn' ? '🟡' : '🔴') ?>
@@ -310,13 +310,13 @@ include __DIR__ . '/includes/header.php';
   <p class="ss-text"><?= e($sSummary) ?></p>
   <form method="get" class="range-bar">
     <?php if ($dashLoc): ?><input type="hidden" name="loc" value="<?= (int)$dashLoc ?>"><?php endif; ?>
-    <?php foreach (['today' => 'આજે', 'yesterday' => 'ગઈકાલે', 'week' => 'આ અઠવાડિયું', 'month' => 'આ મહિનો', 'prev_month' => 'ગયો મહિનો'] as $rk => $rl): ?>
+    <?php foreach (['today' => 'Today', 'yesterday' => 'Yesterday', 'week' => 'This week', 'month' => 'This month', 'prev_month' => 'Last month'] as $rk => $rl): ?>
     <button type="submit" name="range" value="<?= $rk ?>" class="rchip <?= $rangeKey === $rk ? 'on' : '' ?>"><?= $rl ?></button>
     <?php endforeach; ?>
     <span class="rcustom">
       <input type="date" name="from" value="<?= e($rangeKey === 'custom' ? $dFrom : '') ?>">
       <input type="date" name="to" value="<?= e($rangeKey === 'custom' ? $dTo : '') ?>">
-      <button type="submit" name="range" value="custom" class="rchip <?= $rangeKey === 'custom' ? 'on' : '' ?>">બતાવો</button>
+      <button type="submit" name="range" value="custom" class="rchip <?= $rangeKey === 'custom' ? 'on' : '' ?>">Show</button>
     </span>
   </form>
 </div>
@@ -324,7 +324,7 @@ include __DIR__ . '/includes/header.php';
 
 <?php if ($sActions): ?>
 <div class="card">
-  <h2>🔔 આજે શું કરવાનું છે <span class="muted" style="font-weight:400;font-size:13px">(<?= count($sActions) ?>)</span></h2>
+  <h2>🔔 What to do today <span class="muted" style="font-weight:400;font-size:13px">(<?= count($sActions) ?>)</span></h2>
   <?php foreach ($sActions as $a): ?>
   <div class="act act-<?= e($a['sev']) ?>">
     <span class="act-ico"><?= $a['icon'] ?></span>
@@ -337,7 +337,7 @@ include __DIR__ . '/includes/header.php';
 
 <?php if ($sAlerts): ?>
 <div class="card">
-  <h2>⚠️ ધ્યાન રાખવા જેવું</h2>
+  <h2>⚠️ Worth watching</h2>
   <?php foreach ($sAlerts as $al): ?>
   <a class="alertrow al-<?= e($al['sev']) ?>" href="<?= e($al['link']) ?>"><?= e($al['text']) ?> <span class="muted">›</span></a>
   <?php endforeach; ?>
@@ -348,171 +348,171 @@ include __DIR__ . '/includes/header.php';
     if (!$allWidgetDefs[$_w] || in_array($_w, $hiddenWidgets, true)) continue;
     if ($_w === 'smart_kpis'): ?>
 <div class="card">
-  <h2><?= e($dLabel) ?> <span class="muted" style="font-weight:400;font-size:13px">· <?= e($cLabel) ?> સાથે સરખામણી</span></h2>
+  <h2><?= e($dLabel) ?> <span class="muted" style="font-weight:400;font-size:13px">· <?= e($cLabel) ?> compared with</span></h2>
   <div class="kpi-grid">
     <?php
       $rq = 'from=' . urlencode($dFrom) . '&to=' . urlencode($dTo);
-      dash_card('વેચાણ', money($sKpis['sales']), 'reports.php?r=daily&' . $rq, $sKpis['sales'], $sPrev['sales']);
-      if ($seeMoney) dash_card('ઉઘરાણી આવી', money($sKpis['collected']), 'reports.php?r=cashbook&' . $rq, $sKpis['collected'], $sPrev['collected'], 's-ok');
-      if ($seeProfit) dash_card('નફો', money($sKpis['profit']), 'reports.php?r=profit&' . $rq, $sKpis['profit'], $sPrev['profit'], 's-ok');
-      if (can('expenses.view')) dash_card('ખર્ચ', money($sKpis['expenses']), 'expenses.php', $sKpis['expenses'], $sPrev['expenses'], 's-warn');
-      if ($seeMoney) dash_card('ચોખ્ખી રોકડ', money($sKpis['net_cash']), 'cash_bank.php', $sKpis['net_cash'], $sPrev['net_cash'], $sKpis['net_cash'] < 0 ? 's-bad' : '');
-      dash_card('બિલ', (string)$sKpis['bills'], 'sales.php', $sKpis['bills'], $sPrev['bills'], '', '');
-      dash_card('સરેરાશ બિલ', money($sKpis['avg_bill']), 'reports.php?r=daily&' . $rq, $sKpis['avg_bill'], $sPrev['avg_bill']);
-      dash_card('નવા ગ્રાહક', (string)$sKpis['new_customers'], 'parties.php', $sKpis['new_customers'], $sPrev['new_customers'], '', '');
+      dash_card('Sales', money($sKpis['sales']), 'reports.php?r=daily&' . $rq, $sKpis['sales'], $sPrev['sales']);
+      if ($seeMoney) dash_card('Collected', money($sKpis['collected']), 'reports.php?r=cashbook&' . $rq, $sKpis['collected'], $sPrev['collected'], 's-ok');
+      if ($seeProfit) dash_card('Profit', money($sKpis['profit']), 'reports.php?r=profit&' . $rq, $sKpis['profit'], $sPrev['profit'], 's-ok');
+      if (can('expenses.view')) dash_card('Expenses', money($sKpis['expenses']), 'expenses.php', $sKpis['expenses'], $sPrev['expenses'], 's-warn');
+      if ($seeMoney) dash_card('Net cash', money($sKpis['net_cash']), 'cash_bank.php', $sKpis['net_cash'], $sPrev['net_cash'], $sKpis['net_cash'] < 0 ? 's-bad' : '');
+      dash_card('Bill', (string)$sKpis['bills'], 'sales.php', $sKpis['bills'], $sPrev['bills'], '', '');
+      dash_card('Average bill', money($sKpis['avg_bill']), 'reports.php?r=daily&' . $rq, $sKpis['avg_bill'], $sPrev['avg_bill']);
+      dash_card('New customers', (string)$sKpis['new_customers'], 'parties.php', $sKpis['new_customers'], $sPrev['new_customers'], '', '');
       if ($seeMoney && $sBals) {
-        dash_card('બાકી લેણું', money($sBals['receivable']), $partiesLink ? 'parties.php?bal=get' : 'reports.php?r=aging', null, null, 's-bad');
-        dash_card('બાકી દેવું', money($sBals['payable']), $partiesLink ? 'parties.php?bal=give' : 'reports.php?r=payables', null, null, 's-warn');
+        dash_card('Receivable', money($sBals['receivable']), $partiesLink ? 'parties.php?bal=get' : 'reports.php?r=aging', null, null, 's-bad');
+        dash_card('Payable', money($sBals['payable']), $partiesLink ? 'parties.php?bal=give' : 'reports.php?r=payables', null, null, 's-warn');
       }
-      if ($repairsReady) dash_card('તૈયાર રિપેર', (string)$repairsReady, 'repairs.php', null, null, 's-warn', '');
-      if ($newOrders) dash_card('નવા ઓર્ડર', (string)$newOrders, 'web_orders.php', null, null, 's-warn', '');
+      if ($repairsReady) dash_card('Repairs ready', (string)$repairsReady, 'repairs.php', null, null, 's-warn', '');
+      if ($newOrders) dash_card('New orders', (string)$newOrders, 'web_orders.php', null, null, 's-warn', '');
     ?>
   </div>
-  <p class="muted" style="margin:8px 0 0;font-size:12px">દરેક આંકડા પર ક્લિક કરો એટલે એની પાછળનું લિસ્ટ ખૂલશે.
-    <?php if ($seeProfit && $sKpis['discount'] > 0.009): ?>· ડિસ્કાઉન્ટ આપ્યું ₹<?= money($sKpis['discount']) ?><?php endif; ?>
-    <?php if ($seeProfit && $sKpis['margin_pct']): ?>· માર્જિન <?= $sKpis['margin_pct'] ?>%<?php endif; ?>
-    · <?= (float)$sKpis['units'] ?> નંગ વેચાયા</p>
+  <p class="muted" style="margin:8px 0 0;font-size:12px">Click any figure to open the list behind it.
+    <?php if ($seeProfit && $sKpis['discount'] > 0.009): ?>· discount given Rs <?= money($sKpis['discount']) ?><?php endif; ?>
+    <?php if ($seeProfit && $sKpis['margin_pct']): ?>· margin <?= $sKpis['margin_pct'] ?>%<?php endif; ?>
+    · <?= (float)$sKpis['units'] ?> units sold</p>
 </div>
 <?php elseif ($_w === 'smart_queue'): ?>
 <div class="card">
-  <h2>📮 ઉઘરાણીની અગ્રતા <span class="muted" style="font-weight:400;font-size:13px">· કોને પહેલા કહેવું</span></h2>
+  <h2>📮 Collection priority <span class="muted" style="font-weight:400;font-size:13px">· who to ask first</span></h2>
   <div class="grid-stats">
-    <a class="stat s-bad" href="collection.php"><div class="stat-label">તાત્કાલિક</div><div class="stat-value"><?= (int)$sCollSum['critical'] ?></div></a>
-    <a class="stat s-warn" href="collection.php"><div class="stat-label">ઊંચી અગ્રતા</div><div class="stat-value"><?= (int)$sCollSum['high'] ?></div></a>
-    <a class="stat" href="collection.php"><div class="stat-label">અત્યારે મેસેજ થઈ શકે</div><div class="stat-value"><?= (int)$sCollSum['contactable'] ?></div></a>
-    <a class="stat <?= $sCollSum['broken'] ? 's-bad' : '' ?>" href="collection.php"><div class="stat-label">વાયદા તૂટ્યા (30 દિ.)</div><div class="stat-value"><?= (int)$sCollSum['broken'] ?></div></a>
+    <a class="stat s-bad" href="collection.php"><div class="stat-label">Urgent</div><div class="stat-value"><?= (int)$sCollSum['critical'] ?></div></a>
+    <a class="stat s-warn" href="collection.php"><div class="stat-label">High priority</div><div class="stat-value"><?= (int)$sCollSum['high'] ?></div></a>
+    <a class="stat" href="collection.php"><div class="stat-label">can be messaged now</div><div class="stat-value"><?= (int)$sCollSum['contactable'] ?></div></a>
+    <a class="stat <?= $sCollSum['broken'] ? 's-bad' : '' ?>" href="collection.php"><div class="stat-label">Promises broken (30 days)</div><div class="stat-value"><?= (int)$sCollSum['broken'] ?></div></a>
   </div>
   <?php if ($sCollSum['promises_open']): ?>
-  <p class="muted mb" style="font-size:13px">🤝 <?= (int)$sCollSum['promises_open'] ?> ગ્રાહકે ચૂકવવાનો વાયદો આપ્યો છે<?= $sCollSum['promised_today'] > 0.009 ? ' — આજે ₹' . money($sCollSum['promised_today']) . ' આવવાના છે' : '' ?>.</p>
+  <p class="muted mb" style="font-size:13px">🤝 <?= (int)$sCollSum['promises_open'] ?> customers have promised to pay<?= $sCollSum['promised_today'] > 0.009 ? ' — today Rs ' . money($sCollSum['promised_today']) . ' are due in' : '' ?>.</p>
   <?php endif; ?>
-  <p class="mt" style="margin:0"><a class="btn btn-sm" href="collection.php">📮 આજની ઉઘરાણી યાદી ખોલો</a></p>
+  <p class="mt" style="margin:0"><a class="btn btn-sm" href="collection.php">📮 Open the collection list</a></p>
 </div>
 <?php elseif ($_w === 'smart_purchase'): ?>
 <div class="card">
-  <h2>🛒 શું મંગાવવું <span class="muted" style="font-weight:400;font-size:13px">· ડિલિવરી આવે એ પહેલાં ખૂટે એવું</span></h2>
+  <h2>🛒 What to buy <span class="muted" style="font-weight:400;font-size:13px">· likely to run short before delivery</span></h2>
   <div class="grid-stats">
-    <a class="stat s-bad" href="purchase_intel.php"><div class="stat-label">ખલાસ થઈ ગયું</div><div class="stat-value"><?= (int)$sPurch['out_of_stock'] ?></div></a>
-    <a class="stat s-warn" href="purchase_intel.php"><div class="stat-label">મંગાવવા જેવું</div><div class="stat-value"><?= (int)$sPurch['reorder_items'] ?></div></a>
-    <a class="stat" href="purchase_intel.php"><div class="stat-label">અંદાજિત ખર્ચ</div><div class="stat-value">₹<?= money($sPurch['reorder_cost']) ?></div></a>
-    <a class="stat <?= $sPurch['price_alerts'] ? 's-warn' : '' ?>" href="purchase_intel.php?tab=price"><div class="stat-label">ભાવ વધ્યા</div><div class="stat-value"><?= (int)$sPurch['price_alerts'] ?></div></a>
+    <a class="stat s-bad" href="purchase_intel.php"><div class="stat-label">ran out</div><div class="stat-value"><?= (int)$sPurch['out_of_stock'] ?></div></a>
+    <a class="stat s-warn" href="purchase_intel.php"><div class="stat-label">worth ordering</div><div class="stat-value"><?= (int)$sPurch['reorder_items'] ?></div></a>
+    <a class="stat" href="purchase_intel.php"><div class="stat-label">Estimated cost</div><div class="stat-value">₹<?= money($sPurch['reorder_cost']) ?></div></a>
+    <a class="stat <?= $sPurch['price_alerts'] ? 's-warn' : '' ?>" href="purchase_intel.php?tab=price"><div class="stat-label">cost went up</div><div class="stat-value"><?= (int)$sPurch['price_alerts'] ?></div></a>
   </div>
   <p class="mt" style="margin:0">
-    <a class="btn btn-sm" href="purchase_intel.php">🛒 મંગાવવાની યાદી ખોલો</a>
+    <a class="btn btn-sm" href="purchase_intel.php">🛒 Open the buying list</a>
     <?php if ($sPurch['thin_margin']): ?>
-    <a class="btn btn-sm btn-outline" href="purchase_intel.php?tab=margin">🏷️ <?= (int)$sPurch['thin_margin'] ?> વસ્તુનું માર્જિન પાતળું</a>
+    <a class="btn btn-sm btn-outline" href="purchase_intel.php?tab=margin">🏷️ <?= (int)$sPurch['thin_margin'] ?> items on a thin margin</a>
     <?php endif; ?>
   </p>
 </div>
 <?php elseif ($_w === 'smart_cash'): ?>
 <div class="card">
-  <h2>💵 રોકડ ખેંચાવાની છે <span class="muted" style="font-weight:400;font-size:13px">· આગળના અઠવાડિયાં</span></h2>
+  <h2>💵 Cash will be tight <span class="muted" style="font-weight:400;font-size:13px">· the weeks ahead</span></h2>
   <div class="grid-stats">
-    <a class="stat s-bad" href="forecast.php?tab=cash"><div class="stat-label">ખેંચનાં અઠવાડિયાં</div><div class="stat-value"><?= (int)$sCash['danger_weeks'] ?></div></a>
-    <a class="stat s-bad" href="forecast.php?tab=cash"><div class="stat-label">સૌથી પહેલાં</div><div class="stat-value" style="font-size:15px"><?= e($sCash['danger_label']) ?></div></a>
-    <a class="stat" href="forecast.php?tab=cash"><div class="stat-label">ત્યારે બચશે</div><div class="stat-value">₹<?= money($sCash['danger_balance']) ?></div></a>
-    <a class="stat" href="collection.php"><div class="stat-label">અત્યારે હાથમાં</div><div class="stat-value">₹<?= money($sCash['opening']) ?></div></a>
+    <a class="stat s-bad" href="forecast.php?tab=cash"><div class="stat-label">tight weeks</div><div class="stat-value"><?= (int)$sCash['danger_weeks'] ?></div></a>
+    <a class="stat s-bad" href="forecast.php?tab=cash"><div class="stat-label">First of all</div><div class="stat-value" style="font-size:15px"><?= e($sCash['danger_label']) ?></div></a>
+    <a class="stat" href="forecast.php?tab=cash"><div class="stat-label">would be saved</div><div class="stat-value">₹<?= money($sCash['danger_balance']) ?></div></a>
+    <a class="stat" href="collection.php"><div class="stat-label">on hand right now</div><div class="stat-value">₹<?= money($sCash['opening']) ?></div></a>
   </div>
   <p class="mt muted" style="margin:0;font-size:12.5px">
-    આ ગણતરીમાં <b>મુદત વીતી ગયેલી ઉઘરાણી ગણી નથી</b> — એ આવશે એમ માની લેવું ખોટું છે.
-    એ ઉઘરાવી લો તો ચિત્ર સુધરે. <a href="collection.php">ઉઘરાણી યાદી</a> · <a href="forecast.php?tab=cash">આખું ચિત્ર</a>
+    In this calculation <b>overdue receivables are not counted</b> — assuming it will arrive would be wrong.
+    Collecting that would improve the picture. <a href="collection.php">Collection list</a> · <a href="forecast.php?tab=cash">The whole picture</a>
   </p>
 </div>
 <?php elseif ($_w === 'smart_market'): ?>
 <div class="card">
-  <h2>📊 બજારની સમજ <span class="muted" style="font-weight:400;font-size:13px">· આખા વર્ષ સામે આગલું આખું વર્ષ</span></h2>
+  <h2>📊 Market Intelligence <span class="muted" style="font-weight:400;font-size:13px">· the full year against the previous full year</span></h2>
   <div class="grid-stats">
     <a class="stat <?= $sMarket['change']['dir'] === 'down' ? 's-bad' : ($sMarket['change']['dir'] === 'up' ? 's-good' : '') ?>" href="market.php">
-      <div class="stat-label">વેચાણ ગયા વર્ષ સામે</div><div class="stat-value"><?= e($sMarket['change']['label']) ?></div></a>
-    <a class="stat s-good" href="market.php?tab=momentum"><div class="stat-label">વધતી કેટેગરી</div><div class="stat-value"><?= (int)$sMarket['growing'] ?></div></a>
-    <a class="stat <?= $sMarket['shrinking'] ? 's-bad' : '' ?>" href="market.php?tab=momentum"><div class="stat-label">ઘટતી કેટેગરી</div><div class="stat-value"><?= (int)$sMarket['shrinking'] ?></div></a>
+      <div class="stat-label">sales against last year</div><div class="stat-value"><?= e($sMarket['change']['label']) ?></div></a>
+    <a class="stat s-good" href="market.php?tab=momentum"><div class="stat-label">Growing category</div><div class="stat-value"><?= (int)$sMarket['growing'] ?></div></a>
+    <a class="stat <?= $sMarket['shrinking'] ? 's-bad' : '' ?>" href="market.php?tab=momentum"><div class="stat-label">Shrinking category</div><div class="stat-value"><?= (int)$sMarket['shrinking'] ?></div></a>
     <a class="stat <?= $sMarket['discount_pct'] >= 5 ? 's-warn' : '' ?>" href="market.php?tab=discount">
-      <div class="stat-label">છૂટ (<?= e($sMarket['discount_month']) ?>)</div><div class="stat-value"><?= $sMarket['discount_pct'] ?>%</div></a>
+      <div class="stat-label">Discount (<?= e($sMarket['discount_month']) ?>)</div><div class="stat-value"><?= $sMarket['discount_pct'] ?>%</div></a>
   </div>
   <p class="mt" style="margin:0">
-    <a class="btn btn-sm" href="market.php">📊 બજારની સમજ ખોલો</a>
+    <a class="btn btn-sm" href="market.php">📊 Open Market Intelligence</a>
     <?php if ($sMarket['top_down']): ?>
-    <a class="btn btn-sm btn-outline" href="market.php?tab=momentum">▼ સૌથી વધુ ઘટ્યું: <?= e($sMarket['top_down']) ?></a>
+    <a class="btn btn-sm btn-outline" href="market.php?tab=momentum">▼ Biggest drop: <?= e($sMarket['top_down']) ?></a>
     <?php endif; ?>
   </p>
 </div>
 <?php elseif ($_w === 'smart_campaign'): $kc = $sCampaign['counts']; ?>
 <div class="card">
-  <h2>📣 <?= e($sCampaign['name']) ?> <span class="badge b-warn">ચાલુ છે</span></h2>
+  <h2>📣 <?= e($sCampaign['name']) ?> <span class="badge b-warn">running</span></h2>
   <div class="grid-stats">
-    <a class="stat s-good" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">મોકલ્યા</div><div class="stat-value"><?= (int)$kc['sent'] ?></div></a>
-    <a class="stat s-warn" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">બાકી</div><div class="stat-value"><?= (int)$kc['queued'] ?></div></a>
-    <a class="stat" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">રોકી રાખેલા</div><div class="stat-value"><?= (int)$kc['holdout'] ?></div></a>
-    <a class="stat <?= $kc['failed'] ? 's-bad' : '' ?>" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">નિષ્ફળ</div><div class="stat-value"><?= (int)$kc['failed'] ?></div></a>
+    <a class="stat s-good" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">sent</div><div class="stat-value"><?= (int)$kc['sent'] ?></div></a>
+    <a class="stat s-warn" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">Outstanding</div><div class="stat-value"><?= (int)$kc['queued'] ?></div></a>
+    <a class="stat" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">held back</div><div class="stat-value"><?= (int)$kc['holdout'] ?></div></a>
+    <a class="stat <?= $kc['failed'] ? 's-bad' : '' ?>" href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>"><div class="stat-label">failed</div><div class="stat-value"><?= (int)$kc['failed'] ?></div></a>
   </div>
   <p class="mt muted" style="margin:0;font-size:12.5px">
-    <?= (int)$kc['holdout'] ?> ગ્રાહકોને જાણી જોઈને મેસેજ નથી મોકલ્યો — એમની સામે સરખાવીને ખબર પડશે કે કેમ્પેનથી ખરેખર ફરક પડ્યો કે નહીં.
-    <a href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>">વિગત જુઓ</a>
+    <?= (int)$kc['holdout'] ?> customers were deliberately not messaged — comparing against them shows whether the campaign really made a difference.
+    <a href="campaigns.php?id=<?= (int)$sCampaign['id'] ?>">See detail</a>
   </p>
 </div>
 <?php elseif ($_w === 'smart_collection'): ?>
 <div class="card">
-  <h2>💰 ઉઘરાણી <span class="muted" style="font-weight:400;font-size:13px">(ખાતાવહી પ્રમાણે સાચી બાકી)</span></h2>
+  <h2>💰 Collections <span class="muted" style="font-weight:400;font-size:13px">(the true balance per the ledger)</span></h2>
   <div class="grid-stats">
-    <a class="stat s-bad" href="reports.php?r=aging"><div class="stat-label">કુલ બાકી</div><div class="stat-value">₹<?= money($sCol['total']) ?></div></a>
-    <a class="stat s-bad" href="reports.php?r=aging"><div class="stat-label">મુદત વીતી</div><div class="stat-value">₹<?= money($sCol['overdue']) ?></div></a>
-    <a class="stat s-warn" href="reports.php?r=aging"><div class="stat-label">આજે ભરવાના</div><div class="stat-value">₹<?= money($sCol['due_today']) ?></div></a>
-    <a class="stat" href="reports.php?r=aging"><div class="stat-label">આ અઠવાડિયે</div><div class="stat-value">₹<?= money($sCol['due_week']) ?></div></a>
+    <a class="stat s-bad" href="reports.php?r=aging"><div class="stat-label">Total outstanding</div><div class="stat-value">₹<?= money($sCol['total']) ?></div></a>
+    <a class="stat s-bad" href="reports.php?r=aging"><div class="stat-label">Overdue</div><div class="stat-value">₹<?= money($sCol['overdue']) ?></div></a>
+    <a class="stat s-warn" href="reports.php?r=aging"><div class="stat-label">Due today</div><div class="stat-value">₹<?= money($sCol['due_today']) ?></div></a>
+    <a class="stat" href="reports.php?r=aging"><div class="stat-label">This week</div><div class="stat-value">₹<?= money($sCol['due_week']) ?></div></a>
   </div>
   <?php if ($sCol['oldest_days'] > 0): ?>
-  <p class="muted mb">સૌથી જૂનું બાકી: <strong><?= e($sCol['oldest_party']) ?></strong> — <?= (int)$sCol['oldest_days'] ?> દિવસથી</p>
+  <p class="muted mb">Oldest outstanding: <strong><?= e($sCol['oldest_party']) ?></strong> — <?= (int)$sCol['oldest_days'] ?> days since</p>
   <?php endif; ?>
   <?php if ($sCol['customers']): ?>
   <div class="table-wrap"><table class="table-sm">
-    <thead><tr><th>ગ્રાહક</th><th class="num">બાકી ₹</th><th class="num">દિવસ</th><th>છેલ્લું પેમેન્ટ</th><th>વર્તન</th></tr></thead>
+    <thead><tr><th>Customer</th><th class="num">Due Rs </th><th class="num">days</th><th>Last payment</th><th>Behaviour</th></tr></thead>
     <tbody>
     <?php foreach (array_slice($sCol['customers'], 0, 8) as $c):
-      $bmap = ['excellent' => ['badge-ok', 'સમયસર'], 'good' => ['badge-ok', 'સારું'], 'slow' => ['badge-warn', 'ધીમું'],
-               'poor' => ['badge-bad', 'ખરાબ'], 'new' => ['badge-info', 'નવું']];
+      $bmap = ['excellent' => ['badge-ok', 'On time'], 'good' => ['badge-ok', 'Good'], 'slow' => ['badge-warn', 'Slow'],
+               'poor' => ['badge-bad', 'Poor'], 'new' => ['badge-info', 'New']];
       list($bcls, $btxt) = $bmap[$c['behaviour']] ?? ['badge-info', '-']; ?>
     <tr>
       <td><a href="parties.php?action=ledger&id=<?= (int)$c['id'] ?>"><?= e($c['name']) ?></a></td>
       <td class="num">₹<?= money($c['amount']) ?></td>
       <td class="num"><?= $c['days'] > 0 ? (int)$c['days'] . 'd' : '-' ?></td>
-      <td><?= $c['last_payment'] ? dmy($c['last_payment']) : '<span class="muted">ક્યારેય નહીં</span>' ?></td>
+      <td><?= $c['last_payment'] ? dmy($c['last_payment']) : '<span class="muted">never</span>' ?></td>
       <td><span class="badge <?= $bcls ?>"><?= $btxt ?></span></td>
     </tr>
     <?php endforeach; ?>
     </tbody>
   </table></div>
-  <p class="mt"><a class="btn btn-sm btn-wa" href="reports.php?r=aging">📲 રિમાઇન્ડર મોકલો</a>
-     <a class="btn btn-sm btn-outline" href="reports.php?r=aging">આખું લિસ્ટ →</a></p>
+  <p class="mt"><a class="btn btn-sm btn-wa" href="reports.php?r=aging">📲 Send a reminder</a>
+     <a class="btn btn-sm btn-outline" href="reports.php?r=aging">Full list →</a></p>
   <?php endif; ?>
 </div>
 <?php elseif ($_w === 'smart_stock'): ?>
 <div class="card">
-  <h2>📦 સ્ટોકની સ્થિતિ</h2>
+  <h2>📦 Stock position</h2>
   <?php // stock VALUE is cost-price information, so it follows the same
         // reports.profit fence the Inventory Summary card already uses;
         // the shortage COUNTS are safe for anyone who may see items ?>
   <div class="grid-stats">
-    <a class="stat s-bad" href="reports.php?r=low"><div class="stat-label">ખલાસ</div><div class="stat-value"><?= dash_n($sStock, 'out') ?></div></a>
-    <a class="stat s-warn" href="reports.php?r=low"><div class="stat-label">ખૂટવાની તૈયારીમાં</div><div class="stat-value"><?= dash_n($sStock, 'low') ?></div></a>
+    <a class="stat s-bad" href="reports.php?r=low"><div class="stat-label">Out of stock</div><div class="stat-value"><?= dash_n($sStock, 'out') ?></div></a>
+    <a class="stat s-warn" href="reports.php?r=low"><div class="stat-label">about to run short</div><div class="stat-value"><?= dash_n($sStock, 'low') ?></div></a>
     <?php if ($seeProfit): ?>
-    <a class="stat" href="reports.php?r=stockval"><div class="stat-label">સ્ટોકની કિંમત</div><div class="stat-value">₹<?= money($sStock['stock_value']) ?></div></a>
-    <a class="stat s-warn" href="reports.php?r=dead_stock"><div class="stat-label">પડી રહેલો માલ</div><div class="stat-value">₹<?= money($sStock['dead_value']) ?></div></a>
+    <a class="stat" href="reports.php?r=stockval"><div class="stat-label">Stock value</div><div class="stat-value">₹<?= money($sStock['stock_value']) ?></div></a>
+    <a class="stat s-warn" href="reports.php?r=dead_stock"><div class="stat-label">Dead stock</div><div class="stat-value">₹<?= money($sStock['dead_value']) ?></div></a>
     <?php else: ?>
-    <a class="stat" href="reports.php?r=low"><div class="stat-label">કુલ પ્રોડક્ટ</div><div class="stat-value"><?= (int)$sStock['items'] ?></div></a>
-    <a class="stat s-warn" href="reports.php?r=low"><div class="stat-label">પડી રહેલી પ્રોડક્ટ</div><div class="stat-value"><?= dash_n($sStock, 'deadlist') ?></div></a>
+    <a class="stat" href="reports.php?r=low"><div class="stat-label">Total products</div><div class="stat-value"><?= (int)$sStock['items'] ?></div></a>
+    <a class="stat s-warn" href="reports.php?r=low"><div class="stat-label">products sitting unsold</div><div class="stat-value"><?= dash_n($sStock, 'deadlist') ?></div></a>
     <?php endif; ?>
   </div>
   <?php if ($seeProfit && $sStock['dead_value'] > 0.009): ?>
-  <h3>🐌 કેટલા વખતથી પડ્યું છે</h3>
+  <h3>🐌 How long it has been sitting</h3>
   <div class="grid-stats">
     <?php foreach ($sStock['dead_buckets'] as $bk => $bv): ?>
     <a class="stat <?= $bv > 0 ? ($bk === '180+' ? 's-bad' : 's-warn') : '' ?>" href="reports.php?r=dead_stock">
-      <div class="stat-label"><?= e($bk) ?> દિવસ</div><div class="stat-value">₹<?= money($bv) ?></div></a>
+      <div class="stat-label"><?= e($bk) ?> days</div><div class="stat-value">₹<?= money($bv) ?></div></a>
     <?php endforeach; ?>
   </div>
   <?php endif; ?>
   <?php $short = array_merge($sStock['out'], $sStock['low']); if ($short): ?>
-  <h3>તરત ધ્યાન આપો</h3>
+  <h3>Needs attention now</h3>
   <div class="table-wrap"><table class="table-sm">
-    <thead><tr><th>પ્રોડક્ટ</th><th class="num">સ્ટોક</th><th class="num">રોજ વેચાય</th><th class="num">કેટલા દિવસ ચાલશે</th><th class="num">મંગાવો</th><th>છેલ્લે વેચાયું</th></tr></thead>
+    <thead><tr><th>Product</th><th class="num">Stock</th><th class="num">sold per day</th><th class="num">Days of cover</th><th class="num">Order</th><th>Last sold</th></tr></thead>
     <tbody>
     <?php foreach (array_slice($short, 0, 8) as $it): ?>
     <tr>
@@ -521,24 +521,24 @@ include __DIR__ . '/includes/header.php';
       <td class="num"><?= $it['per_day'] > 0 ? $it['per_day'] : '-' ?></td>
       <td class="num"><?= $it['days_left'] === null ? '-' : (int)$it['days_left'] . 'd' ?></td>
       <td class="num"><?= $it['reorder_qty'] > 0 ? '<strong>' . (int)$it['reorder_qty'] . '</strong>' : '-' ?></td>
-      <td><?= $it['last_sale'] ? dmy($it['last_sale']) : '<span class="muted">ક્યારેય નહીં</span>' ?></td>
+      <td><?= $it['last_sale'] ? dmy($it['last_sale']) : '<span class="muted">never</span>' ?></td>
     </tr>
     <?php endforeach; ?>
     </tbody>
   </table></div>
-  <p class="mt"><a class="btn btn-sm" href="purchases.php?action=new">🛒 પરચેસ કરો</a>
-     <a class="btn btn-sm btn-outline" href="reports.php?r=purchase_reco">સૂચન જુઓ →</a></p>
+  <p class="mt"><a class="btn btn-sm" href="purchases.php?action=new">🛒 Buy now</a>
+     <a class="btn btn-sm btn-outline" href="reports.php?r=purchase_reco">See suggestions →</a></p>
   <?php endif; ?>
 
   <?php // fast / slow / dead / high-value, side by side ?>
   <div class="grid-2">
     <?php
       $stockBlocks = [
-        ['🔥 ઝડપથી વેચાય છે', $sStock['fast'], 'sold90', 'nos'],
-        ['🐢 ધીમે વેચાય છે', $sStock['slow'], 'value', 'money'],
-        ['🐌 પડી રહેલો માલ', $sStock['deadlist'], 'value', 'money'],
+        ['🔥 Selling fast', $sStock['fast'], 'sold90', 'nos'],
+        ['🐢 Selling slowly', $sStock['slow'], 'value', 'money'],
+        ['🐌 Dead stock', $sStock['deadlist'], 'value', 'money'],
       ];
-      if ($seeProfit) $stockBlocks[] = ['💎 સૌથી કિંમતી સ્ટોક', $sStock['high_value'], 'value', 'money'];
+      if ($seeProfit) $stockBlocks[] = ['💎 Most valuable stock', $sStock['high_value'], 'value', 'money'];
       foreach ($stockBlocks as list($bt, $brows, $bkey, $bfmt)):
         if (!$brows) continue;
         if (!$seeProfit && $bfmt === 'money') continue; // cost data stays behind reports.profit
@@ -549,7 +549,7 @@ include __DIR__ . '/includes/header.php';
       <?php foreach (array_slice($brows, 0, 5) as $x): ?>
         <tr>
           <td><a href="item_view.php?id=<?= (int)$x['id'] ?>"><?= e($x['name']) ?></a>
-            <?php if ($x['idle_days'] !== null && $bkey === 'value'): ?><br><span class="muted" style="font-size:11px"><?= (int)$x['idle_days'] ?> દિવસથી પડ્યું</span><?php endif; ?>
+            <?php if ($x['idle_days'] !== null && $bkey === 'value'): ?><br><span class="muted" style="font-size:11px"><?= (int)$x['idle_days'] ?> days sitting</span><?php endif; ?>
           </td>
           <td class="num"><?= $bfmt === 'money' ? '₹' . money($x[$bkey]) : (float)$x[$bkey] . ' ' . e($x['unit']) ?></td>
         </tr>
@@ -561,17 +561,17 @@ include __DIR__ . '/includes/header.php';
 </div>
 <?php elseif ($_w === 'smart_sales'): ?>
 <div class="card">
-  <h2>📈 વેચાણનું વિશ્લેષણ
+  <h2>📈 Sales analysis
     <span class="muted" style="font-weight:400;font-size:13px">·
-      <?= $sTrend['direction'] === 'up' ? '↑ વધી રહ્યું છે' : ($sTrend['direction'] === 'down' ? '↓ ઘટી રહ્યું છે' : '→ સ્થિર') ?>
-      (છેલ્લા 6 મહિના)</span></h2>
+      <?= $sTrend['direction'] === 'up' ? '↑ going up' : ($sTrend['direction'] === 'down' ? '↓ going down' : '→ steady') ?>
+      (last 6 months)</span></h2>
   <div class="grid-2">
     <?php
       $blocks = [
-        ['ટોપ પ્રોડક્ટ', $sIntel['products'], 'item_view.php?id=', 'reports.php?r=sales'],
-        ['ટોપ ગ્રાહક', $sIntel['customers'], 'parties.php?action=ledger&id=', 'reports.php?r=party_sales'],
-        ['ટોપ કેટેગરી', $sIntel['categories'], '', 'reports.php?r=sales'],
-        ['ટોપ બ્રાન્ડ', $sIntel['brands'], '', 'reports.php?r=sales'],
+        ['Top product', $sIntel['products'], 'item_view.php?id=', 'reports.php?r=sales'],
+        ['Top customer', $sIntel['customers'], 'parties.php?action=ledger&id=', 'reports.php?r=party_sales'],
+        ['Top category', $sIntel['categories'], '', 'reports.php?r=sales'],
+        ['Top brand', $sIntel['brands'], '', 'reports.php?r=sales'],
       ];
       foreach ($blocks as list($bTitle, $bRows, $bLink, $bMore)):
         if (!$bRows) continue; ?>
@@ -585,32 +585,32 @@ include __DIR__ . '/includes/header.php';
         </tr>
       <?php endforeach; ?>
       </tbody></table>
-      <p class="mt"><a class="muted" href="<?= e($bMore) ?>" style="font-size:12px">બધું જુઓ →</a></p>
+      <p class="mt"><a class="muted" href="<?= e($bMore) ?>" style="font-size:12px">See all →</a></p>
     </div>
     <?php endforeach; ?>
   </div>
 </div>
 <?php elseif ($_w === 'smart_segments'): ?>
 <div class="card">
-  <h2>👥 ગ્રાહકોના પ્રકાર</h2>
+  <h2>👥 Types of customer</h2>
   <div class="grid-stats">
     <?php
-      $segLabels = ['vip' => ['⭐ VIP', 's-ok'], 'high_value' => ['💎 મોટા ગ્રાહક', 's-ok'], 'regular' => ['🔁 નિયમિત', ''],
-                    'new' => ['🆕 નવા', ''], 'at_risk' => ['⚠️ છૂટી રહ્યા', 's-warn'],
-                    'inactive' => ['😴 બંધ થઈ ગયા', 's-warn'], 'overdue' => ['⏰ મુદત વીતી', 's-bad']];
+      $segLabels = ['vip' => ['⭐ VIP', 's-ok'], 'high_value' => ['💎 Big customers', 's-ok'], 'regular' => ['🔁 Regular', ''],
+                    'new' => ['🆕 New', ''], 'at_risk' => ['⚠️ Slipping away', 's-warn'],
+                    'inactive' => ['😴 Gone quiet', 's-warn'], 'overdue' => ['⏰ Overdue', 's-bad']];
       foreach ($segLabels as $sk => list($sl, $stone)):
         $sv = $sSeg[$sk] ?? null; if (!$sv || !$sv['count']) continue; ?>
     <a class="stat <?= $stone ?>" href="parties.php?seg=<?= e($sk) ?>">
       <div class="stat-label"><?= $sl ?></div>
       <div class="stat-value"><?= (int)$sv['count'] ?></div>
       <div class="muted" style="font-size:11px">
-        ₹<?= money($sv['sales']) ?> વેચાણ<?= $sv['outstanding'] > 0.009 ? ' · ₹' . money($sv['outstanding']) . ' બાકી' : '' ?>
-        <?= $sv['last_purchase'] ? '<br>છેલ્લે ' . dmy($sv['last_purchase']) : '' ?>
+        ₹<?= money($sv['sales']) ?> Sales<?= $sv['outstanding'] > 0.009 ? ' · ₹' . money($sv['outstanding']) . ' Outstanding' : '' ?>
+        <?= $sv['last_purchase'] ? '<br>Last ' . dmy($sv['last_purchase']) : '' ?>
       </div>
     </a>
     <?php endforeach; ?>
   </div>
-  <p class="muted" style="font-size:12px;margin:0">આ ભાગ પાડવાનું કામ ચોક્કસ નિયમોથી થાય છે — વેચાણની રકમ, બિલની સંખ્યા અને છેલ્લી ખરીદીની તારીખ. કોઈ અંદાજ નથી.</p>
+  <p class="muted" style="font-size:12px;margin:0">These groups are worked out by fixed rules — sales value, number of bills and the date of the last purchase. Nothing is guessed.</p>
 </div>
 <?php elseif ($_w === 'duo'): ?>
 <div class="duo-cards">

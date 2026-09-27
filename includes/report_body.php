@@ -93,13 +93,13 @@ if ($r === 'all_txn') {
     if (empty($reportPdf)) {
         echo '<div class="card"><form method="get" class="filterbar" style="align-items:center">';
         echo '<input type="hidden" name="r" value="all_txn"><input type="hidden" name="from" value="' . e($from) . '"><input type="hidden" name="to" value="' . e($to) . '">';
-        echo '<div style="flex-basis:100%"><label>કયા રેકોર્ડ લેવા? (Which records to include)</label></div>';
+        echo '<div style="flex-basis:100%"><label>Which records to include</label></div>';
         foreach ($typesAll as $k => $lbl) {
             echo '<label class="check-inline" style="margin-right:10px"><input type="checkbox" name="tt[]" value="' . $k . '"' . (in_array($k, $selTypes, true) ? ' checked' : '') . ' onchange="document.getElementById(\'txnTypes\').value=Array.from(document.querySelectorAll(\'input[name=&quot;tt[]&quot;]:checked\')).map(function(c){return c.value}).join(\',\')"> ' . $lbl . '</label>';
         }
         echo '<input type="hidden" name="types" id="txnTypes" value="' . e(implode(',', $selTypes)) . '">';
         echo '<button class="btn btn-sm" type="submit">Apply</button>';
-        echo '</form><p class="muted" style="margin:6px 0 0">ઉપરના Period માંથી મહિનો પસંદ કરો → ⬇ PDF દબાવો એટલે આ આખું સ્ટેટમેન્ટ એક PDF માં આવી જશે.</p></div>';
+        echo '</form><p class="muted" style="margin:6px 0 0">Pick a month in Period above → press ⬇ PDF and this whole statement comes out as one PDF.</p></div>';
     }
 
     $rows = [];
@@ -160,7 +160,7 @@ if ($r === 'all_txn') {
     if (!$rows) echo '<tr><td colspan="8" class="muted">No transactions of the selected types in this period.</td></tr>';
     if ($rows) echo '<tr><td colspan="5"><strong>Total (' . count($rows) . ' transactions)</strong></td><td class="num"></td><td class="num"><strong>' . money($tIn) . '</strong></td><td class="num"><strong>' . money($tOut) . '</strong></td></tr>';
     echo '</tbody></table></div>';
-    echo '<p class="muted">Note: <strong>Bill ₹</strong> = બિલની રકમ (ઉધાર હોઈ શકે — પૈસા હજી ન પણ આવ્યા હોય) · <strong>Money In/Out</strong> = ખરેખર આવેલા/ગયેલા પૈસા (વસૂલી, ચૂકવણી, ખર્ચ). એટલે બિલ અને એની વસૂલી બે વાર નથી ગણાતા. ઝાંખી "(edit adj.)" લાઇનો = બિલ એડિટ વખતની આપોઆપ સરખાવણી એન્ટ્રી (એકબીજાને કાપી નાખે). Cancelled બિલ લિસ્ટમાં દેખાય પણ ગણાય નહીં.</p>';
+    echo '<p class="muted">Note: <strong>Bill ₹</strong> = the billed amount (may be on credit — the money may not have come in yet) · <strong>Money In/Out</strong> = money that actually came in or went out (collections, payments, expenses). So a bill and its collection are not counted twice. Overview "(edit adj.)" lines = the automatic balancing entries made when a bill is edited (they cancel each other out). Cancelled bills are listed but not counted.</p>';
 }
 
 // ---------------- data health check (admin) ----------------
@@ -174,7 +174,7 @@ if ($r === 'health' && is_full_admin()) {
     $problems = count(array_filter($checks, fn($c) => count($c['rows']) > 0));
     if (empty($reportPdf)) {
         echo '<div class="grid-stats">';
-        echo '<div class="stat ' . ($problems ? 's-bad' : 's-ok') . '"><div class="stat-label">🩺 Health</div><div class="stat-value">' . ($problems ? $problems . ' issue(s)' : 'બધું બરાબર ✔') . '</div></div>';
+        echo '<div class="stat ' . ($problems ? 's-bad' : 's-ok') . '"><div class="stat-label">🩺 Health</div><div class="stat-value">' . ($problems ? $problems . ' issue(s)' : 'All good ✔') . '</div></div>';
         echo '<div class="stat"><div class="stat-label">Checks run</div><div class="stat-value">' . count($checks) . '</div></div>';
         echo '</div>';
     }
@@ -185,7 +185,7 @@ if ($r === 'health' && is_full_admin()) {
         if ($n) {
             echo '<p class="muted">' . e($c['gu']) . '</p>';
             if (strpos($c['gu'], 'serial_fix.php') !== false && empty($reportPdf)) {
-                echo '<p><a class="btn btn-sm" href="serial_fix.php">🔧 Serial / Stock Repair ખોલો</a></p>';
+                echo '<p><a class="btn btn-sm" href="serial_fix.php">🔧 Open Serial / Stock Repair</a></p>';
             }
             echo '<div class="table-wrap"><table><thead><tr><th>ID</th><th>Doc / Name</th><th>Date</th><th class="num">Amount</th><th class="num">Expected</th></tr></thead><tbody>';
             foreach ($c['rows'] as $x) {
@@ -195,7 +195,7 @@ if ($r === 'health' && is_full_admin()) {
         }
         echo '</div>';
     }
-    echo '<p class="muted">દરેક ચેક ફક્ત વાંચે છે — કંઈ બદલતો નથી. અઠવાડિયે એક વાર આ પેજ ખોલી લેવાની ટેવ રાખો; બધું ✅ હોય એટલે હિસાબ ચોખ્ખો.</p>';
+    echo '<p class="muted">Every check only reads — nothing is changed. Make a habit of opening this page once a week; all ✅ means the books are clean.</p>';
 }
 
 // ---------------- daily sales ----------------
@@ -387,35 +387,35 @@ if ($r === 'party_profit' && can('reports.profit')) {
     foreach ($rows as $x) $tGift += party_gift_budget($x['contribution']);
 
     echo '<div class="flash flash-info" style="margin-bottom:10px">'
-       . '<b>આ "માર્જિન યોગદાન" છે, ચોખ્ખો નફો નહીં.</b> વેચાણ ભાવ માંથી <b>વસ્તુની પડતર</b> બાદ કરી છે, '
-       . 'અને બિલ પર આપેલો વટાવ પણ બાદ કર્યો છે. પણ <b>ભાડું, પગાર, લાઇટબિલ જેવા દુકાનના ખર્ચ આમાં બાદ થયા નથી</b> — '
-       . 'એ ખર્ચ ગ્રાહકવાર વહેંચી શકાય એમ નથી, અને ધારીને વહેંચવા એ ખોટું થાત.</div>';
+       . '<b>This is the margin contributed, not net profit.</b> The item cost has been taken out of the selling price, '
+       . 'and the discount given on the bill has also been taken off. But <b>Shop costs such as rent, salaries and electricity are NOT taken out of this</b> — '
+       . 'Those costs cannot be split per customer, and splitting them by guesswork would be wrong.</div>';
 
     echo '<div class="grid-stats">';
-    echo '<div class="stat"><div class="stat-label">ગ્રાહક</div><div class="stat-value">' . count($rows) . '</div></div>';
-    echo '<div class="stat"><div class="stat-label">વેચાણ</div><div class="stat-value">₹' . money($tRev) . '</div></div>';
-    echo '<div class="stat s-ok"><div class="stat-label">માર્જિન યોગદાન</div><div class="stat-value">₹' . money($tCon) . '</div></div>';
-    echo '<div class="stat' . ($tDisc > 0 ? ' s-warn' : '') . '"><div class="stat-label">વટાવમાં આપ્યા</div><div class="stat-value">₹' . money($tDisc) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">Customer</div><div class="stat-value">' . count($rows) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">Sales</div><div class="stat-value">₹' . money($tRev) . '</div></div>';
+    echo '<div class="stat s-ok"><div class="stat-label">Margin contributed</div><div class="stat-value">₹' . money($tCon) . '</div></div>';
+    echo '<div class="stat' . ($tDisc > 0 ? ' s-warn' : '') . '"><div class="stat-label">given away in discount</div><div class="stat-value">₹' . money($tDisc) . '</div></div>';
     echo '</div>';
 
     if ($rows) {
-        echo '<div class="card"><h3>🏅 સૌથી વધુ કમાવી આપનારા 10 ગ્રાહક</h3>';
+        echo '<div class="card"><h3>🏅 The 10 customers who earned you the most</h3>';
         echo svg_bar_chart(array_map(fn($x) => ['label' => $x['name'], 'val' => (float)$x['contribution']],
                                      array_slice($rows, 0, 10)), '#16a34a');
         echo '</div>';
     }
 
-    echo '<div class="card"><h3>🎁 તહેવારની ભેટનું સૂચન</h3>'
-       . '<p class="muted" style="margin-top:0;font-size:13px">દરેક ગ્રાહકે કમાવી આપેલા <b>' . $giftPct . '%</b> '
-       . 'પ્રમાણે સૂચવેલું બજેટ (Settings → Invoice માં ટકા બદલી શકાય). '
-       . 'જેણે નફો કરાવ્યો જ નથી એને ભેટ સૂચવાતી નથી — ભેટ આભાર છે, માફી નહીં.<br>'
-       . 'કુલ સૂચવેલું બજેટ: <b>₹' . money($tGift) . '</b>. '
-       . '<b>કઈ વસ્તુ આપવી</b> એ માટે ગ્રાહકનું નામ ખોલો — ત્યાં એ સૌથી વધુ શું ખરીદે છે એ લખેલું છે.</p></div>';
+    echo '<div class="card"><h3>🎁 Festival gift suggestions</h3>'
+       . '<p class="muted" style="margin-top:0;font-size:13px">earned from each customer <b>' . $giftPct . '%</b> '
+       . 'of it (the percentage can be changed in Settings → Invoice). '
+       . 'No gift is suggested for someone who brought no profit — a gift is a thank-you, not an apology.<br>'
+       . 'Total suggested budget: <b>₹' . money($tGift) . '</b>. '
+       . '<b>What to give</b> Open the customer name for that — what they buy most is written there.</p></div>';
 
     echo '<div class="table-wrap"><table><thead><tr>'
-       . '<th>#</th><th>ગ્રાહક</th><th class="num">બિલ</th><th class="num">વેચાણ ₹</th>'
-       . '<th class="num">વસ્તુની પડતર ₹</th><th class="num">વટાવ ₹</th>'
-       . '<th class="num">માર્જિન યોગદાન ₹</th><th class="num">%</th><th class="num">🎁 ભેટ બજેટ ₹</th>'
+       . '<th>#</th><th>Customer</th><th class="num">Bill</th><th class="num">Sales Rs </th>'
+       . '<th class="num">Item cost Rs </th><th class="num">Discount Rs </th>'
+       . '<th class="num">Margin contributed Rs </th><th class="num">%</th><th class="num">🎁 Gift budget Rs </th>'
        . '</tr></thead><tbody>';
     $n = 0;
     foreach ($rows as $x) {
@@ -437,7 +437,7 @@ if ($r === 'party_profit' && can('reports.profit')) {
            . '</tr>';
     }
     echo '</tbody></table></div>';
-    if (!$rows) echo '<p class="muted">આ ગાળામાં કોઈ વેચાણ નથી.</p>';
+    if (!$rows) echo '<p class="muted">No sales in this period.</p>';
 }
 
 if ($r === 'party_sales') {
@@ -485,21 +485,21 @@ if ($r === 'payables') {
         $groups[$key][] = $x;
     }
     echo '<div class="grid-stats">';
-    echo '<div class="stat ' . ($sumOverdue > 0.009 ? 's-bad' : '') . '"><div class="stat-label">Overdue (તારીખ વીતી ગઈ)</div><div class="stat-value">₹' . money($sumOverdue) . '</div></div>';
-    echo '<div class="stat"><div class="stat-label">This Week (આ અઠવાડિયે)</div><div class="stat-value">₹' . money($sumThisWeek) . '</div></div>';
-    echo '<div class="stat"><div class="stat-label">Next Week (આવતા અઠવાડિયે)</div><div class="stat-value">₹' . money($sumNextWeek) . '</div></div>';
-    echo '<div class="stat"><div class="stat-label">Total Payable (કુલ ચૂકવવાના)</div><div class="stat-value">₹' . money($sumAll) . '</div></div>';
+    echo '<div class="stat ' . ($sumOverdue > 0.009 ? 's-bad' : '') . '"><div class="stat-label">Overdue</div><div class="stat-value">₹' . money($sumOverdue) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">This Week</div><div class="stat-value">₹' . money($sumThisWeek) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">Next Week</div><div class="stat-value">₹' . money($sumNextWeek) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">Total Payable</div><div class="stat-value">₹' . money($sumAll) . '</div></div>';
     echo '</div>';
-    echo '<div class="table-wrap"><table><thead><tr><th>Due Date</th><th>Party</th><th>Bill No</th><th class="num">Bill ₹</th><th class="num">Paid ₹</th><th class="num">ચૂકવવાના ₹</th></tr></thead><tbody>';
-    if (!$groups) echo '<tr><td colspan="6" class="muted">🎉 કોઈ પરચેસ બિલ બાકી નથી - બધું ચૂકતે છે.</td></tr>';
+    echo '<div class="table-wrap"><table><thead><tr><th>Due Date</th><th>Party</th><th>Bill No</th><th class="num">Bill ₹</th><th class="num">Paid ₹</th><th class="num">To pay Rs </th></tr></thead><tbody>';
+    if (!$groups) echo '<tr><td colspan="6" class="muted">🎉 No purchase bills outstanding - everything is settled.</td></tr>';
     foreach ($groups as $key => $list) {
         if ($key === 'overdue') {
-            $label = '🔴 Overdue - તારીખ વીતી ગઈ';
+            $label = '🔴 Overdue';
         } else {
             $wEnd = date('Y-m-d', strtotime($key . ' +6 days'));
             $label = '📅 ' . dmy($key) . ' - ' . dmy($wEnd);
-            if ($key === $thisMon) $label .= ' (આ અઠવાડિયું)';
-            elseif ($key === $nextMon) $label .= ' (આવતું અઠવાડિયું)';
+            if ($key === $thisMon) $label .= ' (this week)';
+            elseif ($key === $nextMon) $label .= ' (next week)';
         }
         echo '<tr><td colspan="6" style="background:var(--bg);font-weight:700">' . e($label) . '</td></tr>';
         $sub = 0;
@@ -516,7 +516,7 @@ if ($r === 'payables') {
            . '<td class="num" style="font-weight:800">₹' . money($sub) . '</td></tr>';
     }
     echo '</tbody></table></div>';
-    echo '<p class="muted no-print" style="margin-top:8px">દરેક બિલની Due Date = બિલ તારીખ + પાર્ટીના ક્રેડિટ દિવસ. ક્રેડિટ દિવસ ન નાખ્યા હોય તો બિલની તારીખ જ ગણાય છે.</p>';
+    echo '<p class="muted no-print" style="margin-top:8px">Due date = bill date + the party credit days. With no credit days set, the bill date itself is used.</p>';
 }
 
 // ---------------- aging / collection (as of today, ignores from/to) ----------------
@@ -536,7 +536,7 @@ if ($r === 'aging') {
     echo '<div class="stat"><div class="stat-label">📄 Total Due</div><div class="stat-value">₹' . money($tot['total']) . '</div></div>';
     echo '<div class="stat s-bad"><div class="stat-label">⚠️ Overdue (30+ days)</div><div class="stat-value">₹' . money($overdue) . '</div></div>';
     echo '</div>';
-    echo '<p class="muted mb">As of today — બિલની તારીખથી કેટલા દિવસ થયા એ પ્રમાણે (ડ્યુ ડેટથી નહીં). જૂનું ઓપનિંગ બેલેન્સ પણ ગણેલું છે, પાર્ટી બની એ દિવસથી. ઉપરનું તારીખ ફિલ્ટર અહીં લાગુ પડતું નથી.</p>';
+    echo '<p class="muted mb">As of today — counted from the BILL date, not the due date. An old opening balance is included too, aged from the day the party was created. The date filter above does not apply here.</p>';
 
     // ---- the table (wrapped in a bulk-send form on screen) ----
     $canWa = !$isPdf && can('payments.view');
@@ -636,7 +636,7 @@ if ($r === 'stockval' && can('reports.profit')) {
         foreach ($locs as $l) $rowQty += $stockMap[$it['id']][$l['id']] ?? 0;
         if ($hideZero && abs($rowQty) < 0.0001) continue;
         $rowQty = $staffHeld[$it['id']] ?? 0;
-        echo '<tr><td>' . e($it['name']) . (empty($it['is_active']) ? ' <span class="badge badge-warn">બંધ</span>' : '') . '</td>';
+        echo '<tr><td>' . e($it['name']) . (empty($it['is_active']) ? ' <span class="badge badge-warn">Closed</span>' : '') . '</td>';
         foreach ($locs as $l) {
             $qv = $stockMap[$it['id']][$l['id']] ?? 0;
             $rowQty += $qv;
@@ -827,30 +827,30 @@ if ($r === 'expense' && can('expenses.view')) {
     $homeSum = array_sum(array_column($homeRows, 'total'));
 
     echo '<div class="table-wrap"><table><thead><tr><th>Category</th><th class="num">Entries</th><th class="num">Total ₹</th></tr></thead><tbody>';
-    echo '<tr style="font-weight:600"><td colspan="3">🏪 ધંધાનો ખર્ચ</td></tr>';
+    echo '<tr style="font-weight:600"><td colspan="3">🏪 Business spending</td></tr>';
     foreach ($shopRows as $x) echo '<tr><td style="padding-left:20px">' . e($x['category']) . '</td><td class="num">' . $x['cnt'] . '</td><td class="num">' . money($x['total']) . '</td></tr>';
     if (!$shopRows) echo '<tr><td colspan="3" class="muted" style="padding-left:20px">—</td></tr>';
-    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>ધંધાનો કુલ</td><td></td><td class="num">' . money($shopSum) . '</td></tr>';
+    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Business total</td><td></td><td class="num">' . money($shopSum) . '</td></tr>';
 
-    echo '<tr style="font-weight:600"><td colspan="3" style="padding-top:10px">🏠 ઘર / અંગત ખર્ચ</td></tr>';
+    echo '<tr style="font-weight:600"><td colspan="3" style="padding-top:10px">🏠 Household / personal</td></tr>';
     foreach ($homeRows as $x) echo '<tr><td style="padding-left:20px">' . e($x['category']) . '</td><td class="num">' . $x['cnt'] . '</td><td class="num">' . money($x['total']) . '</td></tr>';
     if (!$homeRows) echo '<tr><td colspan="3" class="muted" style="padding-left:20px">—</td></tr>';
-    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>ઘરનો કુલ</td><td></td><td class="num">' . money($homeSum) . '</td></tr>';
+    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Household total</td><td></td><td class="num">' . money($homeSum) . '</td></tr>';
 
-    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>આખો કુલ</td><td></td><td class="num">' . money($shopSum + $homeSum) . '</td></tr>';
+    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>Grand total</td><td></td><td class="num">' . money($shopSum + $homeSum) . '</td></tr>';
     echo '</tbody></table></div>';
 
     // ...and month by month, so "ઘરે આ મહિને કેટલા ગયા" is one glance
     $byMonth = expense_home_by_month($from, $to);
     if (count($byMonth) > 1 || $homeSum > 0.009) {
-        echo '<div class="card mt"><h3>📅 મહિના પ્રમાણે — ધંધો અને ઘર</h3>';
-        echo '<div class="table-wrap"><table><thead><tr><th>મહિનો</th><th class="num">🏪 ધંધો</th><th class="num">🏠 ઘર</th><th class="num">કુલ</th></tr></thead><tbody>';
+        echo '<div class="card mt"><h3>📅 By month — business and household</h3>';
+        echo '<div class="table-wrap"><table><thead><tr><th>Month</th><th class="num">🏪 Business</th><th class="num">🏠 Household</th><th class="num">Total</th></tr></thead><tbody>';
         foreach ($byMonth as $mm)
             echo '<tr><td>' . date('M Y', strtotime($mm['ym'] . '-01')) . '</td>'
                . '<td class="num">' . money($mm['shop']) . '</td>'
                . '<td class="num">' . money($mm['home']) . '</td>'
                . '<td class="num">' . money($mm['total']) . '</td></tr>';
-        echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>કુલ</td>'
+        echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>Total</td>'
            . '<td class="num">' . money(array_sum(array_column($byMonth, 'shop'))) . '</td>'
            . '<td class="num">' . money(array_sum(array_column($byMonth, 'home'))) . '</td>'
            . '<td class="num">' . money(array_sum(array_column($byMonth, 'total'))) . '</td></tr>';
@@ -1323,9 +1323,9 @@ if ($r === 'trial_balance' && can('reports.accounting')) {
     if (abs($totDr - $totCr) > 0.01) {
         // same correction as on the Balance Sheet: a balanced journal entry
         // cannot move this difference, so do not send the owner to do one
-        echo '<p class="muted mt">Debit અને Credit વચ્ચે ₹' . money(abs($totDr - $totCr)) . ' નો ફરક છે — '
-           . 'એ આ Accounting મોડ્યુલ ચાલુ કર્યું <em>એ પહેલાંની</em> મૂડી છે (જૂનો સ્ટોક, જૂની રોકડ, જૂનું ઉઘરાણી-દેવું), '
-           . 'જે કોઈ એન્ટ્રીથી ઊભી થઈ નથી પણ ખરેખર હતી. એ રકમ ખોટી નથી; એ ફક્ત ચોપડે નોંધાયેલી નથી.</p>';
+        echo '<p class="muted mt">Between debit and credit Rs ' . money(abs($totDr - $totCr)) . ' difference — '
+           . 'since this Accounting module was switched on <em>before that</em> of equity (old stock, old cash, old receivables/payables), '
+           . 'which no entry created but which really existed. That amount is not wrong; it is simply not on the books.</p>';
     }
     echo '</div>';
 }
@@ -1362,7 +1362,7 @@ if ($r === 'balance_sheet' && can('reports.accounting')) {
     // subtraction in their head against two figures a screen apart.
     $netWorth = $totAssets - $totLiab;
     echo '<tr style="font-weight:700;border-top:2px solid var(--text);background:var(--bg,#f6f8fb)">'
-       . '<td>ચોખ્ખી મૂડી — Net Worth <span class="muted" style="font-weight:normal">(કુલ મિલકત − કુલ દેવું)</span></td>'
+       . '<td>Net Worth <span class="muted" style="font-weight:normal">(total assets − total liabilities)</span></td>'
        . '<td class="num">₹' . money($netWorth) . '</td></tr>';
 
     echo '<tr style="font-weight:600"><td colspan="2">Equity</td></tr>';
@@ -1382,23 +1382,23 @@ if ($r === 'balance_sheet' && can('reports.accounting')) {
     // opening capital nobody has posted yet - showing it as a line beats
     // leaving it as a footnote the eye skips.
     $diff = $totAssets - ($totLiab + $totEquity);
-    echo '<div class="card mt"><h3>💼 ચોખ્ખી મૂડી (Net Worth) — આખો હિસાબ</h3>';
+    echo '<div class="card mt"><h3>💼 Net Worth — the whole picture</h3>';
     echo '<div class="table-wrap"><table><tbody>';
-    echo '<tr><td>કુલ મિલકત (Total Assets)</td><td class="num">₹' . money($totAssets) . '</td></tr>';
-    echo '<tr><td>− કુલ દેવું (Total Liabilities)</td><td class="num">− ₹' . money($totLiab) . '</td></tr>';
-    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>= ચોખ્ખી મૂડી (Net Worth)</td>'
+    echo '<tr><td>Total Assets</td><td class="num">₹' . money($totAssets) . '</td></tr>';
+    echo '<tr><td>− Total Liabilities</td><td class="num">− ₹' . money($totLiab) . '</td></tr>';
+    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>= Net Worth</td>'
        . '<td class="num">₹' . money($netWorth) . '</td></tr>';
-    echo '<tr><td colspan="2" style="padding-top:12px" class="muted">એમાંથી ચોપડે નોંધાયેલું:</td></tr>';
+    echo '<tr><td colspan="2" style="padding-top:12px" class="muted">Of that, recorded on the books:</td></tr>';
     foreach ($equity as $a) {
         $v = $a['code'] === '3900'
             ? coa_net_profit('0001-01-01', $to) - journal_balance($a['id'], '0001-01-01', $to)
             : -journal_balance($a['id'], '0001-01-01', $to);
         echo '<tr><td style="padding-left:20px">' . e($a['name']) . '</td><td class="num">₹' . money($v) . '</td></tr>';
     }
-    echo '<tr><td style="padding-left:20px">નોંધાયેલી કુલ મૂડી (Total Equity)</td><td class="num">₹' . money($totEquity) . '</td></tr>';
+    echo '<tr><td style="padding-left:20px">Total Equity on the books</td><td class="num">₹' . money($totEquity) . '</td></tr>';
     if (abs($diff) > 0.01) {
         echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)">'
-           . '<td>હજી નહીં નોંધાયેલી જૂની મૂડી</td><td class="num">₹' . money($diff) . '</td></tr>';
+           . '<td>old equity not yet recorded</td><td class="num">₹' . money($diff) . '</td></tr>';
     }
     echo '</tbody></table></div>';
     if (abs($diff) > 0.01) {
@@ -1410,14 +1410,14 @@ if ($r === 'balance_sheet' && can('reports.accounting')) {
         // to retained earnings, and the gap stayed at exactly the same figure
         // all three times. Telling someone to do something that cannot work is
         // worse than telling them nothing, so this says what the number is.
-        echo '<p class="muted mt">ઉપરની <strong>ચોખ્ખી મૂડી ₹' . money($netWorth) . '</strong> એ ધંધાની ખરી કિંમત છે — '
-           . 'કુલ મિલકતમાંથી કુલ દેવું બાદ કરીને આવેલી, એટલે એ ભરોસાપાત્ર આંકડો છે.</p>';
-        echo '<p class="muted">ચોપડે ફક્ત ₹' . money($totEquity) . ' નોંધાયેલી છે. બાકીના '
-           . '<strong>₹' . money($diff) . '</strong> એ આ Accounting મોડ્યુલ ચાલુ કર્યું <em>એ પહેલાંની</em> મૂડી છે — '
-           . 'જૂનો સ્ટોક, જૂની રોકડ અને જૂનું ઉઘરાણી-દેવું, જે કોઈ એન્ટ્રીથી ઊભું થયું નથી પણ ખરેખર હતું. '
-           . 'એ રકમ ખોટી નથી; એ ફક્ત નોંધાયેલી નથી.</p>';
+        echo '<p class="muted mt">the above <strong>Net worth Rs ' . money($netWorth) . '</strong> is what the business is really worth — '
+           . 'arrived at by taking total liabilities away from total assets, so it is a figure you can trust.</p>';
+        echo '<p class="muted">on the books only Rs ' . money($totEquity) . ' is recorded. The remaining '
+           . '<strong>₹' . money($diff) . '</strong> since this Accounting module was switched on <em>before that</em> of equity — '
+           . 'Old stock, old cash and old receivables/payables that no entry created but which really existed. '
+           . 'That amount is not wrong; it is simply not recorded.</p>';
     } else {
-        echo '<p class="muted mt">ચોપડે નોંધાયેલી મૂડી અને ખરી ચોખ્ખી મૂડી બરાબર મળે છે — હિસાબ પૂરો સરભર છે. ✅</p>';
+        echo '<p class="muted mt">The equity on the books matches the real net worth — the accounts balance exactly. ✅</p>';
     }
     echo '</div>';
 }
@@ -1467,16 +1467,16 @@ if ($r === 'profit_loss' && can('reports.accounting')) {
     // that went home, and what the shop alone would have made.
     $homeExp = expense_home_total($from, $to);
     if ($homeExp > 0.009) {
-        echo '<div class="card mt"><h3>🏠 ઘરનો ખર્ચ અલગથી</h3>';
+        echo '<div class="card mt"><h3>🏠 Household spending, separately</h3>';
         echo '<div class="table-wrap"><table><tbody>';
-        echo '<tr><td>ઉપરનો NET PROFIT (ઘરનો ખર્ચ ગણીને)</td><td class="num">₹' . money($net) . '</td></tr>';
-        echo '<tr><td>એમાં ગયેલો ઘરનો ખર્ચ</td><td class="num">₹' . money($homeExp) . '</td></tr>';
-        echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>ફક્ત ધંધાનો નફો</td>'
+        echo '<tr><td>the NET PROFIT above (household spending included)</td><td class="num">₹' . money($net) . '</td></tr>';
+        echo '<tr><td>household spending within it</td><td class="num">₹' . money($homeExp) . '</td></tr>';
+        echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>business profit only</td>'
            . '<td class="num">₹' . money($net + $homeExp) . '</td></tr>';
         echo '</tbody></table></div>';
-        echo '<p class="muted mt">ઘરનો ખર્ચ ઉપરના નફામાં ગણેલો જ છે — કાઢ્યો નથી. '
-           . 'આ ખાનું ફક્ત એટલું કહે છે કે એમાંથી ₹' . money($homeExp) . ' ઘરે ગયા, '
-           . 'અને ફક્ત દુકાને ₹' . money($net + $homeExp) . ' કમાયા. બંને આંકડા સાચા છે.</p>';
+        echo '<p class="muted mt">Household spending is already included in the profit above — it has not been removed. '
+           . 'This box only says that out of it Rs ' . money($homeExp) . ' went home, '
+           . 'and the shop alone Rs ' . money($net + $homeExp) . ' earned. Both figures are correct.</p>';
         echo '</div>';
     }
     echo '</div>';
@@ -1513,11 +1513,11 @@ if ($r === 'photo_log' && can('users.view')) {
     }
 
     if (!$prRows) {
-        echo '<div class="card"><h3>📸 Photo Upload Log</h3><p class="muted">આ સમયગાળામાં કોઈ ફોટો અપલોડ નોંધાયો નથી. (આજથી દરેક પ્રોડક્ટ-ફોટો અપલોડ આપોઆપ અહીં નોંધાય છે.)</p></div>';
+        echo '<div class="card"><h3>📸 Photo Upload Log</h3><p class="muted">No photo uploads were recorded in this period. (From now on every product-photo upload is recorded here automatically.)</p></div>';
     } else {
         // ---- per-staff summary ----
         echo '<div class="card"><h3>📸 Photo Upload Log <span class="muted" style="font-size:13px;font-weight:normal">(' . dmy($from) . ' → ' . dmy($to) . ')</span></h3>';
-        echo '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>Staff</th><th class="num">કુલ ફોટા</th><th class="num">દિવસ</th><th class="num">સરેરાશ ફોટા/દિવસ</th><th class="num">સરેરાશ મિનિટ/ફોટો</th></tr></thead><tbody>';
+        echo '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>Staff</th><th class="num">Total photos</th><th class="num">days</th><th class="num">Average photos/day</th><th class="num">Average minutes/photo</th></tr></thead><tbody>';
         foreach ($byUser as $uid => $bu) {
             $n = count($bu['rows']);
             $days = [];
@@ -1532,13 +1532,13 @@ if ($r === 'photo_log' && can('users.view')) {
                . '<td class="num">' . ($avgGap !== null ? '<strong>' . $avgGap . '</strong> min' : '<span class="muted">—</span>') . '</td></tr>';
         }
         echo '</tbody></table></div>';
-        echo '<p class="muted" style="font-size:12.5px">⏱ મિનિટ/ફોટો = એ જ વ્યક્તિના આગલા ફોટાથી આ ફોટા સુધીનો સમય (60 મિનિટથી મોટો ગેપ = બ્રેક, સરેરાશમાં નથી ગણાતો).</p></div>';
+        echo '<p class="muted" style="font-size:12.5px">⏱ Minutes/photo = the time from that persons previous photo to this one (a gap over 60 minutes counts as a break and is left out of the average).</p></div>';
 
         // ---- daily counts ----
         krsort($dailyC);
-        echo '<div class="card"><h3>📅 રોજના ફોટા</h3><div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>તારીખ</th>';
+        echo '<div class="card"><h3>📅 Photos per day</h3><div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>Date</th>';
         foreach ($uNames as $nm) echo '<th class="num">' . e($nm) . '</th>';
-        echo '<th class="num">કુલ</th></tr></thead><tbody>';
+        echo '<th class="num">Total</th></tr></thead><tbody>';
         foreach ($dailyC as $d => $per) {
             echo '<tr><td>' . dmy($d) . '</td>';
             $tot = 0;
@@ -1550,17 +1550,17 @@ if ($r === 'photo_log' && can('users.view')) {
         // ---- detail log per staff: name, photo, time, minutes ----
         foreach ($byUser as $uid => $bu) {
             $rows2 = array_reverse($bu['rows']); // newest first
-            echo '<div class="card"><h3>🧑 ' . e($uNames[$uid]) . ' — ફોટો-બાય-ફોટો</h3>';
-            echo '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>સમય</th><th>પ્રોડક્ટ</th><th class="num">⏱ કેટલી મિનિટે</th></tr></thead><tbody>';
+            echo '<div class="card"><h3>🧑 ' . e($uNames[$uid]) . ' — photo by photo</h3>';
+            echo '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>Time</th><th>Product</th><th class="num">⏱ How many minutes</th></tr></thead><tbody>';
             $shown = 0;
             foreach ($rows2 as $rw) {
-                if (++$shown > 300) { echo '<tr><td colspan="3" class="muted">…(જૂના ' . (count($rows2) - 300) . ' વધુ)</td></tr>'; break; }
+                if (++$shown > 300) { echo '<tr><td colspan="3" class="muted">…(older ' . (count($rows2) - 300) . ' more)</td></tr>'; break; }
                 $ph = $prPhotos[$rw['iid']] ?? '';
                 echo '<tr><td style="white-space:nowrap">' . dmyt($rw['t']) . '</td>'
                    . '<td>' . ($ph ? '<img src="' . e($ph) . '" style="width:34px;height:34px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:6px">' : '')
                    . '<a href="items.php?action=edit&id=' . $rw['iid'] . '">' . e($rw['name']) . '</a></td>'
-                   . '<td class="num">' . ($rw['gap'] === null ? '<span class="muted">પહેલો (તે દિવસનો)</span>'
-                        : ($rw['gap'] > 60 ? '<span class="muted">' . $rw['gap'] . ' min (બ્રેક પછી)</span>' : '<strong>' . $rw['gap'] . '</strong> min')) . '</td></tr>';
+                   . '<td class="num">' . ($rw['gap'] === null ? '<span class="muted">first (of that day)</span>'
+                        : ($rw['gap'] > 60 ? '<span class="muted">' . $rw['gap'] . ' min (after a break)</span>' : '<strong>' . $rw['gap'] . '</strong> min')) . '</td></tr>';
             }
             echo '</tbody></table></div></div>';
         }
