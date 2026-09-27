@@ -140,9 +140,9 @@ $hv = file_get_contents(dirname(__DIR__) . '/handover.php');
 t_ok('accepting for someone else is written into the activity log',
      strpos($hv, 'accepted on behalf of staff #') !== false);
 t_ok('...and the screen says so before you press the button',
-     strpos($hv, 'નોંધમાં લખાશે કે <b>તમે</b> સ્વીકાર્યું છે') !== false);
+     strpos($hv, 'the note says that <b>You</b> accepted it') !== false);
 t_ok('...and tells you whose phone the OTP went to',
-     strpos($hv, 'ના WhatsApp પર ગયો છે') !== false);
+     strpos($hv, 'has gone to their WhatsApp') !== false);
 t_ok('the OTP is still required by the POST handler',
      strpos($hv, "hash_equals(\$h['otp'], trim(post('otp')))") !== false);
 t_ok('My Stock still offers its own OTP box',
@@ -173,12 +173,12 @@ foreach ($all as $t) if ((int)$t['item_id'] === $tItem) $found = true;
 t_ok('the whole-shop view finds it too', $found);
 
 $stockPage = file_get_contents(dirname(__DIR__) . '/stock.php');
-t_ok('Stock Levels has a transit column', strpos($stockPage, 'રસ્તામાં') !== false);
+t_ok('Stock Levels has a transit column', strpos($stockPage, 'In transit') !== false);
 t_ok('...and it is added into the row total', strpos($stockPage, "\$rowTotal += \$tr") !== false);
 $itemPage = file_get_contents(dirname(__DIR__) . '/item_view.php');
 t_ok('the item page shows what is in transit', strpos($itemPage, 'stock_in_transit(') !== false);
 t_ok('...and explains that it counts nowhere meanwhile',
-     strpos($itemPage, 'કોઈ પણ જગ્યાના સ્ટોકમાં ગણાતો નથી') !== false);
+     strpos($itemPage, 'is not counted in the stock of any location') !== false);
 
 // ---------------------------------------------------------------------------
 // The public website used to tell customers "In stock" on every product,
@@ -203,14 +203,14 @@ t_ok('an item in stock is marked in stock', $in[0] === 'in');
 t_ok('...and says how many, in its own unit', strpos($in[1], '12 pcs') !== false, $in[1]);
 
 $noUnit = web_stock_line(['id' => $wIn, 'item_type' => 'product', 'unit' => ''], $map, true);
-t_ok('an item with no unit still reads sensibly', strpos($noUnit[1], 'નંગ') !== false, $noUnit[1]);
+t_ok('an item with no unit still reads sensibly', strpos($noUnit[1], 'Qty') !== false, $noUnit[1]);
 
 $hidden = web_stock_line(['id' => $wIn, 'item_type' => 'product', 'unit' => 'pcs'], $map, false);
 t_ok('with quantities switched off it just says in stock', $hidden[0] === 'in' && strpos($hidden[1], '12') === false);
 
 $out = web_stock_line(['id' => $wOut, 'item_type' => 'product', 'unit' => 'pcs'], $map, true);
 t_ok('an item with nothing on the shelf is NOT called in stock', $out[0] === 'out');
-t_ok('...it says so plainly', strpos($out[1], 'ખલાસ') !== false);
+t_ok('...it says so plainly', strpos($out[1], 'Out of stock') !== false);
 t_ok('...and offers to order it in', $out[2] !== '');
 // This is the honesty half: hiding quantities is a display preference, but
 // claiming stock that does not exist is a lie to a customer either way.
@@ -219,7 +219,7 @@ t_ok('switching quantities off never turns "out" into "in stock"', $outHidden[0]
 
 $svc = web_stock_line(['id' => $wSvc, 'item_type' => 'service'], $map, true);
 t_ok('a service is neither in nor out of stock', $svc[0] === 'svc');
-t_ok('...and never claims a quantity', strpos($svc[1], 'સ્ટોકમાં') === false);
+t_ok('...and never claims a quantity', strpos($svc[1], 'in stock') === false);
 
 $unknown = web_stock_line(['id' => 99999999, 'item_type' => 'product'], $map, true);
 t_ok('an item the map has never heard of is out, not in', $unknown[0] === 'out');
@@ -238,7 +238,7 @@ t_ok('the switch is one setting, read in one place',
      substr_count($cat, 'web_show_qty()') + substr_count($prd, 'web_show_qty()') === 2);
 $set = file_get_contents(dirname(__DIR__) . '/settings.php');
 t_ok('the owner can turn quantities off in Settings', strpos($set, "name=\"store_show_qty\"") !== false);
-t_ok('...and is warned it is a public page', strpos($set, 'હરીફ પણ જોઈ શકે') !== false);
+t_ok('...and is warned it is a public page', strpos($set, 'a competitor can see') !== false);
 
 // ------------------------------------------------- putting a serial back in --
 // uk_serial is UNIQUE on (item_id, serial_no) with NO status in it. The repair
@@ -306,7 +306,7 @@ t_ok('it no longer checks only for in_stock before inserting',
      strpos($sf, "AND status = 'in_stock'\", [\$iid, \$sn]") === false);
 t_ok('it never inserts a serial by hand any more', strpos($sf, 'INSERT INTO item_serials') === false);
 t_ok('it warns when a serial was taken back from a customer or staff member',
-     strpos($sf, 'serial_live_statuses()') !== false && strpos($sf, 'બિલ સાથેની કડી કપાઈ ગઈ છે') !== false);
+     strpos($sf, 'serial_live_statuses()') !== false && strpos($sf, 'The link to the bill has been cut') !== false);
 
 // Why the old code could not work, pinned to the schema rather than to the
 // code that got it wrong: the unique key carries no status, so "is there one
@@ -375,7 +375,7 @@ $msg3 = warranty_apply_replacement(tw_claim($wi3, 'TW-OLD3', 'Ramesh'), 'TW-OLD3
 t_eq('the count does not move for a customer replacement', stock_qty($wi3, $loc), 10.0);
 t_eq('the replacement is recorded as sold', tw_ser($wi3, 'TW-NEW3')['status'], 'sold');
 t_eq('...against the same bill, so the warranty history stays joined', (int)tw_ser($wi3, 'TW-NEW3')['sale_id'], 4242);
-t_ok('...and the screen explains why it is not in stock', strpos($msg3, 'સ્ટોકમાં ઉમેર્યો નથી') !== false);
+t_ok('...and the screen explains why it is not in stock', strpos($msg3, 'it was not added to stock') !== false);
 
 // a claim that names a customer is theirs even when the old serial was never
 // registered - there is no serial row to read a status from
@@ -575,7 +575,7 @@ t_ok('the list a return shows is of SOLD serials, not stock',
      strpos($aj2, "get('mode') === 'return'") !== false && strpos($aj2, "isr.status = 'sold'") !== false);
 t_ok('...each with the bill it went out on', strpos($aj2, "s.invoice_no") !== false);
 $js2 = file_get_contents(dirname(__DIR__) . '/assets/app.js');
-t_ok('the picker asks the return question', strpos($js2, 'કયો સિરિયલ પાછો આવ્યો?') !== false);
+t_ok('the picker asks the return question', strpos($js2, 'Which serial came back?') !== false);
 t_ok('...and fetches in return mode', strpos($js2, "(isRet ? '&mode=return' : '')") !== false);
 
 // the refusals, checked as rules rather than through the screen: a return must
@@ -591,14 +591,14 @@ t_eq('a serial already on the shelf is not', tw_ser($ri, 'TSR-SHELF')['status'],
 // the guard the screen applies, asserted on the source so it cannot be dropped
 t_ok('the screen refuses a serial that is not sold',
      strpos($sr_src, "\$srow['status'] !== 'sold'") !== false);
-t_ok('...refuses one that is not this item\'s', strpos($sr_src, 'આ આઇટમનો નથી') !== false);
+t_ok('...refuses one that is not this item\'s', strpos($sr_src, 'does not belong to this item') !== false);
 t_ok('...refuses a serial-tracked item with nothing picked',
      strpos($sr_src, "!empty(\$item['serial_tracked']) && !\$r['sns']") !== false);
 t_ok('...and refuses a count that does not match the quantity',
      strpos($sr_src, "count(\$r['sns']) != (int)\$r['qty']") !== false);
 // every one of those checks runs BEFORE the first write, so a refusal leaves
 // nothing behind - the guards sit above $pdo->beginTransaction()
-$guardAt = strpos($sr_src, 'વેચાયેલો નથી');
+$guardAt = strpos($sr_src, 'has not been sold');
 $txnAt = strpos($sr_src, '$pdo->beginTransaction()');
 t_ok('every serial is checked before anything is written', $guardAt !== false && $txnAt !== false && $guardAt < $txnAt);
 
@@ -628,16 +628,16 @@ $js3 = file_get_contents(dirname(__DIR__) . '/assets/app.js');
 t_ok('the widget can pick from stock in purchase mode',
      strpos($js3, "this.cfg.mode === 'purchase' && !this.cfg.pickStock") !== false
      && strpos($js3, "this.cfg.mode === 'sale' || this.cfg.pickStock") !== false);
-t_ok('...and says what the pick is for', strpos($js3, 'કયો સિરિયલ સપ્લાયરને પાછો મોકલવાનો છે?') !== false);
+t_ok('...and says what the pick is for', strpos($js3, 'Which serial is going back to the supplier?') !== false);
 
 t_group('a piece that is not on the shelf cannot go back to the supplier');
 t_ok('a serial not in stock is refused', strpos($pr_src, "\$srow['status'] !== 'in_stock'") !== false);
-t_ok('...one that is not this item\'s is refused', strpos($pr_src, 'આ આઇટમનો નથી') !== false);
+t_ok('...one that is not this item\'s is refused', strpos($pr_src, 'does not belong to this item') !== false);
 t_ok('...a serial-tracked item with nothing picked is refused',
      strpos($pr_src, "!empty(\$item['serial_tracked']) && !\$r['sns']") !== false);
 t_ok('...and a count that does not match the quantity is refused',
      strpos($pr_src, "count(\$r['sns']) != (int)\$r['qty']") !== false);
-$g = strpos($pr_src, 'સ્ટોકમાં નથી (અત્યારે');
+$g = strpos($pr_src, 'is not in stock (currently');
 $t = strpos($pr_src, '$pdo->beginTransaction()');
 t_ok('every serial is checked before anything is written', $g !== false && $t !== false && $g < $t);
 
@@ -668,11 +668,11 @@ t_ok('it reads the return with its supplier and location',
 
 t_group('the view answers both halves of the question');
 t_ok('WHAT WENT: the serials stored on each line are listed',
-     strpos($pr_v, 'શું મોકલ્યું') !== false && strpos($pr_v, "explode(',', (string)\$ln['serials'])") !== false);
+     strpos($pr_v, 'What was sent') !== false && strpos($pr_v, "explode(',', (string)\$ln['serials'])") !== false);
 // each sent serial shows where it is NOW - still with the supplier, or back
 t_ok('...each with its state today', strpos($pr_v, "\$st === 'returned_supplier'") !== false
-     && strpos($pr_v, 'સપ્લાયર પાસે') !== false && strpos($pr_v, 'પાછો આવી ગયો') !== false);
-t_ok('WHAT DID NOT: the same items\' serials still in stock', strpos($pr_v, 'શું નથી મોકલ્યું') !== false
+     && strpos($pr_v, 'With the supplier') !== false && strpos($pr_v, 'came back') !== false);
+t_ok('WHAT DID NOT: the same items\' serials still in stock', strpos($pr_v, 'What was not sent') !== false
      && strpos($pr_v, "status = 'in_stock'") !== false);
 t_ok('...scoped to this return\'s own location', strpos($pr_v, "\$ret['location_id'] ? ' AND location_id = ?' : ''") !== false);
 // only serial-tracked lines can be compared that way; for anything else the
@@ -683,11 +683,11 @@ t_ok('...and only for serial-tracked items',
 t_group('the view shows where the money went');
 t_ok('an adjusted return shows the bills it credited',
      strpos($pr_v, 'FROM purchase_return_credits c') !== false);
-t_ok('...and says plainly when part of it is still unapplied', strpos($pr_v, 'હજી કોઈ બિલ સામે લાગ્યા નથી') !== false);
+t_ok('...and says plainly when part of it is still unapplied', strpos($pr_v, 'not yet applied against any bill') !== false);
 t_ok('a cash or bank refund shows the account it came into',
      strpos($pr_v, "WHERE p.ref_type = 'purchase_return' AND p.ref_id = ?") !== false
      && strpos($pr_v, "\$refundPay['account_name']") !== false);
-t_ok('...and a return with no payment at all says so', strpos($pr_v, 'કોઈ પેમેન્ટ નોંધાયેલું નથી') !== false);
+t_ok('...and a return with no payment at all says so', strpos($pr_v, 'No payment is recorded') !== false);
 
 // ------------------------------- the claim's party is the SUPPLIER, not a customer --
 // This is the bug the earlier fixtures walked straight past: on a warranty
@@ -873,7 +873,7 @@ t_group('a serial with no shelf is visible and repairable');
 $iv = file_get_contents(dirname(__DIR__) . '/item_view.php');
 t_ok('the item page shows which location each serial is at', strpos($iv, '<th>Location</th>') !== false);
 t_ok('...reading it from the locations table', strpos($iv, 'LEFT JOIN locations l ON l.id = s.location_id') !== false);
-t_ok('...and says so loudly when there is none', strpos($iv, 'લોકેશન નથી') !== false);
+t_ok('...and says so loudly when there is none', strpos($iv, 'No location') !== false);
 $hl = file_get_contents(dirname(__DIR__) . '/includes/health.php');
 t_ok('the health check looks for stranded serials', strpos($hl, 'Serial in stock but on no shelf') !== false);
 
@@ -906,7 +906,7 @@ t_group('a manual adjustment cannot move a serial that is somewhere else');
 $stk = file_get_contents(dirname(__DIR__) . '/stock.php');
 t_ok('adjusting out checks WHICH location the piece is on',
      strpos($stk, "(int)\$srow['location_id'] !== \$loc_id") !== false);
-t_ok('...and says where it really is', strpos($stk, 'આ લોકેશનમાં નથી') !== false);
+t_ok('...and says where it really is', strpos($stk, 'is not at this location') !== false);
 // a refusal half way down the list used to leave the serials above it moved
 // while the quantity never changed - everything is checked before anything
 // is written now

@@ -117,7 +117,7 @@ ta_set(['ai_enabled' => '1']);
 t_group('AI is not called when the shop\'s own words are enough');
 $kw = sa_keywords('anything at all', 3);
 t_ok('three or more hits skip the call entirely', $kw['src'] === 'typed');
-t_ok('...and the screen says so', strpos($kw['why'], 'AI વાપર્યું નથી') !== false, $kw['why']);
+t_ok('...and the screen says so', strpos($kw['why'], 'no AI was used') !== false, $kw['why']);
 
 // ------------------------------------------------------------ no authority --
 t_group('AI has no hand on the money or the database');
@@ -156,7 +156,7 @@ t_ok('...and an empty word list finds nothing', sa_find([], $loc) === []);
 // ------------------------------------------------------------------ search --
 t_group('the search understands how a customer speaks');
 $w = sa_words('ગ્રાહકને ઘર માટે wifi router જોઈએ છે 2000 સુધી');
-t_ok('filler words are dropped', !in_array('માટે', $w, true) && !in_array('જોઈએ', $w, true));
+t_ok('filler words are dropped', !in_array('for', $w, true) && !in_array('needed', $w, true));
 t_ok('product words are kept', in_array('wifi', $w, true) && in_array('router', $w, true));
 t_ok('the budget is not treated as a search word', !in_array('2000', $w, true));
 
@@ -285,7 +285,7 @@ t_ok('a party with nothing owing raises no credit warning', sa_credit_warning(t_
 t_ok('no party at all raises no credit warning', sa_credit_warning(0) === null);
 
 t_group('the screens say what is AI and what is arithmetic');
-t_ok('the assistant explains the division of labour', strpos($assist, 'શબ્દો સમજવા') !== false);
-t_ok('...and labels which words were used', strpos($assist, 'તમે લખેલા શબ્દો') !== false);
-t_ok('the scanner says the arithmetic was checked', strpos($scan, 'બિલનો હિસાબ ચકાસ્યો') !== false);
-t_ok('...and tells the reader a flagged line needs checking', strpos($scan, 'જાતે ચકાસો') !== false);
+t_ok('the assistant explains the division of labour', strpos($assist, 'to understand the words') !== false);
+t_ok('...and labels which words were used', strpos($assist, 'The words you typed') !== false);
+t_ok('the scanner says the arithmetic was checked', strpos($scan, 'The bill arithmetic was checked') !== false);
+t_ok('...and tells the reader a flagged line needs checking', strpos($scan, 'check it yourself') !== false);

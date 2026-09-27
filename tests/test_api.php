@@ -301,3 +301,101 @@ t_eq('a serial sitting in stock is sold normally', serial_sell($si, $sn2, $sale1
 t_ok('no warranty months means no expiry date',
      val('SELECT warranty_expiry FROM item_serials WHERE item_id = ? AND serial_no = ?', [$si, $sn2]) === null);
 t_eq('a blank serial is ignored, not stored', serial_sell($si, '   ', $sale1, today(), 0), 'skipped');
+
+t_group('App API — the customer side of the app');
+
+// The same apk in a customer's hands. It must show exactly what the public
+// website shows and nothing more, and it must not become a second way to
+// reach the shop's private data.
+$pub = substr($src, strpos($src, "in_array(\$r, ['catalog', 'wlogin', 'worder']"));
+$pub = substr($pub, 0, strpos($pub, '$u = api_require();'));
+t_ok('the public routes run BEFORE any staff token is demanded',
+     strpos($src, "in_array(\$r, ['catalog', 'wlogin', 'worder']") < strpos($src, '$u = api_require();'));
+t_ok('the catalogue shows only what the website publishes',
+     strpos($pub, 'i.show_on_website = 1') !== false);
+t_ok('...priced by the SAME rule the website prices it', strpos($pub, 'dealer_price(') !== false);
+t_ok('...and says what is on the shelf the same way', strpos($pub, 'web_stock_line(') !== false);
+t_ok('...honouring the setting that hides exact quantities', strpos($pub, 'web_show_qty()') !== false);
+
+// Doors anybody may knock on have to be rate limited, and not all with one
+// bucket: browsing is cheap and frequent, ordering writes.
+t_ok('every public door is rate limited', strpos($pub, 'api_rate_ok(') !== false);
+t_ok('...each with its own limit, not one shared bucket',
+     strpos($pub, "'catalog' => [240, 60]") !== false && strpos($pub, "'worder' => [20, 60]") !== false);
+t_ok('...keyed by route AND address', strpos($pub, "'shop:' . \$r . ':' . client_ip()") !== false);
+t_ok('a dealer login is throttled per mobile as well', strpos($pub, "login_throttle_blocked('wapp:'") !== false);
+
+// THE one that matters on a public write: the price comes from the item
+// master, never from the phone.
+t_ok('every order line is priced on the SERVER, not by the phone',
+     strpos($pub, "SELECT id, name, selling_price FROM items WHERE id = ?") !== false
+     && strpos($pub, "dealer_price(\$it['selling_price'], \$pct)") !== false);
+t_ok('...and an item the website does not publish cannot be ordered',
+     substr_count($pub, 'show_on_website = 1') >= 2);
+t_ok('an order carries a client_uuid, so a lost reply cannot become two orders',
+     strpos($pub, 'FROM web_orders WHERE client_uuid = ?') !== false);
+$uniq = val("SELECT COUNT(*) FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'web_orders'
+               AND COLUMN_NAME = 'client_uuid' AND NON_UNIQUE = 0");
+t_ok('...and the database enforces it', (int)$uniq === 1, "found $uniq");
+t_ok('orders land in the same inbox the website\'s cart lands in',
+     strpos($pub, 'INSERT INTO web_orders') !== false);
+
+// A dealer token is NOT a staff token. It must never resolve to a user.
+t_ok('a dealer token is stored against no user at all', strpos($pub, 'VALUES (0,?,?,?,NOW())') !== false);
+$who = api_auth_user();   // no bearer token in CLI
+t_ok('...and a token with user_id 0 resolves to nobody', $who === null);
+t_ok('signing in again revokes the dealer\'s previous token',
+     strpos($pub, "UPDATE api_tokens SET revoked = 1 WHERE label = ?") !== false);
+
+t_group('App API — WhatsApp goes out as the shop, not as the phone');
+
+t_ok('the app cannot send its own words, only name a bill',
+     strpos($src, "\$res = sale_whatsapp_send(\$saleId") !== false);
+t_ok('...and only for a bill it is allowed to see',
+     (bool)preg_match("/sales.all.*sale\['created_by'\] != \\\$u\['id'\]/s", substr($src, strpos($src, "\$r === 'whatsapp'"))));
+t_ok('a bill still on its way up is told to WAIT (409), not failed for good',
+     (bool)preg_match("/has not reached the shop yet'\], 409\)/", $src));
+$syncSrc = file_get_contents(__DIR__ . '/../mobile/www/sync.js');
+t_ok('...and the app treats 409 as a retry, not as "needs attention"',
+     strpos($syncSrc, 'res.status === 409') !== false);
+
+// a reminder's amount is worked out from the ledger, never taken from a phone
+$rem = substr($src, strpos($src, "\$r === 'reminder'"));
+$rem = substr($rem, 0, 900);
+t_ok('a reminder amount comes from the LEDGER, not from the phone',
+     strpos($rem, 'party_balance($pid)') !== false && strpos($rem, "b['amount']") === false);
+t_ok('...and nothing is sent when nothing is owed', strpos($rem, 'Nothing is owed by this party') !== false);
+t_ok('...through the one rule the website also sends through',
+     strpos($rem, 'collection_reminder_send(') !== false);
+
+t_group('One rule: a bill on WhatsApp says the same thing everywhere');
+
+$waSrc = file_get_contents(__DIR__ . '/../includes/whatsapp.php');
+$svSrc = file_get_contents(__DIR__ . '/../sale_view.php');
+t_ok('the message, the PDF and the pay link are decided in ONE place',
+     strpos($waSrc, 'function sale_whatsapp_send(') !== false);
+t_ok('the invoice screen sends through it', strpos($svSrc, 'sale_whatsapp_send(') !== false);
+t_ok('...and no longer builds the message itself',
+     strpos($svSrc, "wa_template('bill'") === false && strpos($svSrc, 'invoice_pdf(') === false);
+t_ok('the app sends through it too', strpos($src, 'sale_whatsapp_send(') !== false);
+
+t_group('Consent survives the English pass');
+
+// The words a customer TYPES stay in their own language. This is not a
+// translation question - failing to hear "બંધ" is ignoring a withdrawal of
+// consent.
+t_ok('a Gujarati customer replying stop is still understood', cam_is_stop_word('બંધ'));
+t_ok('...and so is the two-word form', cam_is_stop_word('બંધ કરો'));
+t_ok('...and Hindi', cam_is_stop_word('बंद'));
+t_ok('English still works', cam_is_stop_word('STOP') && cam_is_stop_word('unsubscribe'));
+t_ok('and an innocent word still does not stop anything', !cam_is_stop_word('non-stop music'));
+
+$botSrc = file_get_contents(__DIR__ . '/../includes/wa_bot.php');
+t_ok('the bot still recognises the Gujarati word for catalogue', strpos($botSrc, 'કેટલોગ') !== false);
+t_ok('...and for the balance a customer asks about', strpos($botSrc, 'હિસાબ') !== false);
+$portalSrc = file_get_contents(__DIR__ . '/../includes/wa_portal.php');
+t_ok('the customer portal still recognises its own keywords', strpos($portalSrc, 'એકાઉન્ટ') !== false);
+$langSrc = file_get_contents(__DIR__ . '/../includes/wa_lang.php');
+t_ok('the en/gu/hi table for customers is untouched',
+     strpos($langSrc, "'gu' =>") !== false && strpos($langSrc, "'hi' =>") !== false);

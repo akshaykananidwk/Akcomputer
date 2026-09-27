@@ -454,7 +454,7 @@ t_ok('the amount shown is the net balance', substr_count($pl, "money(\$p['balanc
 t_ok('neither side is printed as its own headline amount',
      strpos($pl, "bal-get\">₹<?= money(\$p['recv_due'])") === false
      && strpos($pl, "bal-give\">₹<?= money(\$p['pay_due'])") === false);
-t_ok('a two-way party is still flagged', strpos($pl, 'બંને બાજુ') !== false);
+t_ok('a two-way party is still flagged', strpos($pl, 'both sides') !== false);
 t_ok('...with both figures in the tooltip, not on the row',
      strpos($pl, "title=\"Sale side ₹<?= money(\$p['recv_due']) ?> · Purchase side ₹<?= money(\$p['pay_due']) ?>\"") !== false);
 t_ok('the drill-downs follow the same net rule',
@@ -562,7 +562,7 @@ t_ok('the bill screen can ask about a party', strpos($ajaxSrc, "\$a === 'party_s
 $slsB = file_get_contents(dirname(__DIR__) . '/sales.php');
 t_ok('...and it asks as soon as one is picked', strpos($slsB, 'function partyState()') !== false);
 
-t_group('વ્યાજ — worked out, and charged only as a bill that can be shown');
+t_group('Interest — worked out, and charged only as a bill that can be shown');
 t_eq('₹10,000 at 18% for 45 days', interest_amount(10000, 18, 45), 221.92);
 t_eq('no rate means no interest', interest_amount(10000, 0, 45), 0.0);
 t_eq('paid on time means no interest', interest_amount(10000, 18, 0), 0.0);

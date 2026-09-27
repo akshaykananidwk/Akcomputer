@@ -229,7 +229,7 @@ t_group('too little history is a refusal, not a guess');
 // fc_sales_ahead refuses below min_months; prove the gate exists and is used
 $src = file_get_contents($_ROOT . '/includes/forecast.php');
 t_ok('the minimum is checked before forecasting', strpos($src, "count(\$hist) < \$r['min_months']") !== false);
-t_ok('...and the refusal says how many months there are', strpos($src, 'પૂરા મહિનાનો ઇતિહાસ જોઈએ') !== false);
+t_ok('...and the refusal says how many months there are', strpos($src, 'full months of history are needed') !== false);
 $season = fc_season_factor(1, month_start(100));
 t_eq('an unknown season multiplies by one, changing nothing', $season['factor'], 1.0);
 t_ok('...and says why', $season['why'] !== '');
@@ -264,10 +264,10 @@ t_group('the screen says what it will not promise');
 $page = file_get_contents($_ROOT . '/forecast.php');
 t_ok('it needs reports.view', strpos($page, "require_perm('reports.view')") !== false);
 t_ok('...and payments.view on top', strpos($page, "!can('payments.view')") !== false);
-t_ok('it warns that a forecast is a guess', strpos($page, 'અનુમાન એ ધારણા છે, હકીકત નથી') !== false);
-t_ok('it lists what the cash figure excludes', strpos($page, 'આમાં જે ગણ્યું <b>નથી</b>') !== false);
-t_ok('...naming overdue money as excluded', strpos($page, 'પહેલેથી મોડા') !== false);
-t_ok('...and future sales as excluded', strpos($page, 'હજી ન થયેલું વેચાણ') !== false);
+t_ok('it warns that a forecast is a guess', strpos($page, 'A forecast is a guess, not a fact') !== false);
+t_ok('it lists what the cash figure excludes', strpos($page, 'What is NOT counted in this') !== false);
+t_ok('...naming overdue money as excluded', strpos($page, 'already late') !== false);
+t_ok('...and future sales as excluded', strpos($page, 'Sales not yet made') !== false);
 t_ok('the range is linked to the accuracy record', strpos($page, "tab=accuracy") !== false);
 t_ok('a badly performing method is called out', strpos($page, "\$bt['mape'] > 25") !== false);
 t_ok('the screen writes nothing but its own settings',
@@ -277,4 +277,4 @@ t_ok('no AI is involved', strpos($src, 'ai_ask') === false && strpos($page, 'ai_
 $idx = file_get_contents($_ROOT . '/index.php');
 t_ok('the dashboard card only shows on a real danger week', strpos($idx, "\$f['danger_weeks'] > 0") !== false);
 t_ok('...behind the money permission', strpos($idx, "if (\$seeMoney && can('reports.view'))") !== false);
-t_ok('...and repeats that overdue money was not counted', strpos($idx, 'મુદત વીતી ગયેલી ઉઘરાણી ગણી નથી') !== false);
+t_ok('...and repeats that overdue money was not counted', strpos($idx, 'overdue receivables are not counted') !== false);

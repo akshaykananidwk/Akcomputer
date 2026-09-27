@@ -168,7 +168,7 @@ $poor  = coll_priority(array_merge($base, ['overdue' => 1000, 'days' => 5, 'reli
 t_ok('a known bad payer scores higher than a good one', $poor['score'] > $small['score']);
 $brk   = coll_priority(array_merge($base, ['overdue' => 1000, 'days' => 5, 'broken_promises' => 2]));
 t_ok('a broken promise pushes them up', $brk['score'] > $small['score']);
-t_ok('and says so in the reasons', (bool)array_filter($brk['why'], fn($w) => strpos($w, 'વાયદો') !== false));
+t_ok('and says so in the reasons', (bool)array_filter($brk['why'], fn($w) => strpos($w, 'promise') !== false));
 $prom = coll_priority(array_merge($base, ['overdue' => 25000, 'days' => 60,
         'promise_open' => ['due_date' => date('Y-m-d', strtotime('+3 days')), 'amount' => 25000]]));
 $noProm = coll_priority(array_merge($base, ['overdue' => 25000, 'days' => 60]));
@@ -297,7 +297,7 @@ $page = file_get_contents(dirname(__DIR__) . '/customer.php');
 t_ok('Customer 360 requires parties.view', strpos($page, "require_perm('parties.view')") !== false);
 t_ok('its money blocks are gated on payments.view', substr_count($page, '$seeMoney') >= 3);
 t_ok('its margin block is gated on reports.profit', strpos($page, '$seeProfit && $c[\'margin\']') !== false);
-t_ok('margin is labelled contribution, never profit', strpos($page, 'માર્જિન યોગદાન') !== false);
+t_ok('margin is labelled contribution, never profit', strpos($page, 'Margin contributed') !== false);
 $coll = file_get_contents(dirname(__DIR__) . '/collection.php');
 t_ok('the collection queue requires payments.view', strpos($coll, "require_perm('payments.view')") !== false);
 t_ok('bulk send re-checks the guards at send time, not just at preview',

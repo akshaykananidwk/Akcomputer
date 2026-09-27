@@ -178,9 +178,9 @@ set_setting('gift_pct', '2');
 
 t_group('the report says what it is, and what it is not');
 $rb = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
-t_ok('it is called contribution, not profit', strpos($rb, 'માર્જિન યોગદાન') !== false);
+t_ok('it is called contribution, not profit', strpos($rb, 'Margin contributed') !== false);
 t_ok('...and says outright that shop costs are not deducted',
-     strpos($rb, 'ભાડું, પગાર, લાઇટબિલ જેવા દુકાનના ખર્ચ આમાં બાદ થયા નથી') !== false);
+     strpos($rb, 'Shop costs such as rent, salaries and electricity are NOT taken out of this') !== false);
 t_ok('the report is behind reports.profit', strpos($rb, "\$r === 'party_profit' && can('reports.profit')") !== false);
 $rep = file_get_contents(dirname(__DIR__) . '/reports.php');
 t_ok('...and the tab is hidden without it', strpos($rep, "unset(\$tabs['party_profit'])") !== false);
@@ -341,13 +341,13 @@ $_POST = [];
 t_ok('the bill screen writes one payment row per way of paying',
      strpos($slsSrc, 'foreach ($payLines as $pl)') !== false);
 
-t_group('જૂનું લઈને નવું — the old part comes back across the counter');
+t_group('Trade-in — the old part comes back across the counter');
 $_POST = ['ti_descr' => ['જૂની બેટરી', ''], 'ti_value' => ['400', '0'], 'ti_qty' => ['1', '1'], 'ti_item_id' => ['0', '0']];
 $tr = sale_trade_in_rows();
 t_eq('an empty row on the form is not an exchange', count($tr), 1);
 t_eq('...and the one that was filled in is', [$tr[0]['descr'], money_r($tr[0]['value'])], ['જૂની બેટરી', 400.0]);
 $_POST = ['ti_descr' => [''], 'ti_value' => ['400'], 'ti_qty' => ['1'], 'ti_item_id' => ['0']];
-t_eq('money off a bill always says what it was for', sale_trade_in_rows()[0]['descr'], 'જૂનો માલ');
+t_eq('money off a bill always says what it was for', sale_trade_in_rows()[0]['descr'], 'Old stock');
 $_POST = [];
 t_ok('the exchange rides on the bill\'s own adjustment, so every total still adds up',
      strpos($slsSrc, "\$adjustment = (float)post('adjustment') - \$tradeVal;") !== false);

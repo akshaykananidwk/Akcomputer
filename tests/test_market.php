@@ -65,10 +65,10 @@ $small = mk_change(1050, 1000);
 t_ok('a 5% wobble is called steady, not growth', $small['dir'] === 'flat');
 $new = mk_change(5000, 0);
 t_ok('growth from nothing is not infinity', $new['pct'] === null);
-t_ok('...it is called new', $new['label'] === 'નવું');
+t_ok('...it is called new', $new['label'] === 'new');
 $gone = mk_change(0, 5000);
 t_eq('a category that stopped is -100%', $gone['pct'], -100.0);
-t_ok('...and is called stopped', $gone['label'] === 'બંધ થઈ ગયું');
+t_ok('...and is called stopped', $gone['label'] === 'stopped');
 $none = mk_change(0, 0);
 t_ok('nothing against nothing is not a change', $none['dir'] === 'flat');
 
@@ -251,7 +251,7 @@ if ($h['can_season']) {
     }
 } else {
     t_ok('without two years it refuses outright', !$se['ok']);
-    t_ok('...and says why in plain words', strpos($se['why'], 'બે વર્ષ') !== false);
+    t_ok('...and says why in plain words', strpos($se['why'], 'two years') !== false);
 }
 t_ok('the code refuses on history, not on emptiness', strpos($src, "can_season") !== false);
 
@@ -261,7 +261,7 @@ $g = mk_geography();
 $cityCount = (int)val("SELECT COUNT(*) FROM parties WHERE city IS NOT NULL AND city <> ''");
 if ($cityCount === 0) {
     t_ok('with no city filled in, geography refuses', !$g['ok']);
-    t_ok('...and says the field is empty', strpos($g['why'], 'શહેર') !== false);
+    t_ok('...and says the field is empty', strpos($g['why'], 'city') !== false);
     t_ok('...and does not return a made-up row', $g['rows'] === []);
 }
 q("UPDATE parties SET city = 'TMCITY' WHERE id = ?", [$buyer]);
@@ -276,7 +276,7 @@ t_group('lost quotations refuse when there are no quotations');
 $lq = mk_lost_quotes();
 if ((int)val('SELECT COUNT(*) FROM estimates') === 0) {
     t_ok('no quotations means no win rate', !$lq['ok']);
-    t_ok('...said in plain words', strpos($lq['why'], 'ક્વોટેશન') !== false);
+    t_ok('...said in plain words', strpos($lq['why'], 'quotation') !== false);
     t_ok('...and no invented rows', $lq['rows'] === []);
     t_ok('lost items is empty too, not fabricated', mk_lost_items() === []);
 }
@@ -299,7 +299,7 @@ t_ok('the rejected quotation is listed', $hasRejected);
 $hasConverted = false;
 foreach ($lq2['rows'] as $x) if ($x['status'] === 'converted') $hasConverted = true;
 t_ok('a quotation that became a bill is not listed as lost', !$hasConverted);
-t_ok('no reason for the loss is invented', strpos(file_get_contents($_ROOT . '/market.php'), 'સોદો કેમ ગયો એ ચોપડો જાણતો નથી') !== false);
+t_ok('no reason for the loss is invented', strpos(file_get_contents($_ROOT . '/market.php'), 'the books do not know why a deal was lost') !== false);
 
 // ---------------------------------------------------------------- summary --
 t_group('the cached summary reads back exactly as it was written');
@@ -315,7 +315,7 @@ t_ok('growing and shrinking fit inside the group count',
 // ------------------------------------------------------------- guard rails --
 t_group('the screen refuses to pretend it knows the outside world');
 $page = file_get_contents($_ROOT . '/market.php');
-t_ok('it states plainly that there is no outside data', strpos($page, 'બહારની કોઈ માહિતી નથી') !== false);
+t_ok('it states plainly that there is no outside data', strpos($page, 'There is no outside information here') !== false);
 t_ok('it needs reports.view', strpos($page, "require_perm('reports.view')") !== false);
 t_ok('...and a cost permission on top of that', strpos($page, "can('reports.profit') && !can('items.cost')") !== false);
 t_ok('it never writes a business row',

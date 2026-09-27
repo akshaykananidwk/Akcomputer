@@ -92,7 +92,15 @@ if ($r === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 // already shows. There is no new information here, only a second way in.
 // ---------------------------------------------------------------------------
 if (in_array($r, ['catalog', 'wlogin', 'worder'], true)) {
-    if (!api_rate_ok('shop:' . client_ip(), 120, 60)) api_json(['error' => 'Too many requests - try again in a minute'], 429);
+    // One bucket for all three was wrong: browsing is cheap and frequent,
+    // ordering is rare and writes, and several customers on one shop WiFi
+    // share an address. So each door gets its own limit.
+    //   catalog - read only, and the app refreshes it whenever the screen opens
+    //   wlogin  - guessing risk, but per-mobile throttling already guards it
+    //   worder  - a write; nobody places twenty orders a minute honestly
+    $rate = ['catalog' => [240, 60], 'wlogin' => [30, 60], 'worder' => [20, 60]][$r];
+    if (!api_rate_ok('shop:' . $r . ':' . client_ip(), $rate[0], $rate[1]))
+        api_json(['error' => 'Too many requests - try again in a minute'], 429);
 
     // A dealer's own token, from ?r=wlogin. Optional: without it this is a
     // walk-in customer and the price is the ordinary one.
@@ -296,7 +304,7 @@ if ($r === 'sync' && $method === 'GET') {
 }
 
 // ---------------------------------------------------------------------------
-// EVERY SCREEN THE SHOP HAS, as the app's "બધું" list.
+// EVERY SCREEN THE SHOP HAS, as the app's "Everything" list.
 //
 // Built from nav_menu() - the same definition the website's own sidebar is
 // drawn from - and filtered by what this token is allowed to see. A screen

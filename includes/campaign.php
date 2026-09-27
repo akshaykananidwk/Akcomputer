@@ -41,7 +41,7 @@ function cam_rules() {
         'batch'      => max(1, (int)setting('campaign_batch', 20)),         // messages per cron tick
         'holdout'    => min(50, max(0, (int)setting('campaign_holdout_pct', 10))),
         'msg_paise'  => max(0, (int)setting('campaign_msg_paise', 0)),      // 0 = the shop has not said what a message costs
-        'optout_line' => (string)setting('campaign_optout_line', 'to stop messages "STOP" Write it.'),
+        'optout_line' => (string)setting('campaign_optout_line', 'Reply STOP to stop these messages.'),
         'inactive_factor' => 1.5,   // past 1.5x their own usual gap
         'min_group'  => 30,         // below this a comparison is noise, not a result
         'min_buyers' => 5,
@@ -400,7 +400,10 @@ function cam_optout($mobile, $on = true) {
 function cam_is_stop_word($text) {
     $t = mb_strtolower(trim((string)$text));
     if ($t === '') return false;
-    foreach (['stop', 'unsubscribe', 'Off', 'Stop', 'ना', 'बंद', 'बंद करो'] as $w) {
+    // THESE ARE WORDS A CUSTOMER TYPES, not words a customer reads. They
+    // stay in Gujarati and Hindi: somebody replying "બંધ" means stop, and
+    // failing to hear them would be ignoring a withdrawal of consent.
+    foreach (['stop', 'unsubscribe', 'બંધ', 'બંધ કરો', 'ना', 'बंद', 'बंद करो'] as $w) {
         if ($t === $w || mb_strpos($t, $w . ' ') === 0) return true;
     }
     return false;

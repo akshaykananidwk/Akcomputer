@@ -8,8 +8,8 @@ android {
         applicationId "in.akdwk.shop"
         minSdk 24           // Android 7 and up - covers the phones in use
         targetSdk 34
-        versionCode 2
-        versionName "2.0"
+        versionCode 3
+        versionName "3.0"
     }
 
     // A signed apk is the only kind Android will install. The key lives in

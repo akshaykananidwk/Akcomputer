@@ -277,7 +277,7 @@ t_group('the Stock Report rows add up to its own total');
 // the total disagree - that was the fourth of the four answers
 $rb = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
 t_ok('switched-off items with stock are listed', strpos($rb, "i.is_active = 1 OR EXISTS") !== false);
-t_ok('...and marked as switched off', strpos($rb, "empty(\$it['is_active']) ? ' <span class=\"badge badge-warn\">બંધ</span>'") !== false);
+t_ok('...and marked as switched off', strpos($rb, "empty(\$it['is_active']) ? ' <span class=\"badge badge-warn\">Closed</span>'") !== false);
 t_ok('...while ones with no stock stay hidden', strpos($rb, "ABS(sq.q) > 0.0001") !== false);
 
 // ------------------------------------------ Total Assets - Total Liabilities --
@@ -287,12 +287,12 @@ t_group('the Balance Sheet shows Net Worth');
 $rb2 = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
 t_ok('there is a Net Worth line', strpos($rb2, '$netWorth = $totAssets - $totLiab;') !== false);
 t_ok('...on the sheet itself, right after the liabilities',
-     strpos($rb2, 'ચોખ્ખી મૂડી — Net Worth') !== false);
-t_ok('...and worked out in full below it', strpos($rb2, 'Net Worth) — આખો હિસાબ') !== false);
+     strpos($rb2, 'Net Worth') !== false);
+t_ok('...and worked out in full below it', strpos($rb2, 'Net Worth — the whole picture') !== false);
 t_ok('...reconciled against what the books actually record',
-     strpos($rb2, 'એમાંથી ચોપડે નોંધાયેલું') !== false);
+     strpos($rb2, 'Of that, recorded on the books') !== false);
 t_ok('...with the unrecorded opening capital as its own line',
-     strpos($rb2, 'હજી નહીં નોંધાયેલી જૂની મૂડી') !== false);
+     strpos($rb2, 'old equity not yet recorded') !== false);
 // the exports render the same body, so the line reaches PDF and Excel too
 foreach (['report_pdf.php', 'report_xlsx.php'] as $f)
     t_ok($f . ' renders the same report body',
@@ -331,15 +331,15 @@ foreach (['1000', '2000', '3900'] as $against) {
 t_ok('so the sheet does not promise a Journal Entry will fix it',
      strpos($rb2, 'this will balance to zero going forward') === false);
 t_ok('...it says what the number actually is instead',
-     strpos($rb2, 'એ રકમ ખોટી નથી; એ ફક્ત નોંધાયેલી નથી') !== false);
+     strpos($rb2, 'That amount is not wrong; it is simply not recorded') !== false);
 t_ok('...and that Net Worth itself is the reliable figure',
-     strpos($rb2, 'ભરોસાપાત્ર આંકડો') !== false);
+     strpos($rb2, 'a figure you can trust') !== false);
 
 // ------------------------------------------------- the shop's own categories --
 t_group('expense categories are the shop\'s own list, in one place');
 $cats = expense_categories();
 $groups = expense_category_groups();
-t_eq('the shop\'s twenty-four are there', count($groups['ધંધાનો ખર્ચ']), 24);
+t_eq('the shop\'s twenty-four are there', count($groups['Business spending']), 24);
 t_eq('...and the household heads beside them', count($groups[expense_home_group()]), 16);
 t_eq('...forty in all', count($cats), 40);
 t_eq('...with no duplicates', count(array_unique($cats)), 40);
@@ -396,12 +396,12 @@ foreach ($mon as $mm) t_eq('each month\'s parts add to its total (' . $mm['ym'] 
 
 $rb3 = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
 t_ok('the P&L says how much of the profit went home', strpos($rb3, 'expense_home_total($from, $to)') !== false);
-t_ok('...and what the shop alone made', strpos($rb3, 'ફક્ત ધંધાનો નફો') !== false);
+t_ok('...and what the shop alone made', strpos($rb3, 'business profit only') !== false);
 // the owner asked for it to stay an expense - so net profit must NOT change
 t_ok('home spending is still inside net profit',
      strpos($rb3, "<td>NET PROFIT</td><td class=\"num\">₹' . money(\$net) . '") !== false);
-t_ok('...and the screen says so in as many words', strpos($rb3, 'ગણેલો જ છે — કાઢ્યો નથી') !== false);
-t_ok('the expense report lists the two apart', strpos($rb3, 'ઘરનો કુલ') !== false && strpos($rb3, 'ધંધાનો કુલ') !== false);
+t_ok('...and the screen says so in as many words', strpos($rb3, 'already included in the profit above — it has not been removed') !== false);
+t_ok('the expense report lists the two apart', strpos($rb3, 'Household total') !== false && strpos($rb3, 'Business total') !== false);
 t_ok('...and month by month', strpos($rb3, 'expense_home_by_month($from, $to)') !== false);
 t_ok('the expenses screen splits its total too', strpos($ex_src, "expense_is_home(\$rw['category'])") !== false);
 
@@ -534,7 +534,7 @@ t_ok('...which goes through the same one rule', strpos($paR, 'collection_reminde
 t_ok('the amount is worked out on the server, never taken from the form',
      strpos($paR, "\$due = \$p ? party_balance_side(\$pid, 'in') : 0.0;") !== false);
 t_ok('...and nothing is sent when they owe nothing',
-     strpos($paR, 'રિમાઇન્ડર મોકલ્યું નથી') !== false);
+     strpos($paR, 'no reminder was sent') !== false);
 t_ok('the button is only drawn when there is something to ask for',
      strpos($paR, "if (\$p['mobile'] && \$remDue > 0.009)") !== false);
 // a party switched off still owes what they owe - the bills side never

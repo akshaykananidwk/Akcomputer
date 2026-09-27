@@ -461,17 +461,21 @@ t_group('the page never pretends a bill got paid');
 t_ok('nothing on the page marks a bill paid',
      strpos($pp, "UPDATE sales SET paid") === false && strpos($pp, "money_settle") === false);
 t_ok('"I have paid" only tells the shop to go and look', strpos($pp, 'tg_notify_admins') !== false);
-t_ok('...and the page says so in as many words', strpos($pp, 'જાતે "ચૂકવાઈ ગયું" નથી કરી શકતું') !== false);
+t_ok('...and the page says so in as many words', strpos($pp, 'cannot do it by itself') !== false);
 
 t_group('the link reaches the customer');
 $sv = file_get_contents($_ROOT . '/sale_view.php');
-t_ok('the bill screen offers it', strpos($sv, 'પેમેન્ટ લિંક ખોલો') !== false);
+t_ok('the bill screen offers it', strpos($sv, 'Open the payment link') !== false);
 t_ok('...with a copy button', strpos($sv, 'copyPay()') !== false);
 t_ok('...only while something is owed', strpos($sv, "(\$sale['total'] - \$sale['paid']) > 0.009 ? invoice_pay_url(\$sale) : null") !== false);
-t_ok('the WhatsApp bill carries it', strpos($sv, "\$payLink = \$due > 0.009 ? invoice_pay_url(\$sale) : null") !== false);
+// the WhatsApp bill is built in ONE place now (sale_whatsapp_send), so that
+// is where the pay link has to be
+$wa = file_get_contents($_ROOT . '/includes/whatsapp.php');
+t_ok('the WhatsApp bill carries it', strpos($wa, "\$payLink = \$due > 0.009 ? invoice_pay_url(\$sale) : null") !== false);
+t_ok('...and the invoice screen sends through that one rule', strpos($sv, 'sale_whatsapp_send(') !== false);
 $wp = file_get_contents($_ROOT . '/includes/wa_portal.php');
 t_ok('the customer portal carries it too', strpos($wp, 'invoice_pay_url($s)') !== false);
-t_ok('...and leaves it off a settled bill', strpos($wp, "\$due > 0.009 ? \"\\n💳 ચૂકવો: \"") !== false);
+t_ok('...and leaves it off a settled bill', strpos($wp, "\$due > 0.009 ? \"\\n💳 Pay: \"") !== false);
 
 // "ડ્રોપ ડાઉન માં કઈ જગ્યાએ શું વસ્તુ પડી હોય છે એ નથી ખબર" - with hundreds of
 // items, finding one in a dropdown means knowing how its name was written and
@@ -573,7 +577,7 @@ t_ok('...it runs before any page\'s own submit handler',
 t_ok('...it stops the submit, so nothing typed is sent away and lost',
      strpos($appJs3, 'if (!FormGuard.check(form)) { ev.preventDefault(); ev.stopPropagation(); }') !== false);
 t_ok('...it scrolls the page to the box it wants', strpos($appJs3, 'bad.scrollIntoView(') !== false);
-t_ok('...says so in Gujarati', strpos($appJs3, "msg: 'આ ખાનું ભરો'") !== false);
+t_ok('...says so in Gujarati', strpos($appJs3, "msg: 'Please fill this in'") !== false);
 t_ok('...takes over the browser\'s own English bubble too',
      strpos($appJs3, "document.addEventListener('invalid'") !== false);
 t_ok('...shows only the first complaint, not five at once',
@@ -587,7 +591,7 @@ t_ok('...and a form can opt out', strpos($appJs3, "form.hasAttribute('novalidate
 t_ok('a hidden box is never demanded', strpos($appJs3, 'el.offsetParent === null') !== false);
 // "a bill needs an item" is not something [required] can say
 t_ok('a bill with no items is caught before it is sent', strpos($appJs3, 'guardItems: function') !== false);
-t_ok('...with words that say what to do', strpos($appJs3, 'ઓછામાં ઓછી એક આઇટમ ઉમેરો') !== false);
+t_ok('...with words that say what to do', strpos($appJs3, 'Add at least one item') !== false);
 
 t_group('the billing screen is short again');
 t_ok('the rare parts of a bill are folded away', strpos($slsUX, 'class="more-opts no-print"') !== false);

@@ -232,6 +232,6 @@ t_ok('the dashboard gates its purchase card the same way',
      strpos($idx, "can('purchases.view') && (\$seeProfit || can('items.cost'))") !== false);
 
 t_group('the honesty labels are actually in the screens');
-t_ok('lost sales is called an estimate to the reader', strpos($src, 'આ આંકડો અંદાજ છે') !== false);
-t_ok('delivery days are explained as owner-entered', strpos($src, 'ડિલિવરીના દિવસ તમારે ભરવાના છે') !== false);
-t_ok('the cost source is shown on every reorder row', strpos($src, 'કેટલોગ ભાવ') !== false);
+t_ok('lost sales is called an estimate to the reader', strpos($src, 'This figure is an estimate') !== false);
+t_ok('delivery days are explained as owner-entered', strpos($src, 'The delivery days are for you to fill in') !== false);
+t_ok('the cost source is shown on every reorder row', strpos($src, 'Catalogue price') !== false);

@@ -23,7 +23,7 @@ foreach (['sales', 'sale_items', 'payments', 'payment_allocations', 'purchases',
 }
 $r = sc_trim('sales', 1);
 t_ok('...and the refusal says why, in the owner\'s language',
-     strpos($r['why'], 'ધંધાનો ડેટા ક્યારેય ડિલીટ થતો નથી') !== false);
+     strpos($r['why'], 'Business data is never deleted') !== false);
 t_ok('a table that does not exist is refused too', !sc_trim('no_such_table_at_all')['ok']);
 t_ok('an empty table name is refused', !sc_trim('')['ok']);
 
@@ -156,11 +156,11 @@ t_eq('the redundant count matches the list', $cold['redundant'], count(sc_redund
 t_group('the screen is for the owner and explains itself');
 t_ok('it is admin only', strpos($page, 'is_full_admin()') !== false);
 t_ok('changing anything needs settings.edit', substr_count($page, "require_perm('settings.edit')") >= 3);
-t_ok('it says the numbers are measured, not assumed', strpos($page, 'માપેલા') !== false);
-t_ok('it has a page listing what can never be deleted', strpos($page, 'જે કદી ડિલીટ ન થાય') !== false);
-t_ok('...and says the guard is inside the deleting function', strpos($page, 'ડિલીટ કરનારા ફંક્શનની અંદર') !== false);
-t_ok('it tells the reader an index is not free', strpos($page, 'ઇન્ડેક્સ મફત નથી') !== false);
-t_ok('it warns that rebuilding a table locks it', strpos($page, 'દુકાન બંધ હોય ત્યારે કરવું') !== false);
-t_ok('it is honest that test runs create dead space too', strpos($page, 'ટેસ્ટ ચલાવવાથી') !== false);
-t_ok('it does not offer to drop an index by itself', strpos($page, 'આ સ્ક્રીન જાતે ઇન્ડેક્સ કાઢતી નથી') !== false);
+t_ok('it says the numbers are measured, not assumed', strpos($page, 'measured from the database as it stands') !== false);
+t_ok('it has a page listing what can never be deleted', strpos($page, 'What may never be deleted') !== false);
+t_ok('...and says the guard is inside the deleting function', strpos($page, 'inside the function that does the deleting') !== false);
+t_ok('it tells the reader an index is not free', strpos($page, 'An index is not free') !== false);
+t_ok('it warns that rebuilding a table locks it', strpos($page, 'do it when the shop is closed') !== false);
+t_ok('it is honest that test runs create dead space too', strpos($page, 'Running tests') !== false);
+t_ok('it does not offer to drop an index by itself', strpos($page, 'This screen does not drop an index by itself') !== false);
 t_ok('no AI anywhere in it', strpos($src, 'ai_ask') === false && strpos($page, 'ai_ask') === false);
