@@ -1,5 +1,5 @@
 <?php
-// Sales Assistant - "ગ્રાહક શું માગે છે?" typed in plain words, answered from
+// Sales Assistant - "Customer શું માગે is?" typed in plain words, answered from
 // the shop's own catalogue.
 //
 // The division of labour is the point, and the screen says it out loud:
@@ -33,7 +33,7 @@ if ($q !== '') {
     if ($kw['src'] === 'ai') {
         $aiRows = sa_find($kw['words'], $loc);
         if ($aiRows) $rows = $aiRows;               // catalogue confirmed them
-        else $kw['why'] = 'AI ના શબ્દોથી પણ કંઈ મળ્યું નહીં — ટાઇપ કરેલા શબ્દોનું પરિણામ બતાવ્યું છે.';
+        else $kw['why'] = 'The AI words found nothing either — the result for the typed words is shown.';
     }
     // 3. a budget only SORTS; nothing is hidden for being expensive
     if ($budget > 0 && $rows) {
@@ -56,26 +56,26 @@ $page_title = 'Sales Assistant';
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="card">
-  <h2>🧑‍💼 ગ્રાહક શું માગે છે?</h2>
+  <h2>🧑‍💼 What does the customer want?</h2>
   <form method="get" action="assistant.php" class="sa-form">
     <input type="text" name="q" value="<?= e($q) ?>" autofocus autocomplete="off"
-           placeholder="દા.ત. ઘર માટે wifi રાઉટર 2000 સુધીમાં&hellip;" style="flex:1;min-width:220px">
+           placeholder="e.g. a wifi router for home under 2000&hellip;" style="flex:1;min-width:220px">
     <?php if (count($locations) > 1): ?>
-    <select name="loc"><option value="0">— બધી જગ્યા —</option>
+    <select name="loc"><option value="0">— all locations —</option>
       <?php foreach ($locations as $l): ?><option value="<?= (int)$l['id'] ?>" <?= $loc == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option><?php endforeach; ?>
     </select>
     <?php endif; ?>
     <?php if ($partyId): ?><input type="hidden" name="party" value="<?= $partyId ?>"><?php endif; ?>
-    <button class="btn btn-primary" type="submit">શોધો</button>
+    <button class="btn btn-primary" type="submit">Search</button>
   </form>
   <p class="muted" style="margin:8px 0 0;font-size:13px">
-    ગુજરાતીમાં કે અંગ્રેજીમાં, જેમ ગ્રાહક બોલે એમ લખો. AI ફક્ત <b>શબ્દો સમજવા</b> માટે વપરાય છે —
-    સ્ટોક, ભાવ, માર્જિન અને ઉધારી બધું દુકાનના ડેટામાંથી જ ગણાય છે.
+    In Gujarati or English, as the customer says it. The AI only <b>to understand the words</b> is used for —
+    Stock, price, margin and credit are all worked out from the shop own data.
   </p>
 </div>
 
 <?php if ($q === ''): ?>
-  <div class="card"><p class="muted">ઉપર ગ્રાહકની જરૂરિયાત લખો.</p></div>
+  <div class="card"><p class="muted">Write what the customer needs above.</p></div>
 <?php else: ?>
 
   <?php if ($kw): ?>
@@ -83,10 +83,10 @@ include __DIR__ . '/includes/header.php';
     <div class="sa-chips">
       <?php foreach ($kw['words'] as $w): ?><span class="sa-chip"><?= e($w) ?></span><?php endforeach; ?>
       <?php if ($budget > 0): ?>
-        <span class="sa-chip sa-chip-b">બજેટ ₹<?= money($budget) ?>
-          <a href="assistant.php?<?= http_build_query(['q' => $q, 'loc' => $loc, 'party' => $partyId, 'nb' => 1]) ?>" title="બજેટ કાઢી નાખો">✕</a></span>
+        <span class="sa-chip sa-chip-b">Budget Rs <?= money($budget) ?>
+          <a href="assistant.php?<?= http_build_query(['q' => $q, 'loc' => $loc, 'party' => $partyId, 'nb' => 1]) ?>" title="Remove the budget">✕</a></span>
       <?php endif; ?>
-      <span class="muted" style="font-size:12px"><?= $kw['src'] === 'ai' ? '🤖 AI એ શબ્દો સૂચવ્યા' : '🔎 તમે લખેલા શબ્દો' ?></span>
+      <span class="muted" style="font-size:12px"><?= $kw['src'] === 'ai' ? '🤖 The AI suggested these words' : '🔎 The words you typed' ?></span>
     </div>
     <?php if ($kw['note']): ?><div class="muted" style="font-size:13px;margin-top:6px">🤖 <?= e($kw['note']) ?></div><?php endif; ?>
     <?php if ($kw['why']): ?><div class="muted" style="font-size:12px;margin-top:6px"><?= e($kw['why']) ?></div><?php endif; ?>
@@ -95,23 +95,23 @@ include __DIR__ . '/includes/header.php';
 
   <?php if ($credit): ?>
   <div class="flash flash-<?= $credit['level'] === 'high' ? 'error' : 'info' ?>">
-    ⚠️ <b><?= e($party['name'] ?? 'આ ગ્રાહક') ?></b> —
+    ⚠️ <b><?= e($party['name'] ?? 'This customer') ?></b> —
     <?= e(implode(' · ', $credit['lines'])) ?>.
-    <a href="customer.php?id=<?= $partyId ?>">વિગત જુઓ</a>
+    <a href="customer.php?id=<?= $partyId ?>">See detail</a>
   </div>
   <?php endif; ?>
 
   <?php if (!$rows): ?>
-    <div class="card"><p class="muted">આ શબ્દોથી કેટલોગમાં કંઈ મળ્યું નહીં. બીજા શબ્દ અજમાવો, અથવા
-      <a href="items.php?q=<?= urlencode($q) ?>">વસ્તુઓમાં જાતે શોધો</a>.</p></div>
+    <div class="card"><p class="muted">Nothing in the catalogue matched these words. Try others, or
+      <a href="items.php?q=<?= urlencode($q) ?>">search the items by hand</a>.</p></div>
   <?php else: ?>
   <div class="card">
-    <h2>🎯 મળતી વસ્તુઓ <span class="muted" style="font-weight:400;font-size:13px">· <?= count($rows) ?></span></h2>
+    <h2>🎯 Matching items <span class="muted" style="font-weight:400;font-size:13px">· <?= count($rows) ?></span></h2>
     <div class="table-wrap"><table>
       <thead><tr>
-        <th style="width:34px"></th><th>વસ્તુ</th><th class="num">સ્ટોક</th><th class="num">ભાવ</th>
-        <?php if ($showCost): ?><th class="num">માર્જિન</th><?php endif; ?>
-        <th>90 દિવસમાં</th>
+        <th style="width:34px"></th><th>Item</th><th class="num">Stock</th><th class="num">Price</th>
+        <?php if ($showCost): ?><th class="num">Margin</th><?php endif; ?>
+        <th>in 90 days</th>
       </tr></thead>
       <tbody>
       <?php foreach ($rows as $it):
@@ -127,23 +127,23 @@ include __DIR__ . '/includes/header.php';
             <div class="muted" style="font-size:12px">
               <?= e(trim($it['brand'] . ' ' . $it['model'])) ?><?= $it['category'] ? ' · ' . e($it['category']) : '' ?>
             </div>
-            <?php if ($lp): ?><div class="muted" style="font-size:12px">🧾 આ ગ્રાહકને છેલ્લે ₹<?= money($lp['price']) ?> (<?= dmy($lp['sale_date']) ?>)</div><?php endif; ?>
+            <?php if ($lp): ?><div class="muted" style="font-size:12px">🧾 Last to this customer Rs <?= money($lp['price']) ?> (<?= dmy($lp['sale_date']) ?>)</div><?php endif; ?>
           </td>
           <td class="num">
-            <?php if ($isSvc): ?><span class="muted">સેવા</span>
-            <?php elseif ($st <= 0): ?><span class="badge b-bad">ખલાસ</span>
+            <?php if ($isSvc): ?><span class="muted">Service</span>
+            <?php elseif ($st <= 0): ?><span class="badge b-bad">Out of stock</span>
             <?php elseif ($st <= (float)$it['min_stock']): ?><span class="badge b-warn"><?= rtrim(rtrim(number_format($st, 2), '0'), '.') ?></span>
             <?php else: ?><?= rtrim(rtrim(number_format($st, 2), '0'), '.') ?><?php endif; ?>
           </td>
           <td class="num">₹<?= money($it['selling_price']) ?>
-            <?php if ($budget > 0 && (float)$it['selling_price'] > $budget): ?><div class="muted" style="font-size:11px">બજેટથી ઉપર</div><?php endif; ?>
+            <?php if ($budget > 0 && (float)$it['selling_price'] > $budget): ?><div class="muted" style="font-size:11px">above budget</div><?php endif; ?>
           </td>
           <?php if ($showCost): ?>
           <td class="num"><?= $m ? '₹' . money($m['amount']) . '<div class="muted" style="font-size:11px">' . $m['pct'] . '%</div>' : '<span class="muted">—</span>' ?></td>
           <?php endif; ?>
           <td class="muted" style="font-size:12px">
-            <?php if ($mv): ?><?= rtrim(rtrim(number_format($mv['qty'], 2), '0'), '.') ?> નંગ વેચાયા · છેલ્લે <?= dmy($mv['last_sold']) ?>
-            <?php else: ?>વેચાયું નથી<?php endif; ?>
+            <?php if ($mv): ?><?= rtrim(rtrim(number_format($mv['qty'], 2), '0'), '.') ?> units sold · last <?= dmy($mv['last_sold']) ?>
+            <?php else: ?>not sold<?php endif; ?>
           </td>
         </tr>
       <?php endforeach; ?>
@@ -151,23 +151,23 @@ include __DIR__ . '/includes/header.php';
     </table></div>
     <?php if (can('sales.add')): ?>
     <div class="page-actions" style="margin-top:12px">
-      <button type="button" class="btn btn-primary" id="saBill">✅ પસંદ કરેલી વસ્તુઓનું બિલ બનાવો</button>
-      <span class="muted" style="font-size:12px">બિલના પાના પર છૂટક ભાવ ભરાશે — ત્યાં બદલી શકાશે.</span>
+      <button type="button" class="btn btn-primary" id="saBill">✅ Make a bill for the selected items</button>
+      <span class="muted" style="font-size:12px">The retail price is filled in on the billing page — it can be changed there.</span>
     </div>
     <?php endif; ?>
   </div>
 
   <?php if ($cross): ?>
   <div class="card">
-    <h2>🔗 આની સાથે આ પણ વેચાય છે</h2>
-    <p class="muted" style="font-size:13px;margin-top:0">છેલ્લા <?= sa_rules()['months'] ?> મહિનામાં એક જ બિલમાં સાથે ગયેલી વસ્તુઓ — ગણતરી, સૂચન નહીં.</p>
+    <h2>🔗 This sells with this</h2>
+    <p class="muted" style="font-size:13px;margin-top:0">Last <?= sa_rules()['months'] ?> months, items that went out on the same bill — a count, not a suggestion.</p>
     <div class="table-wrap"><table>
-      <thead><tr><th>વસ્તુ</th><th class="num">સ્ટોક</th><th class="num">ભાવ</th><th class="num">કેટલાં બિલમાં સાથે</th></tr></thead>
+      <thead><tr><th>Item</th><th class="num">Stock</th><th class="num">Price</th><th class="num">on how many bills together</th></tr></thead>
       <tbody>
       <?php foreach ($cross as $c): ?>
         <tr>
           <td><a href="item_view.php?id=<?= (int)$c['id'] ?>"><?= e($c['name']) ?></a></td>
-          <td class="num"><?= $c['stock'] === null ? '<span class="muted">સેવા</span>' : ((float)$c['stock'] <= 0 ? '<span class="badge b-bad">ખલાસ</span>' : rtrim(rtrim(number_format((float)$c['stock'], 2), '0'), '.')) ?></td>
+          <td class="num"><?= $c['stock'] === null ? '<span class="muted">Service</span>' : ((float)$c['stock'] <= 0 ? '<span class="badge b-bad">Out of stock</span>' : rtrim(rtrim(number_format((float)$c['stock'], 2), '0'), '.')) ?></td>
           <td class="num">₹<?= money($c['selling_price']) ?></td>
           <td class="num"><?= (int)$c['bills'] ?></td>
         </tr>
@@ -190,7 +190,7 @@ include __DIR__ . '/includes/header.php';
 <script>
 document.getElementById('saBill')?.addEventListener('click', function () {
   var ids = Array.from(document.querySelectorAll('.sa-tick:checked')).map(function (c) { return c.value; });
-  if (!ids.length) { alert('એકેય વસ્તુ પસંદ કરી નથી.'); return; }
+  if (!ids.length) { alert('No item has been selected.'); return; }
   var qs = 'action=new&pick=' + ids.join(',') + <?= json_encode($partyId ? '&party=' . $partyId : '') ?>;
   location.href = 'sales.php?' + qs;
 });

@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_lead') {
     $pid = (int)post('party_id');
     q('UPDATE parties SET lead_days = ? WHERE id = ?', [max(0, (int)post('lead_days')), $pid]);
     log_activity('supplier_lead_days', "party=$pid days=" . (int)post('lead_days'));
-    flash('ડિલિવરીના દિવસ સચવાયા.');
+    flash('Delivery days saved.');
     redirect('purchase_intel.php?tab=suppliers');
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_rules') {
@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_rules') {
     foreach (['purchase_lead_days' => 7, 'purchase_safety_days' => 7, 'purchase_cover_days' => 30] as $k => $def) {
         if (post($k) !== null) set_setting($k, (string)max(0, (int)post($k)));
     }
-    flash('ઓર્ડરના નિયમો સચવાયા.');
+    flash('Ordering rules saved.');
     redirect('purchase_intel.php');
 }
 
@@ -40,16 +40,16 @@ $page_title = 'Purchase Intelligence';
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="card">
-  <h2>🛒 શું મંગાવવું</h2>
+  <h2>🛒 What to buy</h2>
   <div class="grid-stats">
-    <a class="stat s-bad" href="purchase_intel.php?tab=reorder"><div class="stat-label">ખલાસ થઈ ગયું</div><div class="stat-value"><?= (int)$sum['out_of_stock'] ?></div></a>
-    <a class="stat s-warn" href="purchase_intel.php?tab=reorder"><div class="stat-label">મંગાવવા જેવું</div><div class="stat-value"><?= (int)$sum['reorder_items'] ?></div></a>
-    <a class="stat" href="purchase_intel.php?tab=reorder"><div class="stat-label">અંદાજિત ખર્ચ</div><div class="stat-value">₹<?= money($sum['reorder_cost']) ?></div></a>
-    <a class="stat <?= $sum['thin_margin'] ? 's-warn' : '' ?>" href="purchase_intel.php?tab=margin"><div class="stat-label">પાતળું માર્જિન</div><div class="stat-value"><?= (int)$sum['thin_margin'] ?></div></a>
+    <a class="stat s-bad" href="purchase_intel.php?tab=reorder"><div class="stat-label">ran out</div><div class="stat-value"><?= (int)$sum['out_of_stock'] ?></div></a>
+    <a class="stat s-warn" href="purchase_intel.php?tab=reorder"><div class="stat-label">worth ordering</div><div class="stat-value"><?= (int)$sum['reorder_items'] ?></div></a>
+    <a class="stat" href="purchase_intel.php?tab=reorder"><div class="stat-label">Estimated cost</div><div class="stat-value">₹<?= money($sum['reorder_cost']) ?></div></a>
+    <a class="stat <?= $sum['thin_margin'] ? 's-warn' : '' ?>" href="purchase_intel.php?tab=margin"><div class="stat-label">Thin margin</div><div class="stat-value"><?= (int)$sum['thin_margin'] ?></div></a>
   </div>
   <div class="range-bar">
-    <?php foreach (['reorder' => '🛒 મંગાવવાનું', 'suppliers' => '🚚 સપ્લાયર', 'price' => '📈 ભાવ વધ્યા',
-                    'margin' => '🏷️ માર્જિન', 'lost' => '🚫 ખલાસ થવાથી નુકસાન', 'rules' => '⚙️ નિયમો'] as $k => $lbl): ?>
+    <?php foreach (['reorder' => '🛒 To order', 'suppliers' => '🚚 Supplier', 'price' => '📈 Price increases',
+                    'margin' => '🏷️ Margin', 'lost' => '🚫 The cost of running out', 'rules' => '⚙️ Rules'] as $k => $lbl): ?>
     <a class="rchip <?= $tab === $k ? 'on' : '' ?>" href="purchase_intel.php?tab=<?= $k ?>"><?= $lbl ?></a>
     <?php endforeach; ?>
   </div>
@@ -57,19 +57,19 @@ include __DIR__ . '/includes/header.php';
 
 <?php if ($tab === 'reorder'): $rows = pi_reorder(150); ?>
 <div class="card">
-  <h2>🛒 મંગાવવા જેવી વસ્તુઓ <span class="muted" style="font-weight:400;font-size:13px">· સૌથી પહેલાં ખલાસ થાય એ ઉપર</span></h2>
+  <h2>🛒 Items worth ordering <span class="muted" style="font-weight:400;font-size:13px">· whatever runs out first is at the top</span></h2>
   <p class="muted mb" style="font-size:13px">
-    માત્ર "ઓછો સ્ટોક" નહીં — <strong>જે માલ ડિલિવરી આવે એ પહેલાં જ ખલાસ થઈ જશે</strong> એ બતાવે છે.
-    જે વસ્તુ વેચાતી જ નથી એ અહીં ક્યારેય નહીં આવે.
+    only "Low stock" no — <strong>Goods that will run out before the delivery arrives</strong> shows that.
+    An item that never sells never appears here.
   </p>
   <?php if (!$rows): ?>
-    <p class="muted">અત્યારે કંઈ મંગાવવાની જરૂર નથી. 🎉</p>
+    <p class="muted">Nothing needs ordering right now. 🎉</p>
   <?php else: ?>
   <div class="table-wrap"><table class="table-sm">
     <thead><tr>
       <?php if (can('purchases.add')): ?><th style="width:28px"><input type="checkbox" onclick="document.querySelectorAll('.rocb').forEach(c=>c.checked=this.checked)"></th><?php endif; ?>
-      <th>વસ્તુ</th><th class="num">સ્ટોક</th><th class="num">રોજ વેચાય</th><th class="num">કેટલા દિવસ ચાલશે</th>
-      <th class="num">મંગાવો</th><th class="num">ભાવ</th><th class="num">અંદાજિત ખર્ચ</th><th>કોની પાસેથી</th>
+      <th>Item</th><th class="num">Stock</th><th class="num">sold per day</th><th class="num">How many days it lasts</th>
+      <th class="num">Order</th><th class="num">Price</th><th class="num">Estimated cost</th><th>From whom</th>
     </tr></thead>
     <tbody>
     <?php foreach ($rows as $x): ?>
@@ -79,45 +79,45 @@ include __DIR__ . '/includes/header.php';
                  data-qty="<?= (int)$x['suggest_qty'] ?>" data-tax="<?= (float)$x['tax_rate'] ?>" data-price="<?= (float)$x['unit_cost'] ?>"></td>
       <?php endif; ?>
       <td><a href="item_view.php?id=<?= (int)$x['item_id'] ?>"><?= e($x['name']) ?></a>
-        <?php if ($x['reason'] === 'min_stock'): ?><br><span class="muted" style="font-size:11px">લઘુતમ સ્ટોકથી નીચે</span><?php endif; ?>
+        <?php if ($x['reason'] === 'min_stock'): ?><br><span class="muted" style="font-size:11px">below the minimum stock</span><?php endif; ?>
       </td>
       <td class="num <?= $x['out_of_stock'] ? '' : 'muted' ?>">
-        <?= $x['out_of_stock'] ? '<span class="badge badge-bad">ખલાસ</span>' : (float)$x['stock'] . ' ' . e($x['unit']) ?></td>
+        <?= $x['out_of_stock'] ? '<span class="badge badge-bad">Out of stock</span>' : (float)$x['stock'] . ' ' . e($x['unit']) ?></td>
       <td class="num"><?= $x['per_day'] > 0 ? $x['per_day'] : '—' ?></td>
-      <td class="num"><?= $x['days_left'] === null ? '—' : '<strong>' . (int)$x['days_left'] . '</strong> દિ.' ?>
-        <br><span class="muted" style="font-size:11px">ડિલિવરી <?= (int)$x['lead_days'] ?> દિ.</span></td>
+      <td class="num"><?= $x['days_left'] === null ? '—' : '<strong>' . (int)$x['days_left'] . '</strong> d' ?>
+        <br><span class="muted" style="font-size:11px">Delivery <?= (int)$x['lead_days'] ?> d</span></td>
       <td class="num"><strong><?= (int)$x['suggest_qty'] ?></strong> <?= e($x['unit']) ?></td>
       <td class="num">₹<?= money($x['unit_cost']) ?>
         <br><span class="muted" style="font-size:11px"><?= $x['cost_source'] === 'last_purchase'
-            ? 'છેલ્લે ' . dmy($x['cost_date']) : 'કેટલોગ ભાવ' ?></span></td>
+            ? 'Last ' . dmy($x['cost_date']) : 'Catalogue price' ?></span></td>
       <td class="num">₹<?= money($x['est_cost']) ?></td>
       <td><?php if ($x['supplier']):
             // the cheapest supplier's price against what we last actually paid:
             // when it is lower, that gap is money left on the table
             $save = round(($x['unit_cost'] - $x['supplier']['price']) * $x['suggest_qty'], 2); ?>
           <a href="parties.php?action=ledger&id=<?= (int)$x['supplier']['party_id'] ?>"><?= e($x['supplier']['name']) ?></a>
-          <br><span class="muted" style="font-size:11px">₹<?= money($x['supplier']['price']) ?> · <?= (int)$x['supplier']['times'] ?> વાર</span>
+          <br><span class="muted" style="font-size:11px">₹<?= money($x['supplier']['price']) ?> · <?= (int)$x['supplier']['times'] ?> times</span>
           <?php if ($save > 0.5): ?>
-          <br><span class="badge badge-ok" style="font-size:10px">આમની પાસેથી લો તો ~₹<?= money($save) ?> બચે</span>
+          <br><span class="badge badge-ok" style="font-size:10px">Buying from them saves about Rs <?= money($save) ?> saved</span>
           <?php endif; ?>
-        <?php else: ?><span class="muted">પહેલાં ક્યાંયથી નથી લીધું</span><?php endif; ?></td>
+        <?php else: ?><span class="muted">never bought from anywhere before</span><?php endif; ?></td>
     </tr>
     <?php endforeach; ?>
     </tbody>
   </table></div>
   <p class="muted" style="font-size:12px">
-    ગણતરી: <?= (int)$rules['cover_days'] ?> દિવસ ચાલે એટલો માલ + <?= (int)$rules['safety_days'] ?> દિવસનો બફર,
-    જે હાથ પર છે એ બાદ કરીને. આ આંકડા <a href="purchase_intel.php?tab=rules">નિયમો</a> માંથી બદલી શકાય છે.
+    Calculation: <?= (int)$rules['cover_days'] ?> days worth of goods + <?= (int)$rules['safety_days'] ?> days of buffer,
+    less what is on hand. These figures <a href="purchase_intel.php?tab=rules">Rules</a> can be changed from there.
   </p>
   <?php if (can('purchases.add')): ?>
-  <button type="button" class="btn mt" onclick="piBuild()">🛒 પસંદ કરેલાની ખરીદી બનાવો</button>
+  <button type="button" class="btn mt" onclick="piBuild()">🛒 Make a purchase for the selected</button>
   <script>
   function piBuild() {
     var items = [];
     document.querySelectorAll('.rocb:checked').forEach(function (cb) {
       items.push({id: cb.dataset.id, name: cb.dataset.name, qty: cb.dataset.qty, tax: cb.dataset.tax, price: cb.dataset.price});
     });
-    if (!items.length) { alert('ઓછામાં ઓછી એક વસ્તુ પસંદ કરો.'); return; }
+    if (!items.length) { alert('Choose at least one item.'); return; }
     sessionStorage.setItem('reorderItems', JSON.stringify(items));
     location.href = 'purchases.php?action=new&reorder=1';
   }
@@ -128,28 +128,28 @@ include __DIR__ . '/includes/header.php';
 
 <?php elseif ($tab === 'suppliers'): $sups = pi_suppliers(); ?>
 <div class="card">
-  <h2>🚚 સપ્લાયર</h2>
+  <h2>🚚 Supplier</h2>
   <p class="muted mb" style="font-size:13px">
-    <strong>ડિલિવરીના દિવસ તમારે ભરવાના છે.</strong> બિલમાં ફક્ત ખરીદીની તારીખ નોંધાય છે, માલ ક્યારે આવ્યો એ નહીં —
-    એટલે સિસ્ટમ એ જાતે ગણી શકતી નથી. તમે ભરશો એટલે "કેટલા દિવસ ચાલશે" ની ગણતરી સાચી થશે.
+    <strong>The delivery days are for you to fill in.</strong> A bill records only the purchase date, not when the goods arrived —
+    so the system cannot work it out by itself. Once you fill it in, "How many days it lasts" will then be worked out correctly.
   </p>
-  <?php if (!$sups): ?><p class="muted">છેલ્લા વર્ષમાં કોઈ ખરીદી નથી.</p><?php else: ?>
+  <?php if (!$sups): ?><p class="muted">No purchases in the last year.</p><?php else: ?>
   <div class="table-wrap"><table class="table-sm">
-    <thead><tr><th>સપ્લાયર</th><th class="num">બિલ</th><th class="num">ખરીદી ₹</th><th class="num">વસ્તુઓ</th>
-      <th>છેલ્લે</th><th>ભાવનું વલણ</th><th class="num">આપણે દેવું</th><th class="num">ડિલિવરી દિ.</th></tr></thead>
+    <thead><tr><th>Supplier</th><th class="num">Bill</th><th class="num">Purchases Rs </th><th class="num">Items</th>
+      <th>Last</th><th>Price trend</th><th class="num">we owe</th><th class="num">Delivery d</th></tr></thead>
     <tbody>
     <?php foreach ($sups as $s): ?>
     <tr>
       <td><a href="parties.php?action=ledger&id=<?= (int)$s['id'] ?>"><?= e($s['name']) ?></a>
         <?php if ($s['mobile']): ?><br><a class="muted" style="font-size:11px" href="tel:<?= e($s['mobile']) ?>"><?= e($s['mobile']) ?></a><?php endif; ?></td>
       <td class="num"><?= (int)$s['bills'] ?></td>
-      <td class="num">₹<?= money($s['spend']) ?><br><span class="muted" style="font-size:11px">સરેરાશ ₹<?= money($s['avg_bill']) ?></span></td>
+      <td class="num">₹<?= money($s['spend']) ?><br><span class="muted" style="font-size:11px">Average Rs <?= money($s['avg_bill']) ?></span></td>
       <td class="num"><?= (int)$s['items'] ?></td>
       <td><?= $s['last_buy'] ? dmy($s['last_buy']) : '—' ?>
-        <?php if ($s['idle_days'] !== null && $s['idle_days'] > 120): ?><br><span class="badge badge-warn"><?= (int)$s['idle_days'] ?> દિવસથી નહીં</span><?php endif; ?></td>
-      <td><?php if ($s['prices_up']): ?><span class="badge badge-bad">↑ <?= (int)$s['prices_up'] ?> વસ્તુ મોંઘી</span><?php endif; ?>
-          <?php if ($s['prices_down']): ?><span class="badge badge-ok">↓ <?= (int)$s['prices_down'] ?> સસ્તી</span><?php endif; ?>
-          <?php if (!$s['prices_up'] && !$s['prices_down']): ?><span class="muted">સ્થિર</span><?php endif; ?></td>
+        <?php if ($s['idle_days'] !== null && $s['idle_days'] > 120): ?><br><span class="badge badge-warn"><?= (int)$s['idle_days'] ?> not for days</span><?php endif; ?></td>
+      <td><?php if ($s['prices_up']): ?><span class="badge badge-bad">↑ <?= (int)$s['prices_up'] ?> items dearer</span><?php endif; ?>
+          <?php if ($s['prices_down']): ?><span class="badge badge-ok">↓ <?= (int)$s['prices_down'] ?> cheaper</span><?php endif; ?>
+          <?php if (!$s['prices_up'] && !$s['prices_down']): ?><span class="muted">steady</span><?php endif; ?></td>
       <td class="num"><?= $s['we_owe'] > 0.009 ? '₹' . money($s['we_owe']) : '—' ?></td>
       <td class="num">
         <?php if (can('parties.edit')): ?>
@@ -169,11 +169,11 @@ include __DIR__ . '/includes/header.php';
 
 <?php elseif ($tab === 'price'): $alerts = pi_price_alerts(); ?>
 <div class="card">
-  <h2>📈 જે વસ્તુના ખરીદ ભાવ વધ્યા છે</h2>
-  <p class="muted mb" style="font-size:13px">એ જ સપ્લાયરે એ જ વસ્તુ માટે પહેલાં કરતાં વધુ ભાવ લીધો હોય એવી યાદી. આગળનો ઓર્ડર આપતાં પહેલાં વાત કરી લેવા જેવી.</p>
-  <?php if (!$alerts): ?><p class="muted">કોઈના ભાવ વધ્યા નથી. 👍</p><?php else: ?>
+  <h2>📈 Items whose cost price has risen</h2>
+  <p class="muted mb" style="font-size:13px">A list where the same supplier charged more than before for the same item. Worth a word before the next order.</p>
+  <?php if (!$alerts): ?><p class="muted">Nobody has raised a price. 👍</p><?php else: ?>
   <div class="table-wrap"><table class="table-sm">
-    <thead><tr><th>વસ્તુ</th><th>સપ્લાયર</th><th class="num">પહેલાં</th><th class="num">હવે</th><th class="num">વધારો</th><th>ક્યારે</th></tr></thead>
+    <thead><tr><th>Item</th><th>Supplier</th><th class="num">before</th><th class="num">now</th><th class="num">increase</th><th>When</th></tr></thead>
     <tbody>
     <?php foreach ($alerts as $a): ?>
     <tr><td><a href="item_view.php?id=<?= (int)$a['item_id'] ?>"><?= e($a['name']) ?></a></td>
@@ -190,51 +190,51 @@ include __DIR__ . '/includes/header.php';
 
 <?php elseif ($tab === 'margin'): $mw = pi_margin_watch(100); ?>
 <div class="card">
-  <h2>🏷️ પાતળા માર્જિનવાળી વસ્તુઓ</h2>
+  <h2>🏷️ Items on a thin margin</h2>
   <p class="muted mb" style="font-size:13px">
-    વેચાણ ભાવ સામે <strong>છેલ્લે ખરેખર ચૂકવેલો ખરીદ ભાવ</strong> મૂકીને ગણેલું — કેટલોગનો જૂનો ભાવ નહીં.
-    એટલે મહિનાના રિપોર્ટની રાહ જોયા વગર, <em>આગળનું વેચાણ થાય એ પહેલાં</em> ભાવ સુધારી શકાય.
-    જે વસ્તુ વેચાય છે એ ઉપર રાખી છે.
+    against the selling price <strong>The cost price actually paid last</strong> is used — not the old catalogue price.
+    so without waiting for the monthly report, <em>before the next sale happens</em> the price can be corrected.
+    What sells is kept at the top.
   </p>
-  <?php if (!$mw): ?><p class="muted">બધી વસ્તુનું માર્જિન ટાર્ગેટ ઉપર છે. 🎉</p><?php else: ?>
+  <?php if (!$mw): ?><p class="muted">Every item margin is above target. 🎉</p><?php else: ?>
   <div class="table-wrap"><table class="table-sm">
-    <thead><tr><th>વસ્તુ</th><th class="num">વેચાણ ભાવ</th><th class="num">ખરીદ ભાવ</th><th class="num">માર્જિન</th>
-      <th class="num">ટાર્ગેટ માટે ભાવ</th><th class="num">સ્ટોક</th><th>વેચાય છે?</th></tr></thead>
+    <thead><tr><th>Item</th><th class="num">Selling price</th><th class="num">Cost price</th><th class="num">Margin</th>
+      <th class="num">Price for the target</th><th class="num">Stock</th><th>does it sell?</th></tr></thead>
     <tbody>
     <?php foreach ($mw as $m): ?>
     <tr>
       <td><a href="item_view.php?id=<?= (int)$m['item_id'] ?>"><?= e($m['name']) ?></a></td>
       <td class="num">₹<?= money($m['sell']) ?></td>
-      <td class="num">₹<?= money($m['cost']) ?><br><span class="muted" style="font-size:11px"><?= $m['cost_source'] === 'last_purchase' ? dmy($m['cost_date']) : 'કેટલોગ' ?></span></td>
+      <td class="num">₹<?= money($m['cost']) ?><br><span class="muted" style="font-size:11px"><?= $m['cost_source'] === 'last_purchase' ? dmy($m['cost_date']) : 'Catalogue' ?></span></td>
       <td class="num"><span class="badge <?= $m['margin_pct'] < 0 ? 'badge-bad' : 'badge-warn' ?>"><?= $m['margin_pct'] ?>%</span></td>
       <td class="num"><strong>₹<?= money($m['suggested_price']) ?></strong></td>
       <td class="num"><?= (float)$m['stock'] ?></td>
-      <td><?= $m['moves'] ? '<span class="badge badge-bad">હા</span>' : '<span class="muted">ના</span>' ?></td>
+      <td><?= $m['moves'] ? '<span class="badge badge-bad">Yes</span>' : '<span class="muted">No</span>' ?></td>
     </tr>
     <?php endforeach; ?>
     </tbody>
   </table></div>
-  <p class="muted" style="font-size:12px">"ટાર્ગેટ માટે ભાવ" = <?= $rules['target_margin'] ?>% માર્જિન મળે એવો વેચાણ ભાવ. ટાર્ગેટ Settings માંથી બદલાય છે.</p>
+  <p class="muted" style="font-size:12px">"Price for the target" = <?= $rules['target_margin'] ?>% margin. The target is changed in Settings.</p>
   <?php endif; ?>
 </div>
 
 <?php elseif ($tab === 'lost'): $ls = pi_lost_sales(90); ?>
 <div class="card">
-  <h2>🚫 માલ ખલાસ થવાથી કેટલું ગુમાવ્યું</h2>
+  <h2>🚫 What running out of stock cost</h2>
   <div class="flash flash-info">
-    <strong>આ આંકડો અંદાજ છે, માપેલો નથી.</strong>
-    જે ગ્રાહક વસ્તુ માગીને પાછો ગયો હોય એની ક્યાંય નોંધ થતી નથી. એટલે આ ગણતરી આ રીતે થાય છે:
-    દરેક વસ્તુ કેટલા દિવસ ઝીરો સ્ટોકમાં રહી × એ વસ્તુ સામાન્ય રીતે રોજ કેટલી વેચાય છે.
-    "કેટલું નુકસાન થયું" એ ચોક્કસ કહેવા માટે નહીં — <em>"માલ ખૂટવો મોંઘો પડે છે કે નહીં"</em> એ સમજવા માટે વાપરો.
+    <strong>This figure is an estimate, not a measurement.</strong>
+    A customer who asked for something and left empty-handed is recorded nowhere. So this is worked out like this:
+    How many days each item sat at zero stock × how many it normally sells a day.
+    "how much was lost" not to say it exactly — <em>"whether running out is costly or not"</em> Use it to understand that.
   </div>
   <div class="grid-stats">
-    <div class="stat s-warn"><div class="stat-label">અંદાજિત ગુમાવેલું માર્જિન (<?= (int)$ls['days'] ?> દિવસ)</div><div class="stat-value">₹<?= money($ls['value']) ?></div></div>
-    <div class="stat"><div class="stat-label">અંદાજિત ગુમાવેલા નંગ</div><div class="stat-value"><?= $ls['units'] ?></div></div>
-    <div class="stat"><div class="stat-label">કેટલી વસ્તુ ખૂટી</div><div class="stat-value"><?= count($ls['items']) ?></div></div>
+    <div class="stat s-warn"><div class="stat-label">Estimated margin lost (<?= (int)$ls['days'] ?> days)</div><div class="stat-value">₹<?= money($ls['value']) ?></div></div>
+    <div class="stat"><div class="stat-label">Estimated units lost</div><div class="stat-value"><?= $ls['units'] ?></div></div>
+    <div class="stat"><div class="stat-label">how many items fell short</div><div class="stat-value"><?= count($ls['items']) ?></div></div>
   </div>
-  <?php if (!$ls['items']): ?><p class="muted">છેલ્લા <?= (int)$ls['days'] ?> દિવસમાં વેચાતી કોઈ વસ્તુ ખૂટી નથી. 🎉</p><?php else: ?>
+  <?php if (!$ls['items']): ?><p class="muted">Last <?= (int)$ls['days'] ?> Nothing selling in these days has run short. 🎉</p><?php else: ?>
   <div class="table-wrap"><table class="table-sm">
-    <thead><tr><th>વસ્તુ</th><th class="num">કેટલા દિવસ ખલાસ</th><th class="num">રોજ વેચાય</th><th class="num">અંદાજિત ગુમાવેલા નંગ</th><th class="num">અંદાજિત માર્જિન ₹</th></tr></thead>
+    <thead><tr><th>Item</th><th class="num">Days out of stock</th><th class="num">sold per day</th><th class="num">Estimated units lost</th><th class="num">Estimated margin Rs </th></tr></thead>
     <tbody>
     <?php foreach ($ls['items'] as $l): ?>
     <tr><td><a href="item_view.php?id=<?= (int)$l['item_id'] ?>"><?= e($l['name']) ?></a></td>
@@ -250,27 +250,27 @@ include __DIR__ . '/includes/header.php';
 
 <?php elseif ($tab === 'rules'): ?>
 <div class="card">
-  <h2>⚙️ ઓર્ડરના નિયમો</h2>
-  <p class="muted mb" style="font-size:13px">આ ત્રણ આંકડા "શું મંગાવવું અને કેટલું" ની આખી ગણતરી ચલાવે છે.</p>
+  <h2>⚙️ Ordering rules</h2>
+  <p class="muted mb" style="font-size:13px">These three figures "What to order and how much" runs the whole calculation.</p>
   <form method="post">
     <?= csrf_field() ?><input type="hidden" name="do" value="save_rules">
     <div class="form-row cols-2">
-      <div><label>ડિલિવરીના સામાન્ય દિવસ (સપ્લાયર ન ભર્યો હોય ત્યારે)</label>
+      <div><label>Usual delivery days (when the supplier has not been filled in)</label>
         <input type="number" name="purchase_lead_days" min="0" max="365" value="<?= (int)$rules['lead_days'] ?>"></div>
-      <div><label>સલામતી માટે વધારાના દિવસ</label>
+      <div><label>Extra days for safety</label>
         <input type="number" name="purchase_safety_days" min="0" max="180" value="<?= (int)$rules['safety_days'] ?>"></div>
     </div>
     <div class="form-row cols-2">
-      <div><label>એક ઓર્ડર કેટલા દિવસ ચાલવો જોઈએ</label>
+      <div><label>How many days one order should last</label>
         <input type="number" name="purchase_cover_days" min="7" max="365" value="<?= (int)$rules['cover_days'] ?>"></div>
     </div>
-    <?php if (can('settings.edit')): ?><button class="btn" type="submit">સાચવો</button>
-    <?php else: ?><p class="muted">આ બદલવા માટે settings.edit પરવાનગી જોઈએ.</p><?php endif; ?>
+    <?php if (can('settings.edit')): ?><button class="btn" type="submit">Save</button>
+    <?php else: ?><p class="muted">Changing this needs the settings.edit permission.</p><?php endif; ?>
   </form>
   <p class="muted mt" style="font-size:12px">
-    ઉદાહરણ: ડિલિવરી <?= (int)$rules['lead_days'] ?> દિ. + સલામતી <?= (int)$rules['safety_days'] ?> દિ. =
-    <strong><?= (int)($rules['lead_days'] + $rules['safety_days']) ?> દિવસ</strong> માં ખલાસ થાય એવી વસ્તુ યાદીમાં આવશે,
-    અને <?= (int)($rules['cover_days'] + $rules['lead_days'] + $rules['safety_days']) ?> દિવસ ચાલે એટલો માલ મંગાવવાનું સૂચવાશે.
+    Example: delivery <?= (int)$rules['lead_days'] ?> d + safety <?= (int)$rules['safety_days'] ?> d =
+    <strong><?= (int)($rules['lead_days'] + $rules['safety_days']) ?> days</strong> items running out within that come onto the list,
+    and <?= (int)($rules['cover_days'] + $rules['lead_days'] + $rules['safety_days']) ?> days worth of goods is what will be suggested.
   </p>
 </div>
 <?php endif; ?>

@@ -2,7 +2,7 @@
 // ============================================================================
 //  SALES ASSISTANT — AI reads the sentence, code reads the shop
 // ============================================================================
-//  A customer says "ઘર માટે wifi વાળું રાઉટર જોઈએ, 2000 સુધીમાં". The shop's
+//  A customer says "ઘર for wifi વાળું રાઉટર needed, 2000 untilin". The shop's
 //  catalogue calls it "TP-Link Archer C6 AC1200 Dual Band Router". The search
 //  box finds nothing, and the man behind the counter scrolls.
 //
@@ -35,8 +35,8 @@ function sa_rules() {
  *  nothing on their own. Kept short on purpose; over-filtering loses real
  *  product words. */
 function sa_stopwords() {
-    return ['જોઈએ', 'છે', 'માટે', 'નું', 'ના', 'ની', 'એક', 'સારું', 'સારો', 'નવું', 'નવો',
-            'આપો', 'બતાવો', 'ભાવ', 'કિંમત', 'સુધી', 'માં', 'ગ્રાહક', 'ગ્રાહકને', 'લેવું', 'છું',
+    return ['needed', 'is', 'for', 'of', 'No', 'of', 'one', 'Good', 'good', 'New', 'new',
+            'Give', 'Show', 'Price', 'Value', 'until', 'in', 'Customer', 'to the customer', 'to take', 'am',
             'need', 'want', 'for', 'the', 'a', 'an', 'me', 'my', 'is', 'are', 'with',
             'under', 'below', 'budget', 'price', 'show', 'give', 'good', 'best', 'new'];
 }
@@ -94,7 +94,7 @@ function sa_vocabulary($limit = 60) {
  *  unless the catalogue confirms it. */
 function sa_keywords($q, $typedHits) {
     $typed = sa_words($q);
-    if ($typedHits >= 3) return ['words' => $typed, 'src' => 'typed', 'note' => '', 'why' => 'ટાઇપ કરેલા શબ્દોથી જ મળી ગયું — AI વાપર્યું નથી.'];
+    if ($typedHits >= 3) return ['words' => $typed, 'src' => 'typed', 'note' => '', 'why' => 'Found from the typed words alone — no AI was used.'];
 
     list($ok, $why) = ai_can_call('assistant');
     if (!$ok) return ['words' => $typed, 'src' => 'typed', 'note' => '', 'why' => $why];
@@ -120,7 +120,7 @@ function sa_keywords($q, $typedHits) {
         if ($w !== '' && mb_strlen($w) >= 2) $words[] = mb_substr($w, 0, 30);
         if (count($words) >= 5) break;
     }
-    if (!$words) return ['words' => $typed, 'src' => 'typed', 'note' => '', 'why' => 'AI પાસેથી વાપરી શકાય એવા શબ્દ ન મળ્યા.'];
+    if (!$words) return ['words' => $typed, 'src' => 'typed', 'note' => '', 'why' => 'The AI returned no usable words.'];
     return ['words' => $words, 'src' => 'ai', 'note' => mb_substr(trim((string)($j['note'] ?? '')), 0, 120), 'why' => ''];
 }
 
@@ -172,7 +172,7 @@ function sa_search(array $words, $loc, $limit = null, $all = true) {
 /** Search the way a person expects it to work: every word first, and if that
  *  finds nothing, the items that match the most of the words.
  *
- *  This matters with AI off. "ઘર માટે wifi router" strips to ઘર/wifi/router,
+ *  This matters with AI off. "ઘર for wifi router" strips to ઘર/wifi/router,
  *  and demanding all three finds nothing at all - while the shop plainly has
  *  routers. The second pass is why the screen is still useful without AI. */
 function sa_find(array $words, $loc, $limit = null) {
@@ -249,8 +249,8 @@ function sa_credit_warning($partyId) {
     $due = cust_outstanding($partyId, $bal);
     $cr = cust_credit($partyId, $bal);
     $lines = [];
-    if ($due['overdue'] > MONEY_EPS) $lines[] = '₹' . money($due['overdue']) . ' મુદત વીતી ગયેલું બાકી છે' . ($due['days'] > 0 ? ' (' . $due['days'] . ' દિવસ)' : '');
-    if ($cr['over_limit']) $lines[] = 'ચાલુ બાકી ₹' . money($cr['outstanding']) . ' — સૂચવેલી ઉધાર મર્યાદા ₹' . money($cr['suggested']) . ' કરતાં વધારે';
+    if ($due['overdue'] > MONEY_EPS) $lines[] = '₹' . money($due['overdue']) . ' is overdue' . ($due['days'] > 0 ? ' (' . $due['days'] . ' days)' : '');
+    if ($cr['over_limit']) $lines[] = 'outstanding Rs ' . money($cr['outstanding']) . ' — suggested credit limit Rs ' . money($cr['suggested']) . ' more than';
     if (!$lines) return null;
     return ['level' => $due['overdue'] > MONEY_EPS ? 'high' : 'medium', 'lines' => $lines,
             'balance' => $bal, 'reliability' => $cr['reliability']['rating']];

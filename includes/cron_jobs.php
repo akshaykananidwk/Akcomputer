@@ -15,7 +15,7 @@
 function cron_jobs() {
     return [
         'custom_reminders' => ['⏰ Custom Reminders', 'Reminder module - one-time & recurring scheduled messages', 5, null],
-        'installment_reminders' => ['🗓️ હપ્તાનાં રિમાઇન્ડર', 'Instalment due-date reminders for bills paid in parts', 60,
+        'installment_reminders' => ['🗓️ Instalment reminders', 'Instalment due-date reminders for bills paid in parts', 60,
             fn() => (int)date('G') >= min(23, max(0, (int)setting('reminder_hour', '10')))],
         'overdue_reminders' => ['📅 Payment Due Reminders', 'Overdue-bill WhatsApp reminders, sent at the hour set in Settings → Reminders', 60,
             fn() => (int)date('G') >= min(23, max(0, (int)setting('reminder_hour', '10')))],
@@ -156,7 +156,7 @@ function cron_job_overdue_reminders() {
             // owner's list and send nothing at all
             if ($pid) {
                 coll_log($pid, 'call', ['amount' => $trueDue, 'status' => 'open',
-                    'note' => $lateDays . ' દિવસ થયા — ફોન કરવાનો છે (' . $s['invoice_no'] . ')']);
+                    'note' => $lateDays . ' days have passed — a call is due (' . $s['invoice_no'] . ')']);
                 q('UPDATE sales SET last_reminder = ? WHERE id = ?', [$today, $s['id']]);
                 $calls++;
             }
@@ -165,14 +165,14 @@ function cron_job_overdue_reminders() {
         wa_context(['kind' => 'reminder']);
         $ok = $step
             ? send_whatsapp($s['customer_mobile'], dunning_message($step['tone'], [
-                'shop' => $s['company_name'], 'customer' => $s['customer_name'] ?: 'ગ્રાહક',
+                'shop' => $s['company_name'], 'customer' => $s['customer_name'] ?: 'Customer',
                 'amount' => money($trueDue), 'days' => $lateDays, 'invoice_no' => $s['invoice_no'],
               ]))
             : send_whatsapp($s['customer_mobile'], wa_template('reminder', [
                 'firm' => $s['company_name'], 'invoice_no' => $s['invoice_no'], 'date' => dmy($s['sale_date']),
                 'due' => money($trueDue),
-                'due_date_line' => $lateDays <= 0 ? "📅 આજે પેમેન્ટની છેલ્લી તારીખ છે!\n"
-                    : '📅 Due date: ' . dmy($s['due_date']) . " — ⏰ *$lateDays દિવસ* થઈ ગયા\n",
+                'due_date_line' => $lateDays <= 0 ? "📅 Payment is due today!\n"
+                    : '📅 Due date: ' . dmy($s['due_date']) . " — ⏰ *$lateDays days* have passed\n",
               ]));
         if ($ok) {
             q('UPDATE sales SET last_reminder = ? WHERE id = ?', [$today, $s['id']]);
@@ -180,7 +180,7 @@ function cron_job_overdue_reminders() {
             // recorded in the same history a human's reminder goes into, so
             // the cooldown and the Customer 360 trail cover both
             if ($pid) coll_log($pid, 'reminder', ['channel' => 'whatsapp', 'amount' => $trueDue,
-                                                  'note' => ($step ? $step['label'] . ' — ' : 'ઓટોમેટિક રિમાઇન્ડર — ') . $s['invoice_no'], 'status' => 'done']);
+                                                  'note' => ($step ? $step['label'] . ' — ' : 'Automatic reminders — ') . $s['invoice_no'], 'status' => 'done']);
         }
         usleep(400000);
     }
@@ -189,7 +189,7 @@ function cron_job_overdue_reminders() {
          . ($covered ? ", already-covered $covered" : '') . ($held ? ", held-back $held" : '');
 }
 
-/** હપ્તાનું રિમાઇન્ડર: the day an instalment falls due, the customer hears
+/** હપ્તાof રિમાઇન્ડર: the day an instalment falls due, the customer hears
  *  about THAT instalment - not the whole bill. Only what is still pending on
  *  it is asked for, worked out from the bill's real paid figure. */
 function cron_job_installment_reminders() {
@@ -213,9 +213,9 @@ function cron_job_installment_reminders() {
             continue;
         }
         wa_context(['kind' => 'reminder']);
-        $msg = "🗓️ " . $r['company_name'] . "\n" . ($r['customer_name'] ?: 'નમસ્તે') . ",\n"
-             . "બિલ " . $r['invoice_no'] . " નો હપ્તો " . (int)$r['seq'] . " — ₹" . money($this_one['pending'])
-             . " આજે (" . dmy($r['due_date']) . ") ભરવાનો છે.\nઆભાર! 🙏";
+        $msg = "🗓️ " . $r['company_name'] . "\n" . ($r['customer_name'] ?: 'Hello') . ",\n"
+             . "Bill " . $r['invoice_no'] . " instalment " . (int)$r['seq'] . " — ₹" . money($this_one['pending'])
+             . " Today (" . dmy($r['due_date']) . ") is due.\nThank you! 🙏";
         if (send_whatsapp($r['customer_mobile'], $msg)) {
             q('UPDATE installments SET last_reminder = ? WHERE id = ?', [$today, $r['id']]);
             $sent++;
@@ -317,12 +317,12 @@ function cron_job_net_expiry() {
                 AND (last_alert_date IS NULL OR last_alert_date < CURDATE())");
     $sent = 0;
     foreach ($due as $c) {
-        $when = $c['dl'] == 0 ? 'આજે' : ($c['dl'] == 1 ? 'કાલે' : $c['dl'] . ' દિવસમાં');
+        $when = $c['dl'] == 0 ? 'Today' : ($c['dl'] == 1 ? 'tomorrow' : $c['dl'] . ' in days');
         if (strlen($shopNo) >= 12) {
-            $sent += send_whatsapp($shopNo, "🌐 *Internet connection expiry*\n\n" . $c['customer_name'] . ' (' . $c['mobile'] . ")\nPlan: " . ($c['plan_name'] ?: '-') . " · ₹" . money($c['price']) . "\n*$when બંધ થાય છે* (" . dmy($c['expiry_date']) . ")\n\nRenew: " . base_url('net_connections.php')) ? 1 : 0;
+            $sent += send_whatsapp($shopNo, "🌐 *Internet connection expiry*\n\n" . $c['customer_name'] . ' (' . $c['mobile'] . ")\nPlan: " . ($c['plan_name'] ?: '-') . " · ₹" . money($c['price']) . "\n*Ends on $when* (" . dmy($c['expiry_date']) . ")\n\nRenew: " . base_url('net_connections.php')) ? 1 : 0;
         }
         if ($c['notify_customer'] && $c['mobile']) {
-            send_whatsapp($c['mobile'], "🙏 *" . setting('app_name', 'AK Computer') . "*\n\n" . $c['customer_name'] . ", તમારું ઇન્ટરનેટ કનેક્શન *$when* પૂરું થાય છે (" . dmy($c['expiry_date']) . ").\nચાલુ રાખવા અમને મેસેજ/કૉલ કરો. 📞");
+            send_whatsapp($c['mobile'], "🙏 *" . setting('app_name', 'AK Computer') . "*\n\n" . $c['customer_name'] . ", your internet connection ends on *$when* (" . dmy($c['expiry_date']) . ").\nMessage or call us to continue. 📞");
         }
         q('UPDATE net_connections SET last_alert_date = CURDATE() WHERE id = ?', [$c['id']]);
     }
@@ -342,7 +342,7 @@ function cron_job_estimate_followup() {
                     AND e.estimate_date >= DATE_SUB(?, INTERVAL 60 DAY) LIMIT 25", [$today, $efDays, $today]) as $e2) {
         if (!$e2['mob']) { q('UPDATE estimates SET followup_sent_at = ? WHERE id = ?', [$today, $e2['id']]); continue; }
         $name = $e2['customer_name'] ?: 'Sir/Madam';
-        $ok = send_whatsapp($e2['mob'], "🙏 *" . setting('app_name', 'AK Computer') . "*\n\n$name, અમે તમને " . dmy($e2['estimate_date']) . " ના રોજ *₹" . money($e2['total']) . "* નું ક્વોટેશન (" . $e2['estimate_no'] . ") આપ્યું હતું.\nકંઈ વિચાર્યું? કોઈ પ્રશ્ન હોય કે ભાવમાં વાત કરવી હોય તો બેધડક કૉલ/મેસેજ કરો. 😊\n\nThank you!");
+        $ok = send_whatsapp($e2['mob'], "🙏 *" . setting('app_name', 'AK Computer') . "*\n\n$name, we gave you " . dmy($e2['estimate_date']) . " on *Rs " . money($e2['total']) . "* quotation (" . $e2['estimate_no'] . ").\nAny thoughts? If you have a question or want to talk about the price, do call or message. 😊\n\nThank you!");
         q('UPDATE estimates SET followup_sent_at = ? WHERE id = ?', [$today, $e2['id']]);
         if ($ok) $sent++;
     }
@@ -393,7 +393,7 @@ function cron_job_auto_backup() {
                 $note = "🗄 " . setting('app_name', 'AK Computer') . " daily backup " . dmy($today) . "\n"
                       . basename($bkFile) . ' · ' . round(filesize($bkFile) / 1024) . " KB\n"
                       . ($pass === ''
-                          ? "⚠️ બેકઅપ ફાઈલ અહીં નથી મોકલી — એ ખુલ્લી (unencrypted) છે.\nSettings → Backup માં પાસફ્રેઝ નાખો એટલે એન્ક્રિપ્ટ થઈને અહીં આવશે."
+                          ? "⚠️ The backup file was not sent here — it is unencrypted.\nPut a passphrase in Settings → Backup and it will arrive here encrypted."
                           : "Attachment off in Settings → Backup.");
                 $r = tg_call('sendMessage', ['chat_id' => $chat, 'text' => $note]);
                 $mode = $pass === '' ? 'notice only (no passphrase set)' : 'notice only (attachment off)';
@@ -410,9 +410,9 @@ function cron_job_health_check() {
     require_once __DIR__ . '/health.php';
     $issues = health_issue_summary();
     if (!$issues) return 'all clean';
-    $msgH = "🩺 *Data Health Check*\n" . count($issues) . " પ્રકારની ગરબડ મળી:\n";
+    $msgH = "🩺 *Data Health Check*\n" . count($issues) . " kinds of problem found:\n";
     foreach ($issues as $t2 => $n2) $msgH .= "• $t2 — $n2\n";
-    $msgH .= "\nસોફ્ટવેરમાં Reports → Data Health Check ખોલીને સુધારો.";
+    $msgH .= "\nOpen Reports → Data Health Check in the software and fix it.";
     $shopNoH = wa_normalize_number(setting('wa_shop_number'));
     if ($shopNoH) send_whatsapp($shopNoH, $msgH);
     try { tg_notify_admins($msgH); } catch (Exception $e) {}

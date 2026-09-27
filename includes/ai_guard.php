@@ -28,11 +28,11 @@
  *  Adding a feature here is what makes it appear in Settings. */
 function ai_features() {
     return [
-        'assistant' => ['🧑‍💼 Sales Assistant', 'ગ્રાહક શું માગે છે એ સમજીને કેટલોગમાંથી વસ્તુ શોધે છે'],
-        'bill_scan' => ['🧾 Bill Scan', 'ખરીદીના બિલનો ફોટો વાંચીને લાઇન ભરી આપે છે'],
-        'categorize' => ['🏷️ Auto Categories', 'નવી વસ્તુની કેટેગરી સૂચવે છે'],
-        'enrich' => ['✨ Item Auto-Fill', 'વસ્તુની વિગત અને ફોટો શોધી આપે છે'],
-        'wa_bot' => ['💬 WhatsApp Bot', 'ગ્રાહકના મેસેજનો જવાબ આપે છે'],
+        'assistant' => ['🧑‍💼 Sales Assistant', 'understands what the customer is asking for and finds it in the catalogue'],
+        'bill_scan' => ['🧾 Bill Scan', 'reads a photo of a purchase bill and fills in the lines'],
+        'categorize' => ['🏷️ Auto Categories', 'suggests the category for a new item'],
+        'enrich' => ['✨ Item Auto-Fill', 'finds the item details and a photo'],
+        'wa_bot' => ['💬 WhatsApp Bot', 'answers a customer message'],
     ];
 }
 
@@ -88,15 +88,15 @@ function ai_cost_paise($tokensIn, $tokensOut) {
  *  The reasons are written for the owner, because they are shown on screen. */
 function ai_can_call($feature) {
     $l = ai_limits();
-    if (!$l['enabled'])          return [false, 'AI બંધ છે (Settings → AI).'];
-    if (!ai_feature_on($feature)) return [false, 'આ સુવિધા બંધ છે (Settings → AI).'];
+    if (!$l['enabled'])          return [false, 'AI is off (Settings → AI).'];
+    if (!ai_feature_on($feature)) return [false, 'This feature is off (Settings → AI).'];
     if (trim((string)setting('gemini_api_key')) === '' && trim((string)setting('gemini_api_key_paid')) === '')
-        return [false, 'AI ની ચાવી (API key) સેટ નથી.'];
+        return [false, 'No AI key (API key) is set.'];
     $u = ai_month_usage();
     if ($l['calls_cap'] > 0 && $u['calls'] >= $l['calls_cap'])
-        return [false, 'આ મહિનાની AI મર્યાદા પૂરી થઈ ગઈ (' . $u['calls'] . '/' . $l['calls_cap'] . ' કૉલ).'];
+        return [false, 'This month AI limit has been reached (' . $u['calls'] . '/' . $l['calls_cap'] . ' calls).'];
     if ($l['budget_rs'] > 0 && $u['cost'] >= $l['budget_rs'])
-        return [false, 'આ મહિનાનું AI બજેટ પૂરું થયું (₹' . money($u['cost']) . ' / ₹' . money($l['budget_rs']) . ').'];
+        return [false, 'This month AI budget is spent (Rs ' . money($u['cost']) . ' / ₹' . money($l['budget_rs']) . ').'];
     return [true, ''];
 }
 
@@ -127,7 +127,7 @@ function ai_ask($feature, array $parts, $timeout = 30, $forceJson = false) {
           [mb_substr($feature, 0, 40), ai_cost_paise($in, $outTok)]);
     } catch (Exception $e) { /* metering must never block work */ }
 
-    if ($out === null) return [null, 'AI અત્યારે જવાબ આપી શક્યું નહીં — સામાન્ય રીતે કામ ચાલુ રહેશે.'];
+    if ($out === null) return [null, 'The AI could not answer just now — the ordinary way of working continues.'];
     return [$out, null];
 }
 

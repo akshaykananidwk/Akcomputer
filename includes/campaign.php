@@ -41,7 +41,7 @@ function cam_rules() {
         'batch'      => max(1, (int)setting('campaign_batch', 20)),         // messages per cron tick
         'holdout'    => min(50, max(0, (int)setting('campaign_holdout_pct', 10))),
         'msg_paise'  => max(0, (int)setting('campaign_msg_paise', 0)),      // 0 = the shop has not said what a message costs
-        'optout_line' => (string)setting('campaign_optout_line', 'મેસેજ બંધ કરવા "STOP" લખો.'),
+        'optout_line' => (string)setting('campaign_optout_line', 'to stop messages "STOP" Write it.'),
         'inactive_factor' => 1.5,   // past 1.5x their own usual gap
         'min_group'  => 30,         // below this a comparison is noise, not a result
         'min_buyers' => 5,
@@ -51,13 +51,13 @@ function cam_rules() {
 /** Every audience the shop can pick, each a plain question about the books. */
 function cam_audiences() {
     return [
-        'inactive'  => ['💤 ઘણા વખતથી નથી આવ્યા', 'જે ગ્રાહકો પોતાની જ સામાન્ય ટેવ કરતાં ઘણા મોડા થયા છે', ''],
-        'vip'       => ['⭐ સૌથી સારા ગ્રાહકો', 'છેલ્લા વર્ષમાં સૌથી વધુ ખરીદનારા', 'ઓછામાં ઓછી ખરીદી ₹'],
-        'once_only' => ['1️⃣ એક જ વાર આવ્યા', 'એક જ બિલ થયું અને પછી ક્યારેય પાછા ન આવ્યા', ''],
-        'birthday'  => ['🎂 આ મહિને જન્મદિવસ', 'જેમની જન્મતારીખ આ મહિનામાં છે', ''],
-        'category'  => ['🏷️ કોઈ કેટેગરી ખરીદનારા', 'છેલ્લાં બે વર્ષમાં આ કેટેગરીમાંથી ખરીદનારા', 'કેટેગરી'],
-        'item'      => ['📦 કોઈ વસ્તુ ખરીદનારા', 'છેલ્લાં બે વર્ષમાં આ વસ્તુ ખરીદનારા', 'વસ્તુ'],
-        'all'       => ['👥 બધા ગ્રાહકો', 'મોબાઇલ નંબર હોય એવા બધા ચાલુ ગ્રાહકો', ''],
+        'inactive'  => ['💤 Not seen for a long time', 'Customers much later than their own usual habit', ''],
+        'vip'       => ['⭐ The best customers', 'The biggest buyers of the last year', 'Minimum purchases Rs '],
+        'once_only' => ['1️⃣ Came only once', 'bought once and never came back', ''],
+        'birthday'  => ['🎂 Birthdays this month', 'Those whose birthday falls this month', ''],
+        'category'  => ['🏷️ Buyers of a category', 'Those who bought from this category in the last two years', 'Category'],
+        'item'      => ['📦 Buyers of an item', 'Those who bought this item in the last two years', 'Item'],
+        'all'       => ['👥 All customers', 'All active customers who have a mobile number', ''],
     ];
 }
 
@@ -159,16 +159,16 @@ function cam_recent_map(array $partyIds) {
  *  person, so "why didn't Ramesh get it" always has an answer. */
 function cam_can_message(array $p, array $recent = []) {
     $r = cam_rules();
-    if (trim((string)($p['mobile'] ?? '')) === '') return 'મોબાઇલ નંબર નથી';
-    if (!empty($p['marketing_opt_out'])) return 'આ ગ્રાહકે જાહેરાતના મેસેજ બંધ કરાવ્યા છે';
+    if (trim((string)($p['mobile'] ?? '')) === '') return 'No mobile number';
+    if (!empty($p['marketing_opt_out'])) return 'This customer has turned off advertising messages';
     $rec = $recent[(int)$p['id']] ?? null;
     if ($rec) {
         if ($r['gap_days'] > 0 && $rec['last'] && strtotime($rec['last']) > strtotime('-' . $r['gap_days'] . ' days'))
             // date to date, not timestamp to midnight - otherwise a message
             // sent three afternoons ago is reported as "2 days ago"
-            return 'હમણાં જ (' . days_between(date('Y-m-d', strtotime($rec['last']))) . ' દિવસ પહેલાં) મેસેજ ગયો છે';
+            return 'just now (' . days_between(date('Y-m-d', strtotime($rec['last']))) . ' days ago) a message went';
         if ($r['max_month'] > 0 && $rec['month'] >= $r['max_month'])
-            return 'આ મહિને પહેલેથી ' . $rec['month'] . ' મેસેજ ગયા છે';
+            return 'already this month ' . $rec['month'] . ' messages have gone';
     }
     return '';
 }
@@ -182,7 +182,7 @@ function cam_quiet_ok($ts = null) {
 
 function cam_quiet_text() {
     $r = cam_rules();
-    return $r['hour_from'] . ':00 થી ' . $r['hour_to'] . ':00';
+    return $r['hour_from'] . ':00 to ' . $r['hour_to'] . ':00';
 }
 
 /** Deterministic, unbiased holdout.
@@ -200,7 +200,7 @@ function cam_is_holdout($campaignId, $partyId, $pct) {
 function cam_prepare($campaignId) {
     $c = row('SELECT * FROM campaigns WHERE id = ?', [$campaignId]);
     if (!$c) return ['error' => 'campaign not found'];
-    if (!in_array($c['status'], ['draft', 'ready'], true)) return ['error' => 'આ કેમ્પેન શરૂ થઈ ગયું છે, હવે યાદી બદલી શકાય નહીં.'];
+    if (!in_array($c['status'], ['draft', 'ready'], true)) return ['error' => 'This campaign has started; the list can no longer be changed.'];
 
     $people = cam_build($c['audience'], $c['audience_params']);
     $ids = array_map(fn($x) => (int)$x['id'], $people);
@@ -243,7 +243,7 @@ function cam_message_for(array $c, array $t) {
     $r = cam_rules();
     $body = str_replace(
         ['{customer}', '{shop}'],
-        [trim((string)$t['name']) !== '' ? $t['name'] : 'ગ્રાહકશ્રી', setting('app_name', 'AK Computer')],
+        [trim((string)$t['name']) !== '' ? $t['name'] : 'Dear customer', setting('app_name', 'AK Computer')],
         (string)$c['message']
     );
     // The way out is appended by the code, not left to whoever wrote the
@@ -261,8 +261,8 @@ function cam_send_batch($campaignId, $limit = null) {
     $limit = max(1, min(200, (int)($limit ?: $r['batch'])));
     $c = row('SELECT * FROM campaigns WHERE id = ?', [$campaignId]);
     if (!$c) return ['error' => 'campaign not found'];
-    if (!in_array($c['status'], ['ready', 'sending'], true)) return ['error' => 'આ કેમ્પેન મોકલવા તૈયાર નથી.'];
-    if (!cam_quiet_ok()) return ['error' => 'અત્યારે મોકલવાનો સમય નથી (' . cam_quiet_text() . ' વચ્ચે જ જાય છે).'];
+    if (!in_array($c['status'], ['ready', 'sending'], true)) return ['error' => 'This campaign is not ready to send.'];
+    if (!cam_quiet_ok()) return ['error' => 'This is not the time to send (' . cam_quiet_text() . ' only.'];
 
     if ($c['status'] === 'ready') q("UPDATE campaigns SET status = 'sending', started_at = COALESCE(started_at, NOW()) WHERE id = ?", [$campaignId]);
 
@@ -273,7 +273,7 @@ function cam_send_batch($campaignId, $limit = null) {
     foreach ($rows as $t) {
         // a person who opted out AFTER the list was frozen must not be messaged
         $p = row('SELECT id, name, mobile, marketing_opt_out FROM parties WHERE id = ?', [(int)$t['party_id']]);
-        $why = $p ? cam_can_message($p, cam_recent_map([(int)$t['party_id']])) : 'ગ્રાહક મળ્યો નહીં';
+        $why = $p ? cam_can_message($p, cam_recent_map([(int)$t['party_id']])) : 'Customer not found';
         if ($why !== '') {
             q("UPDATE campaign_targets SET status = 'skipped', reason = ? WHERE id = ?", [mb_substr($why, 0, 120), $t['id']]);
             $skipped++;
@@ -302,7 +302,7 @@ function cam_send_batch($campaignId, $limit = null) {
  *  three customers. */
 function cam_result($campaignId) {
     $c = row('SELECT * FROM campaigns WHERE id = ?', [$campaignId]);
-    if (!$c || !$c['started_at']) return ['ok' => false, 'why' => 'આ કેમ્પેન હજી મોકલાયું નથી.'];
+    if (!$c || !$c['started_at']) return ['ok' => false, 'why' => 'This campaign has not been sent yet.'];
     $r = cam_rules();
     $from = date('Y-m-d', strtotime($c['started_at']));
     $days = max(1, (int)$c['measure_days']);
@@ -337,10 +337,10 @@ function cam_result($campaignId) {
     // alternative is an owner acting on the difference between 2 and 3 people.
     $trust = ''; $lift = null;
     if ($g['held']['people'] === 0) {
-        $trust = 'આ કેમ્પેનમાં કોઈને રોકી રાખ્યા નહોતા, એટલે સરખામણી માટે કંઈ નથી. આગલી વખતે થોડા ગ્રાહકોને બાજુ પર રાખો.';
+        $trust = 'Nobody was held back in this campaign, so there is nothing to compare with. Next time, keep a few customers aside.';
     } elseif (min($g['sent']['people'], $g['held']['people']) < $r['min_group']
            || ($g['sent']['buyers'] + $g['held']['buyers']) < $r['min_buyers']) {
-        $trust = 'બંને જૂથ નાનાં છે, એટલે આ તફાવત સાચો છે એમ કહી શકાય નહીં — સંજોગ પણ હોઈ શકે.';
+        $trust = 'Both groups are small, so this difference cannot be called real — it could be chance.';
     } else {
         $lift = round($g['sent']['rate'] - $g['held']['rate'], 1);
     }
@@ -400,7 +400,7 @@ function cam_optout($mobile, $on = true) {
 function cam_is_stop_word($text) {
     $t = mb_strtolower(trim((string)$text));
     if ($t === '') return false;
-    foreach (['stop', 'unsubscribe', 'બંધ', 'બંધ કરો', 'ना', 'बंद', 'बंद करो'] as $w) {
+    foreach (['stop', 'unsubscribe', 'Off', 'Stop', 'ना', 'बंद', 'बंद करो'] as $w) {
         if ($t === $w || mb_strpos($t, $w . ' ') === 0) return true;
     }
     return false;

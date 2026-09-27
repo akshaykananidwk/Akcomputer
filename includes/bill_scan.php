@@ -52,7 +52,7 @@ function bs_mime($path) {
 function bs_extract($path) {
     list($ok, $why) = ai_can_call('bill_scan');
     if (!$ok) return [null, $why];
-    if (!is_file($path) || filesize($path) > 15 * 1024 * 1024) return [null, 'ફાઇલ વાંચી શકાઈ નહીં.'];
+    if (!is_file($path) || filesize($path) > 15 * 1024 * 1024) return [null, 'The file could not be read.'];
 
     $prompt = "Read this supplier purchase bill and return its line items as data.\n"
         . "Copy the numbers EXACTLY as printed. Do not calculate anything, do not fill in a "
@@ -71,7 +71,7 @@ function bs_extract($path) {
     if ($raw === null) return [null, $err];
 
     $j = ai_json($raw);
-    if (!is_array($j) || empty($j['lines']) || !is_array($j['lines'])) return [null, 'બિલમાંથી લાઇન વાંચી શકાઈ નહીં.'];
+    if (!is_array($j) || empty($j['lines']) || !is_array($j['lines'])) return [null, 'No line could be read from the bill.'];
 
     $r = bs_rules();
     $lines = [];
@@ -88,7 +88,7 @@ function bs_extract($path) {
             'tax_pct' => max(0.0, min(100.0, (float)($ln['tax_pct'] ?? 0))),
         ];
     }
-    if (!$lines) return [null, 'બિલમાંથી લાઇન વાંચી શકાઈ નહીં.'];
+    if (!$lines) return [null, 'No line could be read from the bill.'];
 
     return [[
         'supplier' => trim(mb_substr((string)($j['supplier'] ?? ''), 0, 100)),
@@ -115,14 +115,14 @@ function bs_check(array $doc) {
 
         // Fill in the ONE missing number from the other two - that is
         // arithmetic, not a guess, and it is said out loud either way.
-        if ($amt <= 0 && $qty > 0 && $rate > 0) { $amt = money_r($qty * $rate); $notes[] = 'લાઇન ટોટલ ગણી કાઢ્યો'; }
-        elseif ($qty <= 0 && $rate > 0 && $amt > 0) { $qty = money_r($amt / $rate); $notes[] = 'નંગ ગણી કાઢ્યા'; }
-        elseif ($rate <= 0 && $qty > 0 && $amt > 0) { $rate = money_r($amt / $qty); $notes[] = 'ભાવ ગણી કાઢ્યો'; }
+        if ($amt <= 0 && $qty > 0 && $rate > 0) { $amt = money_r($qty * $rate); $notes[] = 'line total worked out'; }
+        elseif ($qty <= 0 && $rate > 0 && $amt > 0) { $qty = money_r($amt / $rate); $notes[] = 'quantity worked out'; }
+        elseif ($rate <= 0 && $qty > 0 && $amt > 0) { $rate = money_r($amt / $qty); $notes[] = 'price worked out'; }
 
-        if ($qty <= 0) $problems[] = 'નંગ વંચાયા નથી';
-        if ($rate <= 0 && $amt <= 0) $problems[] = 'ભાવ વંચાયો નથી';
+        if ($qty <= 0) $problems[] = 'quantity not read';
+        if ($rate <= 0 && $amt <= 0) $problems[] = 'price not read';
         if ($qty > 0 && $rate > 0 && $amt > 0 && !bs_close($qty * $rate, $amt))
-            $problems[] = 'નંગ × ભાવ = ₹' . money($qty * $rate) . ', પણ બિલમાં ₹' . money($amt);
+            $problems[] = 'qty × price = Rs ' . money($qty * $rate) . ', but the bill says Rs ' . money($amt);
 
         $ln['qty'] = $qty; $ln['rate'] = $rate; $ln['amount'] = $amt;
         $ln['problems'] = $problems; $ln['notes'] = $notes;
@@ -136,7 +136,7 @@ function bs_check(array $doc) {
     $bill = [];
     $sum = money_r($sum);
     if ($doc['subtotal'] > 0 && !bs_close($sum, $doc['subtotal']))
-        $bill[] = 'લાઇનોનો સરવાળો ₹' . money($sum) . ' છે, બિલમાં લખ્યું ₹' . money($doc['subtotal']);
+        $bill[] = 'Sum of the lines Rs ' . money($sum) . ' , the bill says Rs ' . money($doc['subtotal']);
     $base = $doc['subtotal'] > 0 ? $doc['subtotal'] : $sum;
     // When the tax row was not read, the per-line GST% is the honest stand-in -
     // otherwise every ordinary GST bill would be reported as "does not add up".
@@ -147,7 +147,7 @@ function bs_check(array $doc) {
     }
     $calcTotal = money_r($base + $tax - $doc['discount']);
     if ($doc['total'] > 0 && !bs_close($calcTotal, $doc['total']))
-        $bill[] = 'સરવાળો + GST − વટાવ = ₹' . money($calcTotal) . ', પણ બિલનો ટોટલ ₹' . money($doc['total']);
+        $bill[] = 'subtotal + GST − discount = Rs ' . money($calcTotal) . ', but the bill total is Rs ' . money($doc['total']);
     $doc['tax_used'] = $tax;
 
     $doc['line_sum'] = $sum;

@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'cleanup') {
         q('DELETE FROM categories WHERE id = ?', [$c['id']]);
         $n++;
     }
-    flash("$n ખાલી કેટેગરી કાઢી નાખી.");
+    flash("$n empty categories removed.");
     redirect('ai_categorize.php');
 }
 
@@ -58,8 +58,8 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="card">
   <h2>🤖 AI Catalog Organizer</h2>
-  <p class="muted">બધી પ્રોડક્ટ નીચે બતાવેલા <strong>ફિક્સ્ડ સ્ટ્રક્ચર</strong> (ડીલર-સાઇટ સ્ટાઇલ) માં જ ગોઠવાય છે — AI આ યાદી બહારની કોઈ નવી કેટેગરી કદી નહીં બનાવે, એટલે કેટલોગ હંમેશા ચોખ્ખો રહે. IP Camera ખોલો તો ફક્ત IP Camera ની જ પ્રોડક્ટ દેખાય.</p>
-  <details style="margin:8px 0"><summary style="cursor:pointer;font-weight:700">📂 આખું સ્ટ્રક્ચર જુઓ (<?= count(ai_taxonomy()) ?> મુખ્ય કેટેગરી)</summary>
+  <p class="muted">Every product is sorted into the <strong>fixed structure</strong> (dealer-site style) — the AI never invents a category outside this list, so the catalogue stays clean. Open IP Camera and only IP Camera products show.</p>
+  <details style="margin:8px 0"><summary style="cursor:pointer;font-weight:700">📂 See the whole structure (<?= count(ai_taxonomy()) ?> main categories)</summary>
     <div style="font-size:13px;margin-top:8px;line-height:1.7">
     <?php foreach (ai_taxonomy() as $p => $kids): ?>
       <strong><?= e($p) ?></strong>: <span class="muted"><?= e(implode(' · ', $kids)) ?></span><br>
@@ -67,21 +67,21 @@ include __DIR__ . '/includes/header.php';
     </div>
   </details>
   <div class="grid-stats">
-    <div class="stat"><div class="stat-label">કુલ પ્રોડક્ટ</div><div class="stat-value"><?= $total ?></div></div>
-    <div class="stat <?= $uncat ? 's-bad' : 's-ok' ?>"><div class="stat-label">કેટેગરી વગરની</div><div class="stat-value"><?= $uncat ?></div></div>
-    <div class="stat"><div class="stat-label">હાલની કેટેગરી</div><div class="stat-value"><?= $nCats ?></div></div>
+    <div class="stat"><div class="stat-label">Total products</div><div class="stat-value"><?= $total ?></div></div>
+    <div class="stat <?= $uncat ? 's-bad' : 's-ok' ?>"><div class="stat-label">without a category</div><div class="stat-value"><?= $uncat ?></div></div>
+    <div class="stat"><div class="stat-label">Current category</div><div class="stat-value"><?= $nCats ?></div></div>
   </div>
   <?php if (!$haveTree): ?>
-  <p class="flash flash-error">પહેલા Settings → <strong>Migrate</strong> ચલાવો (v47 - સબ-કેટેગરી કૉલમ).</p>
+  <p class="flash flash-error">First, Settings → <strong>Migrate</strong> run it (v47 - the sub-category column).</p>
   <?php elseif (!$haveAi): ?>
-  <p class="flash flash-error">Gemini API key સેટ નથી (Settings → Invoice &amp; Payment) - એ વગર AI ગોઠવણ ન ચાલે.</p>
+  <p class="flash flash-error">No Gemini API key is set (Settings → Invoice &amp; Payment) - AI sorting cannot run without it.</p>
   <?php else: ?>
   <div class="no-print" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0">
-    <button class="btn" id="startBtn">▶ Start — <?= $uncat ?> નવી/બાકી પ્રોડક્ટ ગોઠવો</button>
-    <label class="check-inline" style="margin:0"><input type="checkbox" id="modeAll"> 🔁 Migration — બધી <?= $total ?> પ્રોડક્ટ (જૂની સહિત) નવા સ્ટ્રક્ચરમાં ફરી ગોઠવો</label>
-    <form method="post" onsubmit="return confirm('ખાલી કેટેગરી કાઢી નાખવી?')"><?= csrf_field() ?><input type="hidden" name="do" value="cleanup"><button class="btn btn-outline" type="submit">🧹 ખાલી કેટેગરી સાફ કરો</button></form>
+    <button class="btn" id="startBtn">▶ Start — <?= $uncat ?> Sort new and remaining products</button>
+    <label class="check-inline" style="margin:0"><input type="checkbox" id="modeAll"> 🔁 Migration — all <?= $total ?> Re-sort products (including old ones) into the new structure</label>
+    <form method="post" onsubmit="return confirm('Remove the empty categories?')"><?= csrf_field() ?><input type="hidden" name="do" value="cleanup"><button class="btn btn-outline" type="submit">🧹 Clear empty categories</button></form>
   </div>
-  <?php if (!$uncat): ?><p class="muted">✅ બધી પ્રોડક્ટને કેટેગરી લાગેલી છે — નવી પ્રોડક્ટ ઉમેરશો એટલે એની કેટેગરી સેવ થતાં જ આપોઆપ લાગી જશે.</p><?php endif; ?>
+  <?php if (!$uncat): ?><p class="muted">✅ Every product has a category — a new product gets one automatically the moment it is saved.</p><?php endif; ?>
   <div id="progWrap" style="display:none">
     <div style="background:var(--bg);border-radius:999px;overflow:hidden;height:14px"><div id="progBar" style="height:14px;width:0;background:var(--acc1,#2563eb);transition:width .3s"></div></div>
     <p id="progTxt" class="muted" style="margin-top:6px"></p>
@@ -89,7 +89,7 @@ include __DIR__ . '/includes/header.php';
   </div>
   <script>
   document.getElementById('startBtn').addEventListener('click', function () {
-    var btn = this; btn.disabled = true; btn.textContent = '⏳ ચાલે છે...';
+    var btn = this; btn.disabled = true; btn.textContent = '⏳ Running...';
     document.getElementById('progWrap').style.display = '';
     var log = document.getElementById('logBox');
     var mode = document.getElementById('modeAll').checked ? 'all' : 'new';
@@ -101,14 +101,14 @@ include __DIR__ . '/includes/header.php';
     function retryLater(skip, msg) {
       retries++;
       if (retries > 8) {
-        document.getElementById('progTxt').textContent = '❌ ' + msg + ' — ઘણા પ્રયત્ન પછી પણ ન ચાલ્યું. થોડી વારે ફરી Start દબાવો (થયેલી પ્રોડક્ટ ફરી નહીં થાય).';
-        btn.disabled = false; btn.textContent = '▶ Start (ફરી)';
+        document.getElementById('progTxt').textContent = '❌ ' + msg + ' — it did not work even after many attempts. Press Start again shortly (products already done are not redone).';
+        btn.disabled = false; btn.textContent = '▶ Start (again)';
         return;
       }
       var wait = 45;
       var t = setInterval(function () {
         wait--;
-        document.getElementById('progTxt').textContent = '⏳ ' + msg.slice(0, 80) + ' — ' + wait + ' સેકન્ડમાં આપોઆપ આગળ વધશે (પ્રયત્ન ' + retries + '/8), કંઈ દબાવવાનું નથી...';
+        document.getElementById('progTxt').textContent = '⏳ ' + msg.slice(0, 80) + ' — ' + wait + ' moves on by itself in seconds (attempt ' + retries + '/8), nothing to press...';
         if (wait <= 0) { clearInterval(t); step(skip); }
       }, 1000);
     }
@@ -129,18 +129,18 @@ include __DIR__ . '/includes/header.php';
         var tot = mode === 'all' ? d.remaining : assigned + d.remaining;
         var pct = tot ? Math.min(100, Math.round(doneCount / tot * 100)) : 100;
         document.getElementById('progBar').style.width = pct + '%';
-        document.getElementById('progTxt').textContent = assigned + ' પ્રોડક્ટ ગોઠવાઈ' + (d.skip && mode === 'new' ? ' · ' + d.skip + ' ઓળખાઈ નહીં (skip)' : '') + ' (' + pct + '%)' + (d.via === 'paid' ? ' · 💳 paid API' : d.via === 'free' ? ' · 🟢 free API' : '');
+        document.getElementById('progTxt').textContent = assigned + ' products sorted' + (d.skip && mode === 'new' ? ' · ' + d.skip + ' not recognised (skipped)' : '') + ' (' + pct + '%)' + (d.via === 'paid' ? ' · 💳 paid API' : d.via === 'free' ? ' · 🟢 free API' : '');
         if (d.done) {
           document.getElementById('progBar').style.width = '100%';
-          document.getElementById('progTxt').textContent = '✅ પૂરું! ' + assigned + ' પ્રોડક્ટ ગોઠવાઈ' + (mode === 'new' && d.skip ? '; ' + d.skip + ' ને AI ઓળખી ન શક્યું — એ Items માં જાતે ગોઠવી દો.' : '.');
+          document.getElementById('progTxt').textContent = '✅ Done! ' + assigned + ' products sorted' + (mode === 'new' && d.skip ? '; ' + d.skip + ' the AI could not recognise — sort them by hand in Items.' : '.');
           btn.textContent = '✅ Done';
         } else { step(d.skip); }
-      }).catch(function () { retryLater(skip, 'નેટવર્ક ભૂલ'); });
+      }).catch(function () { retryLater(skip, 'Network error'); });
     }
     step(0);
   });
   </script>
   <?php endif; ?>
-  <p class="muted" style="font-size:12.5px">ખર્ચ: આખા કેટલોગ માટે આશરે <?= max(1, (int)ceil($total / 40)) ?> નાના AI કૉલ — Gemini ના ફ્રી-ટિયરમાં ₹0.</p>
+  <p class="muted" style="font-size:12.5px">Cost: roughly, for the whole catalogue <?= max(1, (int)ceil($total / 40)) ?> small AI calls — Rs 0 in the Gemini free tier.</p>
 </div>
 <?php include __DIR__ . '/includes/footer.php'; ?>

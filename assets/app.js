@@ -284,7 +284,7 @@ var Bill = {
     var rows = form.querySelectorAll('#billItems .bill-row .i-id, .add-item-panel .bill-row .i-id');
     for (var i = 0; i < rows.length; i++) if (rows[i].value) return null;
     var btn = document.getElementById('addItemsBtn') || form.querySelector('#billItems');
-    return { el: btn, msg: 'ઓછામાં ઓછી એક આઇટમ ઉમેરો' };
+    return { el: btn, msg: 'Add at least one item' };
   },
 
   quickItem: function (div, name) {
@@ -295,19 +295,19 @@ var Bill = {
     var box = document.createElement('div');
     box.className = 'qi-box';
     box.innerHTML =
-      '<div class="qi-head">＋ નવી આઇટમ</div>' +
-      '<input type="text" class="qi-name" placeholder="આઇટમનું નામ *">' +
+      '<div class="qi-head">＋ New item</div>' +
+      '<input type="text" class="qi-name" placeholder="Item name *">' +
       '<div class="qi-row">' +
-        '<input type="number" step="any" min="0" class="qi-sell" placeholder="વેચાણ ભાવ ₹">' +
+        '<input type="number" step="any" min="0" class="qi-sell" placeholder="Selling price Rs ">' +
         (this.cfg.showPurchasePrice || this.cfg.mode === 'purchase'
-          ? '<input type="number" step="any" min="0" class="qi-cost" placeholder="ખરીદ ભાવ ₹">' : '') +
-        '<input type="text" class="qi-unit" placeholder="યુનિટ" value="PCS">' +
+          ? '<input type="number" step="any" min="0" class="qi-cost" placeholder="Cost price Rs ">' : '') +
+        '<input type="text" class="qi-unit" placeholder="units" value="PCS">' +
       '</div>' +
-      '<label class="check-inline"><input type="checkbox" class="qi-sn"> સિરિયલ નંબર વાળી આઇટમ</label>' +
+      '<label class="check-inline"><input type="checkbox" class="qi-sn"> A serial-tracked item</label>' +
       '<div class="qi-msg"></div>' +
       '<div class="qi-act">' +
-        '<button type="button" class="btn btn-sm qi-save">બનાવો અને બિલમાં નાખો</button>' +
-        '<button type="button" class="btn btn-sm btn-muted qi-cancel">રહેવા દો</button>' +
+        '<button type="button" class="btn btn-sm qi-save">create it and put it on the bill</button>' +
+        '<button type="button" class="btn btn-sm btn-muted qi-cancel">Leave it</button>' +
       '</div>';
     div.querySelector('.isearch-wrap, .i-search').parentNode.appendChild(box);
     var nameInp = box.querySelector('.qi-name');
@@ -318,7 +318,7 @@ var Bill = {
       var btn = this;
       var msg = box.querySelector('.qi-msg');
       var nm = nameInp.value.trim();
-      if (!nm) { msg.textContent = 'આઇટમનું નામ લખો.'; nameInp.focus(); return; }
+      if (!nm) { msg.textContent = 'Enter the item name.'; nameInp.focus(); return; }
       var fd = new FormData();
       var csrf = document.querySelector('input[name=csrf]');
       if (csrf) fd.append('csrf', csrf.value);
@@ -327,7 +327,7 @@ var Bill = {
       fd.append('purchase_price', (box.querySelector('.qi-cost') || {}).value || 0);
       fd.append('unit', (box.querySelector('.qi-unit') || {}).value || 'PCS');
       if (box.querySelector('.qi-sn').checked) fd.append('serial_tracked', '1');
-      btn.disabled = true; msg.textContent = 'બની રહી છે…';
+      btn.disabled = true; msg.textContent = 'being created…';
       fetch('ajax.php?a=item_add', { method: 'POST', body: fd })
         .then(function (r) { return r.json(); })
         .then(function (d) {
@@ -336,7 +336,7 @@ var Bill = {
           box.remove();
           self.pickItem(div, d);
         })
-        .catch(function () { btn.disabled = false; msg.textContent = 'બની નહીં — ફરી પ્રયત્ન કરો.'; });
+        .catch(function () { btn.disabled = false; msg.textContent = 'was not created — please try again.'; });
     });
   },
 
@@ -464,8 +464,8 @@ var Bill = {
       // outsourced printer repair's ₹850 goes here, so profit reports charge
       // that cost to THIS bill only - other bills of the service stay at 0.
       (this.cfg.mode === 'sale' ?
-      '<div class="i-cost-wrap" style="display:none"><label>Cost <small class="muted">(બહારનો ખર્ચ)</small></label>' +
-      '<input type="number" step="any" min="0" name="line_cost[]" class="i-cost" value="0" title="આ કામ પાછળ તમારો ખરેખરો ખર્ચ (હોય તો જ)"></div>' : '') +
+      '<div class="i-cost-wrap" style="display:none"><label>Cost <small class="muted">(outside cost)</small></label>' +
+      '<input type="number" step="any" min="0" name="line_cost[]" class="i-cost" value="0" title="Your real cost for this work (only if there is one)"></div>' : '') +
       (this.cfg.lineDisc ?
       '<div><label>Disc</label><div style="display:flex;gap:4px">' +
       '<input type="number" step="any" min="0" name="ldisc[]" class="i-ldisc" value="0" style="flex:1;min-width:56px" title="Discount for this item">' +
@@ -532,7 +532,7 @@ var Bill = {
                 ' | Retail: ' + it.selling_price + ' | B2B: ' + it.b2b_price +
                 (self.cfg.showPurchasePrice ? ' | Purchase: ' + it.purchase_price : '') +
                 (it.serial_tracked == 1 ? ' | Serial-tracked' : '') +
-                (it.last_price ? '<br>👤 આ ગ્રાહકને છેલ્લે: ₹' + it.last_price + ' (' + it.last_date + ')' : '') + '</small>';
+                (it.last_price ? '<br>👤 Last to this customer: Rs ' + it.last_price + ' (' + it.last_date + ')' : '') + '</small>';
               d.addEventListener('click', function () { self.pickItem(div, it); });
               res.appendChild(d);
             });
@@ -544,8 +544,8 @@ var Bill = {
             // so the item is created without the page moving at all.
             var addNew = document.createElement('div');
             addNew.className = 'ir';
-            addNew.innerHTML = '<strong style="color:var(--primary)">＋ નવી આઇટમ બનાવો</strong>' +
-                               '<small>"' + qy + '" નામની આઇટમ અહીં જ બનાવો — બિલ ખૂલ્લું જ રહેશે</small>';
+            addNew.innerHTML = '<strong style="color:var(--primary)">＋ Create a new item</strong>' +
+                               '<small>"' + qy + '" create an item by that name right here — the bill stays open</small>';
             addNew.addEventListener('click', function () { self.quickItem(div, qy); });
             res.appendChild(addNew);
             res.classList.add('show');
@@ -578,7 +578,7 @@ var Bill = {
     closeBtn.className = 'btn btn-danger';
     closeBtn.style.cssText = 'margin-top:14px';
     var hint = document.createElement('div');
-    hint.textContent = onCode ? 'સિરિયલનો બારકોડ/QR કેમેરા સામે ધરો — એક પછી એક બધા સ્કેન કરો' : 'Hold the barcode in front of the camera...';
+    hint.textContent = onCode ? 'Hold the serial barcode or QR up to the camera — scan them one after another' : 'Hold the barcode in front of the camera...';
     hint.style.cssText = 'color:#fff;margin:0 12px 10px;font-size:14px;text-align:center';
     var count = 0;
     overlay.appendChild(hint);
@@ -609,7 +609,7 @@ var Bill = {
               if (val !== lastVal || now - lastT > 2500) {
                 lastVal = val; lastT = now; count++;
                 onCode(val);
-                hint.textContent = '✔ ' + val + '  (' + count + ' સ્કેન થયા) — બીજો બતાવો, પતે એટલે Done';
+                hint.textContent = '✔ ' + val + '  (' + count + ' scanned) — show the next one, press Done when finished';
                 hint.style.color = '#4ade80';
               }
               setTimeout(function () { if (!stopped) requestAnimationFrame(tick); }, 700);
@@ -658,7 +658,7 @@ var Bill = {
       if (this.cfg.mode === 'purchase' && !this.cfg.pickStock) {
         extra.innerHTML = '<label class="mt">Serial numbers (one per line, count = qty) — 🔫 barcode gun works: scan, scan, scan</label>' +
           '<textarea name="serials[]" rows="2" placeholder="SN001\nSN002"></textarea>' +
-          (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline pu-cam" style="margin-top:6px">📷 મોબાઇલ કેમેરાથી સિરિયલ સ્કેન</button>' : '');
+          (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline pu-cam" style="margin-top:6px">📷 Scan serials with the phone camera</button>' : '');
         div.dataset.hasSerialBox = '1';
         this.wireSerialQtySync(div);
         var puCam = extra.querySelector('.pu-cam');
@@ -699,15 +699,15 @@ var Bill = {
             }).join('');
             extra.innerHTML =
               '<div class="serial-pick mt">' +
-              '<label>' + (isRet ? 'કયો સિરિયલ પાછો આવ્યો?'
-                          : (self.cfg.pickStock ? 'કયો સિરિયલ સપ્લાયરને પાછો મોકલવાનો છે?' : 'Select Serial No.')) +
+              '<label>' + (isRet ? 'Which serial came back?'
+                          : (self.cfg.pickStock ? 'Which serial is going back to the supplier?' : 'Select Serial No.')) +
               ' <span class="sp-count badge badge-warn">0 / ' + (parseFloat(div.querySelector('.i-qty').value) || 1) + ' entered</span></label>' +
               '<div class="sp-scan"><input type="text" class="sp-inp" placeholder="Type / scan serial no.">' +
               '<button type="button" class="btn btn-sm sp-add">Add</button>' +
-              (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline sp-cam" title="મોબાઇલ કેમેરાથી સ્કેન">📷</button>' : '') + '</div>' +
+              (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline sp-cam" title="Scan with the phone camera">📷</button>' : '') + '</div>' +
               '<div class="sp-list">' + (boxes || '<span class="muted">' +
-                (isRet ? 'આ આઇટમનો કોઈ વેચાયેલો સિરિયલ મળ્યો નથી — નીચે જાતે લખી શકો છો'
-                       : (self.cfg.pickStock ? 'આ લોકેશનમાં આ આઇટમનો કોઈ સિરિયલ સ્ટોકમાં નથી'
+                (isRet ? 'No sold serial was found for this item — you can type one below'
+                       : (self.cfg.pickStock ? 'No serial of this item is in stock at this location'
                                              : 'No serials in stock (advance billing will proceed)')) + '</span>') + '</div>' +
               '</div>';
             function updCount() {
@@ -815,7 +815,7 @@ var Bill = {
     fetch('ajax.php?a=last_price&item_id=' + itemId + '&party=' + partySel.value)
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        lp.textContent = d.price ? '👤 આ ગ્રાહકને છેલ્લે: ₹' + d.price + ' (' + d.date + ' · ' + d.doc + ')' : '';
+        lp.textContent = d.price ? '👤 Last to this customer: Rs ' + d.price + ' (' + d.date + ' · ' + d.doc + ')' : '';
       }).catch(function () {});
   },
 
@@ -1073,7 +1073,7 @@ var SearchPick = {
     var inp = document.createElement('input');
     inp.type = 'text';
     inp.autocomplete = 'off';
-    inp.placeholder = placeholder || 'નામ કે મોબાઇલ ટાઇપ કરો…';
+    inp.placeholder = placeholder || 'Type a name or mobile…';
     var res = document.createElement('div');
     res.className = 'isearch-results';
     wrap.appendChild(inp);
@@ -1122,7 +1122,7 @@ var SearchPick = {
       if (!list.length) {
         var none = document.createElement('div');
         none.className = 'ir';
-        none.innerHTML = '<small>કંઈ મળ્યું નહીં</small>';
+        none.innerHTML = '<small>Nothing found</small>';
         res.appendChild(none);
       }
       list.forEach(function (m, k) {
@@ -1184,7 +1184,7 @@ var SearchPick = {
 };
 
 // ---------------------------------------------------------------------------
-// "આ ખાનું ભરો" — one validation behaviour for every form in the shop.
+// "Please fill this in" — one validation behaviour for every form in the shop.
 //
 // What used to happen: a required field was left empty, the form went to the
 // server anyway, the server flashed "Party and amount required", redirected -
@@ -1194,7 +1194,7 @@ var SearchPick = {
 //
 // What happens now, on every form, without touching a single screen: the
 // first empty required field stops the submit, the page scrolls to it, it is
-// outlined in red with "આ ખાનું ભરો" under it, and the cursor lands in it.
+// outlined in red with "Please fill this in" under it, and the cursor lands in it.
 // Nothing is sent, so nothing is lost. The message clears as soon as it is
 // filled in.
 //
@@ -1203,7 +1203,7 @@ var SearchPick = {
 // polite first pass, the server is the one that decides.
 // ---------------------------------------------------------------------------
 var FormGuard = {
-  msg: 'આ ખાનું ભરો',
+  msg: 'Please fill this in',
 
   clear: function (el) {
     el.classList.remove('field-bad');
@@ -1285,8 +1285,8 @@ document.addEventListener('invalid', function (ev) {
   setTimeout(function () { form.dataset.guardShown = ''; }, 50);
   var v = el.validity || {};
   var text = v.valueMissing ? FormGuard.msg
-           : (v.rangeUnderflow || v.rangeOverflow || v.stepMismatch) ? 'આ આંકડો બરાબર નથી'
-           : (v.typeMismatch || v.patternMismatch) ? 'આ બરાબર લખાયું નથી — ફરી તપાસો'
+           : (v.rangeUnderflow || v.rangeOverflow || v.stepMismatch) ? 'This figure is not right'
+           : (v.typeMismatch || v.patternMismatch) ? 'This is not written correctly — check it again'
            : (el.validationMessage || FormGuard.msg);
   FormGuard.mark(el, text);
   try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { el.scrollIntoView(); }
