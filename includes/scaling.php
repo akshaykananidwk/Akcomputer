@@ -37,14 +37,14 @@ function sc_rules() {
  *  far as the cleanup is concerned - including tables added in future. */
 function sc_log_tables() {
     return [
-        'activity_log'       => ['📋 કોણે શું કર્યું', 'created_at', 365],
-        'login_history'      => ['🔑 લોગિન નોંધ', 'created_at', 180],
-        'login_throttle'     => ['🚧 લોગિન અટકાવ', 'window_start', 30],
-        'site_visits'        => ['👣 વેબસાઇટ મુલાકાત', 'visit_date', 180],
-        'webhook_deliveries' => ['🔌 વેબહૂક ડિલિવરી', 'created_at', 30],
-        'cron_runs'          => ['⏱ ક્રોન ઇતિહાસ', 'started_at', 60],
-        'wa_bot_log'         => ['🤖 બોટની નોંધ', 'created_at', 90],
-        'api_usage'          => ['💸 AI વપરાશ', 'created_at', 730],
+        'activity_log'       => ['📋 Who did what', 'created_at', 365],
+        'login_history'      => ['🔑 Login records', 'created_at', 180],
+        'login_throttle'     => ['🚧 Login throttle', 'window_start', 30],
+        'site_visits'        => ['👣 Website visits', 'visit_date', 180],
+        'webhook_deliveries' => ['🔌 Webhook deliveries', 'created_at', 30],
+        'cron_runs'          => ['⏱ Cron history', 'started_at', 60],
+        'wa_bot_log'         => ['🤖 Bot records', 'created_at', 90],
+        'api_usage'          => ['💸 AI usage', 'created_at', 730],
     ];
 }
 
@@ -52,11 +52,11 @@ function sc_log_tables() {
  *  them to the list above later by pattern-matching on the name. */
 function sc_never_trim() {
     return [
-        'stock_ledger'      => 'સ્ટોકનો દરેક ફેરફાર — સ્ટોક કેમ આટલો છે એનો એકમાત્ર પુરાવો',
-        'wa_chats'          => 'ગ્રાહક સાથેની વાતચીત — ફરિયાદ વખતે આ જ પુરાવો છે',
-        'collection_events' => 'ઉઘરાણીની નોંધ — વચન, સ્નૂઝ, ના પાડી; ઉઘરાણીના નિયમો આના પર ચાલે છે',
-        'payment_allocations' => 'કયો પૈસો કયા બિલમાં ગયો — ખાતાવહીનો પાયો',
-        'campaign_targets'  => 'કોને મેસેજ ગયો અને કોને કેમ નહીં — સંમતિનો પુરાવો',
+        'stock_ledger'      => 'Every stock movement — the only proof of why stock is what it is',
+        'wa_chats'          => 'Conversations with a customer — this is the proof in a dispute',
+        'collection_events' => 'Collection notes — promises, snoozes, refusals; the collection rules run on these',
+        'payment_allocations' => 'Which rupee went against which bill — the foundation of the ledger',
+        'campaign_targets'  => 'Who was messaged and who was not, and why — the proof of consent',
     ];
 }
 
@@ -109,7 +109,7 @@ function sc_growth($limit = 15) {
         $col = sc_date_column($t['name']);
         $rows = (int)val('SELECT COUNT(*) FROM `' . $t['name'] . '`');
         if ($col === '') { $out[] = ['name' => $t['name'], 'rows' => $rows, 'total_mb' => (float)$t['total_mb'],
-                                     'per_month' => null, 'why' => 'તારીખનું ખાનું નથી, એટલે વધારો માપી શકાય એમ નથી']; continue; }
+                                     'per_month' => null, 'why' => 'has no date column, so growth cannot be measured']; continue; }
         $recent = (int)val("SELECT COUNT(*) FROM `{$t['name']}` WHERE `$col` >= DATE_SUB(NOW(), INTERVAL ? DAY)", [$r['window']]);
         $perMonth = round($recent / ($r['window'] / 30.44), 1);
         $bytesPerRow = $rows > 0 ? ((float)$t['data_mb'] + (float)$t['idx_mb']) * 1048576 / $rows : 0;
@@ -194,7 +194,7 @@ function sc_trim($table, $days = null) {
     $logs = sc_log_tables();
     if (!isset($logs[$table])) {
         return ['ok' => false, 'deleted' => 0,
-                'why' => '"' . $table . '" સાફ કરી શકાય એવું ટેબલ નથી. ધંધાનો ડેટા ક્યારેય ડિલીટ થતો નથી.'];
+                'why' => '"' . $table . '" There is no table that can be cleared. Business data is never deleted.'];
     }
     list($label, $col, $keep) = $logs[$table];
     $days = max(7, (int)($days ?: $keep));   // never allow "delete everything from today"
@@ -232,7 +232,7 @@ function sc_optimize($table) {
     $db = defined('DB_NAME') ? DB_NAME : (string)val('SELECT DATABASE()');
     $exists = (int)val("SELECT COUNT(*) FROM information_schema.tables
                         WHERE table_schema = ? AND table_name = ? AND table_type = 'BASE TABLE'", [$db, $table]);
-    if (!$exists) return ['ok' => false, 'why' => 'એવું ટેબલ નથી.'];
+    if (!$exists) return ['ok' => false, 'why' => 'There is no such table.'];
     $before = (float)val("SELECT ROUND(data_free/1048576,2) FROM information_schema.tables
                           WHERE table_schema = ? AND table_name = ?", [$db, $table]);
     q('OPTIMIZE TABLE `' . str_replace('`', '', $table) . '`');

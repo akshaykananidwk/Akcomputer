@@ -82,9 +82,9 @@ function mk_windows($days = null) {
 /** Percentage change, with the honest answers for the awkward cases. */
 function mk_change($now, $prev) {
     $now = (float)$now; $prev = (float)$prev;
-    if ($prev <= MONEY_EPS && $now <= MONEY_EPS) return ['pct' => 0.0, 'dir' => 'flat', 'label' => 'કંઈ નહીં'];
-    if ($prev <= MONEY_EPS) return ['pct' => null, 'dir' => 'up', 'label' => 'નવું'];
-    if ($now <= MONEY_EPS) return ['pct' => -100.0, 'dir' => 'down', 'label' => 'બંધ થઈ ગયું'];
+    if ($prev <= MONEY_EPS && $now <= MONEY_EPS) return ['pct' => 0.0, 'dir' => 'flat', 'label' => 'nothing'];
+    if ($prev <= MONEY_EPS) return ['pct' => null, 'dir' => 'up', 'label' => 'new'];
+    if ($now <= MONEY_EPS) return ['pct' => -100.0, 'dir' => 'down', 'label' => 'stopped'];
     $pct = round(($now - $prev) / $prev * 100, 1);
     $move = mk_rules()['move_pct'];
     $dir = $pct >= $move ? 'up' : ($pct <= -$move ? 'down' : 'flat');
@@ -98,8 +98,8 @@ function mk_momentum($by = 'category') {
     $r = mk_rules();
     $w = mk_windows();
     $grp = $by === 'brand'
-        ? ["COALESCE(NULLIF(i.brand,''),'(બ્રાન્ડ નથી)')", 'i.brand', 'NULL']
-        : ["COALESCE(c.name,'(કેટેગરી નથી)')", 'i.category_id', 'c.id'];
+        ? ["COALESCE(NULLIF(i.brand,''),'(no brand)')", 'i.brand', 'NULL']
+        : ["COALESCE(c.name,'(no category)')", 'i.category_id', 'c.id'];
     $rows = all("SELECT {$grp[0]} g, {$grp[2]} gid,
                         SUM(IF(s.sale_date >= ?, si.total, 0)) now_amt,
                         SUM(IF(s.sale_date <= ?, si.total, 0)) prev_amt,
@@ -238,7 +238,7 @@ function mk_discount_by_category($limit = null) {
     // Only the LINE discount can be attributed to a category honestly; a
     // bill-level discount belongs to the whole bill, and splitting it across
     // categories would be an invented number.
-    return all("SELECT COALESCE(c.name,'(કેટેગરી નથી)') name, c.id,
+    return all("SELECT COALESCE(c.name,'(no category)') name, c.id,
                        COALESCE(SUM(si.line_disc),0) given, COALESCE(SUM(si.total),0) net,
                        COUNT(DISTINCT s.id) bills
                 FROM sale_items si
@@ -287,7 +287,7 @@ function mk_lifecycle() {
 function mk_season() {
     $h = mk_history();
     if (!$h['can_season']) return ['ok' => false, 'months' => [], 'years' => $h['years'],
-                                   'why' => 'સીઝન કહેવા માટે ઓછામાં ઓછા બે વર્ષનો ઇતિહાસ જોઈએ. અત્યારે ' . $h['years'] . ' વર્ષનો છે.'];
+                                   'why' => 'At least two years of history are needed to speak of a season. Right now ' . $h['years'] . ' years long.'];
     // Only WHOLE months count. The shop's first month and its current month are
     // both partial, and dividing a half-month's takings by a full year made
     // that month look like a slump - August read as index 68 purely because
@@ -296,7 +296,7 @@ function mk_season() {
     $from = month_start(-1, $h['first_sale']);   // 1st of the month AFTER the first sale
     $to = month_end(1);   // last whole month; month_end() survives the 31st
     if ($from > $to) return ['ok' => false, 'months' => [], 'years' => $h['years'],
-                             'why' => 'આખા મહિનાનો પૂરતો ઇતિહાસ નથી.'];
+                             'why' => 'There is not enough full-month history.'];
     $rows = all("SELECT MONTH(sale_date) mno, COUNT(DISTINCT YEAR(sale_date)) years,
                         SUM(total) amt, COUNT(*) bills
                  FROM sales WHERE is_cancelled = 0 AND sale_date >= ? AND sale_date <= ?
@@ -309,7 +309,7 @@ function mk_season() {
         $totalAvg += $avg;
     }
     $mean = count($perYear) ? $totalAvg / count($perYear) : 0.0;
-    $names = ['', 'જાન્યુ', 'ફેબ્રુ', 'માર્ચ', 'એપ્રિલ', 'મે', 'જૂન', 'જુલાઈ', 'ઓગસ્ટ', 'સપ્ટે', 'ઓક્ટો', 'નવે', 'ડિસે'];
+    $names = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     $out = [];
     for ($m = 1; $m <= 12; $m++) {
         $d = $perYear[$m] ?? ['avg' => 0.0, 'years' => 0, 'bills' => 0];
@@ -330,7 +330,7 @@ function mk_geography($limit = null) {
     $filled = (int)val("SELECT COUNT(*) FROM parties WHERE city IS NOT NULL AND city <> ''");
     $total = (int)val('SELECT COUNT(*) FROM parties');
     if ($filled === 0) return ['ok' => false, 'rows' => [], 'filled' => 0, 'total' => $total,
-                               'why' => 'ગ્રાહકોના શહેરનું ખાનું ભરેલું નથી, એટલે વિસ્તાર પ્રમાણે કંઈ કહી શકાય એમ નથી.'];
+                               'why' => 'The customer city field is not filled in, so nothing can be said by area.'];
     $rows = all("SELECT p.city, COUNT(DISTINCT p.id) customers, COUNT(DISTINCT s.id) bills,
                         COALESCE(SUM(s.total),0) amt
                  FROM parties p JOIN sales s ON s.party_id = p.id AND s.is_cancelled = 0 AND s.sale_date >= ?
@@ -346,7 +346,7 @@ function mk_lost_quotes($limit = null) {
     $limit = (int)($limit ?: mk_rules()['top']);
     $total = (int)val('SELECT COUNT(*) FROM estimates');
     if ($total === 0) return ['ok' => false, 'rows' => [], 'stats' => [],
-                              'why' => 'હજી કોઈ ક્વોટેશન બનાવ્યું નથી, એટલે ગુમાવેલા સોદા ગણી શકાય એમ નથી.'];
+                              'why' => 'No quotation has been made yet, so lost deals cannot be counted.'];
     $stats = row("SELECT COUNT(*) total,
                          SUM(status = 'converted') won, SUM(status IN ('rejected','cancelled')) lost,
                          SUM(status IN ('open','accepted')) pending,

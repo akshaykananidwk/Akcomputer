@@ -320,14 +320,14 @@ function fc_month_sales($months = 24, $before = null, array $series = null) {
  *  which is honest: an unknown season should change nothing. */
 function fc_season_factor($monthNo, $before = null, array $series = null) {
     $hist = fc_month_sales(60, $before, $series);
-    if (count($hist) < 24) return ['factor' => 1.0, 'years' => 0, 'why' => 'બે વર્ષથી ઓછો ઇતિહાસ — સીઝનનો ગુણાકાર લગાડ્યો નથી.'];
+    if (count($hist) < 24) return ['factor' => 1.0, 'years' => 0, 'why' => 'Less than two years of history — no seasonal multiplier applied.'];
     $byMonth = []; $all = [];
     foreach ($hist as $ym => $amt) {
         $byMonth[(int)substr($ym, 5, 2)][] = $amt;
         $all[] = $amt;
     }
     $mean = array_sum($all) / count($all);
-    if ($mean <= 0 || empty($byMonth[$monthNo])) return ['factor' => 1.0, 'years' => 0, 'why' => 'આ મહિનાનો ઇતિહાસ નથી.'];
+    if ($mean <= 0 || empty($byMonth[$monthNo])) return ['factor' => 1.0, 'years' => 0, 'why' => 'There is no history for this month.'];
     $mAvg = array_sum($byMonth[$monthNo]) / count($byMonth[$monthNo]);
     return ['factor' => round($mAvg / $mean, 3), 'years' => count($byMonth[$monthNo]), 'why' => ''];
 }
@@ -383,7 +383,7 @@ function fc_sales_ahead($ahead = 3) {
     $hist = fc_month_sales($r['base_months']);
     if (count($hist) < $r['min_months']) {
         return ['ok' => false, 'rows' => [], 'backtest' => null,
-                'why' => 'અનુમાન કરવા માટે ઓછામાં ઓછા ' . $r['min_months'] . ' પૂરા મહિનાનો ઇતિહાસ જોઈએ. અત્યારે ' . count($hist) . ' છે.'];
+                'why' => 'at least this many are needed to forecast ' . $r['min_months'] . ' full months of history are needed. Right now ' . count($hist) . '.'];
     }
     $bt = fc_backtest();
     $band = $bt['mape'];   // null when the method has never been scored
