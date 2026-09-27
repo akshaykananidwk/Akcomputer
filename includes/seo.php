@@ -170,7 +170,7 @@ function seo_footer() {
     $h .= '<p>📍 ' . e($co['address'] ?: 'Dwarka, Gujarat') . '</p>';
     if ($co['phone']) $h .= '<p>📞 <a href="tel:' . e(preg_replace('/\D/', '', $co['phone'])) . '" style="display:inline">' . e($co['phone']) . '</a></p>';
     if ($wa && strlen($wa) >= 12) $h .= '<p>💬 <a href="https://wa.me/' . e($wa) . '" style="display:inline" rel="noopener">WhatsApp Order</a></p>';
-    $h .= '<p style="margin-top:8px">Computer, Laptop, CCTV Camera, Printer — sales, repair &amp; installation in Dwarka (દ્વારકા), Gujarat. Genuine products with warranty &amp; doorstep service.</p>';
+    $h .= '<p style="margin-top:8px">Computer, Laptop, CCTV Camera, Printer — sales, repair &amp; installation in Dwarka, Gujarat. Genuine products with warranty &amp; doorstep service.</p>';
     $h .= '</div></div>';
     $h .= '<div class="cop">© ' . date('Y') . ' ' . e($app) . ', Dwarka · <a style="display:inline" href="' . e(base_url('') . '/') . '">Online Store</a> · <a style="display:inline" href="' . e(seo_service_url('cctv-installation')) . '">CCTV Installation</a> · <a style="display:inline" href="' . e(seo_service_url('computer-repair')) . '">Computer Repair</a> · <a style="display:inline" href="' . e(base_url('privacy.php')) . '">Privacy Policy</a> · <a style="display:inline" href="' . e(base_url('terms.php')) . '">Terms</a></div>';
     return $h . '</footer>';
@@ -185,110 +185,110 @@ function seo_services() {
             'title' => 'CCTV Camera Installation in Dwarka, Gujarat — Best Price | ' . $app,
             'desc' => 'CCTV camera installation in Dwarka at best price. HD & IP cameras, DVR/NVR setup, mobile viewing, wiring, warranty and quick service. Free site visit — WhatsApp us.',
             'paras' => [
-                'ઘર, દુકાન, ઓફિસ, સ્કૂલ કે ફેક્ટરી માટે CCTV કેમેરા સેટઅપ — સર્વે, વાયરિંગ, ઇન્સ્ટોલેશન અને મોબાઇલમાં લાઈવ જોવાની સેટિંગ સુધીનું બધું કામ અમે કરીએ છીએ. HD તથા IP બંને પ્રકારના કેમેરા, બ્રાન્ડેડ DVR/NVR અને ઓરિજિનલ પ્રોડક્ટ જ વાપરીએ છીએ.',
-                'Dwarka અને આસપાસના વિસ્તારમાં ફ્રી સાઇટ વિઝિટ. ઇન્સ્ટોલેશન પછી પણ સર્વિસ અને વોરંટી સપોર્ટ અમારી જવાબદારી. જૂની સિસ્ટમ રિપેર / અપગ્રેડ પણ કરી આપીએ છીએ.',
+                'CCTV camera setup for a home, shop, office, school or factory — we do it all, from the survey and wiring to installation and setting up live view on your phone. Both HD and IP cameras, branded DVR/NVR, and only genuine products.',
+                'Free site visit in Dwarka and nearby. Service and warranty support after installation are our responsibility too. We repair and upgrade older systems as well.',
             ],
-            'points' => ['HD / IP કેમેરા — 2MP થી 8MP', 'DVR / NVR + હાર્ડ ડિસ્ક સેટઅપ', 'મોબાઇલમાં ગમે ત્યાંથી લાઈવ વ્યૂ', 'વાયરિંગ સાથે કમ્પ્લીટ પેકેજ', 'વોરંટી + આફ્ટર-સેલ સર્વિસ'],
+            'points' => ['HD / IP cameras — 2MP to 8MP', 'DVR / NVR + hard disk setup', 'Live view on your phone from anywhere', 'A complete package with wiring', 'Warranty + after-sales service'],
             'faqs' => [
-                'CCTV કેમેરા લગાવવાનો ખર્ચ કેટલો થાય?' => 'કેમેરાની સંખ્યા અને ક્વોલિટી (2MP/5MP, HD/IP) પ્રમાણે ભાવ થાય. WhatsApp પર જગ્યાની વિગત મોકલો એટલે ફ્રી quotation મળશે.',
-                'મોબાઇલમાં કેમેરા જોઈ શકાય?' => 'હા, દરેક સિસ્ટમમાં મોબાઇલ એપ સેટ કરી આપીએ છીએ — દુનિયામાં ગમે ત્યાંથી લાઈવ જોઈ શકાય.',
+                'What does installing CCTV cameras cost?' => 'The price depends on the number of cameras and the quality (2MP/5MP, HD/IP). Send us the details of the place on WhatsApp for a free quotation.',
+                'Can I see the cameras on my phone?' => 'Yes, we set up the mobile app on every system — you can watch live from anywhere in the world.',
             ]],
         'computer-repair' => [
             'name' => 'Computer & Desktop Repair', 'emoji' => '🖥️',
             'title' => 'Computer Repair in Dwarka — Desktop PC Repair & Upgrade | ' . $app,
             'desc' => 'Computer and desktop repair in Dwarka, Gujarat. Slow PC, no display, virus, hardware upgrade, SSD/RAM, formatting with data safety. Same-day service at ' . $app . '.',
             'paras' => [
-                'કમ્પ્યુટર ચાલુ નથી થતું? ધીમું ચાલે છે? ડિસ્પ્લે નથી આવતી? — દરેક પ્રકારના ડેસ્કટોપ કમ્પ્યુટર રિપેરિંગ માટે ' . $app . ' પર લઈ આવો. મોટા ભાગનું કામ એ જ દિવસે થઈ જાય છે.',
-                'SSD/RAM અપગ્રેડ કરાવવાથી જૂનું કમ્પ્યુટર પણ નવા જેવું ફાસ્ટ ચાલે છે. ફોર્મેટિંગ વખતે તમારો ડેટા સાચવીને જ કામ કરીએ છીએ.',
+                'Computer not starting? Running slow? No display? — for desktop computer repairs of every kind ' . $app . ' bring it in. Most work is done the same day.',
+                'An SSD or RAM upgrade makes even an old computer as fast as a new one. When formatting, we always save your data first.',
             ],
-            'points' => ['No display / dead PC repair', 'SSD + RAM અપગ્રેડ — સ્પીડ ડબલ', 'Virus સફાઈ + Windows setup', 'નવા-જૂના કમ્પ્યુટર ખરીદ-વેચાણ', 'એ જ દિવસે ડિલિવરીની કોશિશ'],
+            'points' => ['No display / dead PC repair', 'SSD + RAM upgrade — double the speed', 'Virus cleaning + Windows setup', 'New and used computers bought and sold', 'We try to deliver the same day'],
             'faqs' => [
-                'કમ્પ્યુટર ધીમું ચાલે છે, શું કરવું?' => 'મોટા ભાગે SSD + RAM અપગ્રેડથી કમ્પ્યુટર 5-10 ગણું ફાસ્ટ થઈ જાય છે. ચેકિંગ કરીને સાચી સલાહ આપીશું.',
-                'ડેટા સેફ રહેશે?' => 'હા, કોઈ પણ કામ પહેલા ડેટા બેકઅપની ચિંતા અમે રાખીએ છીએ.',
+                'The computer is slow, what should I do?' => 'Most often an SSD and RAM upgrade makes a computer 5 to 10 times faster. We check it and advise you honestly.',
+                'Will my data be safe?' => 'Yes, we take care of a data backup before any work.',
             ]],
         'laptop-repair' => [
             'name' => 'Laptop Repair', 'emoji' => '💻',
             'title' => 'Laptop Repair in Dwarka, Gujarat — Screen, Battery, Keyboard | ' . $app,
             'desc' => 'Laptop repair in Dwarka: broken screen replacement, battery, keyboard, hinge, charging port, SSD upgrade, chip-level service. All brands — HP, Dell, Lenovo, Acer, Asus.',
             'paras' => [
-                'લેપટોપની સ્ક્રીન તૂટી ગઈ છે, બેટરી નથી ચાલતી, કીબોર્ડ ખરાબ છે કે ચાર્જિંગ નથી થતું? HP, Dell, Lenovo, Acer, Asus — બધી બ્રાન્ડના લેપટોપ રિપેર કરીએ છીએ.',
-                'ઓરિજિનલ ક્વોલિટીના પાર્ટ્સ અને કામની ગેરંટી. લેપટોપ ધીમું હોય તો SSD અપગ્રેડ કરાવો — સૌથી સસ્તો અને અસરકારક ઉપાય.',
+                'Broken laptop screen, dead battery, bad keyboard or not charging? HP, Dell, Lenovo, Acer, Asus — we repair laptops of every brand.',
+                'Genuine quality parts and a guarantee on the work. If a laptop is slow, get an SSD upgrade — the cheapest and most effective fix.',
             ],
-            'points' => ['સ્ક્રીન રિપ્લેસમેન્ટ', 'બેટરી / કીબોર્ડ / હિન્જ રિપેર', 'ચાર્જિંગ પોર્ટ + ચિપ લેવલ કામ', 'SSD અપગ્રેડ + Windows', 'નવા-જૂના લેપટોપ ખરીદ-વેચાણ'],
+            'points' => ['Screen replacement', 'Battery / keyboard / hinge repair', 'Charging port and chip-level work', 'SSD upgrade + Windows', 'New and used laptops bought and sold'],
             'faqs' => [
-                'લેપટોપ સ્ક્રીન બદલવાનો ભાવ કેટલો?' => 'સાઇઝ અને મોડેલ પ્રમાણે ભાવ થાય. મોડેલ નંબર WhatsApp કરો એટલે તરત ભાવ કહી દઈએ.',
+                'What does replacing a laptop screen cost?' => 'The price depends on the size and model. WhatsApp the model number and we will quote at once.',
             ]],
         'printer-repair' => [
             'name' => 'Printer Sales & Repair', 'emoji' => '🖨️',
             'title' => 'Printer Repair & Sales in Dwarka — Ink Tank, Laser, Cartridge | ' . $app,
             'desc' => 'Printer repair, sales, ink refilling and cartridge in Dwarka, Gujarat. HP, Canon, Epson service, paper jam, print quality issues — quick turnaround at ' . $app . '.',
             'paras' => [
-                'પ્રિન્ટર પ્રિન્ટ નથી કરતું, પેપર જામ થાય છે કે પ્રિન્ટ ઝાંખી આવે છે? HP, Canon, Epson — બધા પ્રિન્ટર રિપેર કરીએ છીએ. ઇન્ક રિફિલિંગ અને કાર્ટ્રિજ પણ મળે છે.',
-                'નવું પ્રિન્ટર લેવું હોય તો તમારા વપરાશ પ્રમાણે (ઘર / દુકાન / ઓફિસ) સાચી સલાહ સાથે બેસ્ટ ભાવે આપીશું.',
+                'Printer not printing, paper jamming, or prints coming out faint? HP, Canon, Epson — we repair every printer. Ink refilling and cartridges available too.',
+                'If you want a new printer we will advise you properly for your use (home / shop / office) and give you the best price.',
             ],
-            'points' => ['બધી બ્રાન્ડના પ્રિન્ટર રિપેર', 'Ink tank + cartridge રિફિલિંગ', 'નવા પ્રિન્ટર બેસ્ટ ભાવે', 'Printer setup + WiFi printing'],
+            'points' => ['Printer repair, every brand', 'Ink tank and cartridge refilling', 'New printers at the best price', 'Printer setup + WiFi printing'],
             'faqs' => [
-                'ઘર માટે કયું પ્રિન્ટર સારું?' => 'ઓછા વપરાશ માટે ink tank printer સૌથી સસ્તું પડે છે — પ્રિન્ટ દીઠ ખર્ચ ઘણો ઓછો. દુકાને આવો, ડેમો સાથે સમજાવીશું.',
+                'Which printer is good for home?' => 'For light use an ink tank printer works out cheapest — the cost per print is far lower. Come to the shop and we will demonstrate it.',
             ]],
         'networking' => [
             'name' => 'Networking & WiFi Solutions', 'emoji' => '📡',
             'title' => 'Networking & WiFi Setup in Dwarka — Router, LAN, Office Network | ' . $app,
             'desc' => 'WiFi router setup, office LAN networking, structured cabling, range extension and network troubleshooting in Dwarka, Gujarat by ' . $app . '.',
             'paras' => [
-                'ઘર કે ઓફિસમાં WiFi ધીમું ચાલે છે કે અમુક રૂમમાં પહોંચતું નથી? રાઉટર સેટઅપ, રેન્જ એક્સટેન્ડર, ઓફિસ LAN વાયરિંગ અને નેટવર્કનું બધું કામ કરીએ છીએ.',
-                'દુકાન / ઓફિસ માટે CCTV + કમ્પ્યુટર + પ્રિન્ટર બધું એક નેટવર્કમાં જોડી આપીએ — શેરિંગ અને બેકઅપ સહેલું બને.',
+                'WiFi slow at home or the office, or not reaching some rooms? Router setup, range extenders, office LAN wiring — we do all networking work.',
+                'For a shop or office we connect CCTV, computers and printers on one network — sharing and backups become easy.',
             ],
-            'points' => ['WiFi router setup + રેન્જ સોલ્યુશન', 'Office LAN cabling', 'File / printer sharing setup', 'Network troubleshooting'],
+            'points' => ['WiFi router setup + range solutions', 'Office LAN cabling', 'File / printer sharing setup', 'Network troubleshooting'],
             'faqs' => [
-                'WiFi ની રેન્જ કેમ વધારવી?' => 'જગ્યા પ્રમાણે mesh WiFi કે range extender — બંનેમાંથી જે સસ્તું અને સાચું હોય એ સૂચવીશું.',
+                'How do I extend WiFi range?' => 'Mesh WiFi or a range extender depending on the place — we suggest whichever is cheaper and right.',
             ]],
         'internet-broadband' => [
             'name' => 'Internet / Broadband Connection', 'emoji' => '🌐',
             'title' => 'Internet & Broadband Connection in Dwarka, Gujarat | ' . $app,
             'desc' => 'New internet / broadband connection in Dwarka with fast installation, WiFi router and local support by ' . $app . '. Best plans for home and business.',
             'paras' => [
-                'ઘર કે ધંધા માટે નવું ઇન્ટરનેટ કનેક્શન જોઈએ છે? બેસ્ટ પ્લાન, ઝડપી ઇન્સ્ટોલેશન અને લોકલ સપોર્ટ સાથે કનેક્શન અપાવીએ છીએ.',
-                'સ્પીડ કે કનેક્શનની કોઈ પણ તકલીફમાં ફોન કરો — લોકલ માણસ તરત મદદે આવે એ જ સૌથી મોટો ફાયદો.',
+                'Need a new internet connection for home or business? We arrange it with the best plan, quick installation and local support.',
+                'Call us for any speed or connection trouble — having a local person come at once is the biggest advantage.',
             ],
-            'points' => ['હોમ + બિઝનેસ પ્લાન', 'WiFi router સાથે સેટઅપ', 'લોકલ સપોર્ટ — તરત સર્વિસ'],
+            'points' => ['Home and business plans', 'Setup with a WiFi router', 'Local support — service at once'],
             'faqs' => [
-                'કનેક્શન કેટલા દિવસમાં મળે?' => 'મોટા ભાગે 1-2 દિવસમાં ઇન્સ્ટોલેશન થઈ જાય છે. WhatsApp પર એડ્રેસ મોકલી ચેક કરાવો.',
+                'How many days for a connection?' => 'Installation is usually done in 1 to 2 days. Send your address on WhatsApp and we will check.',
             ]],
         'data-recovery' => [
             'name' => 'Data Recovery', 'emoji' => '💾',
             'title' => 'Data Recovery in Dwarka — Hard Disk, Pen Drive, Memory Card | ' . $app,
             'desc' => 'Data recovery service in Dwarka, Gujarat: deleted files, corrupt hard disk, pen drive and memory card recovery with confidentiality at ' . $app . '.',
             'paras' => [
-                'ભૂલથી ડિલીટ થયેલો ડેટા, ખરાબ થયેલી હાર્ડ ડિસ્ક, પેન ડ્રાઇવ કે મેમરી કાર્ડ — શક્ય હોય ત્યાં સુધી તમારો કિંમતી ડેટા પાછો કાઢી આપીએ છીએ.',
-                'ફોટા, ડોક્યુમેન્ટ કે હિસાબની ફાઇલ — તમારો ડેટા 100% ખાનગી રહે છે. પહેલા ચેક કરીને જ શક્યતા અને ખર્ચ કહીશું.',
+                'Data deleted by mistake, a failed hard disk, a pen drive or a memory card — we recover your valuable data wherever it is possible.',
+                'Photos, documents or account files — your data stays 100% private. We check first and only then tell you what is possible and what it costs.',
             ],
             'points' => ['Deleted file recovery', 'Corrupt HDD / SSD recovery', 'Pen drive + memory card', '100% confidential'],
             'faqs' => [
-                'ડેટા પાછો આવવાની ગેરંટી ખરી?' => 'ડિસ્કની હાલત પર આધાર છે. પહેલા ફ્રી ચેકિંગ કરીને જ સાચી શક્યતા કહીએ છીએ — કામ થાય તો જ ચાર્જ.',
+                'Is data recovery guaranteed?' => 'It depends on the state of the disk. We check it free first and tell you the real chances — you pay only if it works.',
             ]],
         'amc' => [
             'name' => 'AMC — Annual Maintenance', 'emoji' => '🛡️',
             'title' => 'Computer & CCTV AMC in Dwarka — Annual Maintenance Contract | ' . $app,
             'desc' => 'Annual Maintenance Contract (AMC) for computers, CCTV and office IT in Dwarka, Gujarat. Regular servicing, priority support and fixed yearly cost by ' . $app . '.',
             'paras' => [
-                'ઓફિસ, દુકાન, સ્કૂલ કે હોસ્પિટલના કમ્પ્યુટર / CCTV માટે વાર્ષિક મેન્ટેનન્સ કોન્ટ્રાક્ટ (AMC) — નિયમિત સર્વિસ, પ્રાયોરિટી સપોર્ટ અને આખા વર્ષનો ફિક્સ ખર્ચ.',
-                'AMC લેનાર ગ્રાહકને કોઈ પણ તકલીફમાં પહેલા સર્વિસ મળે છે — ધંધો અટકે નહીં એ અમારી જવાબદારી.',
+                'Annual maintenance contract (AMC) for the computers and CCTV of an office, shop, school or hospital — regular service, priority support and a fixed cost for the whole year.',
+                'An AMC customer gets service first whatever the trouble — keeping your business running is our responsibility.',
             ],
-            'points' => ['નિયમિત ચેકઅપ + સફાઈ', 'પ્રાયોરિટી સપોર્ટ', 'આખા વર્ષનો ફિક્સ ખર્ચ', 'Computer + CCTV + Printer બધું કવર'],
+            'points' => ['Regular check-ups and cleaning', 'Priority support', 'A fixed cost for the whole year', 'Computers, CCTV and printers all covered'],
             'faqs' => [
-                'AMC માં શું શું આવે?' => 'મશીનની સંખ્યા પ્રમાણે પ્લાન બને છે — સર્વિસ વિઝિટ, સફાઈ, સોફ્ટવેર મેન્ટેનન્સ વગેરે. વિગત માટે WhatsApp કરો.',
+                'What does an AMC include?' => 'The plan is built around the number of machines — service visits, cleaning, software maintenance and so on. WhatsApp us for details.',
             ]],
         'software-installation' => [
             'name' => 'Software & Windows Installation', 'emoji' => '⚙️',
             'title' => 'Windows & Software Installation in Dwarka — Format, Setup | ' . $app,
             'desc' => 'Windows installation, formatting, MS Office, Tally, antivirus and driver setup in Dwarka, Gujarat at ' . $app . '. Data-safe formatting, same-day service.',
             'paras' => [
-                'Windows ઇન્સ્ટોલેશન, ફોર્મેટિંગ, MS Office, Tally, એન્ટીવાયરસ, પ્રિન્ટર ડ્રાઇવર — સોફ્ટવેરનું બધું કામ વ્યવસ્થિત કરી આપીએ છીએ. ડેટા સાચવીને જ ફોર્મેટ કરીએ છીએ.',
-                'નવું કમ્પ્યુટર / લેપટોપ લીધું હોય તો બધો સેટઅપ કરાવવા લઈ આવો — તરત વાપરવા લાયક કરી આપીશું.',
+                'Windows installation, formatting, MS Office, Tally, antivirus, printer drivers — we set up all your software properly. We always save your data before formatting.',
+                'Just bought a new computer or laptop? Bring it in for the full setup — we will have it ready to use.',
             ],
-            'points' => ['Windows + driver setup', 'MS Office / Tally', 'Antivirus + સિક્યોરિટી', 'ડેટા-સેફ ફોર્મેટિંગ'],
+            'points' => ['Windows + driver setup', 'MS Office / Tally', 'Antivirus + security', 'Data-safe formatting'],
             'faqs' => [
-                'ફોર્મેટ કરવામાં કેટલો સમય લાગે?' => 'મોટા ભાગે એ જ દિવસે થઈ જાય છે — સવારે આપો તો સાંજે તૈયાર.',
+                'How long does formatting take?' => 'Usually done the same day — hand it in the morning and it is ready by evening.',
             ]],
     ];
 }

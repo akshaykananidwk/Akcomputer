@@ -243,12 +243,12 @@ function meta_wa_full_sync() {
     [$ok, $ph, $err] = meta_wa_call('GET', setting('meta_wa_phone_id') . '?fields=display_phone_number,verified_name,quality_rating,code_verification_status');
     if (!$ok) {
         $expired = stripos($err, 'expired') !== false || stripos($err, 'Session') !== false || stripos($err, 'access token') !== false;
-        $rowf('🔑 Token / કનેક્શન', 'fail', $err,
-            $expired ? 'Token જૂનું થઈ ગયું છે. business.facebook.com → Business Settings → Users → System Users → તમારો user → Generate New Token (permissions: whatsapp_business_messaging + whatsapp_business_management, expiry: Never) → નવું token અહીં Meta કાર્ડમાં Save કરો.'
-                     : 'Meta કાર્ડમાં Token / Phone ID / WABA ID ફરી ચકાસો.');
+        $rowf('🔑 Token / connection', 'fail', $err,
+            $expired ? 'The token has expired. business.facebook.com → Business Settings → Users → System Users → your user → Generate New Token (permissions: whatsapp_business_messaging + whatsapp_business_management, expiry: Never) → save the new token in the Meta card here.'
+                     : 'Re-check the token, phone ID and WABA ID in the Meta card.');
         set_setting('meta_sync_report', json_encode($R, JSON_UNESCAPED_UNICODE));
         set_setting('meta_sync_at', date('Y-m-d H:i:s'));
-        return $R; // token વગર આગળનું બધું fail જ થાય
+        return $R; // without a token everything after this simply fails
     }
     $rowf('📱 Phone Number', 'ok', ($ph['display_phone_number'] ?? '') . ' · ' . ($ph['verified_name'] ?? '') . ' · Quality: ' . ($ph['quality_rating'] ?? '?'));
 
@@ -257,18 +257,18 @@ function meta_wa_full_sync() {
     $nSubs = $ok ? count($subs['data'] ?? []) : 0;
     if ($ok && $nSubs === 0) {
         [$fx, , ] = meta_wa_call('POST', setting('meta_wa_waba_id') . '/subscribed_apps', []);
-        if ($fx) { $nSubs = 1; $rowf('🔔 Webhook Subscription', 'ok', 'App WABA સાથે subscribe નહોતી - આપોઆપ કરી દીધી ✔'); }
-        else $rowf('🔔 Webhook Subscription', 'fail', 'App subscribe થઈ શકી નહીં.', 'developers.facebook.com → તમારી App → WhatsApp → Configuration માં Callback URL: ' . base_url('wa_webhook.php?key=' . setting('wa_webhook_key')) . ' · Verify token: ' . setting('wa_webhook_key') . ' · "messages" field subscribe કરો.');
+        if ($fx) { $nSubs = 1; $rowf('🔔 Webhook Subscription', 'ok', 'The app was not subscribed to the WABA - done automatically ✔'); }
+        else $rowf('🔔 Webhook Subscription', 'fail', 'The app could not be subscribed.', 'developers.facebook.com → your App → WhatsApp → Configuration, Callback URL: ' . base_url('wa_webhook.php?key=' . setting('wa_webhook_key')) . ' · Verify token: ' . setting('wa_webhook_key') . ' · "messages" subscribe the field.');
     } elseif ($ok) {
-        $rowf('🔔 Webhook Subscription', 'ok', $nSubs . ' app subscribed. મેસેજ ન આવે તો જ Callback URL ચકાસવી.');
+        $rowf('🔔 Webhook Subscription', 'ok', $nSubs . ' app subscribed. Check the Callback URL only if messages do not arrive.');
     } else {
-        $rowf('🔔 Webhook Subscription', 'warn', $err, 'App Dashboard → WhatsApp → Configuration માં Callback URL ચકાસો: ' . base_url('wa_webhook.php?key=' . setting('wa_webhook_key')));
+        $rowf('🔔 Webhook Subscription', 'warn', $err, 'Check the Callback URL in App Dashboard → WhatsApp → Configuration: ' . base_url('wa_webhook.php?key=' . setting('wa_webhook_key')));
     }
 
     // ---- 3. templates: submit missing + refresh approval statuses ----
     $tpls = meta_wa_sync_templates();
     if (isset($tpls['_error'])) {
-        $rowf('📝 Templates', 'fail', $tpls['_error'], 'Token ને whatsapp_business_management permission છે કે ચકાસો.');
+        $rowf('📝 Templates', 'fail', $tpls['_error'], 'Check that the token has the whatsapp_business_management permission.');
     } else {
         $ap = 0; $pend = 0; $rej = [];
         foreach ($tpls as $nm => $t) {
@@ -277,8 +277,8 @@ function meta_wa_full_sync() {
             else $pend++;
         }
         $det = "$ap Approved · $pend Pending" . ($rej ? ' · ' . count($rej) . ' Rejected' : '');
-        if ($rej) $rowf('📝 Templates', 'warn', $det . ' — Rejected: ' . implode(', ', $rej), 'Rejected ટેમ્પ્લેટ Meta ની પોલિસીથી નકારાયું છે - મને (Claude ને) કારણ મોકલો, હું લખાણ બદલી નવું સબમિટ કરી આપીશ.');
-        else $rowf('📝 Templates', $pend ? 'warn' : 'ok', $det . ($pend ? ' — મંજૂરી સામાન્ય રીતે થોડા કલાકમાં આવે છે, cron આપોઆપ ફરી ચકાસે છે.' : ''));
+        if ($rej) $rowf('📝 Templates', 'warn', $det . ' — Rejected: ' . implode(', ', $rej), 'A rejected template was refused by Meta policy - send me the reason and I will reword it and submit a new one.');
+        else $rowf('📝 Templates', $pend ? 'warn' : 'ok', $det . ($pend ? ' — approval usually comes within a few hours; the cron re-checks automatically.' : ''));
     }
 
     // ---- 4. business profile: push OUR info onto the WhatsApp profile ----
@@ -286,7 +286,7 @@ function meta_wa_full_sync() {
     $want = array_filter([
         'about' => mb_substr(setting('app_name', 'AK Computer') . ' — Computer · CCTV · Printer · Networking, Dwarka', 0, 139),
         'address' => mb_substr(trim(($co['address'] ?? '') !== '' ? $co['address'] : 'Dwarka, Gujarat'), 0, 256),
-        'description' => mb_substr(setting('app_name', 'AK Computer') . ' - Dwarka નું વિશ્વાસુ કમ્પ્યુટર અને CCTV સ્ટોર. બધા ભાવ ઓનલાઇન: ' . base_url('') . '/ . આ નંબર પર "catalog" લખો - આખો કેટલોગ WhatsApp માં જ!', 0, 512),
+        'description' => mb_substr(setting('app_name', 'AK Computer') . ' - the trusted computer and CCTV store in Dwarka. All prices online: ' . base_url('') . '/ . On this number "catalog" send it - the whole catalogue inside WhatsApp!', 0, 512),
         'email' => trim($co['email'] ?? ''),
         'vertical' => 'RETAIL',
     ]);
@@ -296,18 +296,18 @@ function meta_wa_full_sync() {
     $same = ($cur['about'] ?? '') === $want['about'] && ($cur['address'] ?? '') === ($want['address'] ?? '')
          && ($cur['description'] ?? '') === $want['description'] && (($cur['websites'] ?? []) === $want['websites']);
     if ($same) {
-        $rowf('👤 Business Profile', 'ok', 'About / Address / Description / Website બધું sync માં જ છે.');
+        $rowf('👤 Business Profile', 'ok', 'About / Address / Description / Website are all in the sync.');
     } else {
         [$up, , $err] = meta_wa_call('POST', setting('meta_wa_phone_id') . '/whatsapp_business_profile', array_merge(['messaging_product' => 'whatsapp'], $want));
-        if ($up) $rowf('👤 Business Profile', 'ok', 'પ્રોફાઇલ અપડેટ કરી દીધી ✔ (About, Address, Description, Website)');
-        else $rowf('👤 Business Profile', 'warn', $err, 'પ્રોફાઇલ ફોટો ફક્ત WhatsApp Business app / Meta Business Suite માંથી બદલાય છે - બાકીનું અહીંથી થાય છે.');
+        if ($up) $rowf('👤 Business Profile', 'ok', 'Profile updated ✔ (About, Address, Description, Website)');
+        else $rowf('👤 Business Profile', 'warn', $err, 'The profile photo can only be changed from the WhatsApp Business app or Meta Business Suite - everything else is done here.');
     }
 
     // ---- 5. product catalog (Commerce Manager) ----
     $catId = trim(setting('meta_catalog_id', ''));
     if ($catId === '') {
-        $rowf('🛒 Product Catalog', 'skip', 'Meta Catalog ID નાખેલું નથી.',
-            'એક જ વાર: business.facebook.com/commerce → Create Catalog (E-commerce) → Settings માંથી Catalog ID કૉપી કરીને Meta કાર્ડમાં નાખો - પછી દરેક Sync માં પ્રોડક્ટ પણ આપોઆપ અપડેટ થશે. (વૈકલ્પિક: Data Feed URL ' . base_url('catalog_feed.php') . ' શેડ્યૂલ કરો.)');
+        $rowf('🛒 Product Catalog', 'skip', 'No Meta catalog ID has been entered.',
+            'Once only: business.facebook.com/commerce → Create Catalog (E-commerce) → copy the Catalog ID from Settings into the Meta card - after that every Sync updates the products too. (Optional: Data Feed URL ' . base_url('catalog_feed.php') . ' schedule it.)');
     } else {
         $items = all('SELECT i.id, i.name, i.brand, i.model, i.selling_price, i.photo, i.description FROM items i WHERE i.is_active = 1 AND i.show_on_website = 1');
         $reqs = []; $noPhoto = 0;
@@ -327,16 +327,16 @@ function meta_wa_full_sync() {
             ]];
         }
         if (!$reqs) {
-            $rowf('🛒 Product Catalog', 'warn', 'ફોટાવાળી કોઈ પ્રોડક્ટ નથી (Meta કેટલોગમાં ફોટો ફરજિયાત છે).', 'Items → AI Auto-Fill થી પ્રોડક્ટ ફોટા લગાવો, પછી ફરી Sync કરો.');
+            $rowf('🛒 Product Catalog', 'warn', 'No product has a photo (a photo is required in the Meta catalogue).', 'Add product photos with Items → AI Auto-Fill, then sync again.');
         } else {
             [$ok, , $err] = meta_wa_call('POST', $catId . '/items_batch', ['item_type' => 'PRODUCT_ITEM', 'requests' => $reqs]);
-            if ($ok) $rowf('🛒 Product Catalog', 'ok', count($reqs) . ' પ્રોડક્ટ Meta કેટલોગમાં અપડેટ થઈ' . ($noPhoto ? " ($noPhoto ફોટા વગરની skip)" : '') . '.');
-            else $rowf('🛒 Product Catalog', 'fail', $err, 'System User ને catalog_management permission + Business Settings → Data Sources → Catalogs માં આ catalog પર Assets access આપો.');
+            if ($ok) $rowf('🛒 Product Catalog', 'ok', count($reqs) . ' products updated in the Meta catalogue' . ($noPhoto ? " ($noPhoto without a photo skipped)" : '') . '.');
+            else $rowf('🛒 Product Catalog', 'fail', $err, 'Give the System User the catalog_management permission, plus Assets access on this catalog under Business Settings → Data Sources → Catalogs.');
         }
     }
 
     // ---- 6. things that need no syncing (informational) ----
-    $rowf('📚 Interactive Menus', 'ok', 'કેટલોગ/પોર્ટલ મેનુ સોફ્ટવેરમાંથી લાઈવ જ જાય છે - Meta માં કંઈ રાખવાનું નથી.');
+    $rowf('📚 Interactive Menus', 'ok', 'The catalogue and portal menus go out live from the software - nothing is kept in Meta.');
 
     set_setting('meta_sync_report', json_encode($R, JSON_UNESCAPED_UNICODE));
     set_setting('meta_sync_at', date('Y-m-d H:i:s'));

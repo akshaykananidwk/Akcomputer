@@ -27,11 +27,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'review') {
     $rvTxt = mb_substr(trim(post('comment')), 0, 1000);
     $err = '';
     if (post('website') !== '') $err = 'spam'; // honeypot - bots fill every field
-    elseif ($rvName === '' || (int)post('rating') < 1) $err = 'નામ અને રેટિંગ (સ્ટાર) બંને જરૂરી છે.';
+    elseif ($rvName === '' || (int)post('rating') < 1) $err = 'Both a name and a star rating are required.';
     else {
         try {
             if ($rvMob !== '' && val('SELECT id FROM product_reviews WHERE item_id = ? AND mobile = ?', [$it['id'], $rvMob])) {
-                $err = 'આ નંબર પરથી આ પ્રોડક્ટનો રિવ્યૂ પહેલેથી અપાયેલો છે. આભાર!';
+                $err = 'A review for this product has already been given from this number. Thank you!';
             } else {
                 $ver = 0;
                 if (strlen($rvMob) >= 10) {
@@ -42,10 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'review') {
                 }
                 q("INSERT INTO product_reviews (item_id, customer_name, mobile, rating, comment, is_verified, status) VALUES (?,?,?,?,?,?,?)",
                   [$it['id'], $rvName, $rvMob, $rvRate, $rvTxt, $ver, $ver ? 'approved' : 'pending']);
-                if (!$ver) { try { tg_notify_admins("⭐ નવો પ્રોડક્ટ રિવ્યૂ (મંજૂરી બાકી)\n{$it['name']} — $rvRate★ — $rvName\n" . mb_substr($rvTxt, 0, 200) . "\n\n" . base_url('reviews.php')); } catch (Exception $e) {} }
-                flash($ver ? '✅ આભાર! તમારો રિવ્યૂ મુકાઈ ગયો (Verified purchase).' : '✅ આભાર! તમારો રિવ્યૂ મળ્યો — ચકાસીને થોડી વારમાં દેખાશે.');
+                if (!$ver) { try { tg_notify_admins("⭐ New product review (awaiting approval)\n{$it['name']} — $rvRate★ — $rvName\n" . mb_substr($rvTxt, 0, 200) . "\n\n" . base_url('reviews.php')); } catch (Exception $e) {} }
+                flash($ver ? '✅ Thank you! Your review is published (verified purchase).' : '✅ Thank you! We have your review — it appears shortly after checking.');
             }
-        } catch (Exception $e) { $err = 'હમણાં રિવ્યૂ સેવ ન થયો — થોડી વારે ફરી પ્રયત્ન કરો.'; }
+        } catch (Exception $e) { $err = 'The review could not be saved just now — please try again shortly.'; }
     }
     if ($err !== '' && $err !== 'spam') flash($err, 'error');
     redirect(seo_product_url($it) . '#reviews');
@@ -70,7 +70,7 @@ if (!empty($_SESSION['web_account_id'])) {
 $waPct = $webAcct ? (float)$webAcct['discount_pct'] : 0;
 $dp = dealer_price($it['selling_price'], $waPct);
 $label = trim($it['name'] . ($it['brand'] ? ' - ' . trim($it['brand'] . ' ' . $it['model']) : ''));
-$desc = $it['description'] ?: ($label . ' available at ' . $app_name . ', Dwarka Gujarat. Best price, genuine product, warranty & service. કિંમત ₹' . money($dp) . ' - WhatsApp પર ઓર્ડર કરો.');
+$desc = $it['description'] ?: ($label . ' available at ' . $app_name . ', Dwarka Gujarat. Best price, genuine product, warranty & service. Price Rs ' . money($dp) . ' - order on WhatsApp.');
 $webQty = (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$it['id']]);
 $inStock = $it['item_type'] === 'service' || $webQty > 0;
 // The SAME rule the catalogue cards use, so the two pages can never disagree
@@ -184,10 +184,10 @@ body { background: var(--bg); }
     <?php if ($it['cat_name']): ?><div class="ptag"><?= e(cat_icon($it['cat_name'])) ?> <?= e($it['cat_name']) ?></div><?php endif; ?>
     <h1><?= e($it['name']) ?></h1>
     <?php if ($it['brand'] || $it['model']): ?><div class="pbrand"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></div><?php endif; ?>
-    <div class="pprice">₹<?= money($dp) ?><?php if ($webAcct): ?> <span style="font-size:13px;color:#059669;font-weight:700">👷 તમારો ભાવ</span><?php endif; ?></div>
+    <div class="pprice">₹<?= money($dp) ?><?php if ($webAcct): ?> <span style="font-size:13px;color:#059669;font-weight:700">👷 Your price</span><?php endif; ?></div>
     <div class="pstock" style="color:<?= $inStock ? '#059669' : '#dc2626' ?>">
-      <?= e($stkText) ?><?= $stkClass === 'in' ? ' — આજે જ મળે' : '' ?>
-      <?php if ($stkNote): ?><div class="muted" style="font-weight:500;font-size:12.5px"><?= e($stkNote) ?> — WhatsApp કરો</div><?php endif; ?>
+      <?= e($stkText) ?><?= $stkClass === 'in' ? ' — available today' : '' ?>
+      <?php if ($stkNote): ?><div class="muted" style="font-weight:500;font-size:12.5px"><?= e($stkNote) ?> — WhatsApp us</div><?php endif; ?>
     </div>
     <?php if ($rvN > 0): ?>
     <a href="#reviews" style="display:inline-block;margin-top:6px;text-decoration:none;color:var(--text);font-weight:700;font-size:14px">
@@ -202,13 +202,13 @@ body { background: var(--bg); }
     </div>
     <div class="chips" style="margin-top:12px">
       <a href="<?= e(seo_price_url($it)) ?>">💰 <?= e($it['name']) ?> Price</a>
-      <?php if ($it['cat_name'] && seo_slug($it['cat_name']) !== ''): ?><a href="<?= e(seo_cat_url($it['cat_name'])) ?>"><?= e(cat_icon($it['cat_name'])) ?> બધા <?= e($it['cat_name']) ?></a><?php endif; ?>
+      <?php if ($it['cat_name'] && seo_slug($it['cat_name']) !== ''): ?><a href="<?= e(seo_cat_url($it['cat_name'])) ?>"><?= e(cat_icon($it['cat_name'])) ?> All <?= e($it['cat_name']) ?></a><?php endif; ?>
       <?php if ($it['brand'] && seo_slug($it['brand']) !== ''): ?><a href="<?= e(seo_brand_url($it['brand'])) ?>">🏷️ <?= e($it['brand']) ?> Products</a><?php endif; ?>
     </div>
     <div class="pbtns">
       <a class="btn btn-block" href="<?= e(base_url('catalog.php?add=' . $it['id'])) ?>" style="background:linear-gradient(100deg,#4f46e5,#2563eb);border:0">🛒 Add to Cart</a>
       <?php if ($waShop): ?>
-      <a class="btn btn-success btn-block" href="https://wa.me/<?= e($waShop) ?>?text=<?= rawurlencode("નમસ્તે! મને આ પ્રોડક્ટ જોઈએ છે:\n" . $label . " - ₹" . money($dp) . "\n" . $purl) ?>" target="_blank" rel="noopener">📲 WhatsApp પર ઓર્ડર કરો</a>
+      <a class="btn btn-success btn-block" href="https://wa.me/<?= e($waShop) ?>?text=<?= rawurlencode("Hello! I would like this product:\n" . $label . " - ₹" . money($dp) . "\n" . $purl) ?>" target="_blank" rel="noopener">📲 Order on WhatsApp</a>
       <?php endif; ?>
     </div>
   </div>
@@ -230,9 +230,9 @@ body { background: var(--bg); }
     <?php if ($r['comment']): ?><p style="margin-top:4px;font-size:14px;line-height:1.5"><?= nl2br(e($r['comment'])) ?></p><?php endif; ?>
   </div>
   <?php endforeach; ?>
-  <?php if (!$revs): ?><p class="muted" style="margin-bottom:10px">હજી કોઈ રિવ્યૂ નથી — પહેલા બનો!</p><?php endif; ?>
+  <?php if (!$revs): ?><p class="muted" style="margin-bottom:10px">No reviews yet — be the first!</p><?php endif; ?>
   <details style="background:var(--card);border-radius:12px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.08)">
-    <summary style="cursor:pointer;font-weight:700;font-size:14.5px">✍️ તમારો રિવ્યૂ લખો / Write a review</summary>
+    <summary style="cursor:pointer;font-weight:700;font-size:14.5px">✍️ Write a review</summary>
     <form method="post" action="<?= e(base_url('product.php?id=' . $it['id'])) ?>" style="margin-top:10px;display:grid;gap:10px">
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="review">
@@ -241,10 +241,10 @@ body { background: var(--bg); }
         <div id="rvStars" style="font-size:34px;letter-spacing:5px;cursor:pointer;color:#f59e0b">☆☆☆☆☆</div>
         <input type="hidden" name="rating" id="rvRating" value="0">
       </div>
-      <input type="text" name="name" placeholder="તમારું નામ *" required maxlength="120" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)">
-      <input type="tel" name="mobile" placeholder="મોબાઈલ (ખરીદી હોય એ નંબર = ✓ Verified બેજ)" maxlength="15" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)">
-      <textarea name="comment" rows="3" maxlength="1000" placeholder="પ્રોડક્ટ કેવી લાગી?" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)"></textarea>
-      <button class="btn" type="submit" style="background:linear-gradient(100deg,#4f46e5,#2563eb);border:0">રિવ્યૂ મોકલો</button>
+      <input type="text" name="name" placeholder="Your name *" required maxlength="120" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)">
+      <input type="tel" name="mobile" placeholder="Mobile (the number you bought on = ✓ Verified badge)" maxlength="15" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)">
+      <textarea name="comment" rows="3" maxlength="1000" placeholder="How was the product?" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)"></textarea>
+      <button class="btn" type="submit" style="background:linear-gradient(100deg,#4f46e5,#2563eb);border:0">Send the review</button>
     </form>
     <script>
       (function () {
@@ -262,7 +262,7 @@ body { background: var(--bg); }
 
 <?php if ($related): ?>
 <div class="rel">
-  <h2>આવી બીજી પ્રોડક્ટ</h2>
+  <h2>Other products like this</h2>
   <div class="grid">
     <?php foreach ($related as $r): $rp = dealer_price($r['selling_price'], $waPct); ?>
     <a class="rcard" href="<?= e(seo_product_url($r)) ?>">

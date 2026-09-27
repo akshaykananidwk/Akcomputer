@@ -26,10 +26,10 @@ function tg_api($method, array $params) {
 }
 function tg_menu() {
     return json_encode(['inline_keyboard' => [
-        [['text' => '📊 આજનું વેચાણ', 'callback_data' => 'sale'], ['text' => '💰 ઉધાર/બાકી', 'callback_data' => 'baki']],
-        [['text' => '💵 કેશ + બેંક', 'callback_data' => 'cash'], ['text' => '📦 સ્ટોક શોધો', 'callback_data' => 'stockhelp']],
-        [['text' => '🌐 વેબ ઓર્ડર', 'callback_data' => 'order'], ['text' => '🛠️ રિપેર જોબ', 'callback_data' => 'repair']],
-        [['text' => '👥 સ્ટાફ વોલેટ', 'callback_data' => 'wallets'], ['text' => '📈 વિઝિટર', 'callback_data' => 'visitor']],
+        [['text' => '📊 Today sales', 'callback_data' => 'sale'], ['text' => '💰 Credit outstanding', 'callback_data' => 'baki']],
+        [['text' => '💵 Cash + bank', 'callback_data' => 'cash'], ['text' => '📦 Find stock', 'callback_data' => 'stockhelp']],
+        [['text' => '🌐 Web orders', 'callback_data' => 'order'], ['text' => '🛠️ Repair jobs', 'callback_data' => 'repair']],
+        [['text' => '👥 Staff wallet', 'callback_data' => 'wallets'], ['text' => '📈 Visitors', 'callback_data' => 'visitor']],
     ]]);
 }
 function tg_send($chatId, $text, $withMenu = true) {
@@ -57,12 +57,12 @@ if (!$staff) {
         if ($target) {
             q('UPDATE users SET telegram_chat_id = ?, tg_link_code = NULL WHERE id = ?', [$chatId, $target['id']]);
             log_activity('tg_linked', $target['name'] . " chat $chatId");
-            tg_send($chatId, "✅ *" . setting('app_name', 'AK Computer') . "*\n" . $target['name'] . ", તમારું Telegram જોડાઈ ગયું! નીચેના બટનથી આખી દુકાન ચલાવો 👇");
+            tg_send($chatId, "✅ *" . setting('app_name', 'AK Computer') . "*\n" . $target['name'] . ", your Telegram is linked! Run the whole shop from the buttons below 👇");
         } else {
-            tg_send($chatId, "❌ કોડ ખોટો છે. Settings → Telegram માં તમારો સાચો કોડ જુઓ.", false);
+            tg_send($chatId, "❌ Wrong code. Find your correct code in Settings → Telegram.", false);
         }
     } else {
-        tg_send($chatId, "🔒 આ " . setting('app_name', 'AK Computer') . " નો પ્રાઇવેટ મેનેજમેન્ટ બોટ છે.\nજોડાવા માટે લખો:\n/link તમારો-કોડ\n(કોડ સોફ્ટવેરમાં Settings → WhatsApp/Telegram માં દેખાય છે)", false);
+        tg_send($chatId, "🔒 This " . setting('app_name', 'AK Computer') . " is a private management bot.\nTo join, send:\n/link your-code\n(the code is shown in the software under Settings → WhatsApp/Telegram)", false);
     }
     die(json_encode(['ok' => true]));
 }
@@ -70,11 +70,11 @@ if (!$staff) {
 // ---------- linked staff: buttons + free text ----------
 $q = $data !== '' ? $data : $text;
 if ($q === '/start' || $q === 'menu' || $q === '/menu') {
-    tg_send($chatId, "🙏 બોલો " . $staff['name'] . "! શું જોવું છે?");
+    tg_send($chatId, "🙏 Tell us " . $staff['name'] . "! What would you like to see?");
     die(json_encode(['ok' => true]));
 }
 if ($q === 'stockhelp') {
-    tg_send($chatId, "📦 સ્ટોક જોવા લખો:\n`stock કેમેરા`\n(કોઈપણ આઇટમનું નામ)");
+    tg_send($chatId, "📦 To see stock, send:\n`stock camera`\n(any item name)");
     die(json_encode(['ok' => true]));
 }
 if ($q === 'wallets') {
@@ -82,13 +82,13 @@ if ($q === 'wallets') {
     $perms = array_merge(json_decode((string)val('SELECT permissions FROM roles WHERE id = ?', [$staff['role_id']]), true) ?: [],
                          json_decode((string)$staff['permissions'], true) ?: []);
     if (in_array('*', $perms, true) || in_array('cashbank.viewall', $perms, true)) {
-        $out = "👥 *સ્ટાફ વોલેટ*";
+        $out = "👥 *Staff wallet*";
         foreach (all('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name') as $s2) {
             $out .= "\n- " . $s2['name'] . ": ₹" . money(staff_cash($s2['id']));
         }
-        $out .= "\n*કુલ કેશ: ₹" . money(total_cash_in_hand()) . "*";
+        $out .= "\n*Total cash: Rs " . money(total_cash_in_hand()) . "*";
     } else {
-        $out = "💵 તમારી કેશ: *₹" . money(staff_cash($staff['id'])) . "*";
+        $out = "💵 Your cash: *Rs " . money(staff_cash($staff['id'])) . "*";
     }
     tg_send($chatId, $out);
     die(json_encode(['ok' => true]));
@@ -101,7 +101,7 @@ $map = ['sale' => 'sale', 'baki' => 'baki', 'cash' => 'cash', 'order' => 'order'
 $question = $map[$q] ?? $q;
 $usedAi = 0;
 $reply = wa_bot_owner_answer($question, $usedAi);
-if ($reply === null) $reply = "સમજાયું નહીં 🤔 — નીચેના બટન વાપરો કે 'help' લખો.";
+if ($reply === null) $reply = "I did not understand 🤔 — use the buttons below, or 'help' Send it.";
 try {
     q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,0,?,0,?,?)',
       ['tg:' . $chatId, mb_substr($question, 0, 500), mb_substr($reply, 0, 1500), $usedAi, 'owner']);

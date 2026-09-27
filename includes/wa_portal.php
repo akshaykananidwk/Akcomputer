@@ -71,7 +71,7 @@ function wa_portal_bill_text($s) {
         . "\n⬇️ PDF: " . base_url('sale_pdf.php?id=' . $s['id'] . '&token=' . $s['share_token'])
         // a bill with something still on it gets the pay link too, for the
         // same $due the line above quotes
-        . ($due > 0.009 ? "\n💳 ચૂકવો: " . invoice_pay_url($s) : '');
+        . ($due > 0.009 ? "\n💳 Pay: " . invoice_pay_url($s) : '');
 }
 
 /** Direct lookup: an invoice number or a serial number typed in the chat.
@@ -118,7 +118,7 @@ function wa_portal_ticket_create($mobile, $text) {
     $tid = insert_id();
     q('UPDATE tickets SET ticket_no = ? WHERE id = ?', [doc_no('TKT', $tid), $tid]);
     try {
-        tg_notify_admins("🎫 નવી WhatsApp ફરિયાદ " . doc_no('TKT', $tid) . "\nFrom: " . ($party['name'] ?? '') . " +$mobile\n" . mb_substr($text, 0, 300)
+        tg_notify_admins("🎫 New WhatsApp complaint " . doc_no('TKT', $tid) . "\nFrom: " . ($party['name'] ?? '') . " +$mobile\n" . mb_substr($text, 0, 300)
             . "\n\n" . base_url('tickets.php?action=view&id=' . $tid));
     } catch (Exception $e) { /* telegram optional */ }
     return wa_t('ticket_done', ['no' => doc_no('TKT', $tid)]);
@@ -253,7 +253,7 @@ function wa_portal_route($mobile, $id) {
             send_whatsapp($mobile, wa_t('pay_link', ['shop' => $shop, 'amt' => money($due), 'link' => $link]));
             return 'pay-link';
         }
-        try { tg_notify_admins("💳 પેમેન્ટ કરવા માંગે છે: +$mobile (₹" . money($due) . ") — ઓનલાઇન લિંક બની નહીં, સંપર્ક કરો."); } catch (Exception $e) {}
+        try { tg_notify_admins("💳 Wants to pay: +$mobile (Rs " . money($due) . ") — no online link could be made, please get in touch."); } catch (Exception $e) {}
         send_whatsapp($mobile, wa_t('pay_manual', ['shop' => $shop, 'amt' => money($due)]));
         return 'pay-manual';
     }
@@ -360,7 +360,7 @@ function wa_portal_route($mobile, $id) {
         $acc = $m[1] === 'acc';
         try { q('UPDATE estimates SET status = ? WHERE id = ?', [$acc ? 'accepted' : 'rejected', $qt['id']]); }
         catch (Exception $e) { /* pre-v48 enum - staff acts on the Telegram ping */ }
-        try { tg_notify_admins(($acc ? '✅ કોટેશન મંજૂર' : '❌ કોટેશન નામંજૂર') . ": {$qt['estimate_no']} (₹" . money($qt['total']) . ") — {$qt['customer_name']} +$mobile"); } catch (Exception $e) {}
+        try { tg_notify_admins(($acc ? '✅ Quotation approved' : '❌ Quotation rejected') . ": {$qt['estimate_no']} (₹" . money($qt['total']) . ") — {$qt['customer_name']} +$mobile"); } catch (Exception $e) {}
         send_whatsapp($mobile, wa_t($acc ? 'q_acc_done' : 'q_rej_done', ['no' => $qt['estimate_no']]));
         return $acc ? 'quote-accepted' : 'quote-rejected';
     }
@@ -387,7 +387,7 @@ function wa_portal_route($mobile, $id) {
     // ---------- talk to staff ----------
     if ($id === 'portal:staff') {
         try {
-            tg_notify_admins("📞 ગ્રાહક વાત કરવા માંગે છે!\n" . ($party ? $party['name'] . ' ' : '') . "+$mobile\n\nજવાબ આપવા: " . base_url('wa_inbox.php?m=' . $mobile));
+            tg_notify_admins("📞 A customer wants to talk!\n" . ($party ? $party['name'] . ' ' : '') . "+$mobile\n\nTo reply: " . base_url('wa_inbox.php?m=' . $mobile));
         } catch (Exception $e) {}
         send_whatsapp($mobile, wa_t('staff_ack', ['phone' => setting('wa_shop_number') ?: '']));
         return 'staff';

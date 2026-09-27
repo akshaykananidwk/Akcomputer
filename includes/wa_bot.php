@@ -121,7 +121,7 @@ function wa_catalog_want($t, $st, $mobile) {
     return wa_catalog_kw($t) ? 'cats:0' : null;
 }
 
-/** "catalog" / "menu" / "ભાવ" as the WHOLE message = open the menu. */
+/** "catalog" / "menu" / "Price" as the WHOLE message = open the menu. */
 function wa_catalog_kw($t) {
     return (bool)preg_match('/^(catalog|catalogue|catlog|કેટલોગ|કૅટલોગ|menu|મેનુ|મેન્યુ|list|લિસ્ટ|price\s?list|rate\s?list|પ્રાઇસ\s?લિસ્ટ|ભાવ|બધા\s?ભાવ)[\s?.!)]*$/iu', $t);
 }
@@ -295,7 +295,7 @@ function wa_bot_send_home($mobile) {
     return send_whatsapp($mobile, $hello . wa_t('welcome_opts')) ? 'home-text' : 'send-failed';
 }
 
-/** "મારે 4 કેમેરા લગાડવા છે" (પછી IP/HD) -> stock-based mini quotation. */
+/** "I need 4 કેમેરા લગાડવા છે" (પછી IP/HD) -> stock-based mini quotation. */
 function wa_bot_camera_quote($qty, $type) {
     $shop = setting('app_name', 'AK Computer');
     $qty = max(1, min(64, (int)$qty));
@@ -459,7 +459,7 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
                 $reply = wa_t('cam_retry');
             }
         }
-        // 2) "મારે 4 કેમેરા લગાડવા છે" -> first ASK which type, then quote
+        // 2) "I need 4 કેમેરા લગાડવા છે" -> first ASK which type, then quote
         elseif (preg_match('/(\d+)\s*(camera|cam|કેમેરા|કૅમેરા|कैमरा)/iu', $t, $cm)
                 || (preg_match('/(camera|કેમેરા|कैमरा)/iu', $t) && preg_match('/lagad|લગાડ|લગાવ|फिट|install|setup|જોઈએ|joie|chahiye/iu', $t))) {
             $qn = isset($cm[1]) ? (int)$cm[1] : 4;
@@ -568,17 +568,17 @@ function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
             q('INSERT INTO expenses (exp_date, category, amount, mode, notes, location_id, created_by) VALUES (CURDATE(), ?, ?, \'cash\', ?, ?, ?)',
               ['General', $amt, $note, (int)($staffUser['location_id'] ?: 1), (int)$staffUser['id']]);
             log_activity('expense_add_wa', $staffUser['name'] . ' ₹' . $amt . ' ' . $note);
-            return "✅ ખર્ચ નોંધ્યો: *₹" . money($amt) . "* – " . $note . " (Cash, " . $staffUser['name'] . ")";
+            return "✅ Expense recorded: *Rs " . money($amt) . "* – " . $note . " (Cash, " . $staffUser['name'] . ")";
         }
     }
 
     if ($has('help', 'મદદ', 'menu')) {
-        return "*$shop bot* 🤖 તમે પૂછી શકો:\n- આજનું વેચાણ / sale\n- ઉધાર / baki\n- કેશ / cash\n- stock <આઇટમ નામ>\n- ઓર્ડર / order\n- રિપેર / repair\n- વિઝિટર / visitors\nબીજું કંઈ પણ લખશો તો AI ટૂંકો જવાબ આપશે.";
+        return "*$shop bot* 🤖 You can ask for:\n- today sales\n- credit outstanding\n- cash\n- stock <Item name>\n- orders\n- repairs\n- visitors\nType anything else and the AI gives a short answer.";
     }
     if ($has('sale', 'sales', 'વેચાણ', 'vechan')) {
         $td = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t, COALESCE(SUM(total-paid),0) due FROM sales WHERE is_cancelled = 0 AND sale_date = CURDATE()");
         $mo = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date >= DATE_FORMAT(NOW(), '%Y-%m-01')");
-        return "📊 *$shop*\nઆજે: *₹" . money($td['t']) . "* ({$td['c']} બિલ, બાકી ₹" . money($td['due']) . ")\nઆ મહિને: *₹" . money($mo) . "*";
+        return "📊 *$shop*\nToday: *Rs " . money($td['t']) . "* ({$td['c']} bills, due Rs " . money($td['due']) . ")\nThis month: *Rs " . money($mo) . "*";
     }
     if ($has('baki', 'udhar', 'ઉધાર', 'બાકી', 'લેણા', 'due', 'receive')) {
         $recv = 0; $pay = 0;
@@ -586,20 +586,20 @@ function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
         foreach (all("SELECT $bx AS bal FROM parties p WHERE p.is_active = 1 OR ABS($bx) > 0.009") as $b) {
             if ($b['bal'] > 0.009) $recv += $b['bal']; elseif ($b['bal'] < -0.009) $pay += -$b['bal'];
         }
-        return "💰 *$shop*\nલેવાના (To Receive): *₹" . money($recv) . "*\nદેવાના (To Pay): *₹" . money($pay) . "*";
+        return "💰 *$shop*\nTo receive: *Rs " . money($recv) . "*\nTo pay: *Rs " . money($pay) . "*";
     }
     if ($has('cash', 'કેશ', 'રોકડ', 'bank', 'બેંક')) {
         $cash = function_exists('total_cash_in_hand') ? total_cash_in_hand() : 0;
-        $out = "💵 *$shop*\nકુલ કેશ: *₹" . money($cash) . "*";
+        $out = "💵 *$shop*\nTotal cash: *Rs " . money($cash) . "*";
         foreach (all('SELECT * FROM bank_accounts WHERE is_active = 1') as $b) {
             $out .= "\n🏦 " . $b['account_name'] . ": ₹" . money(bank_account_balance($b['id']));
         }
         return $out;
     }
     if (preg_match('/^\s*stock\s+(.+)/iu', $text, $m) || $has('સ્ટોક')) {
-        $q2 = isset($m[1]) ? $m[1] : trim(preg_replace('/સ્ટોક/u', '', $text));
+        $q2 = isset($m[1]) ? $m[1] : trim(preg_replace('/Stock/u', '', $text));
         $found = $q2 !== '' ? wa_bot_search($q2) : [];
-        if (!$found) return "🔍 \"$q2\" જેવી કોઈ આઇટમ ન મળી. 'stock <નામ>' લખો.";
+        if (!$found) return "🔍 \"$q2\" No item like that was found. 'stock <Name>' Send it.";
         $out = "📦 *Stock*";
         foreach ($found as $f) {
             $qty = (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$f['id']]);
@@ -610,24 +610,24 @@ function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
     if ($has('order', 'ઓર્ડર')) {
         $new = all("SELECT order_no, customer_name, total FROM web_orders WHERE status = 'new' ORDER BY id DESC LIMIT 3");
         $c = (int)val("SELECT COUNT(*) FROM web_orders WHERE status = 'new'");
-        $out = "🌐 *Website Orders*\nનવા ઓર્ડર: *$c*";
+        $out = "🌐 *Website orders*\nNew orders: *$c*";
         foreach ($new as $o) $out .= "\n- {$o['order_no']} {$o['customer_name']} ₹" . money($o['total']);
         return $out;
     }
     if ($has('repair', 'રિપેર', 'રીપેર')) {
         $c = (int)val("SELECT COUNT(*) FROM repairs WHERE status NOT IN ('delivered','returned_unrepaired')");
-        return "🛠️ ચાલુ રિપેર જોબ: *$c*";
+        return "🛠️ Open repair jobs: *$c*";
     }
     if ($has('visitor', 'વિઝિટર', 'views', 'વ્યુ')) {
         $v = row('SELECT COUNT(*) u, COALESCE(SUM(views),0) v FROM site_visits WHERE visit_date = CURDATE()');
-        return "🌐 આજે વેબસાઇટ પર: *" . (int)$v['u'] . "* મુલાકાતી (" . (int)$v['v'] . " views)";
+        return "🌐 On the website today: *" . (int)$v['u'] . "* visitors (" . (int)$v['v'] . " views)";
     }
     if (wa_bot_is_greeting($text)) {
-        return "🙏 બોલો શેઠ! 'help' લખો એટલે બધા સવાલોની યાદી મળશે.";
+        return "🙏 At your service! 'help' send it for the list of all questions.";
     }
 
     // free intents exhausted - one compact AI call with a tiny shop snapshot
-    if (!wa_bot_ai_allowed()) return "🤖 આ મહિનાની AI મર્યાદા પતી ગઈ. 'help' લખો — સીધા સવાલ (વેચાણ/કેશ/સ્ટોક...) મફતમાં ચાલે જ છે.";
+    if (!wa_bot_ai_allowed()) return "🤖 This month AI limit is used up. 'help' send it — direct questions (sales, cash, stock...) work free anyway.";
     $td = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date = CURDATE()");
     $mo = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date >= DATE_FORMAT(NOW(), '%Y-%m-01')");
     $cash = function_exists('total_cash_in_hand') ? total_cash_in_hand() : 0;

@@ -58,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wregister') {
     } else {
         q('INSERT INTO web_accounts (name, mobile, password_hash, discount_pct, is_active, self_registered) VALUES (?,?,?,0,0,1)',
           [$rname, $rmobile, password_hash(post('rpassword'), PASSWORD_DEFAULT)]);
-        if ($waShop) send_whatsapp($waShop, "🆕 *Dealer registration*\n\n$rname ($rmobile) એ વેબસાઇટ પર ડીલર એકાઉન્ટ માંગ્યું છે.\nApprove: " . base_url('web_customers.php'));
+        if ($waShop) send_whatsapp($waShop, "🆕 *Dealer registration*\n\n$rname ($rmobile) has asked for a dealer account on the website.\nApprove: " . base_url('web_customers.php'));
         $wregDone = true;
     }
 }
@@ -106,8 +106,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'order') {
                 q('INSERT INTO referral_earnings (referrer_id, web_order_id, order_no, order_total, commission) VALUES (?,?,?,?,?)',
                   [$referrer['id'], $oid, doc_no('WEB', $oid), $total, $comm]);
                 if ($referrer['mobile']) {
-                    send_whatsapp($referrer['mobile'], "🎉 *" . setting('app_name', 'AK Computer') . "*\n\nતમારી લિંકથી નવો ઓર્ડર આવ્યો!\nOrder: " . doc_no('WEB', $oid) . " · ₹" . money($total) .
-                        "\nતમારું કમિશન: *₹" . money($comm) . "* (ઓર્ડર પૂરો થાય એટલે જમા)\n\nસ્ટેટસ: " . base_url('referral.php?t=' . $referrer['token']));
+                    send_whatsapp($referrer['mobile'], "🎉 *" . setting('app_name', 'AK Computer') . "*\n\nA new order has come through your link!\nOrder: " . doc_no('WEB', $oid) . " · ₹" . money($total) .
+                        "\nYour commission: *Rs " . money($comm) . "* (credited once the order is completed)\n\nStatus: " . base_url('referral.php?t=' . $referrer['token']));
                 }
             }
             if ($waShop) {
@@ -142,7 +142,7 @@ $showQty = web_show_qty();
 $cats = [];
 foreach ($items as $it) { $cn = $it['cat_name'] ?: ''; if ($cn !== '') $cats[$cn] = ($cats[$cn] ?? 0) + 1; }
 ksort($cats);
-$metaDesc = $app_name . ' - દ્વારકા, ગુજરાતનો ભરોસાપાત્ર કમ્પ્યુટર અને CCTV સ્ટોર. Computers, Laptops, CCTV Cameras, Printers, Accessories & Repairs in Dwarka, Gujarat. ' . count($items) . '+ products online - order on WhatsApp.';
+$metaDesc = $app_name . ' - the trusted computer and CCTV store in Dwarka, Gujarat. Computers, Laptops, CCTV Cameras, Printers, Accessories & Repairs in Dwarka, Gujarat. ' . count($items) . '+ products online - order on WhatsApp.';
 
 // ---------- premium homepage sections ----------
 // All computed from data the shop already has - nothing extra to maintain.
@@ -170,9 +170,9 @@ $dId = (int)setting('store_deal_item');
 if ($dId && isset($byId[$dId]) && ($dealEnds === '' || strtotime($dealEnds) > time())) $deal = $byId[$dId];
 $bannerLines = trim(setting('store_banners', ''));
 if ($bannerLines === '') {
-    $bannerLines = "દ્વારકાની પોતાની Computer & CCTV દુકાન 🛍️|Genuine products · Warranty · ઓર્ડર સીધો WhatsApp પર|🖥️|#4f46e5|#06b6d4|\n"
-        . "CCTV કેમેરા ઇન્સ્ટોલેશન|HD & IP કેમેરા · ફ્રી સાઇટ વિઝિટ — આજે જ પૂછો!|📹|#059669|#10b981|" . seo_service_url('cctv-installation') . "\n"
-        . "Laptop & Printer રિપેર|Same-day સર્વિસ · ઓરિજિનલ પાર્ટ્સ|🛠️|#d97706|#f59e0b|" . seo_service_url('laptop-repair');
+    $bannerLines = "Dwarka own computer &amp; CCTV shop 🛍️|Genuine products · Warranty · Order straight on WhatsApp|🖥️|#4f46e5|#06b6d4|\n"
+        . "CCTV camera installation|HD &amp; IP cameras · free site visit — ask today!|📹|#059669|#10b981|" . seo_service_url('cctv-installation') . "\n"
+        . "Laptop &amp; printer repair|Same-day service · genuine parts|🛠️|#d97706|#f59e0b|" . seo_service_url('laptop-repair');
 }
 $banners = [];
 foreach (explode("\n", $bannerLines) as $ln) {
@@ -180,21 +180,21 @@ foreach (explode("\n", $bannerLines) as $ln) {
     if (($pp[0] ?? '') === '') continue;
     $banners[] = ['t' => $pp[0], 's' => $pp[1] ?? '', 'e' => $pp[2] ?? '🛍️', 'c1' => $pp[3] ?? '#4f46e5', 'c2' => $pp[4] ?? '#06b6d4', 'l' => $pp[5] ?? ''];
 }
-$announce = setting('store_announce', '🚚 Dwarka-માં ઝડપી ડિલિવરી · ✅ Genuine Products · 🛡️ Warranty સાથે · 📞 ઓર્ડર સીધો WhatsApp પર');
+$announce = setting('store_announce', '🚚 Fast delivery in Dwarka · ✅ Genuine products · 🛡️ With warranty · 📞 Order straight on WhatsApp');
 $faqLines = trim(setting('store_faqs', ''));
 if ($faqLines === '') {
-    $faqLines = "ઓર્ડર કેવી રીતે થાય?|પ્રોડક્ટ પર Add દબાવી, નીચે Place Order કરો — નામ/મોબાઈલ નાખો એટલે અમને WhatsApp પર ઓર્ડર મળી જાય, અમે તરત કન્ફર્મ કરીએ.\n"
-        . "ડિલિવરી ક્યાં થાય છે?|દ્વારકા અને આજુબાજુના વિસ્તારમાં. મોટા ઓર્ડરમાં ઇન્સ્ટોલેશન સાથે.\n"
-        . "વોરંટી મળે છે?|હા — બધી પ્રોડક્ટ genuine, કંપની વોરંટી સાથે. બિલ અને વોરંટી WhatsApp પર જ મળે છે.\n"
-        . "CCTV ઇન્સ્ટોલેશન કરો છો?|હા, HD અને IP બન્ને. ફ્રી સાઇટ વિઝિટ માટે WhatsApp કરો.";
+    $faqLines = "How do I order?|Press Add on a product, then Place Order below — enter your name and mobile and the order reaches us on WhatsApp; we confirm it right away.\n"
+        . "Where do you deliver?|In Dwarka and nearby. Large orders come with installation.\n"
+        . "Is there a warranty?|Yes — every product is genuine, with the company warranty. The bill and warranty come to you on WhatsApp.\n"
+        . "Do you install CCTV?|Yes, both HD and IP. WhatsApp us for a free site visit.";
 }
 $faqs = [];
 foreach (explode("\n", $faqLines) as $ln) { $pp = explode('|', $ln, 2); if (trim($pp[0] ?? '') !== '' && trim($pp[1] ?? '') !== '') $faqs[] = [trim($pp[0]), trim($pp[1])]; }
 $testiLines = trim(setting('store_testimonials', ''));
 if ($testiLines === '') {
-    $testiLines = "રમેશભાઈ, દ્વારકા|CCTV કેમેરા ફિટિંગ એક જ દિવસમાં, કામ એકદમ ચોખ્ખું. મોબાઈલમાં લાઈવ જોવા મળે છે!\n"
-        . "હિરેનભાઈ (હોટેલ)|હોટેલ માટે આખું networking + કેમેરા સેટઅપ કરાવ્યું. ભાવ પણ વ્યાજબી, સર્વિસ ફાસ્ટ.\n"
-        . "કિરણબેન|લેપટોપ રિપેર same-day થઈ ગયું. WhatsApp પર બિલ અને વોરંટી પણ મળી ગઈ.";
+    $testiLines = "Ramesh, Dwarka|CCTV cameras fitted in a single day, and the work was spotless. I can watch live on my phone!\n"
+        . "Hiren (hotel)|Had the whole networking and camera setup done for the hotel. Fair price and fast service.\n"
+        . "Kiran|The laptop was repaired the same day. The bill and warranty came on WhatsApp too.";
 }
 $testis = [];
 foreach (explode("\n", $testiLines) as $ln) { $pp = explode('|', $ln, 2); if (trim($pp[0] ?? '') !== '') $testis[] = [trim($pp[0]), trim($pp[1] ?? '')]; }
@@ -240,7 +240,7 @@ function pcard($it, $waPct, array $stockMap = [], $showQty = true) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= e($app_name) ?> — Computer &amp; CCTV Store, Dwarka Gujarat | કમ્પ્યુટર · CCTV કેમેરા · લેપટોપ</title>
+<title><?= e($app_name) ?> — Computer &amp; CCTV Store, Dwarka Gujarat | Computers · CCTV cameras · Laptops</title>
 <meta name="description" content="<?= e($metaDesc) ?>">
 <meta name="keywords" content="computer shop dwarka, cctv camera dwarka, laptop dwarka gujarat, કમ્પ્યુટર દ્વારકા, સીસીટીવી કેમેરા, લેપટોપ, printer, computer repair dwarka, <?= e(implode(', ', array_keys($cats))) ?>">
 <link rel="canonical" href="<?= e(base_url('') . '/') ?>">
@@ -444,7 +444,7 @@ body { padding-bottom: 90px; background: var(--bg); }
 
 <header class="shead">
   <a class="logo" href="catalog.php" style="color:#fff;text-decoration:none">🖥️ <?= e($app_name) ?></a>
-  <div class="search"><input type="text" id="cFilter" placeholder="🔍 Search products… (કેમેરા, લેપટોપ, માઉસ…)"></div>
+  <div class="search"><input type="text" id="cFilter" placeholder="🔍 Search products… (camera, laptop, mouse…)"></div>
   <select id="cSort">
     <option value="">↕️ Sort</option>
     <option value="price_asc">₹ Low → High</option>
@@ -470,7 +470,7 @@ body { padding-bottom: 90px; background: var(--bg); }
 
 <?php if ($webAcct): ?>
 <div class="dealer-bar">
-  <span>👷 <strong><?= e($webAcct['name']) ?></strong> — તમારો સ્પેશિયલ ભાવ ચાલુ છે ✔ (your special prices are ON)</span>
+  <span>👷 <strong><?= e($webAcct['name']) ?></strong> — your special prices are ON ✔</span>
   <a class="hbtn" href="catalog.php?wlogout=1">Logout</a>
 </div>
 <?php endif; ?>
@@ -478,12 +478,12 @@ body { padding-bottom: 90px; background: var(--bg); }
 <?php if (!$webAcct && (get('dlogin') === '1' || !empty($wloginError) || get('dregister') === '1' || !empty($wregError) || $wregDone)): ?>
 <div class="dlg-card">
   <?php if ($wregDone): ?>
-    <h3>✅ Registration મળી ગયું!</h3>
-    <p class="muted mt">દુકાન તમારું એકાઉન્ટ મંજૂર કરશે એટલે તમને WhatsApp આવશે. પછી લોગિન કરો એટલે તમારો સ્પેશિયલ ભાવ દેખાશે.</p>
-    <a class="btn btn-block mt" href="catalog.php">← Store પર પાછા જાઓ</a>
+    <h3>✅ Registration received!</h3>
+    <p class="muted mt">You will get a WhatsApp once the shop approves your account. Log in after that and your special price will show.</p>
+    <a class="btn btn-block mt" href="catalog.php">← Back to the store</a>
   <?php elseif (get('dregister') === '1' || !empty($wregError)): ?>
     <h3>📝 Dealer Registration</h3>
-    <p class="muted" style="font-size:12.5px;margin-top:4px">ઇલેક્ટ્રિશિયન / રિસેલર છો? રજિસ્ટર કરો — દુકાન મંજૂર કરે એટલે તમને તમારો સ્પેશિયલ ભાવ દેખાવા લાગશે.</p>
+    <p class="muted" style="font-size:12.5px;margin-top:4px">An electrician or reseller? Register — once the shop approves you, your special price starts showing.</p>
     <?php if (!empty($wregError)): ?><p style="color:#dc2626;margin-top:6px"><?= e($wregError) ?></p><?php endif; ?>
     <form method="post" class="mt">
       <?= csrf_field() ?>
@@ -503,7 +503,7 @@ body { padding-bottom: 90px; background: var(--bg); }
       <div class="field"><label>Mobile</label><input type="tel" name="wmobile" required></div>
       <div class="field"><label>Password</label><input type="password" name="wpassword" required></div>
       <button class="btn btn-block" type="submit">Login</button>
-      <p class="muted mt" style="text-align:center;font-size:12.5px">નવા ડીલર છો? <a href="catalog.php?dregister=1">Register કરો</a> · <a href="catalog.php">Cancel</a></p>
+      <p class="muted mt" style="text-align:center;font-size:12.5px">New dealer? <a href="catalog.php?dregister=1">Register</a> · <a href="catalog.php">Cancel</a></p>
     </form>
   <?php endif; ?>
 </div>
@@ -540,7 +540,7 @@ body { padding-bottom: 90px; background: var(--bg); }
       <h2><?= e($deal['name']) ?></h2>
       <div class="dealPrice">₹<?= money($ddp) ?></div>
       <?php if ($dealEnds !== ''): ?><div class="countdown" data-ends="<?= e(date('c', strtotime($dealEnds))) ?>" id="dealCd"></div><?php endif; ?>
-      <button type="button" class="btn dealBtn buybtn" data-id="<?= (int)$deal['id'] ?>">⚡ અત્યારે જ લો</button>
+      <button type="button" class="btn dealBtn buybtn" data-id="<?= (int)$deal['id'] ?>">⚡ Get it now</button>
     </div>
     <?php if ($deal['photo']): ?><img src="<?= e($deal['photo']) ?>" alt="<?= e($deal['name']) ?>" loading="lazy"><?php else: ?><div class="dealEmoji"><?= e(cat_icon($deal['cat_name'] ?? '')) ?></div><?php endif; ?>
   </div>
@@ -590,9 +590,9 @@ if (!isset($catGroups)) {
       <button type="button" class="md-close" id="mdClose">✕</button>
     </div>
     <?php if ($webAcct): ?>
-    <a class="md-login" href="catalog.php?wlogout=1">👷 <?= e($webAcct['name']) ?><small>સ્પેશિયલ ભાવ ચાલુ · Logout કરવા ટચ કરો</small></a>
+    <a class="md-login" href="catalog.php?wlogout=1">👷 <?= e($webAcct['name']) ?><small>Special prices on · tap to log out</small></a>
     <?php else: ?>
-    <a class="md-login" href="catalog.php?dlogin=1">👤 Login / Register<small>Dealer ભાવ, ઓર્ડર અને વધુ માટે</small></a>
+    <a class="md-login" href="catalog.php?dlogin=1">👤 Login / Register<small>For dealer prices, orders and more</small></a>
     <?php endif; ?>
   </div>
   <div class="md-tiles">
@@ -610,7 +610,7 @@ if (!isset($catGroups)) {
   <?php endforeach; else: ?>
   <button type="button" class="md-parent" data-mdg="<?= $gi ?>"><span class="mic"><?= e(cat_icon($parent)) ?></span><?= e($parent) ?><span class="arr">▾</span></button>
   <div class="md-kids" data-mdk="<?= $gi ?>">
-    <button type="button" class="md-kid md-kidbtn" data-mdcats="<?= e(json_encode(array_keys($kids), JSON_UNESCAPED_UNICODE)) ?>">🗂️ બધું (<?= array_sum($kids) ?>)</button>
+    <button type="button" class="md-kid md-kidbtn" data-mdcats="<?= e(json_encode(array_keys($kids), JSON_UNESCAPED_UNICODE)) ?>">🗂️ Everything (<?= array_sum($kids) ?>)</button>
     <?php foreach ($kids as $cn => $cnt): ?>
     <button type="button" class="md-kid md-kidbtn" data-mdcat="<?= e($cn) ?>"><?= e(cat_icon($cn)) ?> <?= e($cn) ?> (<?= $cnt ?>)</button>
     <?php endforeach; ?>
@@ -663,7 +663,7 @@ if (!isset($catGroups)) {
 
   <?php if ($homeView): ?>
   <?php if ($testis): ?>
-  <section class="secWrap"><h2 class="sec-h"><span>💬</span> ગ્રાહકો શું કહે છે</h2>
+  <section class="secWrap"><h2 class="sec-h"><span>💬</span> What customers say</h2>
     <div class="testiGrid">
       <?php foreach ($testis as $ts): ?>
       <div class="testi"><div class="stars">★★★★★</div><p>"<?= e($ts[1]) ?>"</p><div class="tname">— <?= e($ts[0]) ?></div></div>
@@ -672,7 +672,7 @@ if (!isset($catGroups)) {
   </section>
   <?php endif; ?>
   <?php if ($faqs): ?>
-  <section class="secWrap"><h2 class="sec-h"><span>❓</span> FAQ — વારંવાર પુછાતા સવાલ</h2>
+  <section class="secWrap"><h2 class="sec-h"><span>❓</span> FAQ — frequently asked questions</h2>
     <div class="faqWrap">
       <?php foreach ($faqs as $fq): ?>
       <details class="faq"><summary><?= e($fq[0]) ?></summary><p><?= e($fq[1]) ?></p></details>
@@ -683,9 +683,9 @@ if (!isset($catGroups)) {
   <?php endif; ?>
   <?php if ($waShop): ?>
   <section class="ctaBand">
-    <h2>📲 ભાવ પૂછવો છે? WhatsApp પર "catalog" લખો!</h2>
-    <p>આખો કેટલોગ, ભાવ, ઓર્ડર અને તમારું એકાઉન્ટ — બધું WhatsApp માં જ.</p>
-    <a class="btn ctaBtn" href="https://wa.me/<?= e($waShop) ?>?text=catalog" target="_blank" rel="noopener">💬 WhatsApp ખોલો</a>
+    <h2>📲 Want a price? On WhatsApp "catalog" Send it!</h2>
+    <p>The whole catalogue, prices, orders and your account — all inside WhatsApp.</p>
+    <a class="btn ctaBtn" href="https://wa.me/<?= e($waShop) ?>?text=catalog" target="_blank" rel="noopener">💬 Open WhatsApp</a>
   </section>
   <?php endif; ?>
   <?php endif; ?>
@@ -722,11 +722,11 @@ if (!isset($catGroups)) {
 
 <footer class="sfoot">
   <p><strong>🖥️ <?= e($app_name) ?></strong> — Devbhoomi Dwarka, Gujarat</p>
-  <p class="muted mt">Computer શોપ · CCTV Camera installation · Laptop · Printer · Repairs — દ્વારકા અને આજુબાજુના વિસ્તારમાં સર્વિસ</p>
+  <p class="muted mt">Computer shop · CCTV camera installation · Laptop · Printer · Repairs — service in Dwarka and nearby</p>
   <p class="mt">
     <?php if ($waShop): ?><a class="btn btn-sm btn-wa" href="https://wa.me/<?= e($waShop) ?>" target="_blank" rel="noopener">📲 WhatsApp us</a><?php endif; ?>
     <a class="btn btn-sm btn-outline" href="referral.php">💰 Refer &amp; Earn</a>
-    <?php if (!$webAcct): ?><a class="btn btn-sm btn-outline" href="catalog.php?dregister=1">📝 Dealer બનો</a><?php endif; ?>
+    <?php if (!$webAcct): ?><a class="btn btn-sm btn-outline" href="catalog.php?dregister=1">📝 Become a dealer</a><?php endif; ?>
   </p>
   <?php if (!current_user()): ?><p class="muted mt" style="font-size:12px"><a href="login.php" style="color:inherit">Staff Login</a></p><?php endif; ?>
   <?php if (current_user() && can('items.edit')): $hidden = (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 0'); ?>
@@ -870,8 +870,8 @@ paintWish();
   function tick() {
     var left = Math.max(0, Math.floor((ends - Date.now()) / 1000));
     var h = Math.floor(left / 3600), m = Math.floor(left % 3600 / 60), sec = left % 60;
-    cd.textContent = '⏰ ' + h + 'h ' + ('0' + m).slice(-2) + 'm ' + ('0' + sec).slice(-2) + 's બાકી';
-    if (left <= 0) cd.textContent = '⏰ Deal પૂરી!';
+    cd.textContent = '⏰ ' + h + 'h ' + ('0' + m).slice(-2) + 'm ' + ('0' + sec).slice(-2) + 's left';
+    if (left <= 0) cd.textContent = '⏰ Deal over!';
   }
   tick(); setInterval(tick, 1000);
 })();

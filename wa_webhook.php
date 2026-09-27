@@ -123,8 +123,8 @@ $isStaffSender = (bool)row("SELECT id FROM users WHERE is_active = 1 AND mobile 
 // menu taps are the bot's own conversation - no Telegram ping per tap
 if (!$isStaffSender && $waTapTitle === '') {
     try {
-        tg_notify_admins("💬 નવો WhatsApp મેસેજ\nFrom: +$mobile\n" . mb_substr($text !== '' ? $text : '📷 media', 0, 300)
-            . "\n\nજવાબ આપવા: " . base_url('wa_inbox.php?m=' . $mobile));
+        tg_notify_admins("💬 New WhatsApp message\nFrom: +$mobile\n" . mb_substr($text !== '' ? $text : '📷 media', 0, 300)
+            . "\n\nTo reply: " . base_url('wa_inbox.php?m=' . $mobile));
     } catch (Exception $e) { /* telegram optional */ }
 }
 
@@ -137,8 +137,8 @@ if ($text !== '' && cam_is_stop_word($text)) {
     $n = cam_optout($mobile, true);
     if ($n > 0) {
         log_activity('campaign_optout', 'STOP from ' . $mobile);
-        send_whatsapp($mobile, 'તમારા નંબર પર જાહેરાતના મેસેજ બંધ કરી દીધા છે. 🙏'
-            . "\nબિલ અને પેમેન્ટની જરૂરી જાણ ચાલુ રહેશે.");
+        send_whatsapp($mobile, 'Advertising messages to your number have been turned off. 🙏'
+            . "\nNecessary bill and payment notices continue.");
         die(json_encode(['ok' => true, 'status' => 'marketing-opt-out']));
     }
 }

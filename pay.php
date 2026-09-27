@@ -22,7 +22,7 @@ $sale = $id ? row('SELECT s.*, c.name company_name, c.phone c_phone
                    WHERE s.id = ?', [$id]) : null;
 if (!$sale || !$sale['share_token'] || !hash_equals($sale['share_token'], $token)) {
     http_response_code(404);
-    die('આ લિંક બરાબર નથી અથવા જૂની થઈ ગઈ છે.');
+    die('This link is wrong or has expired.');
 }
 
 $shop = setting('app_name', $sale['company_name']);
@@ -40,11 +40,11 @@ $note = $sale['invoice_no'];
 $said = false;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'paid_claim' && $due > 0.009) {
     try {
-        tg_notify_admins("💬 ગ્રાહકે કહ્યું કે પેમેન્ટ કરી દીધું\n"
-            . "બિલ: " . $sale['invoice_no'] . "\n"
-            . "રકમ: ₹" . money($due) . "\n"
-            . ($sale['customer_name'] ? "ગ્રાહક: " . $sale['customer_name'] . "\n" : '')
-            . "બેંકમાં તપાસીને પેમેન્ટ નોંધી લેજો.");
+        tg_notify_admins("💬 The customer says they have paid\n"
+            . "Bill: " . $sale['invoice_no'] . "\n"
+            . "Amount: Rs " . money($due) . "\n"
+            . ($sale['customer_name'] ? "Customer: " . $sale['customer_name'] . "\n" : '')
+            . "Check the bank and record the payment.");
     } catch (Throwable $e) { /* telling the shop must never break the page */ }
     log_activity('pay_claim', $sale['invoice_no'] . ' ₹' . money($due));
     $said = true;
@@ -58,7 +58,7 @@ $qr  = ($vpa && $due > 0.009) ? invoice_qr_web_path($sale, $due) : null;
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<title><?= e($shop) ?> — બિલ <?= e($sale['invoice_no']) ?></title>
+<title><?= e($shop) ?> — bills <?= e($sale['invoice_no']) ?></title>
 <style>
   :root { color-scheme: light; --ink:#16202c; --muted:#68727e; --line:#e3e8ef; --brand:#1a56db; --ok:#0f7b3f; }
   * { box-sizing: border-box; }
@@ -93,64 +93,64 @@ $qr  = ($vpa && $due > 0.009) ? invoice_qr_web_path($sale, $due) : null;
 
   <div class="card">
     <div class="shop"><?= e($shop) ?></div>
-    <div class="inv">બિલ <?= e($sale['invoice_no']) ?> · <?= dmy($sale['sale_date']) ?></div>
+    <div class="inv">Bills <?= e($sale['invoice_no']) ?> · <?= dmy($sale['sale_date']) ?></div>
     <?php if ($due > 0.009): ?>
-      <div class="amt-l">ચૂકવવાના</div>
+      <div class="amt-l">To pay</div>
       <div class="amt">₹<?= money($due) ?></div>
       <?php if (money_r($due) < money_r($sale['total'])): ?>
-        <div class="muted">બિલ ₹<?= money($sale['total']) ?> માંથી ₹<?= money($sale['total'] - $due) ?> મળી ગયા છે.</div>
+        <div class="muted">Bills Rs <?= money($sale['total']) ?> of Rs <?= money($sale['total'] - $due) ?> have been received.</div>
       <?php endif; ?>
     <?php else: ?>
       <div class="paid">
         <div class="tick">✅</div>
         <div style="font-weight:700;font-size:18px">
-          <?= $sale['is_cancelled'] ? 'આ બિલ રદ થયેલું છે' : 'આ બિલ ચૂકતે થઈ ગયું છે' ?>
+          <?= $sale['is_cancelled'] ? 'This bill has been cancelled' : 'This bill is already settled' ?>
         </div>
-        <div class="muted">બિલની રકમ ₹<?= money($sale['total']) ?> · કંઈ બાકી નથી</div>
+        <div class="muted">Bill amount Rs <?= money($sale['total']) ?> · nothing outstanding</div>
       </div>
     <?php endif; ?>
   </div>
 
   <?php if ($due > 0.009 && $upi): ?>
     <?php if ($said): ?>
-      <div class="card"><div class="ok-box">🙏 આભાર. દુકાનને જાણ કરી દીધી છે — તેઓ બેંકમાં તપાસીને નોંધી લેશે.</div></div>
+      <div class="card"><div class="ok-box">🙏 Thank you. The shop has been told — they will check the bank and record it.</div></div>
     <?php endif; ?>
 
     <div class="card">
-      <a class="btn btn-pay" href="<?= e($upi) ?>">₹<?= money($due) ?> ચૂકવો</a>
-      <div class="muted" style="text-align:center;margin-top:8px">બટન દબાવો એટલે તમારી UPI એપ ખૂલશે</div>
+      <a class="btn btn-pay" href="<?= e($upi) ?>">₹<?= money($due) ?> Pay</a>
+      <div class="muted" style="text-align:center;margin-top:8px">Press the button and your UPI app opens</div>
       <?php foreach (upi_apps() as $app): ?>
-        <a class="btn btn-app" href="<?= e(str_replace('upi://pay', $app[1], $upi)) ?>"><?= e($app[0]) ?> થી ચૂકવો</a>
+        <a class="btn btn-app" href="<?= e(str_replace('upi://pay', $app[1], $upi)) ?>"><?= e($app[0]) ?> Pay with</a>
       <?php endforeach; ?>
     </div>
 
     <?php if ($qr): ?>
     <div class="card qr">
-      <h2>અથવા QR સ્કેન કરો</h2>
+      <h2>or scan the QR</h2>
       <img src="<?= e(base_url($qr)) ?>" alt="UPI QR">
-      <div class="muted">બીજા ફોનથી સ્કેન કરીને પણ ચૂકવી શકાય</div>
+      <div class="muted">It can also be paid by scanning from another phone</div>
     </div>
     <?php endif; ?>
 
     <div class="card">
       <h2>UPI ID</h2>
       <div class="vpa" id="vpa"><?= e($vpa) ?></div>
-      <button class="btn btn-ghost" type="button" onclick="cp()">UPI ID કૉપી કરો</button>
+      <button class="btn btn-ghost" type="button" onclick="cp()">Copy the UPI ID</button>
       <hr>
       <form method="post">
         <?= csrf_field() ?>
         <input type="hidden" name="do" value="paid_claim">
-        <button class="btn btn-ghost" type="submit">મેં ચૂકવી દીધું છે — દુકાનને જાણ કરો</button>
+        <button class="btn btn-ghost" type="submit">I have paid — tell the shop</button>
       </form>
       <p class="muted" style="margin-bottom:0">
-        UPI થી સીધા પૈસા દુકાનની બેંકમાં જાય છે, એટલે આ પાનું જાતે "ચૂકવાઈ ગયું" નથી કરી શકતું.
-        દુકાન બેંકમાં જોઈને નોંધશે.
+        UPI sends the money straight to the shop bank, so this page cannot "Paid" cannot do it by itself.
+        The shop will check the bank and record it.
       </p>
     </div>
   <?php elseif ($due > 0.009 && !$vpa): ?>
     <div class="card">
-      <p style="margin:0">ઓનલાઇન ચૂકવવાની સગવડ હજી ચાલુ નથી.
-        <?= $sale['c_phone'] ? 'દુકાનનો સંપર્ક કરો: ' . e($sale['c_phone']) : 'દુકાનનો સંપર્ક કરો.' ?></p>
+      <p style="margin:0">Online payment is not available yet.
+        <?= $sale['c_phone'] ? 'Contact the shop: ' . e($sale['c_phone']) : 'Please contact the shop.' ?></p>
     </div>
   <?php endif; ?>
 
@@ -162,8 +162,8 @@ $qr  = ($vpa && $due > 0.009) ? invoice_qr_web_path($sale, $due) : null;
 function cp() {
   var t = document.getElementById('vpa').textContent.trim();
   if (navigator.clipboard) navigator.clipboard.writeText(t).then(ok, no); else no();
-  function ok() { alert('કૉપી થઈ ગયું: ' + t); }
-  function no() { window.prompt('આ UPI ID કૉપી કરો:', t); }
+  function ok() { alert('Copied: ' + t); }
+  function no() { window.prompt('Copy this UPI ID:', t); }
 }
 </script>
 </body>

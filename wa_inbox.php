@@ -20,8 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reply') {
     $to = preg_replace('/\D/', '', post('to'));
     $body = trim(post('body'));
     if ($to !== '' && $body !== '') {
-        if (send_whatsapp($to, $body)) flash('મેસેજ મોકલાયો ✔');
-        else flash('મોકલવામાં ભૂલ: ' . whatsapp_last_error(), 'error');
+        if (send_whatsapp($to, $body)) flash('Message sent ✔');
+        else flash('Send error: ' . whatsapp_last_error(), 'error');
     }
     redirect('wa_inbox.php?m=' . $to);
 }
@@ -62,19 +62,19 @@ function wa_inbox_party($mobile) {
                        SUBSTRING_INDEX(GROUP_CONCAT(CONCAT(direction, ': ', LEFT(COALESCE(body,''), 80)) ORDER BY id DESC SEPARATOR '\n'), '\n', 1) last_msg
                        FROM wa_chats GROUP BY mobile ORDER BY last_at DESC LIMIT 100");
     } catch (Exception $e) {
-        echo '<div class="card"><p>પહેલા Settings → Migrate ચલાવો (v46 - ચેટ ટેબલ).</p></div>';
+        echo '<div class="card"><p>Run Settings → Migrate first (v46 - the chat table).</p></div>';
         include __DIR__ . '/includes/footer.php';
         exit;
     } ?>
 <div class="card wa-list">
   <h2>💬 WhatsApp Inbox</h2>
-  <p class="muted" style="font-size:13px">દરેક આવેલો મેસેજ અને દરેક મોકલાયેલો જવાબ (બોટ + બિલ + રિસીપ્ટ સહિત). ચેટ ખોલીને સીધો જવાબ આપી શકો છો. નવો મેસેજ આવે તો Telegram પર પણ જાણ થાય છે.</p>
-  <?php if (!$convos): ?><p class="muted">હજી કોઈ ચેટ નથી — કોઈ ગ્રાહક દુકાનના WhatsApp નંબર પર મેસેજ કરશે એટલે અહીં દેખાશે.</p><?php endif; ?>
+  <p class="muted" style="font-size:13px">Every message received and every reply sent (bot, bills and receipts included). Open a chat and reply directly. A new message is also announced on Telegram.</p>
+  <?php if (!$convos): ?><p class="muted">No chats yet — as soon as a customer messages the shop WhatsApp number it appears here.</p><?php endif; ?>
   <?php foreach ($convos as $c): $pt = wa_inbox_party($c['mobile']); ?>
   <a class="list-row" href="wa_inbox.php?m=<?= e($c['mobile']) ?>">
     <div class="list-row-main">
       <strong><?= $pt ? e($pt['name']) : '+' . e($c['mobile']) ?></strong>
-      <?= $c['unread'] > 0 ? ' <span class="wa-unread">' . (int)$c['unread'] . ' નવા</span>' : '' ?>
+      <?= $c['unread'] > 0 ? ' <span class="wa-unread">' . (int)$c['unread'] . ' New</span>' : '' ?>
       <div class="list-row-sub muted"><?= e(mb_substr(preg_replace('/^(in|out): /', '', $c['last_msg'] ?? ''), 0, 70)) ?></div>
     </div>
     <div class="muted" style="font-size:12px;white-space:nowrap"><?= dmyt($c['last_at']) ?></div>
@@ -93,13 +93,13 @@ function wa_inbox_party($mobile) {
     $pt = wa_inbox_party($m); ?>
 <div class="page-actions no-print">
   <a class="btn btn-outline btn-sm" href="wa_inbox.php">← Inbox</a>
-  <?php if ($pt): ?><a class="btn btn-outline btn-sm" href="parties.php?action=ledger&id=<?= (int)$pt['id'] ?>">👤 <?= e($pt['name']) ?> નું ખાતું</a><?php endif; ?>
-  <a class="btn btn-outline btn-sm" href="https://wa.me/<?= e($m) ?>" target="_blank" rel="noopener">📱 WhatsApp માં ખોલો</a>
+  <?php if ($pt): ?><a class="btn btn-outline btn-sm" href="parties.php?action=ledger&id=<?= (int)$pt['id'] ?>">👤 <?= e($pt['name']) ?> account</a><?php endif; ?>
+  <a class="btn btn-outline btn-sm" href="https://wa.me/<?= e($m) ?>" target="_blank" rel="noopener">📱 Open in WhatsApp</a>
 </div>
 <div class="card">
   <h2><?= $pt ? e($pt['name']) : '+' . e($m) ?> <span class="muted" style="font-weight:400;font-size:13px">+<?= e($m) ?></span></h2>
   <div class="wa-thread">
-    <?php if (!$msgs): ?><p class="muted">આ નંબર સાથે હજી કોઈ મેસેજ નથી.</p><?php endif; ?>
+    <?php if (!$msgs): ?><p class="muted">There are no messages with this number yet.</p><?php endif; ?>
     <?php foreach ($msgs as $x): ?>
     <div class="wa-b <?= $x['direction'] === 'in' ? 'wa-in' : 'wa-out' ?>">
       <?= e($x['body']) ?>
@@ -112,8 +112,8 @@ function wa_inbox_party($mobile) {
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="reply">
     <input type="hidden" name="to" value="<?= e($m) ?>">
-    <textarea name="body" id="rbox" placeholder="જવાબ લખો..." required></textarea>
-    <button class="btn" type="submit" style="align-self:flex-end">📤 મોકલો</button>
+    <textarea name="body" id="rbox" placeholder="Type a reply..." required></textarea>
+    <button class="btn" type="submit" style="align-self:flex-end">📤 Send</button>
   </form>
 </div>
 <script>
