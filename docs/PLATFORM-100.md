@@ -2444,3 +2444,336 @@
 **Example:** shop.akdwk.in (પોતાનું) + rajcomputer.akdwk.in + 48 વધુ → ₹6L વાર્ષિક પુનરાવર્તિત.
 
 ---
+# ભાગ 2 — 10 FINAL DELIVERABLES
+
+100 ફીચરની ગણતરી: **P0 = 27 · P1 = 55 · P2 = 14 · P3 = 4** · Easy 34 · Medium 54 · Hard 12.
+AI નો હાથ હોય એવાં ફીચર **72** (જેમાં **13 શુદ્ધ AI ફીચર** — CATEGORY 12).
+🔴 નવું · 🟡 અડધું બનેલું (કોષ્ટક કે પડોશી ફીચર હાજર) — 🟡 વાળાં **સસ્તાં** છે.
+
+---
+
+## 1 · FEATURE PRIORITY MATRIX
+
+ધરી: **ડાબે-ઉપર પહેલાં કરો** (વધુ ફાયદો, ઓછી મહેનત).
+
+### ચોકડી A — તરત કરો (ઊંચો ફાયદો · ઓછી મહેનત) — **18**
+| # | ફીચર | કેમ પહેલાં | મહેનત |
+|---|---|---|---|
+| 96 | Job Queue & Retry | 6 ફીચરનો પાયો; કાઉન્ટર ઝડપી | Medium |
+| 62 | AI Gateway | AI નો ખર્ચ કાબૂમાં — બીજું AI આ પછી | Medium |
+| 90 | Encrypted Backup + restore drill | ડેટા ગયો = ધંધો ગયો | Medium |
+| 53 | Frequently Bought Together | ગણતરી પહેલેથી છે; સરેરાશ બિલ વધે | Easy |
+| 1 | Keyboard-only Counter | લાઇન ઘટે; ભૂલ ઘટે | Medium |
+| 3 | Price Override Approval | માર્જિન ગળતર બંધ | Easy |
+| 7 | Rack/Bin Location | કોષ્ટક હાજર (`stock_bins`) — શોધવાનો સમય ખતમ | Easy |
+| 11 | Auto Reorder Point | ખોટા alert બંધ | Easy |
+| 34 | Warranty Self-check | ફોન ઘટે; ગ્રાહકનો ભરોસો | Easy |
+| 35 | Warranty Expiry Campaign | AMC/renewal ની સીધી આવક | Easy |
+| 25 | Repeat-purchase Reminder | કારતૂસ/consumable ની પક્કી આવક | Easy |
+| 61 | WhatsApp Pay Link + auto-settle | ઉઘરાણીના દિવસ ઘટે | Medium |
+| 71 | AI Collection Priority & Tone | વસૂલાત વધે, સંબંધ સચવાય | Medium |
+| 92 | Margin Leak Report | અસલી નફો દેખાય | Medium |
+| 78 | Cash Flow Forecast | રોકડ ખૂટવાની આગોતરી ચેતવણી | Medium |
+| 94 | Owner Dashboard on Phone | માલિકનું નિયંત્રણ | Easy |
+| 98 | Day-end Auto Close | રોજ સાફ બંધ | Easy |
+| 56 | Stock-aware Catalog | ખોટું વચન બંધ | Medium |
+
+### ચોકડી B — યોજના બનાવીને કરો (ઊંચો ફાયદો · વધુ મહેનત) — **16**
+29+30+31 PC Builder · 63 AI PC Builder · 99 Public Configurator · 46+47+48+49 CCTV Calculator · 15+16+17 PO/GRN/Landed Cost · 64 AI Diagnosis · 70 AI Bill Reading · 75 e-Invoice · 100 Multi-tenant SaaS
+
+### ચોકડી C — ભરતી કરો (સામાન્ય ફાયદો · ઓછી મહેનત) — **સહેલાં**
+8 · 9 · 22 · 27 · 32 · 38 · 43 · 47 · 48 · 49 · 52 · 55 · 57 · 59 · 68 · 74 · 81 · 82 · 91
+
+### ચોકડી D — પછી (ઓછો ફાયદો કે ઘણી મહેનત) — **પછી જ**
+77 Fixed Assets · 84 Tender · 80 Attendance · 95 Report Builder · 97 Rule Engine · 88 Central Purchase
+
+> **નિયમ:** કોઈ પણ AI ફીચર **#62 પહેલાં નહીં**. કોઈ પણ queue-આધારિત ફીચર **#96 પહેલાં નહીં**.
+
+---
+
+## 2 · 12-MONTH DEVELOPMENT ROADMAP
+
+પ્રત્યેક તબક્કો: **પહેલાં ટેસ્ટ, પછી staging, પછી live** — અને દરેક તબક્કો પોતે જ કામનું ફળ આપે.
+
+| મહિનો | નામ | ફીચર | મહિનાના અંતે શું બદલાય |
+|---|---|---|---|
+| 1 | **પાયો** | 96 Queue · 90 Backup · 62 AI Gateway | કંઈ ખોવાય નહીં, કંઈ અટકે નહીં, AI નો ખર્ચ કાબૂમાં |
+| 2 | **કાઉન્ટર** | 1 · 2 · 3 · 5 · 98 | બિલ ઝડપી, ડિસ્કાઉન્ટ કાબૂમાં, દિવસ સાફ બંધ |
+| 3 | **સ્ટોક** | 7 · 8 · 11 · 13 · 14 | માલ મળે, ખૂટે નહીં, પડ્યો ન રહે |
+| 4 | **ખરીદી** | 15 PO · 16 GRN · 17 Landed Cost · 18 · 20 | ખરીદ ભાવ સાચો, સસ્તો પુરવઠાદાર દેખાય |
+| 5 | **પૈસા** | 61 Pay Link · 71 AI Collection · 78 Cash Flow · 92 Margin Leak | ઉઘરાણી ઝડપી, અસલી નફો દેખાય |
+| 6 | **ગ્રાહક + વોરંટી** | 24 · 25 · 34 · 35 · 36 · 28 | પુનરાવર્તિત આવક ચાલુ થાય |
+| 7 | **સર્વિસ** | 39 · 40 · 41 · 42 · 43 · 45 | રિપેરિંગ નફાનું કેન્દ્ર બને |
+| 8 | **CCTV** | 46 · 47 · 48 · 49 · 50 · 51 | પ્રોજેક્ટ સાઇટ પર જ પાકે |
+| 9 | **PC Builder** | 29 · 30 · 31 · 32 · 33 | ક્વોટ 20 મિનિટને બદલે 2 મિનિટ |
+| 10 | **AI** | 63 · 64 · 67 · 68 · 69 · 65 | સિસ્ટમ સલાહ આપવા લાગે (સત્તા વગર) |
+| 11 | **ઓનલાઇન** | 52 · 53 · 54 · 55 · 56 · 57 · 99 | દુકાન ઓનલાઇન સ્પર્ધામાં |
+| 12 | **વિસ્તાર** | 83 · 85 · 86 · 87 · 89 · 91 → પછી **100** | B2B + શાખા + સુરક્ષા; SaaS નો દરવાજો |
+
+**છ મહિનાનું નિશાન:** ઉઘરાણીના દિવસ −30% · dead stock −25% · સરેરાશ બિલ +8%
+**બારે મહિનાનું નિશાન:** સર્વિસ આવક +40% · ઓનલાઇન ઓર્ડર દર મહિને 40+ · SaaS માટે તૈયાર
+
+---
+
+## 3 · COMPLETE DATABASE ARCHITECTURE
+
+**હાલ: 104 કોષ્ટક.** નવાં ~38. નિયમ પહેલાં:
+
+> દરેક ફેરફાર **migration** થી (`install/upgrade_vNN.sql`) — હાથે કદી નહીં.
+> સ્ટોક ફક્ત **`adjust_stock()`** થી. બાકી રકમ ફક્ત **`party_balance()`** થી.
+> પૈસાની રકમ `DECIMAL(12,2)` — `FLOAT` કદી નહીં.
+> દરેક કોષ્ટકમાં `created_at`, અને જ્યાં પૈસા/સ્ટોક છે ત્યાં `created_by`.
+
+### સ્તર 1 — Masters
+`items` · `item_specs`🔴 · `item_alt`🔴 · `parties` (+`credit_limit`🔴) · `party_contacts`🔴 · `party_prices`🔴 · `locations` · `location_bins`🟡 · `users` · `settings` · `categories` · `brands`
+
+### સ્તર 2 — Stock Ledger (સ્ટોકનું સત્ય)
+`stock_moves` (દરેક હલનચલન — append only) · `stock` (વર્તમાન, moves પરથી) · `stock_bins`🟡 · `stock_reservations`🟡 · `serials` · `serial_moves` · `batches`🔴 · `stock_transfers` (+`status`🔴) · `stock_take`🔴
+
+### સ્તર 3 — Documents
+`sales` · `sale_items` · `purchases` · `purchase_items` · `purchase_orders`🔴 · `po_items`🔴 · `po_allocations`🔴 · `grn`🔴 · `quotations` · `quotation_items` · `quotation_versions`🔴 · `pc_builds`🔴 · `pc_build_items`🔴 · `web_orders` · `web_order_events`🔴 · `site_surveys`🔴 · `survey_items`🔴 · `tenders`🔴 · `returns` · `credit_notes`
+
+### સ્તર 4 — Money (**ખાતાવહી = સત્ય**)
+`party_ledger` (append only; TDS entry🔴) · `payments` · `payment_allocations` · `expenses` (+`location_id`🔴) · `recurring_expenses`🔴 · `bank_accounts` · `cash_book` · `einvoices`🔴 · `assets`🔴 · `asset_depreciation`🔴
+
+### સ્તર 5 — Service
+`repairs` · `repair_items` · `repair_photos` · `repair_kb`🔴 · `warranties` · `warranty_claims` · `amc_contracts` · `amc_visits`🔴 · `tasks` · `task_photos`🔴 · `customer_devices`🔴
+
+### સ્તર 6 — Communication
+`wa_chats` (+`delivery_status`🔴 +`repair_id`🔴) · `wa_templates`🔴 · `wa_optout` · `campaigns` · `campaign_sends` · `party_consent`🔴
+
+### સ્તર 7 — Intelligence & Automation
+`jobs`🔴 · `jobs_dead`🔴 · `rules`🔴 · `rule_runs`🔴 · `ai_calls`🔴 · `ai_budget`🔴 · `price_suggestions`🔴 · `anomalies`🔴 · `kb_docs`🔴 · `kb_chunks`🔴 · `saved_reports`🔴 · `purchase_drafts`🔴
+
+### સ્તર 8 — Governance
+`audit_logs` · `login_throttle` (rate limit પણ) · `user_devices`🔴 · `user_totp`🔴 · `backup_log`🔴 · `app_web_links` · `migrations`
+
+### સ્તર 9 — SaaS (#100)
+`tenants`🔴 · `tenant_plans`🔴 · `tenant_usage`🔴 + **બધા કોષ્ટકમાં `tenant_id`**
+
+**મુખ્ય index:** `stock_moves(item_id, location_id, created_at)` · `party_ledger(party_id, date)` · `sales(date, location_id)` · `serials(serial_no)` UNIQUE · `web_orders(client_uuid)` UNIQUE · SaaS માં દરેક index ની આગળ `tenant_id`.
+
+---
+
+## 4 · API ARCHITECTURE
+
+એક જ દરવાજો: **`api.php?r=<route>`** — ત્રણ પટ્ટા.
+
+```
+1. જાહેર (લોગિન વગર)        catalog · wlogin · worder · order_track · build_price · warranty_check
+   → rate limit પ્રતિ route + IP        (catalog 240/મિ · worder 20/મિ · wlogin 30/મિ)
+2. સ્ટાફ (token)             api_require() → api_can('module.action') → api_own_scope()
+3. અંદરનું (server-to-server) webhook (signature verify) · cron worker
+```
+
+**દરેક જવાબમાં:** `Cache-Control: no-store` (વેચાયેલો serial cache માંથી ફરી ન દેખાય) · JSON · `{ok:true,...}` કે `{ok:false,error}`.
+
+**નિયમો:**
+- **ભાવ, ડિસ્કાઉન્ટ, સ્ટોક, બાકી — હંમેશા સર્વર પર ગણાય.** client નો આંકડો કદી ન સ્વીકારાય.
+- **Idempotency:** દરેક લખાણમાં `client_uuid` (UNIQUE) — નેટવર્ક બે વાર મોકલે તો બે બિલ ન બને.
+- **Sync:** `?r=sync&since=<server_time>` — masters નીચે ખેંચાય, documents ઉપર ધકેલાય. **બંને એક જ વસ્તુ ન બદલે** → conflict જ ન બને.
+- **પરવાનગી API માં પણ:** `can()` વેબ પર, `api_can()` API પર — બે જગ્યાએ એક જ યાદી.
+- **નવો route = rate limit + પરવાનગી + ટેસ્ટ, ત્રણેય સાથે.** આ વગર route merge નહીં.
+
+**નવા routes (સાર):** `survey* · hdd_calc · poe_calc · po* · grn · build_* · ai_* · irn_* · cashflow · margin_leak · clv · rule · report_* · consent · punch · transfer_receive · coupon_check`
+
+---
+
+## 5 · AI ARCHITECTURE
+
+```
+   માણસ / ઘટના
+        │
+        ▼
+ ┌──────────────────┐   ના → નિયમ-આધારિત જવાબ (fallback)
+ │ AI GATEWAY (#62) │── બજેટ બાકી? provider ચાલુ? cache માં છે?
+ └────────┬─────────┘
+          │ હા
+          ▼
+ ┌──────────────────────────────────────┐
+ │ CONTEXT બનાવો — **માત્ર જરૂરી**       │  નામ/નંબર/સરનામું નહીં → id
+ │ RAG: repair_kb · kb_chunks · specs   │  (દુકાનનો પોતાનો ઇતિહાસ)
+ └────────┬─────────────────────────────┘
+          ▼
+ ┌──────────────────┐
+ │ LLM — **સૂચન**   │  tools: ફક્ત **વાંચવાના** (stock_lookup, price_lookup, history)
+ └────────┬─────────┘  લખવાનું tool **એક પણ નહીં**
+          ▼
+ ┌──────────────────────────────────────┐
+ │ VALIDATION (નિશ્ચિત કોડ)              │  compatibility · PSU · સ્ટોક ·
+ │ નિષ્ફળ → સૂચન રદ, કારણ સાથે          │  **margin floor** · ledger નિયમ
+ └────────┬─────────────────────────────┘
+          ▼
+ ┌──────────────────┐
+ │ માણસની મંજૂરી    │  સ્ક્રીન પર: AI શું સૂચવે છે, કેમ, અને શું બદલાશે
+ └────────┬─────────┘
+          ▼
+ ┌──────────────────────────────────────┐
+ │ TRANSACTION — હાલના જ કાર્યો          │  adjust_stock() · party_ledger ·
+ │ audit: "AI સૂચન · <નામ> એ મંજૂર"      │  doc_next_no()
+ └──────────────────────────────────────┘
+```
+
+**બદલાય નહીં એવા 7 નિયમ**
+1. AI પાસે **database લખવાનું tool એક પણ નહીં**.
+2. પૈસાની ગણતરી **નિશ્ચિત કોડ** — AI નો આંકડો કદી સીધો ન વપરાય.
+3. ભાવ/માર્જિન/ખાતાવહી પર AI ને **સત્તા નહીં** (ફક્ત સૂચન).
+4. ગ્રાહકનું નામ/નંબર/સરનામું બહાર **ન જાય** — id અને લક્ષણ પૂરતાં.
+5. દરેક call નો **ખર્ચ નોંધાય**; મહિનાની cap પછી **બંધ** (fallback ચાલુ).
+6. AI બગડે તો **દુકાન ચાલે** — દરેક AI ફીચરનો નિયમ-આધારિત વિકલ્પ.
+7. **બનાવટી માહિતી કદી નહીં** — રિવ્યૂ, રેટિંગ, spec, વોરંટીનું વચન AI ન રચે.
+
+**માપ:** સૂચન સ્વીકારાયું કે નકારાયું એ `ai_calls` માં — **જે સૂચન સ્ટાફ સ્વીકારતો નથી એ ફીચર બંધ કરવું**, સુધારવું નહીં.
+
+---
+
+## 6 · WHATSAPP AUTOMATION ARCHITECTURE
+
+```
+ગ્રાહકનો મેસેજ
+     │
+     ▼
+Meta Webhook ──▶ signature verify ──▶ `wa_chats` માં નોંધ (કાચો)
+                                           │
+                                           ▼
+                                  ┌────────────────────┐
+                                  │ ROUTER             │
+                                  └─┬────┬────┬────────┘
+              keyword (ભાવ/સ્ટોક/હિસાબ)│    │    │ job નો જવાબ (#60)
+                        DB query ◀─────┘    │    └──▶ repair timeline + technician
+                                            ▼
+                                   ન સમજાયું → AI (#67, #62 ના દરવાજેથી)
+                                            │  જવાબના **આંકડા DB માંથી**
+                                            ▼
+                                   ┌────────────────────┐
+મોકલવાનું ─────────────────────────▶│ JOBS QUEUE (#96)   │  retry + idempotency
+(બિલ · રિમાઇન્ડર · campaign)        └─────────┬──────────┘
+                                             ▼
+                                   template ✔ (#58) · opt-out ✔ (#91)
+                                             ▼
+                                   WhatsApp Cloud API
+                                             ▼
+                                   delivery status (#59) → `wa_chats`
+```
+
+**નિયમો:** સેવાના મેસેજ (બિલ, વોરંટી, રિપેરિંગ) opt-out પછી પણ જાય; **પ્રચાર નહીં**. બે વાર એક જ મેસેજ ન જાય (idempotency key). હિસાબ માંગે તો **નંબર verify** થયેલો હોવો જોઈએ. "બંધ/स्टॉप/stop" ત્રણ ભાષામાં સંભળાય — **આ શબ્દો કદી અનુવાદ ન થાય** (ગ્રાહક જે લખે એ છે).
+
+---
+
+## 7 · INVENTORY ARCHITECTURE
+
+```
+SKU (items)
+ ├─ Barcode / Part No / OEM cross-ref (#9)      → સ્કેન કે ટાઇપ, બંને એક જ વસ્તુ પર
+ ├─ Specs (item_specs)                          → સરખામણી (#52) · compatibility (#30)
+ ├─ Serial (serials) ─── એક નંગ = એક ઓળખ        → વોરંટી · ખરીદ ખર્ચ (#10) · દાવો
+ ├─ Batch (batches) ──── કારતૂસ/બેટરી: expiry
+ ├─ Condition (#8) ───── New · Open Box · Used · Faulty · RMA  → **દરેકનો પોતાનો ભાવ**
+ ├─ Location (locations) → Bin (#7: A-3-2)      → "ક્યાં પડ્યું છે" નો જવાબ
+ └─ Levels (#11/#69) ─── min · max · reorder point
+```
+
+**સ્ટોકનું સત્ય = `stock_moves`** (append only). `stock` કોષ્ટક એનો સરવાળો છે, સ્વતંત્ર સત્ય નહીં.
+
+```
+ખરીદી (GRN #16) ──┐
+પરત ──────────────┤
+transfer મળી (#87)┤
+                  ├──▶ adjust_stock()  ──▶ stock_moves ──▶ stock
+વેચાણ ─────────────┤       ▲                                 │
+રિપેરિંગમાં વપરાયું ─┤       │ **એક જ દરવાજો**                 ▼
+ઘટ / બગડ્યું ───────┘       │                          reservations (#42/#56)
+                          │                          ઘટાડીને **ઉપલબ્ધ** સ્ટોક
+                   બીજો કોઈ રસ્તો નથી
+```
+
+**મૂલ્ય:** ખરીદ ખર્ચ = બિલનો ભાવ + **landed cost** (#17: freight, duty, મજૂરી વહેંચાયેલી). નફો હંમેશા `profit_cost_sql()` — એક જ જગ્યાએ લખેલો નિયમ. Serial હોય તો **એ જ નંગનો** ખર્ચ (#10), સરેરાશ નહીં.
+
+---
+
+## 8 · BILLING FLOW (સંપૂર્ણ)
+
+```
+1  ગ્રાહક      → જૂનો શોધો (નામ/નંબર, ગમે ત્યાંથી ટાઇપ) કે નવો બનાવો
+                 ⤷ બાકી દેખાય · credit limit (#85) · VIP વર્ગ (#93)
+2  વસ્તુ        → barcode / part no / નામ (#9) · **serial પસંદ** (#6)
+                 ⤷ સ્ટોક 0 → વિકલ્પ સૂચવે (#13) · સાથે વેચાતું (#53)
+3  કાર્ટ        → કીબોર્ડથી જ ચાલે (#1) · **અધૂરું બિલ ભૂંસાય નહીં** (draft)
+4  ડિસ્કાઉન્ટ   → floor ઉપર જ; નીચે જવું હોય તો **મંજૂરી** (#3) · કૂપન (#54)
+5  GST         → HSN પ્રમાણે દર; રાજ્ય પ્રમાણે CGST/SGST કે IGST; round off
+6  પેમેન્ટ      → રોકડ · UPI · કાર્ડ · ઉધાર · મિશ્ર  (`money_noncash_modes()`)
+                 ⤷ ઉધાર = **ledger માં જ**, બીજે ક્યાંય નહીં
+7  બિલ         → `doc_next_no()` થી નંબર (ક્રમ તૂટે નહીં) · PDF · e-Invoice IRN (#75)
+8  સ્ટોક ઘટે    → **`adjust_stock()`** · serial → `serial_sell()` · reservation છૂટે
+9  WhatsApp    → `sale_whatsapp_send()` → **queue** (#96) · pay link (#61)
+10 હિસાબ       → `party_ledger` entry · રોકડ/બેંક · નફો `profit_cost_sql()`
+11 પછી         → વોરંટી નોંધાય (#6/#38) · device registry (#24) · refill રિમાઇન્ડર (#25)
+```
+
+**અટલ નિયમ:** પગલું 6-10 **એક જ transaction** માં. કોઈ એક નિષ્ફળ = આખું રદ. અડધું બિલ કદી નહીં.
+**અને:** WhatsApp/PDF/IRN **બિલને અટકાવે નહીં** — એ કતારમાં જાય. કાઉન્ટર પર ગ્રાહક ઊભો છે.
+
+---
+
+## 9 · MOBILE / PWA ARCHITECTURE
+
+એક જ કોડ — **ત્રણ રૂપ**: (1) Android APK (`mobile/`), (2) બ્રાઉઝરમાં PWA, (3) ગ્રાહક/ડીલર mode.
+
+```
+UI (mobile/www) ──▶ IndexedDB (masters + documents)  ← ઑફલાઇન આ જ સત્ય
+                        │
+        લખાણ ──────────▶ OUTBOX (client_uuid સાથે)
+                        │  નેટ આવે → ક્રમમાં ધકેલાય → 2s,4s,8s... backoff
+                        ▼
+                   api.php?r=sync  (masters નીચે · documents ઉપર)
+```
+
+### માલિક શું કરી શકે (મોબાઇલમાં)
+બિલ (serial સાથે) · ક્વોટ · ખરીદી · payment/receipt · ઉઘરાણી + રિમાઇન્ડર · સ્ટોક + adjust · બધા રિપોર્ટ · **નફો અને ખર્ચ** · dead stock (#) · ડિસ્કાઉન્ટ મંજૂરી (#3) · સ્ટાફ · બધાં સેટિંગ · બેકઅપ સ્થિતિ · AI સૂચન મંજૂર કરવાં
+
+### સ્ટાફ શું કરી શકે
+બિલ · ગ્રાહક · સ્ટોક **જોવો** · રિપેરિંગ job (ફોટા, status) · હાજરી (#80) · પોતાનું લક્ષ્ય (#79) · શાખા બદલવી નહીં · **નફો/ખર્ચ/બીજાનું વેચાણ નહીં** · ડિસ્કાઉન્ટ floor સુધી જ
+
+### ગ્રાહક / ડીલર mode
+કેટલોગ + સ્ટોક + ભાવ (dealer ને dealer ભાવ) · સરખામણી (#52) · PC બનાવો (#99) · ઓર્ડર · ઓર્ડર ક્યાં છે (#57) · વોરંટી ચેક (#34) · પોતાનો હિસાબ (verify પછી) · **બીજું કંઈ નહીં**
+
+**નિયમો:** ઑફલાઇનમાં **ભાવ અને સ્ટોક છેલ્લા sync નો** — સ્ક્રીન પર સમય દેખાય. પૈસાનો આંકડો ઑફલાઇનમાં પણ **સર્વરના નિયમથી** ફરી ગણાય (sync વખતે) — ફરક દેખાય તો સર્વર જીતે. મોબાઇલનું back બટન ખરેખર પાછળ જાય. લોગિન માટે ફક્ત username + password (સર્વર default).
+
+---
+
+## 10 · FINAL PRODUCT VISION
+
+### નામ: **AKShop OS** — *કમ્પ્યુટર દુકાનની આખી ઓપરેટિંગ સિસ્ટમ*
+ટૅગલાઇન: **"બિલ થી શરૂ, ધંધા સુધી."**
+
+### ચાર પગથિયાં
+
+**પગથિયું 1 — Billing Software** *(આજે: થઈ ગયું ✅)*
+બિલ · સ્ટોક · ઉઘરાણી · GST · WhatsApp · રિપોર્ટ · એપ. 104 કોષ્ટક, પરવાનગી, audit, ટેસ્ટ suite.
+*મૂલ્ય: લખાણ સાચું અને ઝડપી.*
+
+**પગથિયું 2 — Complete Business Management System** *(મહિનો 1-9)*
+ખરીદી (PO→GRN→landed cost) · સર્વિસ નફાનું કેન્દ્ર · CCTV/networking પ્રોજેક્ટ · PC Builder · વોરંટી/AMC ની પુનરાવર્તિત આવક · અસલી નફો અને રોકડનું ચિત્ર.
+*મૂલ્ય: આખો ધંધો એક જગ્યાએ — અંદાજને બદલે આંકડા.*
+
+**પગથિયું 3 — AI Business Operating System** *(મહિનો 10-12)*
+સિસ્ટમ **સલાહ** આપે: શું ખરીદવું, કેટલું રાખવું, કોને ઉઘરાણી, કઈ ખરાબી, ક્યાં નફો ગળે છે, કઈ વસ્તુ ક્લિયર કરવી.
+**અને સત્તા માણસ પાસે જ રહે** — AI સૂચવે, નિયમ ચકાસે, માણસ મંજૂર કરે, કોડ લખે.
+*મૂલ્ય: એક માલિકનું ધ્યાન 10 ગણું થાય.*
+
+**પગથિયું 4 — Multi-Tenant SaaS** *(વર્ષ 2)*
+જે સિસ્ટમ **એક અસલી દુકાનમાં રોજ ચાલે છે** એ બીજી દુકાનોને ભાડે.
+પેકેજ: **Basic ₹499** (બિલ+સ્ટોક+GST) · **Pro ₹999** (+ખરીદી, સર્વિસ, CCTV, રિપોર્ટ) · **AI ₹1,999** (+13 AI ફીચર, ખર્ચ tenant પ્રતિ).
+રસ્તો: દ્વારકા-જામનગરની 50 દુકાન → ગુજરાત → ભારત.
+*મૂલ્ય: માલ ખરીદ્યા વગરની આવક. 50 × ₹999 = **₹6 લાખ/વર્ષ**.*
+
+### સ્પર્ધામાં જગ્યા કેમ છે
+Vyapar/Marg/Busy **હિસાબનાં** સોફ્ટવેર છે — તેમાં serial-વાર વોરંટી, રિપેરિંગ job, CCTV ગણતરી, PC compatibility, HDD/PSU calculator, AMC વિઝિટ — **કંઈ નથી**. કમ્પ્યુટર દુકાનનું અડધું કામ તેમની બહાર છે.
+**AKShop OS એ અડધા કામ માટે બનેલું છે** — અને એ જ અડધામાં નફો છે.
+
+### અડગ પાયા (વર્ષો પછી પણ)
+ખાતાવહી જ સત્ય · સ્ટોક ફક્ત એક દરવાજેથી · એક નિયમ એક જગ્યાએ · પૈસાના દરેક ફેરફાર પહેલાં ટેસ્ટ · migration વગર DB ફેરફાર નહીં · AI ને સત્તા નહીં · ગ્રાહકની સંમતિનું માન · **બનાવટી માહિતી કદી નહીં** · જૂનું ચાલતું કામ તૂટે નહીં · **કોડ જેટલો ઓછો એટલું સારું**.
+
+---
+
+*100 ફીચર · 20 category · 10 deliverable — બધું આ codebase ના અસલી કોષ્ટક, કાર્યો અને સ્ક્રીન સાથે મેળવીને.*
