@@ -15,7 +15,7 @@
 // ============================================================================
 
 /** Slow-moving cutoff, shared by the dead-stock card and the alerts. */
-function dash_dead_days() { return max(1, (int)setting('dead_stock_days', 90)); }
+function dash_dead_days() { return dead_stock_days(); }
 
 /** How many items are really in one of dash_stock()'s lists. The lists
  *  themselves are trimmed to the worst 50 so they fit the result cache, so
@@ -389,7 +389,7 @@ function dash_stock_compute($locId = 0) {
 
     $t = today();
     $out = ['low' => [], 'out' => [], 'fast' => [], 'slow' => [], 'deadlist' => [], 'high_value' => [],
-            'dead_value' => 0.0, 'dead_buckets' => ['30-60' => 0.0, '60-90' => 0.0, '90-180' => 0.0, '180+' => 0.0],
+            'dead_value' => 0.0, 'dead_buckets' => dead_stock_buckets_init(),
             'stock_value' => 0.0, 'items' => count($rows)];
 
     foreach ($rows as $r) {
@@ -418,13 +418,11 @@ function dash_stock_compute($locId = 0) {
         elseif ($r['min_stock'] > 0 && $qty < (float)$r['min_stock']) { $out['low'][] = $item; }
         elseif ($item['days_left'] !== null && $item['days_left'] <= 14) { $out['low'][] = $item; }
 
-        // How long has this money been sitting? For something that has sold,
-        // that is the time since the last sale. For something that has NEVER
-        // sold, ageing it from "forever" would drop a product bought last week
-        // straight into the 180+ bucket, so it is aged from when it arrived
-        // (last purchase, else when the item was created).
-        $sittingSince = $lastSale ?: ($lastPurch[$id] ?? substr((string)($r['created_at'] ?? ''), 0, 10));
-        $sittingDays = $sittingSince ? days_between_dates($sittingSince, $t) : 0;
+        // How long has this money been sitting? One rule, in one place -
+        // stock_sitting_days() in purchase_intel.php - because the clearance
+        // report asks exactly the same question and used to answer it
+        // differently.
+        $sittingDays = stock_sitting_days($lastSale, $lastPurch[$id] ?? null, $r['created_at'] ?? null, $t);
         $item['idle_days'] = $sittingDays;
         $item['never_sold'] = $lastSale === null;
 
@@ -432,8 +430,7 @@ function dash_stock_compute($locId = 0) {
             $out['deadlist'][] = $item;
             $out['dead_value'] += $value;
             // buckets always add up to dead_value - nothing else is counted here
-            $b = $sittingDays < 60 ? '30-60' : ($sittingDays < 90 ? '60-90' : ($sittingDays < 180 ? '90-180' : '180+'));
-            $out['dead_buckets'][$b] += $value;
+            $out['dead_buckets'][dead_stock_bucket($sittingDays)] += $value;
         }
 
         if ($sold90 > 0) $out['fast'][] = $item;

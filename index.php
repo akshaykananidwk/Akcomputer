@@ -505,7 +505,7 @@ include __DIR__ . '/includes/header.php';
   <div class="grid-stats">
     <?php foreach ($sStock['dead_buckets'] as $bk => $bv): ?>
     <a class="stat <?= $bv > 0 ? ($bk === '180+' ? 's-bad' : 's-warn') : '' ?>" href="reports.php?r=dead_stock">
-      <div class="stat-label"><?= e($bk) ?> days</div><div class="stat-value">₹<?= money($bv) ?></div></a>
+      <div class="stat-label"><?= e($bk) ?></div><div class="stat-value">₹<?= money($bv) ?></div></a>
     <?php endforeach; ?>
   </div>
   <?php endif; ?>

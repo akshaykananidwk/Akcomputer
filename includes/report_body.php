@@ -1113,36 +1113,83 @@ if ($r === 'purchase_reco') {
     }
 }
 
-// ---------------- dead / slow-moving stock ----------------
+// ---------------- stock that is not moving, and what to ask for it -------
+//
+// The owner's own words: "this stock has been sitting three months and has
+// not gone; I will take whatever price I can get." So this is not a list of
+// items - it is a list of MONEY, biggest first, with a price to ask against
+// each one and the profit or loss at that price said out loud.
+//
+// Everything here comes from dead_stock_rows() / clearance_price() in
+// purchase_intel.php, the same rules the dashboard card uses. This screen
+// works nothing out for itself.
 if ($r === 'dead_stock' && can('reports.profit')) {
-    $deadDays = (int)get('dead_days') ?: (int)setting('dead_stock_days', 90);
-    $locJoin = $stockLoc ? ' AND s.location_id = ' . (int)$stockLoc : '';
-    $rows = all("SELECT i.*, COALESCE(SUM(s.qty),0) q,
-                 (SELECT MAX(s2.sale_date) FROM sale_items si2 JOIN sales s2 ON s2.id = si2.sale_id
-                  WHERE si2.item_id = i.id AND s2.is_cancelled = 0) last_sale_date
-                 FROM items i LEFT JOIN stock s ON s.item_id = i.id $locJoin
-                 WHERE i.is_active = 1 AND i.item_type <> 'service'
-                 GROUP BY i.id
-                 HAVING q > 0 AND (last_sale_date IS NULL OR last_sale_date < DATE_SUB(CURDATE(), INTERVAL $deadDays DAY))
-                 ORDER BY COALESCE(SUM(s.qty),0) * i.purchase_price DESC");
-    $totalValue = array_sum(array_map(fn($x) => $x['q'] * $x['purchase_price'], $rows));
+    $deadDays = (int)get('dead_days') ?: dead_stock_days();
+    $rows = dead_stock_rows($deadDays, $stockLoc);
+    $tot = dead_stock_totals($rows);
+
     echo '<form method="get" class="filterbar"><input type="hidden" name="r" value="dead_stock">'
        . '<input type="hidden" name="from" value="' . e($from) . '"><input type="hidden" name="to" value="' . e($to) . '">'
        . '<input type="hidden" name="stock_loc" value="' . $stockLoc . '">'
-       . '<div><label>No sale in the last (days)</label><input type="number" name="dead_days" value="' . $deadDays . '"></div>'
-       . '<button class="btn btn-sm" type="submit">Apply</button></form>';
-    echo '<div class="grid-stats"><div class="stat s-bad"><div class="stat-label">Value tied up</div><div class="stat-value">₹' . money($totalValue) . '</div></div>'
-       . '<div class="stat"><div class="stat-label">Items affected</div><div class="stat-value">' . count($rows) . '</div></div></div>';
-    echo '<div class="table-wrap"><table><thead><tr><th>Item</th><th class="num">In stock</th><th>Last sold</th><th class="num">Days idle</th><th class="num">Value tied up</th></tr></thead><tbody>';
-    foreach ($rows as $x) {
-        $idle = $x['last_sale_date'] ? days_between($x['last_sale_date']) : null;
-        echo '<tr><td>' . e($x['name']) . '</td><td class="num">' . (float)$x['q'] . ' ' . e($x['unit']) . '</td>'
-           . '<td>' . ($x['last_sale_date'] ? dmy($x['last_sale_date']) : '<span class="badge badge-bad">Never sold</span>') . '</td>'
-           . '<td class="num">' . ($idle !== null ? $idle . 'd' : '-') . '</td>'
-           . '<td class="num">₹' . money($x['q'] * $x['purchase_price']) . '</td></tr>';
+       . '<div><label>Sitting for at least (days)</label><input type="number" name="dead_days" value="' . $deadDays . '"></div>'
+       . '<button class="btn btn-sm" type="submit">Apply</button>'
+       . ' <a class="btn btn-sm btn-outline no-print" href="?r=dead_stock&dead_days=90&stock_loc=' . $stockLoc . '">3 months</a>'
+       . ' <a class="btn btn-sm btn-outline no-print" href="?r=dead_stock&dead_days=180&stock_loc=' . $stockLoc . '">6 months</a>'
+       . ' <a class="btn btn-sm btn-outline no-print" href="?r=dead_stock&dead_days=365&stock_loc=' . $stockLoc . '">1 year</a>'
+       . '</form>';
+
+    echo '<div class="grid-stats">'
+       . '<div class="stat s-bad"><div class="stat-label">Money stuck on the shelf</div><div class="stat-value">₹' . money($tot['tied_up']) . '</div></div>'
+       . '<div class="stat s-good"><div class="stat-label">Comes back if you clear it all</div><div class="stat-value">₹' . money($tot['cash_back']) . '</div></div>'
+       . '<div class="stat ' . ($tot['result'] < -0.009 ? 's-bad' : 's-good') . '"><div class="stat-label">'
+       . ($tot['result'] < -0.009 ? 'Loss at those prices' : 'Profit at those prices') . '</div>'
+       . '<div class="stat-value">₹' . money(abs($tot['result'])) . '</div></div>'
+       . '<div class="stat"><div class="stat-label">Items</div><div class="stat-value">' . $tot['items'] . '</div></div>'
+       . '</div>';
+
+    if ($rows) {
+        echo '<p class="muted" style="margin:0 0 10px">'
+           . 'Sitting ' . $deadDays . '+ days, biggest money first. <b>Ask</b> is worked out from how long it has '
+           . 'been sitting: under 6 months cost + 5%, 6 to 12 months cost, over a year cost − 15% — and never above '
+           . 'the price you already ask. <b>At that price</b> says what you make or lose, per unit and in total, '
+           . 'so nothing is hidden. Of these, ' . $tot['never_sold'] . ' ' . ($tot['never_sold'] == 1 ? 'has' : 'have')
+           . ' never sold once and ' . $tot['over_year'] . ' ' . ($tot['over_year'] == 1 ? 'has' : 'have')
+           . ' been sitting over a year.</p>';
     }
-    if (!$rows) echo '<tr><td colspan="5" class="muted">Nothing dead/slow-moving right now. 🎉</td></tr>';
+
+    echo '<div class="table-wrap"><table><thead><tr><th>Item</th><th class="num">In stock</th>'
+       . '<th class="num">Sitting</th><th>Last sold</th><th class="num">Cost</th><th class="num">Price now</th>'
+       . '<th class="num">Money stuck</th><th class="num">Ask</th><th class="num">At that price</th>'
+       . '<th class="num">Cash back</th></tr></thead><tbody>';
+    foreach ($rows as $x) {
+        $res = $x['result_total'];
+        echo '<tr><td><a href="item_view.php?id=' . $x['id'] . '">' . e($x['name']) . '</a>'
+           . ($x['sitting_days'] >= 365 ? ' <span class="badge badge-bad">over a year</span>' : '') . '</td>'
+           . '<td class="num">' . (float)$x['qty'] . ' ' . e($x['unit']) . '</td>'
+           . '<td class="num">' . $x['sitting_days'] . 'd</td>'
+           . '<td>' . ($x['never_sold']
+                ? '<span class="badge badge-warn">never sold</span>'
+                : dmy($x['last_sale'])) . '</td>'
+           . '<td class="num">₹' . money($x['cost']) . '</td>'
+           . '<td class="num">₹' . money($x['selling']) . '</td>'
+           . '<td class="num"><b>₹' . money($x['tied_up']) . '</b></td>'
+           . '<td class="num"><b>₹' . money($x['ask']) . '</b>'
+           . '<div class="muted" style="font-size:11px">' . ($x['ask_off_cost_pct'] == 0 ? 'at cost'
+                : 'cost ' . ($x['ask_off_cost_pct'] > 0 ? '+' : '−') . abs($x['ask_off_cost_pct']) . '%') . '</div></td>'
+           . '<td class="num" style="color:var(--' . ($res < -0.009 ? 'danger' : 'success') . ')">'
+           . ($res < -0.009 ? '− ₹' : '+ ₹') . money(abs($res))
+           . '<div class="muted" style="font-size:11px">₹' . money(abs($x['result_per_unit'])) . '/' . e($x['unit']) . '</div></td>'
+           . '<td class="num">₹' . money($x['cash_back']) . '</td></tr>';
+    }
+    if (!$rows) echo '<tr><td colspan="10" class="muted">Nothing has been sitting that long. 🎉</td></tr>';
     echo '</tbody></table></div>';
+
+    if ($rows) {
+        echo '<p class="muted no-print" style="font-size:12.5px">'
+           . 'Nothing here changes a price by itself. Open an item to change what you ask for it — and note that '
+           . 'entering a fresh purchase of the same item raises its price back to the minimum margin, which is '
+           . 'right when you have bought it again.</p>';
+    }
 }
 
 // ---------------- activity log (who did what, when) ----------------

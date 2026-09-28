@@ -28,5 +28,12 @@ try {
 }
 
 $pdo->rollBack(); // nothing the tests did is kept
+
+// ...but the dashboard's cache is a FILE, and a file does not roll back.
+// A suite run renders those summaries from its own fixtures, and the JSON
+// left behind would then be served to a live owner for up to its TTL - real
+// screens showing numbers that no longer exist in the database. Dropping it
+// here costs one cache miss and closes that window.
+foreach (glob(__DIR__ . '/../uploads/cache/*.json') as $stale) @unlink($stale);
 echo "\n\033[90m(all test data rolled back)\033[0m\n";
 exit(t_summary());

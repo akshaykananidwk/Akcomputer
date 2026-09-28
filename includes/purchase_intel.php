@@ -471,3 +471,186 @@ function pi_item_reorder($itemId, $days = 90) {
         'best_supplier' => $sup[0] ?? null,
     ];
 }
+
+// ===========================================================================
+//  STOCK THAT IS NOT MOVING — and what to ask for it
+//
+//  The owner's question: "this stock has been sitting three months and has
+//  not gone; I will take whatever price I can get for it." That needs three
+//  things to be decided in ONE place, because the dashboard card and the
+//  clearance report were answering the first one differently:
+//
+//    1. how long has this stock been sitting
+//    2. is that long enough to call it dead
+//    3. what is it reasonable to ask for it now
+//
+//  On (1) the report used to be wrong. It aged an item from its last SALE
+//  only, so a product bought last week that had never sold was reported as
+//  "dead for ever" and sat at the top of a clearance list it had no business
+//  being on. Money is not stuck in something that arrived on Tuesday.
+// ===========================================================================
+
+/**
+ * The day this money started sitting.
+ *
+ * Something that has sold: the last time it sold. Something that has never
+ * sold: the day it arrived, else the day the item was created. Ageing a
+ * never-sold item from "the beginning of time" is what put a week-old
+ * product into the 180+ bucket.
+ */
+function stock_sitting_since($lastSale, $lastPurchase = null, $createdAt = null) {
+    $d = $lastSale ?: ($lastPurchase ?: substr((string)$createdAt, 0, 10));
+    return $d !== '' ? $d : null;
+}
+
+/** How many days it has been sitting. 0 when nothing is known about it.
+ *
+ *  Never negative: a bill dated in the future - a typo at the counter, or a
+ *  post-dated invoice - would otherwise report stock as having sat for minus
+ *  two hundred days, and "-194d" on a screen is not a number anybody can act
+ *  on. Something not yet in the past has been sitting for no time at all. */
+function stock_sitting_days($lastSale, $lastPurchase = null, $createdAt = null, $asOf = null) {
+    $since = stock_sitting_since($lastSale, $lastPurchase, $createdAt);
+    return $since ? max(0, days_between_dates($since, $asOf ?: today())) : 0;
+}
+
+/** The shop's own cut-off for "not moving", set in Settings. */
+function dead_stock_days() { return max(1, (int)setting('dead_stock_days', 90)); }
+
+/**
+ * What to ask for a piece that is not moving.
+ *
+ * Deterministic and explainable - the deeper the cut, the longer the money
+ * has been dead. No model, no guessing:
+ *
+ *    under 6 months   cost + 5%    clear it close to break-even
+ *    6 to 12 months   cost         take the money back, make nothing
+ *    over 12 months   cost - 15%   a year is long enough; take the loss
+ *
+ * It never suggests ABOVE the current selling price - the point is to move
+ * it, not to reprice it upwards - and never below zero.
+ *
+ * Returns the price, plus the profit or loss per unit AT that price, so the
+ * screen can say so out loud. A clearance list that hides the loss is how a
+ * shop talks itself into selling everything below cost.
+ */
+function clearance_price($cost, $selling, $sittingDays) {
+    $cost = max(0.0, (float)$cost);
+    $selling = max(0.0, (float)$selling);
+    $days = (int)$sittingDays;
+    if ($days >= 365)      { $pct = -15; }
+    elseif ($days >= 180)  { $pct = 0; }
+    else                   { $pct = 5; }
+    $ask = round($cost * (1 + $pct / 100), 2);
+    // never suggest putting the price UP
+    if ($selling > 0 && $ask > $selling) $ask = $selling;
+    $ask = max(0.0, $ask);
+    return ['price' => $ask, 'off_cost_pct' => $pct, 'per_unit' => round($ask - $cost, 2)];
+}
+
+/**
+ * The clearance list: stock on the shelf that has not moved for $days.
+ *
+ * One row per item, carrying everything needed to decide what to do with it
+ * without opening anything else - how long, why, how much money is in it,
+ * and what it is worth asking now.
+ *
+ * Ordered by the money tied up, biggest first: that is where the cash is.
+ */
+function dead_stock_rows($days = null, $locId = 0) {
+    $days = $days !== null ? max(1, (int)$days) : dead_stock_days();
+    $locJoin = $locId ? ' AND st.location_id = ' . (int)$locId : '';
+    $rows = all("SELECT i.id, i.name, i.unit, i.purchase_price, i.selling_price, i.created_at,
+                        COALESCE(SUM(st.qty),0) qty
+                 FROM items i LEFT JOIN stock st ON st.item_id = i.id $locJoin
+                 WHERE i.is_active = 1 AND i.item_type <> 'service'
+                 GROUP BY i.id HAVING qty > 0.009");
+    $lastSale = $lastPurch = [];
+    foreach (all("SELECT si.item_id, MAX(s.sale_date) d FROM sale_items si JOIN sales s ON s.id = si.sale_id
+                  WHERE s.is_cancelled = 0 GROUP BY si.item_id") as $x) $lastSale[(int)$x['item_id']] = $x['d'];
+    foreach (all("SELECT pi.item_id, MAX(p.purchase_date) d FROM purchase_items pi JOIN purchases p ON p.id = pi.purchase_id
+                  WHERE p.is_cancelled = 0 GROUP BY pi.item_id") as $x) $lastPurch[(int)$x['item_id']] = $x['d'];
+
+    $t = today();
+    $out = [];
+    foreach ($rows as $r) {
+        $id = (int)$r['id'];
+        $sitting = stock_sitting_days($lastSale[$id] ?? null, $lastPurch[$id] ?? null, $r['created_at'], $t);
+        if ($sitting < $days) continue;
+        $qty = (float)$r['qty'];
+        $cost = (float)$r['purchase_price'];
+        $cl = clearance_price($cost, $r['selling_price'], $sitting);
+        $out[] = [
+            'id' => $id, 'name' => $r['name'], 'unit' => $r['unit'], 'qty' => $qty,
+            'cost' => round($cost, 2), 'selling' => round((float)$r['selling_price'], 2),
+            'tied_up' => round($qty * $cost, 2),
+            'last_sale' => $lastSale[$id] ?? null,
+            'last_purchase' => $lastPurch[$id] ?? null,
+            'never_sold' => !isset($lastSale[$id]),
+            'sitting_days' => $sitting,
+            'ask' => $cl['price'], 'ask_off_cost_pct' => $cl['off_cost_pct'],
+            'result_per_unit' => $cl['per_unit'],
+            'result_total' => round($cl['per_unit'] * $qty, 2),
+            'cash_back' => round($cl['price'] * $qty, 2),
+        ];
+    }
+    usort($out, fn($a, $b) => $b['tied_up'] <=> $a['tied_up']);
+    return $out;
+}
+
+/** The totals under the clearance list. */
+function dead_stock_totals(array $rows) {
+    $t = ['items' => count($rows), 'tied_up' => 0.0, 'cash_back' => 0.0, 'result' => 0.0,
+          'never_sold' => 0, 'over_year' => 0];
+    foreach ($rows as $r) {
+        $t['tied_up'] += $r['tied_up'];
+        $t['cash_back'] += $r['cash_back'];
+        $t['result'] += $r['result_total'];
+        if ($r['never_sold']) $t['never_sold']++;
+        if ($r['sitting_days'] >= 365) $t['over_year']++;
+    }
+    foreach (['tied_up', 'cash_back', 'result'] as $k) $t[$k] = round($t[$k], 2);
+    return $t;
+}
+
+/**
+ * The age bands the dashboard shows beside "Dead stock".
+ *
+ * They have to start AT the shop's own cut-off. They used to be fixed at
+ * 30-60 / 60-90 / 90-180 / 180+ while nothing entered the list before 90
+ * days, so the first two cards on the owner's home screen were structurally
+ * incapable of ever showing anything but zero. Now the bands begin where the
+ * list begins, so every card can fill.
+ */
+function dead_stock_bands() {
+    $d = dead_stock_days();
+    // always three bands: from the cut-off, then six months, then a year -
+    // skipping any edge that the cut-off has already passed
+    $edges = array_values(array_unique(array_filter([180, 365], fn($e) => $e > $d)));
+    $bands = [];
+    $from = $d;
+    foreach ($edges as $e) { $bands[] = [$from, $e]; $from = $e; }
+    $bands[] = [$from, null];
+    return $bands;
+}
+
+function dead_stock_band_label($from, $to) {
+    return $to === null ? $from . '+ days' : $from . '-' . $to . ' days';
+}
+
+function dead_stock_buckets_init() {
+    $out = [];
+    foreach (dead_stock_bands() as [$f, $t]) $out[dead_stock_band_label($f, $t)] = 0.0;
+    return $out;
+}
+
+/** Which band a sitting age falls in. */
+function dead_stock_bucket($sittingDays) {
+    $sittingDays = (int)$sittingDays;
+    $bands = dead_stock_bands();
+    foreach ($bands as [$f, $t]) {
+        if ($t === null || $sittingDays < $t) return dead_stock_band_label($f, $t);
+    }
+    $last = end($bands);
+    return dead_stock_band_label($last[0], $last[1]);
+}

@@ -235,3 +235,177 @@ t_group('the honesty labels are actually in the screens');
 t_ok('lost sales is called an estimate to the reader', strpos($src, 'This figure is an estimate') !== false);
 t_ok('delivery days are explained as owner-entered', strpos($src, 'The delivery days are for you to fill in') !== false);
 t_ok('the cost source is shown on every reorder row', strpos($src, 'Catalogue price') !== false);
+
+$_ROOT = dirname(__DIR__);
+t_group('Stock that is not moving — how long has it been sitting');
+
+// The rule the report used to get wrong: a never-sold item is aged from when
+// it ARRIVED, not from the beginning of time.
+t_eq('something that sold is aged from its last sale',
+     stock_sitting_days('2026-06-01', '2026-01-01', '2025-01-01', '2026-09-01'), 92);
+t_eq('something never sold is aged from when it arrived',
+     stock_sitting_days(null, '2026-08-25', '2024-01-01', '2026-09-01'), 7);
+t_eq('...and from the day the item was created when it was never bought either',
+     stock_sitting_days(null, null, '2026-08-01 10:00:00', '2026-09-01'), 31);
+t_eq('nothing known at all is not treated as ancient',
+     stock_sitting_days(null, null, null, '2026-09-01'), 0);
+t_eq('a bill dated in the FUTURE is not negative days of sitting',
+     stock_sitting_days('2027-04-10', null, '2026-01-01', '2026-09-28'), 0);
+t_ok('a last sale wins over a later purchase — the money moved when it sold',
+     stock_sitting_days('2026-08-30', '2026-01-01', null, '2026-09-01') === 2);
+
+t_group('...and what to ask for it');
+
+// Deterministic, and it must never quietly hide a loss.
+$c = clearance_price(100, 200, 100);
+t_eq('under 6 months: cost + 5%', $c['price'], 105.0);
+t_eq('...and that is a profit', $c['per_unit'], 5.0);
+$c = clearance_price(100, 200, 200);
+t_eq('6 to 12 months: cost', $c['price'], 100.0);
+t_eq('...breaking even exactly', $c['per_unit'], 0.0);
+$c = clearance_price(100, 200, 400);
+t_eq('over a year: cost − 15%', $c['price'], 85.0);
+t_eq('...and the loss is stated, not hidden', $c['per_unit'], -15.0);
+t_eq('the boundary at 180 days belongs to the cost bucket', clearance_price(100, 200, 180)['price'], 100.0);
+t_eq('the boundary at 365 days belongs to the loss bucket', clearance_price(100, 200, 365)['price'], 85.0);
+
+// THE one that stops it being silly: clearance never raises a price.
+t_eq('it never suggests MORE than you already ask', clearance_price(100, 90, 100)['price'], 90.0);
+t_eq('...and never a negative price', clearance_price(0, 0, 400)['price'], 0.0);
+
+t_group('The clearance list is one rule, shared with the dashboard');
+
+$pi = file_get_contents($_ROOT . '/includes/purchase_intel.php');
+$rb = file_get_contents($_ROOT . '/includes/report_body.php');
+$dash = file_get_contents($_ROOT . '/includes/dashboard.php');
+t_ok('the rule lives in one place', strpos($pi, 'function stock_sitting_days(') !== false);
+t_ok('the dashboard uses it', strpos($dash, 'stock_sitting_days(') !== false);
+t_ok('...and no longer works the date out itself',
+     strpos($dash, '$sittingSince = $lastSale ?:') === false);
+t_ok('the report uses it too', strpos($rb, 'dead_stock_rows(') !== false);
+t_ok('...and no longer has its own SQL for it',
+     strpos($rb, 'last_sale_date < DATE_SUB(CURDATE()') === false);
+t_ok('the cut-off is one setting, read in one place',
+     strpos($pi, "setting('dead_stock_days', 90)") !== false
+     && strpos($dash, "setting('dead_stock_days', 90)") === false);
+
+// --- and now the behaviour, against real rows -----------------------------
+$loc = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+$co  = (int)val('SELECT id FROM companies ORDER BY id LIMIT 1');
+
+// an item bought long ago, sold long ago, still on the shelf: belongs here
+$old = t_item(5, $loc, 500);
+q("UPDATE items SET purchase_price = 400, selling_price = 500, created_at = '2024-01-01' WHERE id = ?", [$old]);
+$s1 = t_sale(t_party(), 500, 500, '2026-01-10');
+q('INSERT INTO sale_items (sale_id, item_id, qty, price, total) VALUES (?,?,1,500,500)', [$s1, $old]);
+
+// an item that arrived a week ago and has never sold: must NOT be here
+$fresh = t_item(3, $loc, 900);
+q("UPDATE items SET purchase_price = 700, created_at = ? WHERE id = ?", [date('Y-m-d', strtotime('-6 days')), $fresh]);
+
+// an item sold yesterday: must NOT be here
+$moving = t_item(4, $loc, 300);
+$s2 = t_sale(t_party(), 300, 300, date('Y-m-d', strtotime('-1 day')));
+q('INSERT INTO sale_items (sale_id, item_id, qty, price, total) VALUES (?,?,1,300,300)', [$s2, $moving]);
+
+$rows = dead_stock_rows(90, 0);
+$byId = [];
+foreach ($rows as $x) $byId[$x['id']] = $x;
+t_ok('stock that has not moved for months is on the list', isset($byId[$old]));
+t_ok('THE OLD BUG: a never-sold item that arrived last week is NOT on it', !isset($byId[$fresh]));
+t_ok('something sold yesterday is not on it either', !isset($byId[$moving]));
+
+$row = $byId[$old] ?? null;
+t_eq('...with the money actually stuck in it', $row['tied_up'], 2000.0);   // 5 x 400
+t_ok('...how long it has been sitting', $row['sitting_days'] >= 200, $row['sitting_days'] ?? '');
+t_eq('...a price to ask', $row['ask'], $row['sitting_days'] >= 365 ? 340.0 : 400.0);
+t_eq('...and the cash that comes back at it', $row['cash_back'], round($row['ask'] * 5, 2));
+
+// an item with stock at ANOTHER location must not show under this one
+$other = (int)val('SELECT id FROM locations WHERE id <> ? ORDER BY id LIMIT 1', [$loc]);
+if ($other) {
+    $elsewhere = t_item(6, $other, 250);
+    q("UPDATE items SET purchase_price = 200, created_at = '2024-01-01' WHERE id = ?", [$elsewhere]);
+    $here = array_column(dead_stock_rows(90, $loc), 'id');
+    t_ok('the location filter really filters', !in_array($elsewhere, $here)
+         && in_array($elsewhere, array_column(dead_stock_rows(90, $other), 'id')));
+}
+
+// a service has no shelf, so it can never be dead stock
+$svc = t_item(0, $loc, 1000);
+q("UPDATE items SET item_type = 'service', created_at = '2024-01-01' WHERE id = ?", [$svc]);
+t_ok('a service is never called dead stock', !in_array($svc, array_column(dead_stock_rows(90, 0), 'id')));
+
+// something sold but with nothing left is not money on a shelf
+$sold_out = t_item(0, $loc, 400);
+q("UPDATE items SET created_at = '2024-01-01' WHERE id = ?", [$sold_out]);
+t_ok('an item with no stock left is not on the list', !in_array($sold_out, array_column(dead_stock_rows(90, 0), 'id')));
+
+$rows2 = dead_stock_rows(90, 0);
+t_ok('the biggest money is at the top', count($rows2) < 2
+     || $rows2[0]['tied_up'] >= $rows2[1]['tied_up']);
+$tt = dead_stock_totals($rows2);
+t_eq('the totals add up to the rows', $tt['tied_up'],
+     round(array_sum(array_column($rows2, 'tied_up')), 2));
+t_eq('...and so does the cash back', $tt['cash_back'],
+     round(array_sum(array_column($rows2, 'cash_back')), 2));
+t_ok('...and the loss/profit is the sum of the rows, not a guess',
+     abs($tt['result'] - round(array_sum(array_column($rows2, 'result_total')), 2)) < 0.011);
+
+t_group('The screen says what the number means');
+
+t_ok('it says where the money is stuck', strpos($rb, 'Money stuck on the shelf') !== false);
+t_ok('...what comes back if it is cleared', strpos($rb, 'Comes back if you clear it all') !== false);
+t_ok('...and names a loss as a loss', strpos($rb, 'Loss at those prices') !== false);
+t_ok('the ask is explained, not just printed', strpos($rb, 'under 6 months cost + 5%') !== false);
+t_ok('never-sold rows are marked as such', strpos($rb, 'never sold') !== false);
+t_ok('...and over-a-year rows too', strpos($rb, 'over a year') !== false);
+t_ok('it is honest that it changes no price by itself',
+     strpos($rb, 'Nothing here changes a price by itself') !== false);
+t_ok('...and warns that a fresh purchase raises the price back',
+     strpos($rb, 'raises its price back to the minimum margin') !== false);
+
+t_group('The age bands beside Dead stock can all actually fill');
+
+// They used to be fixed at 30-60 / 60-90 / 90-180 / 180+ while nothing
+// entered the list before 90 days, so the first two cards on the owner's
+// home screen could never show anything but zero.
+$bands = dead_stock_bands();
+t_ok('every band starts at or after the shop\'s own cut-off',
+     !array_filter($bands, fn($b) => $b[0] < dead_stock_days()), json_encode($bands));
+t_ok('the bands do not overlap and leave no gap', (function () use ($bands) {
+    for ($i = 1; $i < count($bands); $i++) if ($bands[$i][0] !== $bands[$i - 1][1]) return false;
+    return $bands[count($bands) - 1][1] === null;   // the last one is open-ended
+})(), json_encode($bands));
+t_ok('the last band is open-ended, so nothing falls out of the bottom',
+     end($bands)[1] === null);
+
+// every band is reachable: something lands in each one
+$hits = [];
+foreach ([dead_stock_days(), 181, 400, 5000] as $d) $hits[dead_stock_bucket($d)] = true;
+t_ok('and each band can be reached by a real age',
+     count($hits) === count($bands), implode(' | ', array_keys($hits)));
+t_eq('a bucket key is always one the card list knows',
+     array_diff_key($hits, dead_stock_buckets_init()), []);
+t_eq('the cut-off day itself lands in the first band',
+     dead_stock_bucket(dead_stock_days()), dead_stock_band_label($bands[0][0], $bands[0][1]));
+
+// a shop that sets a long cut-off must not get nonsense bands
+$was = setting('dead_stock_days', 90);
+set_setting('dead_stock_days', '400');
+$long = dead_stock_bands();
+t_ok('a 400-day cut-off gives one sensible open band', count($long) === 1 && $long[0] === [400, null]);
+t_eq('...and its bucket resolves', dead_stock_bucket(500), '400+ days');
+set_setting('dead_stock_days', '200');
+t_ok('a 200-day cut-off skips the 180 edge it has already passed',
+     dead_stock_bands() === [[200, 365], [365, null]], json_encode(dead_stock_bands()));
+set_setting('dead_stock_days', (string)$was);
+
+$dash = file_get_contents($_ROOT . '/includes/dashboard.php');
+t_ok('the dashboard no longer hard-codes the bands',
+     strpos($dash, "'30-60' => 0.0") === false && strpos($dash, 'dead_stock_buckets_init()') !== false);
+t_ok('...and puts a value in a band through the one rule', strpos($dash, 'dead_stock_bucket(') !== false);
+t_ok('the buckets still add up to the dead total', (function () {
+    $s = dash_stock(0, 0);
+    return abs(array_sum($s['dead_buckets']) - $s['dead_value']) < 0.011;
+})());
