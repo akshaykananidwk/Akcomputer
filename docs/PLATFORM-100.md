@@ -1911,3 +1911,536 @@
 **Example:** "સપ્તાહ 3: આવક ₹86,000 · ખર્ચ ₹1,34,000 → **₹48,000 ખૂટે**".
 
 ---
+## CATEGORY 14 — STAFF / HR (4)
+
+### #79 · Sales Target & Commission 🔴
+**Category:** Staff/HR
+**શું છે?** સ્ટાફ પ્રતિ **લક્ષ્ય** અને લક્ષ્ય પર **કમિશન** — આપોઆપ ગણાય.
+**શું કામ કરે છે?** માસિક લક્ષ્ય (રકમ કે નફો) → `sales.user_id` પરથી પ્રગતિ → slab પ્રમાણે કમિશન → પગાર સાથે.
+**Real-world Use Case:** સ્ટાફને ઉત્સાહ નથી; "કોણે કેટલું વેચ્યું" એ ચોપડે નથી.
+**Customer:** સ્ટાફ ધ્યાન આપે.
+**Staff:** **પોતાની કમાણી દેખાય** — સૌથી મોટી પ્રેરણા.
+**Owner:** **વેચાણ વધે** પગાર વધાર્યા વગર; કમિશન નફા પર, વેચાણ પર નહીં (ડિસ્કાઉન્ટ ન વધે).
+**Revenue Impact:** **ઊંચી**.
+**Cost Saving:** —
+**Automation:** ગણતરી આપોઆપ.
+**AI Opportunity:** વ્યાજબી લક્ષ્ય સૂચવે.
+**WhatsApp:** સાપ્તાહિક "તમે ₹X / ₹Y".
+**Mobile/PWA:** ✔ પોતાનું કાર્ડ.
+**DB Tables:** `staff_targets`, `staff_commission` (નવાં).
+**APIs:** `GET ?r=my_target`.
+**Security:** સ્ટાફ **પોતાનું જ** જુએ (`api_own_scope()` pattern); કમિશન `profit_cost_sql()` થી.
+**Complexity:** Medium
+**Priority:** P1
+**Monetization:** "Staff Pro".
+**Scalability:** સાદું.
+**Example:** "રમેશ: ₹2.8L / ₹3L · નફો ₹41,000 · કમિશન ₹1,230".
+
+### #80 · Attendance & Shift Roster 🔴
+**Category:** Staff/HR
+**શું છે?** હાજરી (ફોનથી, જગ્યા સાથે) અને **કોણ કઈ shift માં**.
+**શું કામ કરે છે?** ફોનથી in/out + GPS (દુકાનની ત્રિજ્યા) → માસિક હાજરી → પગાર.
+**Real-world Use Case:** હાજરી ચોપડે; પગાર વખતે દલીલ.
+**Customer:** —
+**Staff:** **દલીલ બંધ**; રજા/ઓવરટાઇમ સ્પષ્ટ.
+**Owner:** પગારની ગણતરી સાચી; મોડું આવવું દેખાય.
+**Revenue Impact:** પરોક્ષ.
+**Cost Saving:** ઊંચી (પગારની ભૂલ, દલીલનો સમય).
+**Automation:** માસિક શીટ.
+**AI Opportunity:** નથી.
+**WhatsApp:** ન આવ્યા હોય તો 11 વાગ્યે માલિકને.
+**Mobile/PWA:** ✔ (#5 shift સાથે જોડાય).
+**DB Tables:** `attendance` (નવું).
+**APIs:** `POST ?r=punch`.
+**Security:** GPS ત્રિજ્યા; બીજાની હાજરી નહીં; સુધારો audit સાથે.
+**Complexity:** Medium
+**Priority:** P2
+**Monetization:** "Staff Pro".
+**Scalability:** સાદું.
+**Example:** "રમેશ 26 દિ · 2 રજા · 3 વાર મોડું".
+
+### #81 · Staff Productivity (સેલ્સ + સર્વિસ) 🟡
+**Category:** Staff/HR
+**શું છે?** કોણ **કેટલું કામ** કરે છે — વેચાણ, job, સરેરાશ બિલ, પરત.
+**શું કામ કરે છે?** `sales.user_id`, `repairs.technician_id`, `audit_logs` → એક પાનું.
+**Real-world Use Case:** કોણ ખરેખર કમાવે છે એ માત્ર અંદાજ છે.
+**Customer:** સારો સ્ટાફ ટકે.
+**Staff:** મહેનત દેખાય.
+**Owner:** **પગાર/બોનસના સાચા નિર્ણય**; તાલીમ કોને જોઈએ.
+**Revenue Impact:** મધ્યમ-ઊંચી.
+**Cost Saving:** ઊંચી.
+**Automation:** માસિક.
+**AI Opportunity:** સુધારાનું સૂચન.
+**WhatsApp:** માસિક માલિકને.
+**Mobile/PWA:** ✔
+**DB Tables:** કોઈ નવું નહીં.
+**APIs:** `GET ?r=staff_perf`.
+**Security:** માલિક જ બધાનું; સ્ટાફ પોતાનું.
+**Complexity:** Easy
+**Priority:** P1
+**Monetization:** "Staff Pro".
+**Scalability:** cache.
+**Example:** "રમેશ 142 બિલ · સરેરાશ ₹2,100 · નફો 14% · પરત 1 · Job 22 (સરેરાશ 1.6 દિ)".
+
+### #82 · Training & Certification Tracker 🔴
+**Category:** Staff/HR
+**શું છે?** સ્ટાફ **શું શીખ્યો** અને શું બાકી — brand ની તાલીમ, certificate.
+**શું કામ કરે છે?** કૌશલ્ય યાદી + તાલીમ નોંધ + certificate expiry; કૌશલ્ય પ્રમાણે job સોંપણી (#40).
+**Real-world Use Case:** "લેપટોપ mainboard કોણ કરી શકે?" — યાદ પર આધાર.
+**Customer:** સાચો માણસ આવે.
+**Staff:** કારકિર્દીનો રસ્તો દેખાય.
+**Owner:** **જ્ઞાન એક જ માણસમાં કેદ ન રહે** — એ જાય તો દુકાન અટકે નહીં.
+**Revenue Impact:** પરોક્ષ.
+**Cost Saving:** મધ્યમ.
+**Automation:** expiry રિમાઇન્ડર.
+**AI Opportunity:** #73 માંથી શું શીખવવું એ સૂચવે.
+**WhatsApp:** certificate expiry.
+**Mobile/PWA:** જોવા.
+**DB Tables:** `staff_skills`, `staff_training` (નવાં).
+**APIs:** `GET ?r=skills`.
+**Security:** `users.edit`.
+**Complexity:** Easy
+**Priority:** P3
+**Monetization:** "Staff Pro".
+**Scalability:** સાદું.
+**Example:** "રમેશ: લેપટોપ L2 ✔ · CCTV L1 ✔ · પ્રિન્ટર ✖ → તાલીમ".
+
+---
+
+## CATEGORY 15 — B2B / CORPORATE (3)
+
+### #83 · Corporate Account: PO, Contract Rate, Monthly Bill 🟡
+**Category:** B2B
+**શું છે?** કંપની ગ્રાહકનું **કરારનું ભાવપત્રક**, તેમનો PO નંબર, અને **મહિને એક બિલ**.
+**શું કામ કરે છે?** પાર્ટી પ્રતિ ભાવપત્રક (`party_prices` નવું) + બિલ પર તેમનો PO નંબર ફરજિયાત + મહિનાના challan એક બિલમાં.
+**Real-world Use Case:** હોટેલ/શાળા રોજ નાની ખરીદી કરે; મહિને એક બિલ માંગે અને PO નંબર વગર પૈસા ન આપે.
+**Customer:** તેમની પ્રક્રિયા પ્રમાણે — **તેથી જ મોટા ગ્રાહક ટકે**.
+**Staff:** ભાવ યાદ રાખવા ન પડે.
+**Owner:** **મોટા સ્થિર ગ્રાહક**; ઉઘરાણી અટકે નહીં (PO નંબર છે).
+**Revenue Impact:** **ઊંચી** (મોટી, પુનરાવર્તિત).
+**Cost Saving:** ઊંચી (ઉઘરાણીના ધક્કા).
+**Automation:** માસિક બિલ આપોઆપ.
+**AI Opportunity:** નથી.
+**WhatsApp:** માસિક બિલ + statement.
+**Mobile/PWA:** ✔
+**DB Tables:** `party_prices`, `sales.po_no` (નવાં).
+**APIs:** `GET ?r=party_price`, `POST ?r=monthly_bill`.
+**Security:** ભાવપત્રક સર્વર પર; floor નીચે નહીં; `party.edit`.
+**Complexity:** Medium
+**Priority:** P1
+**Monetization:** "B2B Pro".
+**Scalability:** સાદું.
+**Example:** "Hotel Sagar: કારતૂસ ₹1,380 (કરાર) · PO/2026/88 · મહિનાનું બિલ ₹42,600".
+
+### #84 · Tender / Rate Contract Quotation 🔴
+**Category:** B2B
+**શું છે?** સરકારી/કંપની **ટેન્ડર** માટેનું ફોર્મેટ પ્રમાણેનું ક્વોટેશન.
+**શું કામ કરે છે?** ટેન્ડર નંબર, વસ્તુવાર ભાવ (GST અલગ/સહિત), માન્યતા, શરતો, technical specs; Excel/PDF.
+**Real-world Use Case:** શાળા-પંચાયતના ટેન્ડર — ફોર્મેટ ખોટું હોય તો બિડ રદ.
+**Customer:** માન્ય બિડ.
+**Staff:** ટાઇપ કરવાનું કામ ઘટે.
+**Owner:** **મોટા ઓર્ડરની તક**; ફોર્મેટની ભૂલથી બિડ ન જાય.
+**Revenue Impact:** **ઊંચી** (ટિકિટ મોટી).
+**Cost Saving:** મધ્યમ.
+**Automation:** ફોર્મેટ.
+**AI Opportunity:** ટેન્ડરના PDF માંથી વસ્તુની યાદી વાંચે — **માણસ ચકાસે**.
+**WhatsApp:** નહીં (ઈમેલ/છાપેલું).
+**Mobile/PWA:** જોવા.
+**DB Tables:** `tenders` (નવું); #29 quotation વાપરે.
+**APIs:** `POST ?r=tender_quote`.
+**Security:** margin floor; બિડ મોકલ્યા પછી lock (audit).
+**Complexity:** Medium
+**Priority:** P3
+**Monetization:** "B2B Pro".
+**Scalability:** સાદું.
+**Example:** "TENDER/2026/17 — 25 PC, 3 વર્ષ વોરંટી, ₹11.2L".
+
+### #85 · Dealer / Reseller Portal with Credit Limit 🟡
+**Category:** B2B
+**શું છે?** ડીલર **જાતે ઓર્ડર** કરે — તેમનો ભાવ, તેમની credit મર્યાદા.
+**શું કામ કરે છે?** હાલનું dealer login + #83 ભાવપત્રક + credit limit ચેક; મર્યાદા વટે તો ઓર્ડર **રોકાય**, મંજૂરી માંગે.
+**Real-world Use Case:** નાના ડીલર WhatsApp પર ઓર્ડર કરે; બાકી વધી જાય અને માલ જતો રહે.
+**Customer (ડીલર):** 24×7 ઓર્ડર, ભાવ-સ્ટોક દેખાય.
+**Staff:** ઓર્ડર લખવાનું કામ નહીં.
+**Owner:** **ઉધારીનું જોખમ નિયંત્રણમાં**; ડીલર વેચાણ વધે.
+**Revenue Impact:** **ઊંચી**.
+**Cost Saving:** **ઊંચી** (ખરાબ ઉધારી).
+**Automation:** મર્યાદા ચેક.
+**AI Opportunity:** ડીલરની મર્યાદા સૂચવે (ઇતિહાસ પરથી).
+**WhatsApp:** ઓર્ડરની પુષ્ટિ.
+**Mobile/PWA:** ✔ (એપમાં dealer mode છે).
+**DB Tables:** `parties.credit_limit` (નવો કૉલમ).
+**APIs:** `POST ?r=worder` માં limit ચેક.
+**Security:** મર્યાદા **સર્વર પર**; `party_balance()` થી બાકી; bypass નહીં.
+**Complexity:** Medium
+**Priority:** P1
+**Monetization:** "B2B Pro".
+**Scalability:** ઓર્ડર પ્રતિ એક ચેક.
+**Example:** "ડીલર બાકી ₹48,000 / મર્યાદા ₹50,000 → ₹12,000 નો ઓર્ડર **મંજૂરી માટે**".
+
+---
+
+## CATEGORY 16 — MULTI-BRANCH / MULTI-LOCATION (3)
+
+### #86 · Branch P&L and Comparison 🟡
+**Category:** Multi-branch
+**શું છે?** **દરેક શાખાનો પોતાનો નફો** — સરખામણી સાથે.
+**શું કામ કરે છે?** `locations` છે; વેચાણ/ખરીદી/ખર્ચ/પગાર શાખાવાર → શાખા પ્રતિ P&L.
+**Real-world Use Case:** બીજી દુકાન ખોલી — ખરેખર કમાય છે કે નહીં એ ખબર નથી.
+**Customer:** —
+**Staff:** શાખાની જવાબદારી સ્પષ્ટ.
+**Owner:** **કઈ શાખા ખોટમાં** — બંધ કરવી કે સુધારવી એ નિર્ણય.
+**Revenue Impact:** ઊંચી.
+**Cost Saving:** **સૌથી ઊંચી** (ખોટવાળી શાખા).
+**Automation:** માસિક.
+**AI Opportunity:** ફરક કેમ છે એની સમજૂતી.
+**WhatsApp:** માસિક.
+**Mobile/PWA:** ✔
+**DB Tables:** `expenses.location_id` (કૉલમ).
+**APIs:** `GET ?r=branch_pl`.
+**Security:** માલિક બધું; મેનેજર પોતાની શાખા.
+**Complexity:** Medium
+**Priority:** P1
+**Monetization:** "Multi-branch".
+**Scalability:** cache.
+**Example:** "દ્વારકા ₹1.42L નફો · ખંભાળિયા ₹18,000 ખોટ (ભાડું ઊંચું)".
+
+### #87 · Stock Transfer with In-Transit & Approval 🟡
+**Category:** Multi-branch
+**શું છે?** શાખા વચ્ચે માલ **રસ્તામાં** પણ દેખાય; મળ્યાની પુષ્ટિ પછી જ ઉમેરાય.
+**શું કામ કરે છે?** `stock_transfers` છે; in-transit સ્થિતિ + મળ્યાની પુષ્ટિ + ફરક (ઘટ) નોંધ.
+**Real-world Use Case:** માલ મોકલ્યો, પહોંચ્યો નહીં — બંને શાખા બીજા પર દોષ મૂકે.
+**Customer:** —
+**Staff:** જવાબદારી સ્પષ્ટ.
+**Owner:** **રસ્તામાં ખોવાતો માલ પકડાય**.
+**Revenue Impact:** પરોક્ષ.
+**Cost Saving:** ઊંચી.
+**Automation:** પુષ્ટિ રિમાઇન્ડર.
+**AI Opportunity:** નથી.
+**WhatsApp:** "3 વસ્તુ મોકલી — મળ્યે પુષ્ટિ કરો".
+**Mobile/PWA:** ✔ પુષ્ટિ ફોનથી.
+**DB Tables:** `stock_transfers.status` (કૉલમ).
+**APIs:** `POST ?r=transfer_receive`.
+**Security:** સ્ટોક ફક્ત `adjust_stock()` થી; ઘટ = audit સાથે અલગ entry.
+**Complexity:** Medium
+**Priority:** P1
+**Monetization:** "Multi-branch".
+**Scalability:** સાદું.
+**Example:** "TR-88: 3 મોકલી, 2 મળી → 1 ની તપાસ".
+
+### #88 · Central Purchase, Branch Distribution 🔴
+**Category:** Multi-branch
+**શું છે?** **એક જ જગ્યાએથી ખરીદી** (ભાવ સારો મળે) પછી શાખાઓમાં વહેંચણી.
+**શું કામ કરે છે?** શાખાની જરૂર (#17/#69) જોડાઈને એક PO (#15) → માલ આવે → સૂચવેલી વહેંચણી → #87 થી transfer.
+**Real-world Use Case:** બે શાખા અલગ અલગ 10-10 ખરીદે; 20 એકસાથે લેતાં ભાવ 4% સસ્તો.
+**Customer:** ભાવ સ્પર્ધાત્મક.
+**Staff:** ખરીદીની મહેનત એક જ વાર.
+**Owner:** **ખરીદ ભાવ સીધો ઘટે** — 100% નફામાં જાય.
+**Revenue Impact:** ઊંચી.
+**Cost Saving:** **સૌથી ઊંચી**.
+**Automation:** જરૂર જોડાય + વહેંચણી સૂચવાય.
+**AI Opportunity:** વહેંચણીનું પ્રમાણ સૂચવે.
+**WhatsApp:** શાખાને "આટલું આવશે".
+**Mobile/PWA:** મંજૂરી.
+**DB Tables:** `purchase_orders` (#15) + `po_allocations` (નવું).
+**APIs:** `POST ?r=po_allocate`.
+**Security:** માલિક/ખરીદી પરવાનગી; સ્ટોક `adjust_stock()` થી.
+**Complexity:** Hard
+**Priority:** P2
+**Monetization:** "Multi-branch".
+**Scalability:** સાદું.
+**Example:** "કારતૂસ 20 (દ્વારકા 12, ખંભાળિયા 8) → ભાવ ₹1,180 (₹1,230 ને બદલે) = ₹1,000 બચત".
+
+---
+
+## CATEGORY 17 — SECURITY / COMPLIANCE (3)
+
+### #89 · Two-Factor Login & Device Trust 🔴
+**Category:** Security
+**શું છે?** પાસવર્ડ + **OTP/TOTP**; ભરોસાનાં ઉપકરણ યાદ રહે.
+**શું કામ કરે છે?** માલિક/હિસાબની પરવાનગી વાળા માટે 2FA ફરજિયાત; નવું ઉપકરણ = OTP; ઉપકરણની યાદી + દૂર કરવાની સગવડ.
+**Real-world Use Case:** પાસવર્ડ સ્ટાફને ખબર પડે તો **બધો હિસાબ ખુલ્લો**.
+**Customer:** તેમનો ડેટા સુરક્ષિત.
+**Staff:** —
+**Owner:** **ધંધાની તિજોરીને બીજું તાળું**.
+**Revenue Impact:** પરોક્ષ.
+**Cost Saving:** **સૌથી ઊંચી** (એક ભંગ = આખો ડેટા).
+**Automation:** નવા ઉપકરણનું alert.
+**AI Opportunity:** નથી.
+**WhatsApp:** OTP + "નવા ફોનથી લોગિન".
+**Mobile/PWA:** ✔ ઉપકરણ યાદ.
+**DB Tables:** `user_devices`, `user_totp` (નવાં).
+**APIs:** `POST ?r=login_2fa`.
+**Security:** secret **encrypted**; throttle (પહેલેથી છે); recovery code.
+**Complexity:** Medium
+**Priority:** P1
+**Monetization:** core.
+**Scalability:** સાદું.
+**Example:** "નવા ફોનથી લોગિન → OTP → 'આ ઉપકરણ યાદ રાખો (30 દિ)'".
+
+### #90 · Encrypted Backup & Restore Drill 🟡
+**Category:** Security
+**શું છે?** રોજનો **encrypted** બેકઅપ + મહિને એક વાર **ખરેખર પરત લાવીને** ચકાસવું.
+**શું કામ કરે છે?** `backup.php` છે; encryption + બહાર નકલ + restore કરીને "ચાલ્યું" નો પુરાવો.
+**Real-world Use Case:** બેકઅપ લેવાય છે — પણ ખૂલે છે કે નહીં એ કોઈએ કદી ચકાસ્યું નથી.
+**Customer:** ડેટા ખોવાય નહીં.
+**Staff:** —
+**Owner:** **ધંધો ખતમ થવાનું જોખમ** ખતમ; બેકઅપ ચોરાય તો પણ વંચાય નહીં.
+**Revenue Impact:** પરોક્ષ.
+**Cost Saving:** **અમાપ** (ડેટા ગયો = ધંધો ગયો).
+**Automation:** રોજ + માસિક drill.
+**AI Opportunity:** નથી.
+**WhatsApp:** "બેકઅપ ✔ 42MB · restore ચકાસ્યું 1 તા."
+**Mobile/PWA:** સ્થિતિ.
+**DB Tables:** `backup_log` (નવું).
+**APIs:** `GET ?r=backup_status`.
+**Security:** key **સર્વર પર નહીં** (માલિક પાસે); બેકઅપ ફાઇલ web થી ન ખૂલે.
+**Complexity:** Medium
+**Priority:** **P0**
+**Monetization:** core.
+**Scalability:** સાદું.
+**Example:** "28 દિ સળંગ ✔ · છેલ્લું restore-test 1 તા. સફળ (18 સેકન્ડ)".
+
+### #91 · Data Privacy, Consent & Deletion Request 🟡
+**Category:** Security
+**શું છે?** ગ્રાહકની **સંમતિ** નોંધાયેલી; માંગે તો **ડેટા આપો / ભૂંસો**.
+**શું કામ કરે છે?** campaign માટે opt-in/opt-out (`cam_is_stop_word()` છે) + ગ્રાહકનો ડેટા export + કાયદેસર જરૂરી ન હોય તે ભૂંસવું (બિલ કાયદા મુજબ રહે, નંબર/નામ anonymise).
+**Real-world Use Case:** DPDP કાયદો; અને "મને મેસેજ ન મોકલો" નું માન.
+**Customer:** **તેમની પસંદગીનું માન** — વિશ્વાસનું મૂળ.
+**Staff:** નિયમ સ્પષ્ટ.
+**Owner:** **કાયદેસર સુરક્ષા**; ફરિયાદનું જોખમ ઘટે.
+**Revenue Impact:** પરોક્ષ.
+**Cost Saving:** ઊંચી (દંડ).
+**Automation:** opt-out તરત અમલમાં.
+**AI Opportunity:** નથી — અને **AI ને ગ્રાહકનો ડેટા જરૂર વગર નહીં**.
+**WhatsApp:** "બંધ" લખો = બંધ (ગુજરાતી/હિન્દી/English).
+**Mobile/PWA:** સેટિંગમાં.
+**DB Tables:** `party_consent` (નવું); `wa_optout` (છે).
+**APIs:** `POST ?r=consent`, `GET ?r=my_data`.
+**Security:** ભૂંસવાનું audit સાથે; કાયદેસર રેકોર્ડ ન ભૂંસાય — anonymise.
+**Complexity:** Medium
+**Priority:** P1
+**Monetization:** core.
+**Scalability:** સાદું.
+**Example:** "ગ્રાહકે 'બંધ' લખ્યું → campaign બંધ, બિલ/વોરંટીના મેસેજ ચાલુ (એ સેવા છે)".
+
+---
+
+## CATEGORY 18 — ANALYTICS / BI (4)
+
+### #92 · Margin Leak Report (નફો ક્યાં ગળે છે) 🔴
+**Category:** Analytics
+**શું છે?** ધારેલો નફો અને **અસલી** નફો — વચ્ચેનો ફરક ક્યાં ગયો.
+**શું કામ કરે છે?** વસ્તુવાર: ડિસ્કાઉન્ટ + પરત + વોરંટી ખર્ચ (#37) + freight + ઘટ → "ગળતરનો નકશો".
+**Real-world Use Case:** વેચાણ સારું છે પણ પૈસા બચતા નથી.
+**Customer:** —
+**Staff:** કઈ આદત નુકસાન કરે એ દેખાય.
+**Owner:** **અસલી નફો**; એક જગ્યાએ સુધારો = સીધો નફો.
+**Revenue Impact:** **ઊંચી**.
+**Cost Saving:** **સૌથી ઊંચી**.
+**Automation:** માસિક.
+**AI Opportunity:** "સૌથી પહેલાં આ સુધારો" — 3 સૂચન.
+**WhatsApp:** માસિક.
+**Mobile/PWA:** ✔
+**DB Tables:** કોઈ નવું નહીં (`profit_cost_sql()` વાપરે).
+**APIs:** `GET ?r=margin_leak`.
+**Security:** માલિક જ (ખર્ચ દેખાય).
+**Complexity:** Medium
+**Priority:** P0
+**Monetization:** "Analytics Pro".
+**Scalability:** cache.
+**Example:** "ધાર્યો 18.2% · અસલી 13.4% → ડિસ્કાઉન્ટ 2.1% · વોરંટી 1.4% · પરત 0.8% · ઘટ 0.5%".
+
+### #93 · Customer Lifetime Value & Segments 🔴
+**Category:** Analytics
+**શું છે?** ગ્રાહકે **જીવનભરમાં** કેટલો નફો આપ્યો; વર્ગ પ્રમાણે વહેંચણી.
+**શું કામ કરે છે?** RFM (છેલ્લી ખરીદી, વારંવારતા, રકમ) + નફો → VIP / સામાન્ય / જોખમી / ગુમાવેલા.
+**Real-world Use Case:** "મોટા ગ્રાહક" એ યાદ પર નક્કી થાય છે; ઘણી વાર ખોટું.
+**Customer:** VIP ને સાચી કિંમત મળે.
+**Staff:** કોને ધ્યાન આપવું એ સ્પષ્ટ.
+**Owner:** **માર્કેટિંગ ખર્ચ સાચી જગ્યાએ**; 20% ગ્રાહક 80% નફો.
+**Revenue Impact:** **ઊંચી**.
+**Cost Saving:** ઊંચી (નકામું માર્કેટિંગ).
+**Automation:** માસિક વર્ગીકરણ.
+**AI Opportunity:** કોણ જવાની તૈયારીમાં (#26).
+**WhatsApp:** વર્ગ પ્રમાણે campaign.
+**Mobile/PWA:** ✔
+**DB Tables:** `parties.segment` (કૉલમ).
+**APIs:** `GET ?r=clv`.
+**Security:** માલિક; campaign માં consent (#91) જરૂરી.
+**Complexity:** Medium
+**Priority:** P1
+**Monetization:** "Analytics Pro".
+**Scalability:** રાત્રે.
+**Example:** "VIP 42 ગ્રાહક = 61% નફો · જોખમી 18 (₹2.1L નફો જોખમમાં)".
+
+### #94 · Owner Dashboard on Phone (એક સ્ક્રીન) 🟡
+**Category:** Analytics
+**શું છે?** માલિક માટે **એક જ સ્ક્રીન** — આજ, રોકડ, ઉઘરાણી, સ્ટોક, ધ્યાન આપવા જેવું.
+**શું કામ કરે છે?** હાલનું dashboard મોબાઇલ માટે ફરી ગોઠવવું; 6 કાર્ડ, બસ.
+**Real-world Use Case:** માલિક બહાર હોય ત્યારે દુકાનની હાલત જાણવી.
+**Customer:** —
+**Staff:** —
+**Owner:** **ગમે ત્યાંથી નિયંત્રણ**; રિપોર્ટ ખોલવાની જરૂર નહીં.
+**Revenue Impact:** પરોક્ષ (વહેલા નિર્ણય).
+**Cost Saving:** સમય.
+**Automation:** cache થી ઝડપી.
+**AI Opportunity:** #68 નો સાર ઉપર.
+**WhatsApp:** રોજનો સાર.
+**Mobile/PWA:** ✔ મુખ્ય.
+**DB Tables:** કોઈ નવું નહીં.
+**APIs:** `GET ?r=dash`.
+**Security:** માલિકની પરવાનગી; cache no-store.
+**Complexity:** Easy
+**Priority:** P1
+**Monetization:** core.
+**Scalability:** file cache (છે).
+**Example:** "આજ ₹18,400 · રોકડ ₹9,200 · ઉઘરાણી ₹1.9L · 3 વસ્તુ ખૂટવાની · 2 job અટક્યાં".
+
+### #95 · Custom Report Builder + Scheduled Email/WhatsApp 🔴
+**Category:** Analytics
+**શું છે?** પોતાનો રિપોર્ટ **જાતે બનાવો** અને નિયમિત મેળવો.
+**શું કામ કરે છે?** ક્ષેત્ર + ગાળણ + સમૂહ પસંદ કરો → સાચવો → રોજ/સપ્તાહ/મહિને આપોઆપ મળે (PDF/Excel).
+**Real-world Use Case:** માલિકને જોઈતો ચોક્કસ કાગળ દર વખતે હાથે બનાવવો પડે.
+**Customer:** —
+**Staff:** વારંવારની માંગ બંધ.
+**Owner:** **પોતાની રીતે** ધંધો જોવો.
+**Revenue Impact:** પરોક્ષ.
+**Cost Saving:** ઊંચી (સમય).
+**Automation:** schedule.
+**AI Opportunity:** "ગુજરાતીમાં પૂછો, રિપોર્ટ બને" — પણ **query નિયમથી બને**, AI SQL ન લખે.
+**WhatsApp:** ✔ નિયત સમયે.
+**Mobile/PWA:** જોવા.
+**DB Tables:** `saved_reports` (નવું).
+**APIs:** `POST ?r=report_save`, `GET ?r=report_run`.
+**Security:** **whitelisted ક્ષેત્ર જ** (કાચું SQL કદી નહીં); પરવાનગી પ્રમાણે ક્ષેત્ર મર્યાદિત.
+**Complexity:** Hard
+**Priority:** P2
+**Monetization:** "Analytics Pro".
+**Scalability:** queue.
+**Example:** "દર સોમવારે 9 વાગ્યે: 'ગયા સપ્તાહનું CCTV વેચાણ' WhatsApp પર".
+
+---
+
+## CATEGORY 19 — AUTOMATION / WORKFLOW (3)
+
+### #96 · Job Queue & Retry (પાયાનું) 🔴
+**Category:** Automation
+**શું છે?** ધીમાં કામ (WhatsApp, PDF, IRN, AI) **પાછળ** ચાલે — retry સાથે.
+**શું કામ કરે છે?** `jobs` કોષ્ટક + `cron.php` worker; નિષ્ફળ થાય તો exponential backoff; dead-letter.
+**Real-world Use Case:** બિલ સાચવતી વખતે WhatsApp ધીમું હોય તો સ્ક્રીન અટકે — ગ્રાહક લાઇનમાં.
+**Customer:** **બિલ તરત** — બાકીનું પાછળ.
+**Staff:** સ્ક્રીન અટકે નહીં.
+**Owner:** **મેસેજ ખોવાય નહીં**; સિસ્ટમ ઝડપી.
+**Revenue Impact:** પરોક્ષ (કાઉન્ટરની ઝડપ).
+**Cost Saving:** ઊંચી.
+**Automation:** ✔ પાયો.
+**AI Opportunity:** નથી.
+**WhatsApp:** આ એની જ નળી.
+**Mobile/PWA:** આ જ pattern outbox માં છે.
+**DB Tables:** `jobs`, `jobs_dead` (નવાં).
+**APIs:** અંદરનું; `GET ?r=jobs_health`.
+**Security:** idempotency key (એક જ મેસેજ બે વાર નહીં); payload માં secret નહીં.
+**Complexity:** Medium
+**Priority:** **P0 — #58/#61/#70/#75 આના પર ઊભાં**
+**Monetization:** core પાયો.
+**Scalability:** **આ જ scalability નો પાયો**.
+**Example:** "કતાર 3 · નિષ્ફળ 0 · છેલ્લું worker 40 સેકન્ડ પહેલાં".
+
+### #97 · Rule Engine: "આવું થાય તો આવું કરો" 🔴
+**Category:** Automation
+**શું છે?** માલિક **જાતે નિયમ** બનાવે — કોડ વગર.
+**શું કામ કરે છે?** ઘટના (બિલ બન્યું, સ્ટોક ઘટ્યો, બાકી 30 દિ) + શરત → ક્રિયા (WhatsApp, task, alert). ક્રિયાઓ **પહેલેથી મંજૂર કરેલી** યાદીમાંથી જ.
+**Real-world Use Case:** "₹10,000 ઉપરનું બિલ થાય તો મને મેસેજ" — આજે એ માટે કોડ બદલવો પડે.
+**Customer:** સુસંગત સેવા.
+**Staff:** યાદ રાખવાનું ઘટે.
+**Owner:** **પોતાની રીતે દુકાન ચલાવે**; નવી જરૂર માટે વિકાસકાર્ય નહીં.
+**Revenue Impact:** મધ્યમ-ઊંચી.
+**Cost Saving:** ઊંચી.
+**Automation:** ✔ મુખ્ય.
+**AI Opportunity:** ગુજરાતીમાં લખો → નિયમ સૂચવે (**માણસ મંજૂર કરે**).
+**WhatsApp:** ક્રિયા તરીકે.
+**Mobile/PWA:** જોવા.
+**DB Tables:** `rules`, `rule_runs` (નવાં).
+**APIs:** `POST ?r=rule`.
+**Security:** ક્રિયા **whitelist** માંથી જ; પૈસા/સ્ટોક બદલતી ક્રિયા **નહીં** (ફક્ત સૂચના/task); દરેક run audit.
+**Complexity:** Hard
+**Priority:** P2
+**Monetization:** "Automation Pro".
+**Scalability:** #96 ની કતાર વાપરે.
+**Example:** "બાકી > ₹20,000 અને 45 દિ → માલિકને મેસેજ + ઉઘરાણી task".
+
+### #98 · Day-end Auto Close & Checklist 🟡
+**Category:** Automation
+**શું છે?** દિવસના અંતે **આપોઆપ સરવાળો** અને શું બાકી છે એની યાદી.
+**શું કામ કરે છે?** #5 shift handover + રોકડ મેળવણી + અધૂરાં બિલ + અધૂરાં job + બેકઅપ ✔ → એક પાનું; માલિકને WhatsApp.
+**Real-world Use Case:** રાત્રે દુકાન બંધ કરતી વખતે કંઈક ને કંઈક ભૂલાય.
+**Customer:** —
+**Staff:** **બંધ કરવાની સ્પષ્ટ યાદી**.
+**Owner:** **રોજ દુકાન સાફ બંધ થાય**; સવારે આશ્ચર્ય નહીં.
+**Revenue Impact:** પરોક્ષ.
+**Cost Saving:** ઊંચી (રોકડનો ફરક).
+**Automation:** ✔
+**AI Opportunity:** #68 નો સાર.
+**WhatsApp:** ✔ રાત્રે.
+**Mobile/PWA:** ✔
+**DB Tables:** `day_close` (નવું).
+**APIs:** `POST ?r=day_close`.
+**Security:** બંધ કર્યા પછીના ફેરફાર audit સાથે.
+**Complexity:** Easy
+**Priority:** P1
+**Monetization:** core.
+**Scalability:** સાદું.
+**Example:** "વેચાણ ₹41,200 · રોકડ મળી ✔ · 1 બિલ અધૂરું · 2 job · બેકઅપ ✔".
+
+---
+
+## CATEGORY 20 — ADVANCED / ENTERPRISE (2)
+
+### #99 · PC Builder Public Configurator (ગ્રાહક જાતે બનાવે) 🔴 · PC Builder મોડ્યુલ 5/5
+**Category:** Advanced
+**શું છે?** ગ્રાહક **વેબસાઈટ પર જાતે** PC બનાવે — ભાવ સાથે, અને ઓર્ડર કરે.
+**શું કામ કરે છે?** #30 compatibility + #31 PSU + સ્ટોક + ભાવ **સર્વર પર** → "ઓર્ડર કરો" → #29 ક્વોટ/ઓર્ડર; ન ચાલે એવું જોડાણ પસંદ **થઈ જ ન શકે**.
+**Real-world Use Case:** યુવાન ગ્રાહક જાતે ગોઠવવાનું પસંદ કરે; આજે એ ગ્રાહક બહારની વેબસાઈટ પર જાય છે.
+**Customer:** **જાતે બનાવવાની મજા** + ભરોસો કે ચાલશે.
+**Staff:** તૈયાર યાદી સાથે ગ્રાહક આવે.
+**Owner:** **નવો, ઊંચી ટિકિટનો ગ્રાહક વર્ગ**; આ એક ફીચર દુકાનને ઓનલાઇન સ્પર્ધામાં લાવે.
+**Revenue Impact:** **સૌથી ઊંચી**.
+**Cost Saving:** ઊંચી (સેલ્સનો સમય).
+**Automation:** આખું.
+**AI Opportunity:** #63 "બજેટ કહો" ગ્રાહકને પણ — સૂચન માત્ર.
+**WhatsApp:** બનાવેલું PC WhatsApp પર મોકલો.
+**Mobile/PWA:** ✔
+**DB Tables:** `pc_builds` (#29/#63 સાથે એક જ).
+**APIs:** `GET ?r=build_parts`, `POST ?r=build_price` (rate-limited, જાહેર).
+**Security:** **ભાવ અને સ્ટોક સર્વર પર જ** (ગ્રાહકનું browser વિશ્વાસપાત્ર નહીં); floor નીચે ભાવ અશક્ય; rate limit.
+**Complexity:** Hard
+**Priority:** P2
+**Monetization:** **"Store Pro" નું મુખ્ય આકર્ષણ**.
+**Scalability:** parts cache; ભાવની ગણતરી સર્વર.
+**Example:** ગ્રાહકે ₹52,000 નું gaming PC બનાવ્યું → PSU ચેતવણી → 550W સૂચવ્યું → ઓર્ડર.
+
+### #100 · Multi-Tenant SaaS: બીજી દુકાનોને વેચવું 🔴
+**Category:** Advanced
+**શું છે?** આ **આખી સિસ્ટમ બીજી કમ્પ્યુટર દુકાનોને** ભાડે આપવી.
+**શું કામ કરે છે?** `tenant_id` દરેક કોષ્ટકમાં + subdomain + પેકેજ/બિલિંગ + tenant પ્રતિ સેટિંગ/બ્રાન્ડિંગ + વપરાશની મર્યાદા. એક જ કોડ, દરેક દુકાનનો પોતાનો ડેટા (અથવા DB-per-tenant).
+**Real-world Use Case:** દ્વારકા-જામનગરની 50 કમ્પ્યુટર દુકાનોને આ જ જરૂર છે; Vyapar/Marg તેમના ધંધા માટે બન્યાં નથી.
+**Customer (દુકાનદાર):** પોતાના ધંધા માટે બનેલું સોફ્ટવેર.
+**Staff:** —
+**Owner:** **દુકાનની આવક ઉપરાંત સોફ્ટવેરની પુનરાવર્તિત આવક** — ધંધાનું સ્વરૂપ બદલાય.
+**Revenue Impact:** **સૌથી ઊંચી** — 50 × ₹1,000/મહિનો = ₹6L/વર્ષ, માલ ખરીદ્યા વગર.
+**Cost Saving:** —
+**Automation:** self-signup, tenant બનાવવું, બિલિંગ.
+**AI Opportunity:** AI નો ખર્ચ tenant પ્રતિ (#62) — નહીંતર નફો ખાઈ જાય.
+**WhatsApp:** tenant પ્રતિ પોતાનો WhatsApp નંબર/token.
+**Mobile/PWA:** એ જ એપ, tenant પ્રતિ બ્રાન્ડિંગ.
+**DB Tables:** બધામાં `tenant_id`; `tenants`, `tenant_plans`, `tenant_usage` (નવાં).
+**APIs:** બધા routes tenant-scoped; `POST ?r=tenant_signup`.
+**Security:** **સૌથી કડક** — દરેક query માં tenant ગાળણ (એક ભૂલ = બીજી દુકાનનો ડેટા દેખાય); tenant પ્રતિ અલગ backup/encryption key; rate limit tenant પ્રતિ; tenant નો ડેટા બહાર લઈ જવાનો હક.
+**Complexity:** Hard (**સૌથી મોટું કામ — પણ સૌથી મોટું ઇનામ**)
+**Priority:** P3 (પહેલાં પોતાની દુકાનમાં 6 મહિના સ્થિર ચાલે પછી)
+**Monetization:** **આ જ સૌથી મોટું monetization** — પેકેજ: Basic ₹499 / Pro ₹999 / AI ₹1,999 પ્રતિ મહિનો.
+**Scalability:** tenant પ્રતિ DB કે shared + `tenant_id` index; queue tenant પ્રતિ.
+**Example:** shop.akdwk.in (પોતાનું) + rajcomputer.akdwk.in + 48 વધુ → ₹6L વાર્ષિક પુનરાવર્તિત.
+
+---
