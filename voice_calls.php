@@ -80,7 +80,7 @@ if ($waiting && !$show): ?>
         <?php if ($w['recording_secs']): ?> · <?= (int)$w['recording_secs'] ?>s recording<?php endif; ?>
         <?php if ($w['ref_type']): ?> · became a <?= e($w['ref_type']) ?><?php endif; ?></span>
       <?php if ($w['recording_url']): ?>
-        <br><audio controls preload="none" src="<?= e($w['recording_url']) ?>" style="width:100%;max-width:320px"></audio>
+        <br><audio controls preload="none" src="voice_rec.php?id=<?= (int)$w['id'] ?>" style="width:100%;max-width:320px"></audio>
       <?php endif; ?>
     </span>
     <span style="white-space:nowrap">
@@ -132,7 +132,7 @@ if ($waiting && !$show): ?>
           <?php if ($r['error']): ?><br><span class="muted" style="font-size:11px"><?= e($r['error']) ?></span><?php endif; ?>
         </td>
         <td style="white-space:nowrap">
-          <?php if ($r['recording_url']): ?><a class="btn btn-sm btn-outline" href="<?= e($r['recording_url']) ?>" target="_blank">▶</a><?php endif; ?>
+          <?php if ($r['recording_url']): ?><a class="btn btn-sm btn-outline" href="voice_rec.php?id=<?= (int)$r['id'] ?>" target="_blank">▶</a><?php endif; ?>
           <?php if ((int)$r['needs_action'] === 1 && can('payments.add')): ?>
           <form method="post" style="display:inline">
             <?= csrf_field() ?><input type="hidden" name="do" value="handled"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">

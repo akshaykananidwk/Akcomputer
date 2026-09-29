@@ -724,6 +724,9 @@ include __DIR__ . '/includes/header.php';
             <?= e(voice_intent_label($r['intent'])) ?>
             <?php if ($r['ivr_path']): ?><br><span class="muted" style="font-size:11px">pressed <?= e($r['ivr_path']) ?></span><?php endif; ?>
             <?php if ($r['wa_sent_at']): ?><br><span class="badge badge-ok" style="font-size:10px">📲 sent on WhatsApp</span><?php endif; ?>
+            <?php if ($r['recording_url']): ?>
+              <br><a href="voice_rec.php?id=<?= (int)$r['id'] ?>" target="_blank">▶ hear what they said<?php if ($r['recording_secs']): ?> (<?= (int)$r['recording_secs'] ?>s)<?php endif; ?></a>
+            <?php endif; ?>
           <?php else: ?>
             💰 ₹<?= money($r['amount']) ?>
             <?php if ($r['response'] === 'yes'): ?><br><span class="badge badge-ok" style="font-size:10px">✅ Yes — today</span>

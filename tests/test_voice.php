@@ -1322,3 +1322,49 @@ t_ok('and the preview can look them up', $pvZ['party'] !== null);
 set_setting('voice_agent_numbers', '07990263599, 9824537749');
 t_eq('agent numbers with a leading zero are not silently dropped', count(voice_in_agents()), 2);
 set_setting('voice_agent_numbers', '');
+
+t_group('Voice — a recording plays, instead of handing over a 401');
+
+// The recording lives on Vobiz and its URL needs the account's Auth ID and
+// token. A browser sends neither, so the player was pointed at a link that
+// could never work: the owner pressed play and got
+// {"error":{"code":401,"message":"Authentication required"...}}.
+foreach (['voice_calls.php', 'voice_setup.php'] as $f) {
+    $src = file_get_contents(__DIR__ . '/../' . $f);
+    t_ok($f . ' never sends a browser to the provider',
+         strpos($src, 'src="<?= e($w[\'recording_url\'])') === false
+         && strpos($src, 'href="<?= e($r[\'recording_url\'])') === false);
+    t_ok($f . ' plays it through this server instead', strpos($src, 'voice_rec.php?id=') !== false);
+}
+
+$rec = file_get_contents(__DIR__ . '/../voice_rec.php');
+t_ok('the recording page is behind a permission, not public',
+     strpos($rec, "require_perm('payments.view')") !== false);
+t_ok('the fetch carries the account headers the browser cannot',
+     strpos($rec, 'X-Auth-ID: ') !== false && strpos($rec, 'X-Auth-Token: ') !== false);
+t_ok('a call with no recording is a plain 404, not an error page',
+     strpos($rec, 'http_response_code(404)') !== false);
+t_ok('a provider failure says so, and says it may not be ready yet',
+     strpos($rec, 'may not be ready yet') !== false);
+t_ok('the copy is kept, so it survives the provider expiring the link',
+     strpos($rec, 'file_put_contents($local, $audio)') !== false);
+t_ok('and the folder it is kept in is refused to the web',
+     strpos($rec, 'Require all denied') !== false);
+t_ok('the saved name cannot be guessed from the call id alone',
+     strpos($rec, "hash('sha256', \$call['token'])") !== false);
+t_ok('it is served as audio', strpos($rec, "Content-Type: audio/mpeg") !== false);
+t_ok('and not cached in a shared cache', strpos($rec, 'Cache-Control: private') !== false);
+
+// The recordings folder must be refused while the spoken menu stays public -
+// Vobiz has to fetch the menu on every call, so a blanket "no audio" rule
+// over uploads would silence the phone line.
+$recDir = __DIR__ . '/../uploads/voice/rec';
+if (!is_dir($recDir)) mkdir($recDir, 0755, true);
+if (!is_file($recDir . '/.htaccess')) file_put_contents($recDir . '/.htaccess', "Require all denied\n");
+t_ok('the recordings folder carries its own deny file',
+     is_file($recDir . '/.htaccess')
+     && stripos((string)file_get_contents($recDir . '/.htaccess'), 'denied') !== false);
+t_ok('the spoken menu folder does NOT deny anything — the provider must read it',
+     !is_file(__DIR__ . '/../uploads/voice/tts/.htaccess'));
+t_ok('and uploads does not block mp3 across the board',
+     strpos((string)@file_get_contents(__DIR__ . '/../uploads/.htaccess'), 'mp3') === false);
