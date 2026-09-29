@@ -1190,3 +1190,19 @@ t_ok('a dangerously short stored number is reported',
      (bool)array_filter($pvS['short'] ?? [], fn($o) => $o['mobile'] === '123'));
 t_ok('the screen warns about it',
      strpos(file_get_contents(__DIR__ . '/../voice_setup.php'), 'shorter than 10 digits') !== false);
+
+t_group('Voice — the recent list does not call an incoming call a test');
+
+// Every row was drawn as if it were an outgoing reminder, so a customer
+// ringing the shop appeared as "test" owing "₹0.00" for nought seconds -
+// three wrong facts about a call that worked perfectly.
+$su6 = file_get_contents(__DIR__ . '/../voice_setup.php');
+$tbl = substr($su6, strpos($su6, 'Last 20 calls'));
+t_ok('the direction is shown', strpos($tbl, "=== 'in'") !== false);
+t_ok('an incoming caller is not labelled a test', strpos($tbl, 'unknown caller') !== false);
+t_ok('an incoming call shows what it was about, not an amount',
+     strpos($tbl, 'voice_intent_label') !== false);
+t_ok('and which keys were pressed', strpos($tbl, 'ivr_path') !== false);
+t_ok('and whether the WhatsApp follow-up went', strpos($tbl, 'wa_sent_at') !== false);
+t_ok('an outgoing call still shows the amount and the answer',
+     strpos($tbl, "money(\$r['amount'])") !== false && strpos($tbl, "'yes'") !== false);

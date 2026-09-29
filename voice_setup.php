@@ -693,24 +693,35 @@ include __DIR__ . '/includes/header.php';
 
 <div class="card">
   <h3>🕘 Last 20 calls</h3>
+  <p class="muted" style="font-size:12px">📥 came in · 📤 went out. The full list, with recordings, is on <a href="voice_calls.php">Calls</a>.</p>
   <?php if (!$recent): ?><p class="muted">No calls yet.</p><?php else: ?>
   <div class="table-wrap"><table class="table-sm">
-    <thead><tr><th>When</th><th>Customer</th><th class="num">Amount</th><th>Result</th><th>They said</th><th class="num">Sec</th></tr></thead>
+    <thead><tr><th></th><th>When</th><th>Who</th><th>What for</th><th>Result</th><th class="num">Sec</th></tr></thead>
     <tbody>
-    <?php foreach ($recent as $r): ?>
+    <?php foreach ($recent as $r): $in = ($r['direction'] ?? 'out') === 'in'; ?>
       <tr>
-        <td><?= e(dmy(substr($r['created_at'], 0, 10))) ?> <span class="muted"><?= e(substr($r['created_at'], 11, 5)) ?></span></td>
-        <td><?= $r['name'] ? e($r['name']) : '<span class="muted">test</span>' ?>
-          <br><span class="muted" style="font-size:11px"><?= e($r['mobile']) ?> · <?= e($r['lang']) ?></span></td>
-        <td class="num">₹<?= money($r['amount']) ?></td>
+        <td title="<?= $in ? 'Incoming' : 'Outgoing' ?>"><?= $in ? '📥' : '📤' ?></td>
+        <td style="white-space:nowrap"><?= e(dmy(substr($r['created_at'], 0, 10))) ?>
+          <br><span class="muted" style="font-size:11px"><?= e(substr($r['created_at'], 11, 5)) ?></span></td>
+        <td>
+          <?php if ($r['name']): ?><?= e($r['name']) ?>
+          <?php elseif ($in): ?><span class="muted">unknown caller</span>
+          <?php else: ?><span class="muted">test</span><?php endif; ?>
+          <br><span class="muted" style="font-size:11px"><?= e($in ? ($r['from_number'] ?: $r['mobile']) : $r['mobile']) ?> · <?= e($r['lang']) ?></span></td>
+        <td>
+          <?php if ($in): ?>
+            <?= e(voice_intent_label($r['intent'])) ?>
+            <?php if ($r['ivr_path']): ?><br><span class="muted" style="font-size:11px">pressed <?= e($r['ivr_path']) ?></span><?php endif; ?>
+            <?php if ($r['wa_sent_at']): ?><br><span class="badge badge-ok" style="font-size:10px">📲 sent on WhatsApp</span><?php endif; ?>
+          <?php else: ?>
+            💰 ₹<?= money($r['amount']) ?>
+            <?php if ($r['response'] === 'yes'): ?><br><span class="badge badge-ok" style="font-size:10px">✅ Yes — today</span>
+            <?php elseif ($r['response'] === 'no'): ?><br><span class="badge badge-bad" style="font-size:10px">❌ No</span>
+            <?php elseif ($r['response'] === 'none'): ?><br><span class="muted" style="font-size:11px">no key pressed</span><?php endif; ?>
+          <?php endif; ?>
+        </td>
         <td><?= e(voice_status_label($r['status'])) ?>
           <?= $r['error'] ? '<br><span class="muted" style="font-size:11px">' . e($r['error']) . '</span>' : '' ?></td>
-        <td>
-          <?php if ($r['response'] === 'yes'): ?><span class="badge badge-ok">✅ Yes — today</span>
-          <?php elseif ($r['response'] === 'no'): ?><span class="badge badge-bad">❌ No</span>
-          <?php elseif ($r['response'] === 'none'): ?><span class="muted" style="font-size:11px">no key pressed</span>
-          <?php else: ?><span class="muted">—</span><?php endif; ?>
-        </td>
         <td class="num"><?= (int)$r['duration'] ?></td>
       </tr>
     <?php endforeach; ?>
