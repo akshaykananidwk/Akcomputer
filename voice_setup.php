@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $appId = setting('vobiz_app_id', '');
         if ($appId === '') { flash('Make the application first.', 'error'); redirect('voice_setup.php'); }
         $a = voice_in_number_attach(post('number'), $appId);
+        set_setting('vobiz_attach_trail', json_encode($a['trail'] ?? [], JSON_UNESCAPED_UNICODE));
         flash($a['ok'] ? '✅ ' . e(post('number')) . ' now rings this software.' : $a['error'],
               $a['ok'] ? 'success' : 'error');
         redirect('voice_setup.php');
@@ -136,6 +137,7 @@ $preview = json_decode(setting('voice_preview_last', ''), true) ?: null;
 $myNums = voice_configured() ? voice_in_numbers() : ['ok' => false, 'error' => '', 'numbers' => []];
 $diag = (get('check') === '1') ? voice_in_diagnose() : null;
 $rejects = voice_in_rejects(8);
+$attachTrail = json_decode((string)setting('vobiz_attach_trail', ''), true) ?: [];
 $hours = voice_hours();
 $recent = all('SELECT v.*, p.name FROM voice_calls v LEFT JOIN parties p ON p.id = v.party_id
                ORDER BY v.id DESC LIMIT 20');
@@ -383,6 +385,24 @@ include __DIR__ . '/includes/header.php';
       <tr><td style="white-space:nowrap"><?= e(dmy(substr($rj['created_at'], 0, 10))) ?>
             <span class="muted"><?= e(substr($rj['created_at'], 11, 5)) ?></span></td>
           <td><?= e($rj['details']) ?></td></tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table></div>
+  <?php endif; ?>
+
+  <?php if ($attachTrail && !setting('vobiz_inbound_number')): ?>
+  <h4>What Vobiz said to each way of attaching it</h4>
+  <p class="muted" style="font-size:12px">
+    All of these are the same request written four ways. If every one was refused, the number is on your
+    account but Vobiz is not letting this account point it at an application — that is theirs to fix.
+    Send them this list and the application id.
+  </p>
+  <div class="table-wrap mb"><table class="table-sm">
+    <thead><tr><th>Tried</th><th>Vobiz said</th></tr></thead>
+    <tbody>
+    <?php foreach ($attachTrail as $tr): ?>
+      <tr><td style="font-size:12px"><?= e($tr['tried'] ?? '') ?></td>
+          <td class="muted" style="font-size:12px"><?= e($tr['said'] ?? '') ?></td></tr>
     <?php endforeach; ?>
     </tbody>
   </table></div>

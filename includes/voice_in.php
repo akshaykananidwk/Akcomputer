@@ -138,27 +138,66 @@ function voice_in_numbers() {
     return ['ok' => true, 'error' => '', 'numbers' => $out];
 }
 
-/** Point the shop's number at that application. */
+/** Just the digits, for comparing two numbers written differently.
+ *  "+918065354620" and "918065354620" are the same number, and a message
+ *  that says otherwise is worse than no message. */
+function voice_num_same($a, $b) {
+    $d = fn($x) => substr(preg_replace('/\D/', '', (string)$x), -10);
+    return $d($a) !== '' && $d($a) === $d($b);
+}
+
+/** Point the shop's number at that application.
+ *
+ *  Vobiz publishes one shape for this and answers "access denied" to it on
+ *  at least some accounts - a message that says nothing about what is
+ *  actually wrong. Rather than leave the shop with a dead line and a wrong
+ *  guess, the documented call is tried first and the shapes this API is
+ *  compatible with after it, and every attempt is kept so the screen can
+ *  show exactly what Vobiz said to each one.
+ *
+ *  All four are the same request - attach this number to this application -
+ *  written the way four different versions of this API have spelled it.
+ *  None of them can do anything else. */
+function voice_in_attach_shapes($e164, $appId) {
+    return [
+        ['POST', 'numbers/' . rawurlencode('+' . $e164) . '/application', ['application_id' => $appId],
+         'documented: numbers/%2B<number>/application'],
+        ['POST', 'numbers/' . rawurlencode($e164) . '/application', ['application_id' => $appId],
+         'same, without the plus'],
+        ['POST', 'Number/' . rawurlencode($e164) . '/', ['app_id' => $appId],
+         'compatible: Number/<number>/ with app_id'],
+        ['POST', 'numbers/' . rawurlencode('+' . $e164) . '/application', ['app_id' => $appId],
+         'documented path, app_id instead of application_id'],
+    ];
+}
+
 function voice_in_number_attach($number, $appId) {
     $e164 = voice_e164($number);
-    [$j, $err] = voice_api('POST', 'numbers/' . rawurlencode('+' . $e164) . '/application',
-                           ['application_id' => $appId]);
-    if ($j === null) {
-        // Vobiz says "access denied" for a number it did not sell you, which
-        // reads like a permissions problem and almost never is. Say what it
-        // usually means, and prove it by naming the numbers you do own.
-        if (stripos($err, 'access denied') !== false || strpos($err, '400') !== false) {
-            $mine = voice_in_numbers();
-            $list = $mine['ok'] ? implode(', ', array_column($mine['numbers'], 'e164')) : '';
-            $err .= ' — this usually means ' . $e164 . ' is not one of your Vobiz numbers.'
-                  . ($list !== '' ? ' Yours are: ' . $list . '.'
-                                  : ' Buy one under Phone Numbers in the Vobiz console first.');
+
+    $mine = voice_in_numbers();
+    $owned = $mine['ok'] ? $mine['numbers'] : [];
+    $isMine = (bool)array_filter($owned, fn($n) => voice_num_same($n['e164'], $e164));
+
+    $trail = [];
+    foreach (voice_in_attach_shapes($e164, $appId) as [$m, $path, $body, $label]) {
+        [$j, $err] = voice_api($m, $path, $body);
+        if ($j !== null) {
+            set_setting('vobiz_inbound_number', $e164);
+            set_setting('vobiz_numbers_cache', '');      // it has an application now
+            set_setting('vobiz_attach_shape', $label);   // remember what worked
+            log_activity('voice_number', $e164 . ' -> ' . $appId . ' via ' . $label);
+            return ['ok' => true, 'error' => '', 'via' => $label, 'trail' => $trail];
         }
-        return ['ok' => false, 'error' => $err];
+        $trail[] = ['tried' => $label, 'said' => $err];
     }
-    set_setting('vobiz_inbound_number', $e164);
-    log_activity('voice_number', $e164 . ' -> ' . $appId);
-    return ['ok' => true, 'error' => ''];
+
+    // Everything refused. Say what is true rather than guess a cause.
+    $err = $isMine
+        ? 'Vobiz refused every way of attaching ' . $e164 . ', even though the number IS on your account. '
+        . 'This is on their side — send them the list below and ask them to point it at application ' . $appId . '.'
+        : $e164 . ' is not on your Vobiz account. Buy a number under Phone Numbers first.';
+    log_activity('voice_number_fail', $e164 . ': ' . count($trail) . ' shapes refused');
+    return ['ok' => false, 'error' => $err, 'trail' => $trail];
 }
 
 /** May we answer a call made to this number?

@@ -862,10 +862,13 @@ t_group('Voice IN — attaching a number is not a guessing game');
 // like a permissions problem and almost never is. The message has to say so.
 $vsrc2 = file_get_contents(__DIR__ . '/../includes/voice_in.php');
 t_ok('the numbers on the account can be listed', strpos($vsrc2, "voice_api('GET', 'numbers") !== false);
-t_ok('an access-denied is explained in terms of the real cause',
-     strpos($vsrc2, 'not one of your Vobiz numbers') !== false);
-t_ok('and the numbers you DO own are named in the message',
-     strpos($vsrc2, "array_column(\$mine['numbers'], 'e164')") !== false);
+// This hint used to fire whenever Vobiz said "access denied" and told the
+// owner their own number was not theirs - comparing "918065354620" against
+// "+918065354620" and calling them different. It has to stay gone.
+t_ok('the old hint that accused a number of not being owned is gone',
+     strpos($vsrc2, 'this usually means') === false);
+t_ok('ownership is decided on the digits, not on how it is written',
+     strpos($vsrc2, 'voice_num_same(') !== false);
 t_ok('a number that needs KYC is flagged rather than silently attached',
      strpos($vsrc2, 'aadhaar_verification_required') !== false);
 
@@ -967,3 +970,39 @@ t_ok('and no numbers at all says there is nothing to point',
 
 $su = file_get_contents(__DIR__ . '/../voice_setup.php');
 t_ok('the screen turns that into a button', strpos($su, 'Attach <?= e($d[\'attach\']) ?> now') !== false);
+
+t_group('Voice IN — attaching: say what is true, not what is guessed');
+
+// The hint compared "918065354620" against "+918065354620" and declared them
+// different numbers. A message that tells the owner their own number is not
+// theirs is worse than no message.
+t_ok('the same number written two ways is one number', voice_num_same('918065354620', '+918065354620'));
+t_ok('and with spaces and dashes', voice_num_same('+91 80653-54620', '918065354620'));
+t_ok('but two different numbers are still two', !voice_num_same('918065354620', '919111122223'));
+t_ok('and nothing matches nothing', !voice_num_same('', '918065354620'));
+
+// Four spellings of one request, tried in order, documented one first.
+$shapes = voice_in_attach_shapes('918065354620', 'APP123');
+t_eq('every known spelling is tried', count($shapes), 4);
+t_ok('the documented one goes first', strpos($shapes[0][3], 'documented') === 0);
+foreach ($shapes as $i => $sh) {
+    t_ok('attempt ' . ($i + 1) . ' is a POST that names the number and the application',
+         $sh[0] === 'POST' && strpos($sh[1], '8065354620') !== false
+         && in_array('APP123', array_values($sh[2]), true));
+}
+t_ok('none of them can do anything but attach',
+     count(array_filter($shapes, fn($sh) => strpos($sh[1], 'application') === false
+                                         && strpos($sh[1], 'Number/') === false)) === 0);
+
+$vin2 = file_get_contents(__DIR__ . '/../includes/voice_in.php');
+t_ok('every attempt is kept so the screen can show it', strpos($vin2, "\$trail[] = ['tried'") !== false);
+t_ok('a number that IS owned is not accused of not being owned',
+     strpos($vin2, 'even though the number IS on your account') !== false);
+t_ok('and one that is not owned is told plainly',
+     strpos($vin2, 'is not on your Vobiz account') !== false);
+t_ok('the shape that worked is remembered', strpos($vin2, "set_setting('vobiz_attach_shape'") !== false);
+t_ok('the cached number list is dropped once something attaches',
+     strpos($vin2, "set_setting('vobiz_numbers_cache', '')") !== false);
+
+$su2 = file_get_contents(__DIR__ . '/../voice_setup.php');
+t_ok('the screen prints what Vobiz said to each attempt', strpos($su2, 'What Vobiz said to each way') !== false);
