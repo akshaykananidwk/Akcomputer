@@ -40,6 +40,8 @@ function cron_jobs() {
             }],
         'campaign_queue' => ['📣 Campaign Sending', 'Sends the next batch of any running campaign, inside the allowed hours only', 15,
             fn() => cam_quiet_ok()],
+        'voice_balance' => ['📞 Reminder-call Balance', 'Warns the owner before the Vobiz balance runs out and calls stop going through', 360,
+            fn() => (int)setting('voice_enabled', 0) === 1],
         'housekeeping' => ['🧹 Log Cleanup', 'Trims every log table past its keep-for period — never business data (see Scaling)', 1440, null],
     ];
 }
@@ -425,6 +427,14 @@ function cron_job_meta_tpl_sync() {
     $res = meta_wa_sync_templates();
     if (isset($res['_error'])) throw new Exception($res['_error']);
     return count($res) . ' template(s) refreshed';
+}
+
+/** Reminder-call credit. An empty Vobiz account does not announce itself:
+ *  the calls simply stop connecting, which looks from this side exactly like
+ *  customers not picking up. This is the warning before that happens. */
+function cron_job_voice_balance() {
+    require_once __DIR__ . '/voice.php';
+    return voice_balance_check();
 }
 
 /** Housekeeping: trim old webhook-delivery + cron-history rows. */

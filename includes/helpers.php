@@ -100,7 +100,8 @@ function csrf_check() {
         // request their own way and have no browser session/CSRF token to
         // check against - both are genuinely different trust boundaries
         // from the rest of this cookie-session-based app.
-        $exempt = ['api.php', 'razorpay_webhook.php', 'wa_webhook.php', 'telegram_webhook.php'];
+        $exempt = ['api.php', 'razorpay_webhook.php', 'wa_webhook.php', 'telegram_webhook.php',
+                   'voice_answer.php', 'voice_webhook.php'];
         if (in_array(basename($_SERVER['SCRIPT_NAME'] ?? ''), $exempt, true)) return;
         if (!hash_equals(csrf_token(), (string)post('csrf'))) {
             http_response_code(400);
@@ -122,7 +123,7 @@ const SECRET_PREFIX = 'enc:v1:';
 function secret_setting_keys() {
     return ['meta_wa_token', 'razorpay_key_secret', 'razorpay_webhook_secret', 'gemini_api_key',
             'gemini_api_key_paid', 'wa_api_key', 'tg_bot_token', 'ocr_api_key', 'google_cse_key',
-            'smtp_pass', 'wa_session_id', 'backup_passphrase'];
+            'smtp_pass', 'wa_session_id', 'backup_passphrase', 'vobiz_auth_token', 'vobiz_webhook_secret'];
 }
 function is_secret_setting($name) { return in_array($name, secret_setting_keys(), true); }
 

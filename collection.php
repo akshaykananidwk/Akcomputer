@@ -11,6 +11,7 @@
 // open promise, was contacted two days ago, has been snoozed, or has opted
 // out simply cannot be messaged from here, and the row says why.
 require_once __DIR__ . '/includes/init.php';
+require_once __DIR__ . '/includes/voice.php';
 require_perm('payments.view');
 $u = current_user();
 
@@ -28,6 +29,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (post('do') === 'call') {
         coll_log($pid, 'call', ['channel' => 'phone', 'note' => trim(post('note')) ?: 'Called']);
         flash('Call note saved.');
+        redirect($back);
+    }
+
+    // ---- the automatic reminder call ----
+    //
+    // Sending needs the permission to CHANGE money matters, not just to look
+    // at them: this screen is open to anyone who may see payments, and
+    // ringing a customer is not a read-only act.
+    if (post('do') === 'voice_call') {
+        require_perm('payments.add');
+        $res = voice_call_send($pid, ['client_uuid' => trim(post('client_uuid'))]);
+        $who = (string)val('SELECT name FROM parties WHERE id = ?', [$pid]);
+        if (!empty($res['duplicate'])) flash('That call was already placed — not calling ' . $who . ' twice.');
+        elseif ($res['ok'] && $res['status'] === 'test')
+            flash('🧪 Test mode: nothing was dialled. ' . $who . ' would have heard — “' . ($res['script'] ?? '') . '”');
+        elseif ($res['ok']) flash('📞 Calling ' . $who . ' now.');
+        else flash('The call did not go: ' . $res['error'], 'error');
         redirect($back);
     }
     if (post('do') === 'promise') {
@@ -141,6 +159,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// ---------- "are you sure you want to call?" ----------
+//
+// A separate screen rather than a JavaScript confirm box, for the same
+// reason the bulk send has one: the owner gets to see the amount and the
+// exact words before a customer's phone rings, and a mis-tap on a small
+// screen lands here instead of on a live call.
+if (($callPid = (int)get('call')) > 0) {
+    require_perm('payments.add');
+    $vc = voice_party_context($callPid);
+    if (!$vc) { flash('No such customer.', 'error'); redirect('collection.php'); }
+    $gate = voice_can_call($callPid, $vc);
+    $lang = setting('voice_lang', 'gu');
+    $plan = voice_clip_plan($vc['name'], $vc['due'], $lang, $vc['name_clip']);
+    $script = voice_script($vc['name'], $vc['due'], $plan['lang']);
+    $last = $vc['last_call'];
+    $page_title = 'Before calling';
+    include __DIR__ . '/includes/header.php'; ?>
+    <div class="card">
+      <h2>📞 Really call <?= e($vc['name']) ?>?</h2>
+      <div class="grid-stats">
+        <div class="stat"><div class="stat-label">Customer</div><div class="stat-value" style="font-size:18px"><?= e($vc['name']) ?></div></div>
+        <div class="stat"><div class="stat-label">Number</div><div class="stat-value" style="font-size:18px"><?= e($vc['mobile'] ?: '—') ?></div></div>
+        <div class="stat s-bad"><div class="stat-label">Outstanding</div><div class="stat-value">₹<?= money($vc['due']) ?></div></div>
+        <div class="stat"><div class="stat-label">Last call</div>
+          <div class="stat-value" style="font-size:16px"><?= $last ? e(voice_status_label($last['status'])) . '<br><span class="muted" style="font-size:12px">' . e(voice_ago($last['created_at'])) . '</span>' : '<span class="muted">never</span>' ?></div></div>
+      </div>
+
+      <?php if (!$gate['ok']): ?>
+        <div class="flash flash-error">This call cannot go out: <?= e($gate['why']) ?></div>
+        <a class="btn btn-outline" href="collection.php">← Back</a>
+      <?php else: ?>
+      <h3>What they will hear</h3>
+      <p class="muted" style="font-size:12px">
+        <?php if ($plan['mode'] === 'clips'): ?>
+          Played in <?= e(voice_langs()[$plan['lang']]) ?>, from the shop's own recordings — <?= count($plan['urls']) ?> clips.
+        <?php else: ?>
+          <strong>In English</strong>, spoken by the provider.
+          <?php if ($plan['fell_back']): ?>
+            Vobiz has no Gujarati or Hindi voice, and <?= count($plan['missing']) ?> recordings are still missing, so the call falls back to English.
+            <a href="voice_setup.php">Record them →</a>
+          <?php endif; ?>
+        <?php endif; ?>
+      </p>
+      <pre style="white-space:pre-wrap;background:var(--bg);padding:12px;border-radius:10px;font-family:inherit;font-size:15px"><?= e($script) ?></pre>
+
+        <?php if (voice_test_mode()): ?>
+          <div class="flash flash-info">🧪 Test mode is on — nothing will actually be dialled.
+            Turn it off in <a href="voice_setup.php">Reminder Calls</a> when you are ready.</div>
+        <?php endif; ?>
+        <form method="post" class="mt" onsubmit="this.querySelector('button').disabled=true">
+          <?= csrf_field() ?>
+          <input type="hidden" name="do" value="voice_call">
+          <input type="hidden" name="id" value="<?= $callPid ?>">
+          <?php /* the press is stamped here, so a double-submit or a browser
+                    retry finds the call it already made instead of ringing
+                    the customer a second time */ ?>
+          <input type="hidden" name="client_uuid" value="<?= e(bin2hex(random_bytes(16))) ?>">
+          <button class="btn btn-success" type="submit">✅ Yes, call now</button>
+          <a class="btn btn-outline" href="collection.php">Leave it</a>
+        </form>
+      <?php endif; ?>
+    </div>
+    <?php include __DIR__ . '/includes/footer.php'; exit;
+}
+
 // ---------- the queue ----------
 $showAll = get('show') === 'all';
 $queue = coll_queue(300, $showAll);
@@ -149,6 +232,13 @@ $promises = coll_promises_due();
 
 $levelStyle = ['critical' => ['🔴', 's-bad', 'Urgent'], 'high' => ['🟠', 's-warn', 'High'],
                'medium' => ['🟡', '', 'Medium'], 'low' => ['🟢', 's-ok', 'less']];
+
+// One load for the whole screen: the parties, their collection history and
+// their last call, so each row can say whether it may be called without
+// going back to the database.
+$vctx = voice_contexts(array_column($queue, 'id'));
+$vcan = [];
+foreach ($vctx as $vid => $vc) $vcan[$vid] = voice_can_call($vid, $vc);
 
 $page_title = 'Collection Queue';
 include __DIR__ . '/includes/header.php';
@@ -229,12 +319,27 @@ include __DIR__ . '/includes/header.php';
         </td>
         <td class="num"><?= (int)$c['days'] ?>d<br><span class="muted" style="font-size:11px"><?= (int)$c['bill_count'] ?> Bill</span></td>
         <td><?= $c['last_payment'] ? dmy($c['last_payment']) : '<span class="muted">never</span>' ?></td>
+        <?php $vl = $vctx[$c['id']]['last_call'] ?? null; $vg = $vcan[$c['id']] ?? ['ok' => false, 'why' => '']; ?>
         <td><?= $c['last_contact'] ? dmy(substr($c['last_contact'], 0, 10)) : '<span class="muted">—</span>' ?>
           <?php if (!$c['can_remind']['ok']): ?><br><span class="badge badge-warn" style="font-size:10px"><?= e($c['can_remind']['why']) ?></span><?php endif; ?>
+          <?php /* the last call lives in this cell rather than a column of its
+                   own: the table is already eight columns and the owner reads
+                   it on a phone, where a ninth pushes the buttons off-screen */ ?>
+          <?php if ($vl): ?>
+            <br><span class="badge <?= $vl['status'] === 'answered' ? 'badge-ok' : ($vl['status'] === 'failed' ? 'badge-bad' : 'badge-warn') ?>" style="font-size:10px">📞 <?= e(voice_status_label($vl['status'])) ?></span>
+            <span class="muted" style="font-size:11px"><?= e(voice_ago($vl['created_at'])) ?></span>
+          <?php endif; ?>
         </td>
         <td style="white-space:nowrap">
           <a class="btn btn-sm btn-outline" href="parties.php?action=ledger&id=<?= (int)$c['id'] ?>" title="Ledger">📒</a>
-          <?php if ($c['mobile']): ?><a class="btn btn-sm btn-outline" href="tel:<?= e($c['mobile']) ?>" title="Phone">📞</a><?php endif; ?>
+          <?php if ($c['mobile']): ?><a class="btn btn-sm btn-outline" href="tel:<?= e($c['mobile']) ?>" title="Call from this phone">📱</a><?php endif; ?>
+          <?php if (can('payments.add')): ?>
+            <?php if ($vg['ok']): ?>
+              <a class="btn btn-sm btn-success" href="collection.php?call=<?= (int)$c['id'] ?>" title="Automatic reminder call">Remind Now 📞</a>
+            <?php else: ?>
+              <button class="btn btn-sm btn-outline" type="button" disabled title="<?= e($vg['why']) ?>">📞</button>
+            <?php endif; ?>
+          <?php endif; ?>
           <?php if (can('payments.add')): ?><a class="btn btn-sm btn-success" href="payments.php?action=new&dir=in&party_id=<?= (int)$c['id'] ?>" title="Record a payment">💵</a><?php endif; ?>
           <a class="btn btn-sm" href="customer.php?id=<?= (int)$c['id'] ?>" title="Customer 360">👤</a>
         </td>

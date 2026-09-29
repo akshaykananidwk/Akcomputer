@@ -88,7 +88,12 @@ foreach (glob(dirname(__DIR__) . '/*.php') as $f) {
         'privacy.php', 'terms.php', 'sitemap.php', 'referral.php', 'feedback.php', 'service_report.php',
         'pay.php',   // customer pay page - share-token gated, see pay.php
         'sale_view.php', 'sale_pdf.php', 'api.php', 'cron.php', 'razorpay_webhook.php', 'wa_webhook.php',
-        'telegram_webhook.php'], true)) continue;
+        'telegram_webhook.php',
+        // Fetched by the phone network while a reminder call is connecting,
+        // so no session exists to gate on. Both are guarded instead by the
+        // per-call ?t= token - 160 random bits, one call, six hours - which
+        // the voice suite tests directly.
+        'voice_answer.php', 'voice_webhook.php'], true)) continue;
     $src = file_get_contents($f);
     if (!preg_match('/require_perm\(|require_login\(/', $src)) $ungated[] = $base;
 }

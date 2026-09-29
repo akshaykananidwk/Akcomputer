@@ -20,6 +20,7 @@ return [
         ['parties.php', 'All Parties', 'parties.view', 'parties.php?action=new', 'parties.add'],
         ['payments.php', 'Party Payments', 'payments.view', null, null],
         ['collection.php', '📮 Collection Queue', 'payments.view', null, null],
+        ['voice_setup.php', '📞 Reminder Calls', 'settings.view', null, null],
         ['campaigns.php', '📣 Campaigns', 'campaigns.view', 'campaigns.php?action=new', 'campaigns.add'],
     ]],
     ['group', 'items', 'box', 'Items', [

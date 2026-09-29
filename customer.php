@@ -55,6 +55,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // want offers is still entitled to be told a bill of theirs is due, and
     // someone who has asked to stop the payment chasing has not thereby agreed
     // to be advertised to. One flag for both would break one of those promises.
+    if (post('do') === 'voice_dnd') {
+        require_perm('parties.edit');
+        $v = post('value') === '1' ? 1 : 0;
+        q('UPDATE parties SET voice_dnd = ? WHERE id = ?', [$v, $pid]);
+        log_activity('voice_dnd', "party=$pid value=$v");
+        flash($v ? 'No reminder call will go to this customer now.' : 'Reminder calls can go to this customer now.');
+        redirect($back);
+    }
     if (post('do') === 'mkt_opt_out') {
         require_perm('parties.edit');
         $v = post('value') === '1' ? 1 : 0;
@@ -387,6 +395,23 @@ include __DIR__ . '/includes/header.php';
     <input type="hidden" name="value" value="<?= $mkt ? '0' : '1' ?>">
     <button class="btn btn-sm <?= $mkt ? 'btn-success' : 'btn-outline btn-danger' ?>" type="submit">
       <?= $mkt ? '📣 Turn offer messages back on' : '🚫 Turn off offer messages' ?>
+    </button>
+  </form>
+  <hr>
+  <?php $dnd = (int)($p['voice_dnd'] ?? 0); ?>
+  <p class="muted mb" style="font-size:13px">
+    <b>Reminder calls</b> — a third, separate permission, for the same reason the two above are separate.
+    A customer may be perfectly happy to get a WhatsApp reminder and still not want their phone to ring;
+    folding the two together would force them to choose between silence and everything.
+    <?= $dnd
+        ? 'This customer has asked not to be called. The Remind Now button is switched off for them.'
+        : 'Reminder calls may go to this customer.' ?>
+  </p>
+  <form method="post" onsubmit="return confirm('<?= $dnd ? 'Allow reminder calls again?' : 'Stop calling this customer?' ?>')">
+    <?= csrf_field() ?><input type="hidden" name="do" value="voice_dnd"><input type="hidden" name="id" value="<?= $id ?>">
+    <input type="hidden" name="value" value="<?= $dnd ? '0' : '1' ?>">
+    <button class="btn btn-sm <?= $dnd ? 'btn-success' : 'btn-outline btn-danger' ?>" type="submit">
+      <?= $dnd ? '📞 Allow reminder calls' : '📵 Do not call' ?>
     </button>
   </form>
 </div>
