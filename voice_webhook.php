@@ -17,6 +17,16 @@ header('Content-Type: text/plain');
 header('Cache-Control: no-store');
 
 $call = voice_call_by_token(get('t'));
+
+// An INCOMING call's hangup comes from the Application's own hangup_url,
+// which carries no token - Vobiz built that URL, not us. Matching on the
+// call id it does send is what lets an incoming call be finished off at all;
+// without this its duration was never recorded and its WhatsApp follow-up
+// never went out.
+if (!$call) {
+    $uuid = (string)($_POST['CallUUID'] ?? $_GET['CallUUID'] ?? '');
+    if ($uuid !== '') $call = row('SELECT * FROM voice_calls WHERE call_uuid = ? ORDER BY id DESC LIMIT 1', [$uuid]);
+}
 if (!$call) { log_activity('voice_webhook_reject', 'unknown token'); exit('ignored'); }
 
 // Vobiz posts form fields; a JSON body is accepted too rather than dropped
@@ -37,4 +47,11 @@ if (in_array($call['status'], ['answered', 'no_answer', 'busy', 'failed'], true)
 }
 
 $new = voice_status_apply($call, $p);
+
+// The call is over, so this is the moment to send whatever it promised -
+// off the critical path, with nobody waiting on the line.
+if (strtolower((string)($p['Event'] ?? '')) === 'hangup') {
+    require_once __DIR__ . '/includes/voice_in.php';
+    voice_in_wa_flush(row('SELECT * FROM voice_calls WHERE id = ?', [$call['id']]));
+}
 exit('ok ' . $new);

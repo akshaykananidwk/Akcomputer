@@ -40,6 +40,8 @@ function cron_jobs() {
             }],
         'campaign_queue' => ['📣 Campaign Sending', 'Sends the next batch of any running campaign, inside the allowed hours only', 15,
             fn() => cam_quiet_ok()],
+        'voice_followup' => ['📲 Call → WhatsApp follow-up', 'Sends the statement, ticket number or order status a caller asked for on the phone', 5,
+            fn() => (int)setting('voice_inbound', 0) === 1],
         'voice_balance' => ['📞 Reminder-call Balance', 'Warns the owner before the Vobiz balance runs out and calls stop going through', 360,
             fn() => (int)setting('voice_enabled', 0) === 1],
         'housekeeping' => ['🧹 Log Cleanup', 'Trims every log table past its keep-for period — never business data (see Scaling)', 1440, null],
@@ -427,6 +429,18 @@ function cron_job_meta_tpl_sync() {
     $res = meta_wa_sync_templates();
     if (isset($res['_error'])) throw new Exception($res['_error']);
     return count($res) . ' template(s) refreshed';
+}
+
+/** What a caller asked for on the phone, delivered on WhatsApp.
+ *
+ *  The hangup callback normally sends it the moment the call ends. This is
+ *  the safety net for the call whose hangup never arrived - a customer who
+ *  asked for their statement and got nothing would never ring back to say
+ *  so, they would simply decide the shop's phone line does not work. */
+function cron_job_voice_followup() {
+    require_once __DIR__ . '/voice_in.php';
+    $n = voice_in_wa_flush_pending(120);
+    return $n ? $n . ' follow-up(s) sent' : 'nothing waiting';
 }
 
 /** Reminder-call credit. An empty Vobiz account does not announce itself:

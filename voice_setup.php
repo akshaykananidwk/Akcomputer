@@ -41,6 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('voice_setup.php');
     }
 
+    if (post('do') === 'preview_caller') {
+        set_setting('voice_preview_caller', post('mobile'));
+        redirect('voice_setup.php#hear');
+    }
+
     if (post('do') === 'make_in_voice') {
         $lang = post('lang') ?: voice_in_lang();
         $r = voice_in_pregenerate($lang);
@@ -152,6 +157,8 @@ $diag = (get('check') === '1') ? voice_in_diagnose() : null;
 $rejects = voice_in_rejects(8);
 $attachTrail = json_decode((string)setting('vobiz_attach_trail', ''), true) ?: [];
 $inVoice = voice_in_voice_status(voice_in_lang());
+$pvMobile = (string)setting('voice_preview_caller', '');
+$pv = ($pvMobile !== '' && voice_mobile_ok($pvMobile)) ? voice_in_preview($pvMobile) : null;
 $hours = voice_hours();
 $recent = all('SELECT v.*, p.name FROM voice_calls v LEFT JOIN parties p ON p.id = v.party_id
                ORDER BY v.id DESC LIMIT 20');
@@ -564,6 +571,67 @@ include __DIR__ . '/includes/header.php';
     <?php if (!voice_tts_enabled()): ?><span class="muted"> — the Gemini key is missing (Settings → AI)</span><?php endif; ?>
     <span class="muted" style="font-size:12px"> Do this again if you change the menu language or the AI voice.</span>
   </form>
+  <?php endif; ?>
+
+  <h4 id="hear">🔎 What would this caller hear?</h4>
+  <p class="muted" style="font-size:13px">
+    Type a mobile number and see exactly what the menu would say to it — without ringing anybody.
+    This is the quickest way to check a customer who says the balance read out was wrong.
+  </p>
+  <?php if (can('settings.edit')): ?>
+  <form method="post" class="mb">
+    <?= csrf_field() ?><input type="hidden" name="do" value="preview_caller">
+    <div class="grid-2">
+      <label>Their mobile number<input name="mobile" value="<?= e($pvMobile) ?>" placeholder="9824537749"></label>
+    </div>
+    <button class="btn btn-outline mt" type="submit">Show me</button>
+  </form>
+  <?php endif; ?>
+  <?php if ($pv): ?>
+    <?php if (!$pv['party']): ?>
+      <div class="flash flash-error">
+        <strong><?= e($pv['mobile']) ?> is not matched to any customer.</strong>
+        The caller would be told their number is not registered. Add the number to their party record.
+      </div>
+    <?php else: ?>
+      <div class="flash flash-info">
+        Matched to <strong><a href="customer.php?id=<?= (int)$pv['party']['id'] ?>"><?= e($pv['party']['name']) ?></a></strong>
+        (<?= e($pv['party']['mobile']) ?>) — outstanding <strong>₹<?= money($pv['due']) ?></strong>
+      </div>
+    <?php endif; ?>
+    <?php if (!empty($pv['short'])): ?>
+      <div class="flash flash-error">
+        <strong><?= count($pv['short']) ?> customer record(s) have a mobile number shorter than 10 digits.</strong>
+        A caller is matched on the last 10 digits of what is stored, so a short one matches
+        <em>anybody</em> whose number happens to end with it — and that caller then hears the wrong ledger.
+        Fix or clear these:
+        <ul style="margin:6px 0 0">
+        <?php foreach ($pv['short'] as $o): ?>
+          <li><a href="customer.php?id=<?= (int)$o['id'] ?>"><?= e($o['name']) ?></a> — [<?= e($o['mobile']) ?>]</li>
+        <?php endforeach; ?>
+        </ul>
+      </div>
+    <?php endif; ?>
+    <?php if (count($pv['others']) > 1): ?>
+      <div class="flash flash-error">
+        <strong><?= count($pv['others']) ?> customer records share this number.</strong>
+        The call reads the ledger of whichever one it matched, so the figure can look wrong when it is simply
+        the wrong record. Merge them, or clear the number from the ones it does not belong to:
+        <ul style="margin:6px 0 0">
+        <?php foreach ($pv['others'] as $o): ?>
+          <li><a href="customer.php?id=<?= (int)$o['id'] ?>"><?= e($o['name']) ?></a>
+              — <?= e($o['mobile']) ?> — ₹<?= money($o['due']) ?></li>
+        <?php endforeach; ?>
+        </ul>
+      </div>
+    <?php endif; ?>
+    <div class="table-wrap mb"><table class="table-sm">
+      <tbody>
+        <tr><td style="width:90px" class="muted">Greeting</td><td><?= e($pv['lines']['greeting']) ?></td></tr>
+        <tr><td class="muted">Menu</td><td><?= e($pv['lines']['menu']) ?></td></tr>
+        <tr><td class="muted">Press 1</td><td><strong><?= e($pv['lines']['press_1']) ?></strong></td></tr>
+      </tbody>
+    </table></div>
   <?php endif; ?>
 
   <h4>What a caller hears</h4>

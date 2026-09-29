@@ -1096,3 +1096,97 @@ t_ok('the check tells the owner when callers are hearing English',
      strpos($vin5, 'callers are hearing English') !== false);
 $su5 = file_get_contents(__DIR__ . '/../voice_setup.php');
 t_ok('and the screen has the button that fixes it', strpos($su5, 'make_in_voice') !== false);
+
+t_group('Voice IN — the phone asks, WhatsApp answers');
+
+set_setting('voice_wa_followup', '1');
+$pidW = t_party('TEST_WA_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500077' WHERE id = ?", [$pidW]);
+t_sale($pidW, 300, 0, date('Y-m-d', strtotime('-20 days')), date('Y-m-d', strtotime('-5 days')));
+$cw = voice_in_start('919876500077', '918065354620', 'uuid-wa-' . bin2hex(random_bytes(4)));
+
+voice_in_branch($cw, '1', $NOON);
+t_eq('asking for the balance queues the statement',
+     val('SELECT wa_send FROM voice_calls WHERE id = ?', [$cw['id']]), 'stmt');
+t_ok('but nothing is sent while the caller is still on the line',
+     val('SELECT wa_sent_at FROM voice_calls WHERE id = ?', [$cw['id']]) === null);
+
+voice_in_branch($cw, '3', $NOON);
+t_eq('a complaint queues the ticket number instead',
+     val('SELECT wa_send FROM voice_calls WHERE id = ?', [$cw['id']]), 'ticket');
+voice_in_branch($cw, '2', $NOON);
+t_eq('an order queues the order confirmation',
+     val('SELECT wa_send FROM voice_calls WHERE id = ?', [$cw['id']]), 'order');
+voice_in_branch($cw, '4', $NOON);
+t_eq('a price question queues the catalog',
+     val('SELECT wa_send FROM voice_calls WHERE id = ?', [$cw['id']]), 'catalog');
+
+// sending twice is worse than sending once, late
+q("UPDATE voice_calls SET wa_send = 'stmt', wa_sent_at = NULL WHERE id = ?", [$cw['id']]);
+$row = row('SELECT * FROM voice_calls WHERE id = ?', [$cw['id']]);
+voice_in_wa_flush($row);
+$stamped = val('SELECT wa_sent_at FROM voice_calls WHERE id = ?', [$cw['id']]);
+t_ok('flushing stamps it as sent', $stamped !== null);
+t_eq('and flushing again sends nothing', voice_in_wa_flush(row('SELECT * FROM voice_calls WHERE id = ?', [$cw['id']])), '');
+
+// a call with nothing promised must not send anything
+$cw2 = voice_in_start('919876500078', '918065354620', 'uuid-wa2-' . bin2hex(random_bytes(4)));
+t_eq('a call that asked for nothing sends nothing', voice_in_wa_flush($cw2), '');
+
+// the safety net
+q("UPDATE voice_calls SET wa_send = 'order', wa_sent_at = NULL, created_at = DATE_SUB(NOW(), INTERVAL 10 MINUTE) WHERE id = ?", [$cw2['id']]);
+$n = voice_in_wa_flush_pending(120);
+t_ok('a call whose hangup never arrived is swept up later', $n >= 1, (string)$n);
+t_ok('and is not swept twice', voice_in_wa_flush_pending(120) === 0);
+
+// switched off means off
+set_setting('voice_wa_followup', '0');
+$cw3 = voice_in_start('919876500079', '918065354620', 'uuid-wa3-' . bin2hex(random_bytes(4)));
+voice_in_branch($cw3, '1', $NOON);
+t_ok('with the follow-up switched off nothing is queued',
+     val('SELECT wa_send FROM voice_calls WHERE id = ?', [$cw3['id']]) === null);
+set_setting('voice_wa_followup', '1');
+
+$wh = file_get_contents(__DIR__ . '/../voice_webhook.php');
+t_ok('an incoming hangup with no token is matched by the call id', strpos($wh, 'CallUUID') !== false);
+t_ok('and that is when the follow-up goes out', strpos($wh, 'voice_in_wa_flush(') !== false);
+t_ok('a cron sweep catches the ones that never got a hangup',
+     strpos(file_get_contents(__DIR__ . '/../includes/cron_jobs.php'), 'cron_job_voice_followup') !== false);
+
+t_group('Voice IN — "it said I owe nothing when I owe 300"');
+
+// Chasing that from the outside is impossible: wrong customer matched, no
+// customer matched, or a ledger that really does read zero all sound the
+// same on the phone. This answers it without ringing anybody.
+$pv = voice_in_preview('9876500077');
+t_ok('the matched customer is named', $pv['party'] && (int)$pv['party']['id'] === $pidW);
+t_eq('and the figure that would be read out is shown', round((float)$pv['due'], 2), 300.0);
+t_ok('along with the exact words', strpos($pv['lines']['press_1'], 'ત્રણ સો') !== false, $pv['lines']['press_1']);
+
+// a number that certainly belongs to nobody in this database
+$absent = null;
+for ($i = 0; $i < 40 && $absent === null; $i++) {
+    $try = '9' . str_pad((string)random_int(0, 999999999), 9, '0', STR_PAD_LEFT);
+    if (!wa_bot_party_for(voice_e164($try))) $absent = $try;
+}
+$pvNone = voice_in_preview($absent ?? '9111100001');
+t_ok('an unmatched number is called out as unmatched', $pvNone['party'] === null);
+t_ok('and shows what such a caller is told',
+     strpos($pvNone['lines']['press_1'], 'નોંધાયેલો') !== false || stripos($pvNone['lines']['press_1'], 'not registered') !== false);
+
+// two records for one person is the commonest cause of a wrong figure
+$dupe = t_party('TEST_DUP_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500077' WHERE id = ?", [$dupe]);
+$pv2 = voice_in_preview('9876500077');
+t_ok('every customer sharing that number is listed', count($pv2['others']) >= 2, count($pv2['others']) . ' records');
+t_ok('with each one\'s own balance, so the wrong match is obvious',
+     count(array_filter($pv2['others'], fn($o) => array_key_exists('due', $o))) === count($pv2['others']));
+
+// A party whose mobile is shorter than ten digits matches any caller whose
+// number ends with it, and that caller then hears somebody else's ledger.
+q("INSERT INTO parties (name, type, mobile, opening_balance) VALUES ('TEST_SHORT_MOB', 'customer', '123', 0)");
+$pvS = voice_in_preview('9876500077');
+t_ok('a dangerously short stored number is reported',
+     (bool)array_filter($pvS['short'] ?? [], fn($o) => $o['mobile'] === '123'));
+t_ok('the screen warns about it',
+     strpos(file_get_contents(__DIR__ . '/../voice_setup.php'), 'shorter than 10 digits') !== false);

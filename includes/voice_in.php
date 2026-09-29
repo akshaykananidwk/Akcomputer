@@ -681,28 +681,34 @@ function voice_in_branch($call, $digit, $now = null) {
     switch ($digit) {
         case '1':   // their own account
             voice_in_log($call['id'], 'balance', $digit);
-            if (!$known) { voice_in_intent($call['id'], 'balance', 1); return voice_in_xml(voice_in_say('not_known', $lang)); }
+            if (!$known) { voice_in_intent($call['id'], 'balance', 1); voice_in_wa_queue($call['id'], 'menu');
+                           return voice_in_xml(voice_in_say('not_known', $lang)); }
+            voice_in_wa_queue($call['id'], 'stmt');   // the figures, as something they can keep
             return voice_in_xml(voice_in_balance_xml($call));
 
         case '2':   // place an order
             voice_in_log($call['id'], 'order', $digit);
             voice_in_intent($call['id'], 'order', 1);
+            voice_in_wa_queue($call['id'], 'order');
             return voice_in_xml(voice_in_record_xml($call, 'ask_order', 'order'));
 
         case '3':   // complaint or repair
             voice_in_log($call['id'], 'complaint', $digit);
             voice_in_intent($call['id'], 'complaint', 1);
+            voice_in_wa_queue($call['id'], 'ticket');
             return voice_in_xml(voice_in_record_xml($call, 'ask_problem', 'complaint'));
 
         case '4':   // stock or price
             voice_in_log($call['id'], 'stock', $digit);
             voice_in_intent($call['id'], 'stock', 1);
+            voice_in_wa_queue($call['id'], 'catalog');
             return voice_in_xml(voice_in_record_xml($call, 'ask_stock', 'stock'));
 
         case '5':   // where is my order
             voice_in_log($call['id'], 'delivery', $digit);
             voice_in_intent($call['id'], 'delivery', $known ? 0 : 1);
-            if (!$known) return voice_in_xml(voice_in_say('not_known', $lang));
+            if (!$known) { voice_in_wa_queue($call['id'], 'menu'); return voice_in_xml(voice_in_say('not_known', $lang)); }
+            voice_in_wa_queue($call['id'], 'orders');
             return voice_in_xml(voice_in_order_status_xml($call));
 
         case '9':   // a person
@@ -899,4 +905,145 @@ function voice_intent_label($i) {
     return ['balance' => '💰 Balance', 'order' => '🛒 Order', 'complaint' => '🔧 Complaint',
             'stock' => '🏷 Price / stock', 'delivery' => '🚚 Delivery', 'agent' => '🙋 Wanted a person',
             'message' => '💬 Message'][$i] ?? ($i ? ucfirst($i) : '—');
+}
+
+// ---------- the phone asks, WhatsApp answers ----------
+//
+// A statement read down a phone is useless: nobody writes down eleven bills
+// from memory, and being unable to is why people ring instead of looking it
+// up. So the call takes the question and WhatsApp delivers the answer as
+// something the customer can keep, scroll back to, and act on.
+//
+// Nothing is sent while the caller is on the line. Sending a WhatsApp is an
+// HTTP request to Meta, and the answer URL has seconds to reply - the same
+// trap as making speech mid-call. The call writes down what to send; the
+// hangup callback sends it, and a cron sweep catches any call whose hangup
+// never arrived.
+
+/** Note what this caller should receive once the call ends. */
+function voice_in_wa_queue($callId, $what) {
+    if ((int)setting('voice_wa_followup', 1) !== 1) return;
+    q('UPDATE voice_calls SET wa_send = ? WHERE id = ? AND wa_sent_at IS NULL',
+      [mb_substr((string)$what, 0, 20), (int)$callId]);
+}
+
+/** Send it. Returns what was sent, or '' if there was nothing to send.
+ *
+ *  Marked as sent BEFORE sending, not after: a hangup callback and the cron
+ *  sweep can arrive at the same moment, and a customer getting their
+ *  statement twice is a worse failure than getting it once late. */
+function voice_in_wa_flush($call) {
+    $what = (string)($call['wa_send'] ?? '');
+    if ($what === '' || !empty($call['wa_sent_at'])) return '';
+    $mobile = (string)($call['from_number'] ?: $call['mobile']);
+    if (strlen(preg_replace('/\D/', '', $mobile)) < 10) return '';
+
+    q('UPDATE voice_calls SET wa_sent_at = NOW() WHERE id = ? AND wa_sent_at IS NULL', [(int)$call['id']]);
+    if (!db()->query('SELECT ROW_COUNT()')->fetchColumn()) return '';   // somebody else got there first
+
+    require_once __DIR__ . '/wa_portal.php';
+    $shop = setting('app_name', 'AK Computer');
+    $known = (int)$call['party_id'] > 0;
+
+    try {
+        switch ($what) {
+            case 'stmt':                       // their ledger, as a document
+                if ($known) { wa_portal_route($mobile, 'portal:stmt'); return 'stmt'; }
+                break;
+            case 'orders':                     // where their order has got to
+                if ($known) { wa_portal_route($mobile, 'portal:orders'); return 'orders'; }
+                break;
+            case 'ticket':                     // the complaint's number
+                $ref = (int)($call['ref_id'] ?? 0);
+                $t = $ref ? row('SELECT ticket_no, subject FROM tickets WHERE id = ?', [$ref]) : null;
+                send_whatsapp($mobile, "🔧 *" . $shop . "*\n\n"
+                    . ($t && $t['ticket_no'] ? "તમારી ફરિયાદ નોંધાઈ ગઈ છે — *" . $t['ticket_no'] . "*\n\n" : "તમારી ફરિયાદ નોંધાઈ ગઈ છે.\n\n")
+                    . "અમે સાંભળીને તમારો સંપર્ક કરીશું. 🙏");
+                return 'ticket';
+            case 'order':                      // we heard your order
+                send_whatsapp($mobile, "🛒 *" . $shop . "*\n\n"
+                    . "તમારો ઓર્ડર ફોન પર નોંધાઈ ગયો છે. અમે સાંભળીને પુષ્ટિ માટે સંપર્ક કરીશું.\n\n"
+                    . "આખો કેટલોગ અહીં જોઈ શકો છો:\n" . base_url('catalog.php'));
+                return 'order';
+            case 'catalog':                    // the price they asked about
+                send_whatsapp($mobile, "🏷 *" . $shop . "*\n\n"
+                    . "તમે પૂછેલી વસ્તુ વિશે અમે સંપર્ક કરીશું.\n\n"
+                    . "દરમિયાન ભાવ અને સ્ટોક અહીં જોઈ શકો છો:\n" . base_url('catalog.php')
+                    . "\n\nઅહીં *કેટલોગ* લખીને પણ પૂછી શકો છો.");
+                return 'catalog';
+            case 'menu':                       // we could not place them
+                wa_portal_route($mobile, 'portal:menu');
+                return 'menu';
+        }
+    } catch (Exception $e) {
+        log_activity('voice_wa_fail', 'call ' . (int)$call['id'] . ': ' . mb_substr($e->getMessage(), 0, 200));
+        return '';
+    }
+    return '';
+}
+
+/** Calls that ended without their follow-up going out - a hangup callback
+ *  that never arrived, or arrived before the recording did. */
+function voice_in_wa_flush_pending($olderThanSecs = 120, $limit = 30) {
+    $rows = all("SELECT * FROM voice_calls
+                 WHERE wa_send IS NOT NULL AND wa_sent_at IS NULL
+                   AND created_at < DATE_SUB(NOW(), INTERVAL ? SECOND)
+                 ORDER BY id LIMIT " . (int)$limit, [(int)$olderThanSecs]);
+    $n = 0;
+    foreach ($rows as $r) if (voice_in_wa_flush($r) !== '') $n++;
+    return $n;
+}
+
+// ---------- what would this caller hear? ----------
+
+/** Play the whole thing out on paper for one number.
+ *
+ *  Built because "it says I owe nothing when I owe three hundred" is
+ *  impossible to chase from the outside: is the number matched to the wrong
+ *  customer, matched to nobody, or matched correctly to a ledger that really
+ *  does read zero? This answers that in one press, without ringing anybody. */
+function voice_in_preview($mobile) {
+    $e164 = voice_e164($mobile);
+    $party = wa_bot_party_for($e164);
+    $lang = voice_in_lang();
+    $out = [
+        'mobile' => $e164,
+        'party'  => $party ? ['id' => (int)$party['id'], 'name' => $party['name'], 'mobile' => $party['mobile']] : null,
+        'others' => [],
+        'due'    => null,
+        'lines'  => [],
+    ];
+
+    // Every party whose number ends the same way - two records for one person
+    // is the commonest reason the wrong ledger is read out.
+    $last10 = substr(preg_replace('/\D/', '', $e164), -10);
+    $out['others'] = all("SELECT id, name, mobile, " . party_balance_side_expr('p', 'in') . " due
+                          FROM parties p
+                          WHERE mobile <> '' AND RIGHT(REPLACE(REPLACE(mobile,'+',''),' ',''), 10) = ?
+                          ORDER BY id", [$last10]);
+
+    // A party whose "mobile" is shorter than ten digits matches ANY caller
+    // whose number happens to end with it, because the match is on the last
+    // ten digits of what is stored. One bad record can therefore answer
+    // other people's calls with the wrong ledger.
+    $out['short'] = all("SELECT id, name, mobile FROM parties
+                         WHERE mobile <> '' AND CHAR_LENGTH(REPLACE(REPLACE(mobile,'+',''),' ','')) BETWEEN 1 AND 9
+                         ORDER BY id LIMIT 10");
+
+    $w = voice_in_words($lang, ['name' => $party['name'] ?? '']);
+    $out['lines']['greeting'] = $party ? $w['welcome_name'] : $w['welcome'];
+    $out['lines']['menu'] = $w['menu'];
+
+    if (!$party) {
+        $out['lines']['press_1'] = $w['not_known'];
+        return $out;
+    }
+    $due = round((float)party_balance_side((int)$party['id'], 'in'), 2);
+    $out['due'] = $due;
+    $mode = setting('voice_ivr_balance', 'speak');
+    $out['lines']['press_1'] = $mode === 'off' ? $w['not_known']
+        : ($due <= 0.009 ? $w['balance_nil']
+        : ($mode === 'whatsapp' ? $w['balance_wa']
+        : voice_in_words($lang, ['amount' => voice_tokens_text(voice_amount_tokens($due), $lang)])['balance']));
+    return $out;
 }
