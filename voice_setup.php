@@ -47,7 +47,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // fail for entirely different reasons and rolling them into one
         // button made a number problem look like an application problem.
         $r = voice_in_app_setup();
-        flash($r['ok'] ? '✅ Application ready (' . e($r['app_id']) . '). Now pick a number below and press "Use this one".'
+        flash($r['ok'] ? '✅ Application ready (' . e($r['app_id']) . ')'
+                       . (!empty($r['adopted']) ? ' — the one that was already there was used, not a new one.' : '.')
+                       . (!empty($r['duplicates']) ? ' ' . (int)$r['duplicates'] . ' spare application(s) also point here — delete them in the Vobiz console.' : '')
+                       . ' Now pick a number below and press "Use this one".'
                        : 'Could not set up the application: ' . $r['error'],
               $r['ok'] ? 'success' : 'error');
         redirect('voice_setup.php');
@@ -481,12 +484,13 @@ include __DIR__ . '/includes/header.php';
   <?php if (can('settings.edit')): ?>
   <p class="muted" style="font-size:12px;margin-top:10px">
     <?= setting('vobiz_app_id') ? 'Application already made.' : 'No application yet.' ?>
-    The button below makes (or refreshes) it — do it once, or again after the site address changes.
+    The button below finds the one that already points here and uses it, and only makes a new one if there is none —
+    so pressing it twice is safe.
   </p>
   <form method="post" class="mb">
     <?= csrf_field() ?><input type="hidden" name="do" value="app_setup">
     <button class="btn btn-outline" type="submit" <?= voice_configured() ? '' : 'disabled' ?>>
-      <?= setting('vobiz_app_id') ? 'Refresh the application' : 'Make the application' ?></button>
+      <?= setting('vobiz_app_id') ? 'Find / refresh the application' : 'Make the application' ?></button>
   </form>
   <?php endif; ?>
 

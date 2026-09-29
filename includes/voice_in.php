@@ -93,8 +93,56 @@ function voice_api($method, $path, array $body = null) {
     return [is_array($j) ? $j : [], ''];
 }
 
+/** Every application on the account, so ours can be recognised rather than
+ *  remembered. The reply shape differs between list endpoints, so all three
+ *  spellings are accepted. */
+function voice_in_apps() {
+    [$j, $err] = voice_api('GET', 'Application/?per_page=50');
+    if ($j === null) return ['ok' => false, 'error' => $err, 'apps' => []];
+    $rows = $j['items'] ?? $j['objects'] ?? $j['applications'] ?? (isset($j[0]) ? $j : []);
+    $out = [];
+    foreach ($rows as $a) {
+        if (!is_array($a)) continue;
+        $out[] = [
+            'id'   => (string)($a['app_id'] ?? $a['application_id'] ?? $a['id'] ?? ''),
+            'name' => (string)($a['app_name'] ?? $a['name'] ?? ''),
+            'url'  => (string)($a['answer_url'] ?? ''),
+        ];
+    }
+    return ['ok' => true, 'error' => '', 'apps' => $out];
+}
+
+/** The applications that point at THIS software.
+ *
+ *  Identified by their answer_url, not by an id in a setting. The id in the
+ *  setting is only what we last created, and the console can show a
+ *  different one - which is exactly what happened: pressing "refresh" made a
+ *  second application instead of editing the first, and then the check
+ *  looked for a number attached to the one the console was not showing. */
+function voice_in_our_apps() {
+    $want = voice_public_url('voice_in.php');
+    $r = voice_in_apps();
+    if (!$r['ok']) return [];
+    return array_values(array_filter($r['apps'], fn($a) => $a['url'] === $want && $a['id'] !== ''));
+}
+
 /** Create (or re-point) the application that answers our number. */
 function voice_in_app_setup() {
+    // Adopt one that already points here rather than making another. This
+    // used to POST unconditionally, so every press left one more application
+    // behind and the stored id drifted away from the one in the console.
+    $ours = voice_in_our_apps();
+    if ($ours) {
+        set_setting('vobiz_app_id', $ours[0]['id']);
+        log_activity('voice_app', 'adopted existing application ' . $ours[0]['id']
+                                . (count($ours) > 1 ? ' (' . count($ours) . ' point here)' : ''));
+        return ['ok' => true, 'error' => '', 'app_id' => $ours[0]['id'], 'adopted' => true,
+                'duplicates' => max(0, count($ours) - 1)];
+    }
+    return voice_in_app_create();
+}
+
+function voice_in_app_create() {
     [$j, $err] = voice_api('POST', 'Application/', [
         'app_name'      => preg_replace('/[^A-Za-z0-9_-]/', '-', setting('app_name', 'AK Computer')) . '-inbound',
         'answer_url'    => voice_public_url('voice_in.php'),
@@ -307,12 +355,24 @@ function voice_in_diagnose() {
                           : 'none — the caller ID you are using for outgoing calls is not the same thing. '
                           . 'Buy a number in the Vobiz console under Phone Numbers, then come back.');
 
-    $attached = array_values(array_filter($nums['numbers'], fn($n) => $n['app_id'] !== '' && $n['app_id'] === $appId));
+    // A number counts as attached if it points at ANY application whose
+    // answer_url is ours - not only the id we happen to have stored. The
+    // console can legitimately show a different id for the same setup.
+    $ourIds = array_column(voice_in_our_apps(), 'id');
+    if ($appId !== '' && !in_array($appId, $ourIds, true)) $ourIds[] = $appId;
+    if (count($ourIds) > 1) {
+        $add('Only one application points here', false,
+             count($ourIds) . ' applications point at this software — delete the spare ones in the Vobiz console, '
+             . 'they do no harm but they are confusing: ' . implode(', ', $ourIds));
+    }
+    $attached = array_values(array_filter($nums['numbers'],
+        fn($n) => $n['app_id'] !== '' && in_array($n['app_id'], $ourIds, true)));
     // Name the number to attach, and offer to do it right here. Saying
     // "press Use this one on a number above" is no help when the table above
     // is empty, and not much when it is not.
     $free = array_values(array_filter($nums['numbers'],
-        fn($n) => $n['app_id'] !== $appId && $n['voice'] && !$n['blocked'] && (!$n['kyc_need'] || $n['kyc_done'])));
+        fn($n) => !in_array($n['app_id'], $ourIds, true) && $n['voice'] && !$n['blocked']
+                  && (!$n['kyc_need'] || $n['kyc_done'])));
     if ($attached) {
         $add('A number is pointed at this software', true, implode(', ', array_column($attached, 'e164')));
     } elseif ($free) {

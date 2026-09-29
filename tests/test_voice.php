@@ -1033,3 +1033,25 @@ t_ok('and names the number and the application to set there',
 $su3 = file_get_contents(__DIR__ . '/../voice_setup.php');
 t_ok('the screen offers to remember a number attached by hand',
      strpos($su3, 'I attached it in the Vobiz console') !== false);
+
+t_group('Voice IN — one application, recognised rather than remembered');
+
+// "Refresh the application" used to POST unconditionally, so every press left
+// another application behind and the stored id drifted away from the one the
+// console showed. Then the check looked for a number attached to an id the
+// owner could not see, and said no number was attached when one was.
+$vin4 = file_get_contents(__DIR__ . '/../includes/voice_in.php');
+t_ok('applications can be listed', strpos($vin4, "voice_api('GET', 'Application/") !== false);
+t_ok('ours are found by the address they point at, not by a stored id',
+     strpos($vin4, "\$a['url'] === \$want") !== false);
+t_ok('setup adopts an existing one instead of making another',
+     strpos($vin4, 'Adopt one that already points here') !== false);
+t_ok('and only creates when there is none', strpos($vin4, 'return voice_in_app_create();') !== false);
+t_ok('a number attached to ANY application of ours counts',
+     strpos($vin4, "in_array(\$n['app_id'], \$ourIds, true)") !== false);
+t_ok('spare applications are reported rather than left to confuse',
+     strpos($vin4, 'Only one application points here') !== false);
+
+$su4 = file_get_contents(__DIR__ . '/../voice_setup.php');
+t_ok('the button says it is safe to press twice', strpos($su4, 'pressing it twice is safe') !== false);
+t_ok('and says when it reused one', strpos($su4, 'was already there was used') !== false);
