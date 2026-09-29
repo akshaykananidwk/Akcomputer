@@ -1374,6 +1374,117 @@ t_ok('the spoken menu folder does NOT deny anything — the provider must read i
 t_ok('and uploads does not block mp3 across the board',
      strpos((string)@file_get_contents(__DIR__ . '/../uploads/.htaccess'), 'mp3') === false);
 
+t_group('Voice — the shop decides what the phone says');
+
+// 1. The shop's own greeting comes first, on the way out as well as in.
+$wasLines = setting('voice_lines_gu'); $wasOpts = setting('voice_menu_opts');
+set_setting('voice_lines_gu', ''); set_setting('voice_menu_opts', '');
+t_ok('the greeting is said before anything else on an incoming call',
+     strpos(voice_in_words('gu')['hello'], 'દ્વારકાધીશ') !== false, voice_in_words('gu')['hello']);
+t_ok('and the reminder going out opens with it too',
+     strpos(voice_script('રમેશ', 100, 'gu'), voice_greeting('gu')) === 0,
+     mb_substr(voice_script('રમેશ', 100, 'gu'), 0, 30));
+t_ok('the menu plays it as the very first clip',
+     strpos(file_get_contents(__DIR__ . '/../includes/voice_in.php'),
+            "voice_in_say('hello', \$lang);\n        \$body .= \$party") !== false);
+t_ok('one greeting serves both directions, not two that drift',
+     substr_count(file_get_contents(__DIR__ . '/../includes/voice.php'), 'function voice_greeting_default') === 1
+     && strpos(file_get_contents(__DIR__ . '/../includes/voice_in.php'), 'voice_greeting_default($lang)') !== false);
+
+// 2. Edited, cleared, switched off - three different things.
+voice_lines_save('gu', ['hello' => 'જય રણછોડ.']);
+t_eq('an edited line is what the call says', voice_in_words('gu')['hello'], 'જય રણછોડ.');
+t_ok('and it reaches the outgoing call as well', strpos(voice_script('ર', 100, 'gu'), 'જય રણછોડ') === 0);
+voice_lines_save('gu', ['hello' => '']);
+t_ok('a blank box goes back to the wording the software ships with',
+     strpos(voice_in_words('gu')['hello'], 'દ્વારકાધીશ') !== false);
+voice_lines_save('gu', [], ['hello']);
+t_eq('switched off, the line is empty', voice_in_words('gu')['hello'], '');
+t_eq('and the call says NOTHING there, not the English underneath', voice_in_say('hello', 'gu'), '');
+t_ok('the outgoing call drops it too', strpos(voice_script('ર', 100, 'gu'), 'નમસ્કાર') === 0);
+// switching off has to survive the next save, or it silently comes back
+voice_lines_save('gu', ['bye' => 'આભાર જી.'], ['hello']);
+t_eq('and it stays off when something else is saved', voice_in_words('gu')['hello'], '');
+voice_lines_save('gu', []);
+t_ok('saving nothing at all restores everything', strpos(voice_in_words('gu')['hello'], 'દ્વારકાધીશ') !== false);
+
+// 3. A sentence that carries a figure must keep the slot the figure goes in.
+$r = voice_lines_save('gu', ['balance' => 'તમારે પૈસા બાકી છે.']);   // {amount} dropped
+t_ok('an edit that loses the amount is refused', in_array('balance', $r['refused'], true));
+t_ok('and the old wording still stands', strpos(voice_in_words('gu')['balance'], '{amount}') !== false
+     || strpos(voice_in_words('gu', ['amount' => '₹5'])['balance'], '₹5') !== false);
+$r2 = voice_lines_save('gu', ['balance' => 'તમારા {amount} ચૂકવવાના બાકી છે.']);
+t_ok('the same edit WITH the slot is saved', $r2['refused'] === [] && $r2['saved'] === 1);
+voice_lines_save('gu', []);
+
+t_group('Voice — the menu is what the shop offers, nothing more');
+
+// The sentence and the keypad read ONE list, so a shop that does not deliver
+// cannot be made to offer "press 5 for your order" by one of them.
+set_setting('voice_menu_opts', '1,3,9');
+$menu = voice_in_words('gu')['menu'];
+t_ok('a switched-off option is not read out', strpos($menu, 'પાંચ દબાવો') === false, $menu);
+t_ok('and the ones that are on still are', strpos($menu, 'એક દબાવો') !== false
+                                        && strpos($menu, 'નવ દબાવો') !== false);
+t_ok('the keypad agrees with the sentence', voice_in_digit_on('3') && !voice_in_digit_on('5'));
+$callM = voice_in_start('919876500055', '918065354620', 'uuid-menu-' . bin2hex(random_bytes(4)));
+$xmlOff = voice_in_branch($callM, '5', $NOON);
+t_ok('pressing a switched-off key leads nowhere but the menu again',
+     strpos($xmlOff, 'Gather') !== false);
+t_ok('and it is not answered as if it were on', strpos($xmlOff, 'order') === false);
+t_eq('the press is written down as one the shop does not offer',
+     val("SELECT step FROM voice_ivr_events WHERE call_id = ? ORDER BY id DESC LIMIT 1", [$callM['id']]), 'menu_off');
+// Every option off would be a phone that answers and then refuses everything.
+set_setting('voice_menu_opts', '2');
+$only = voice_in_digits();
+t_eq('a shop can offer a single option', $only, ['2']);
+set_setting('voice_menu_opts', 'nonsense,99');
+t_eq('and nothing sane left means a person is still reachable', voice_in_digits(), ['9']);
+set_setting('voice_menu_opts', $wasOpts);
+set_setting('voice_lines_gu', $wasLines);
+
+t_group('Voice IN — the caller hears their own name');
+
+// The line with the name in it EXISTED and was never once heard: it is one
+// sentence per customer, so it is not among the fixed lines made in advance,
+// and the live path is rightly forbidden from making speech mid-call. Every
+// call fell through to the nameless greeting.
+t_ok('the greeting with a name is not one of the fixed lines',
+     !in_array('welcome_name', voice_in_fixed_keys(), true));
+t_ok('so it has to be made ahead of the call',
+     function_exists('voice_in_greet_make') && function_exists('voice_in_greet_parties'));
+$pidG = t_party('TEST_GREET_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500088' WHERE id = ?", [$pidG]);
+t_sale($pidG, 700, 0, date('Y-m-d', strtotime('-30 days')), date('Y-m-d', strtotime('-10 days')));
+$ids = array_column(voice_in_greet_parties(500), 'id');
+t_ok('somebody who owes money is worth greeting by name', in_array((string)$pidG, array_map('strval', $ids), true));
+$lineG = voice_in_greet_line(val('SELECT name FROM parties WHERE id = ?', [$pidG]), 'gu');
+t_ok('and the sentence made for them is the one the call would say',
+     strpos($lineG, (string)val('SELECT name FROM parties WHERE id = ?', [$pidG])) !== false, $lineG);
+t_ok('it carries no leftover placeholder', strpos($lineG, '{') === false, $lineG);
+$stG = voice_in_greet_status('gu', 50);
+t_ok('the screen can say how many are ready', $stG['total'] > 0 && $stG['ready'] + $stG['left'] === $stG['total']);
+t_ok('a shop speaking English needs none of this', voice_in_greet_status('en')['total'] === 0);
+t_ok('and there is a job that makes them a few at a time',
+     strpos(file_get_contents(__DIR__ . '/../includes/cron_jobs.php'), 'cron_job_voice_greet') !== false);
+t_ok('nothing is made while a caller is on the line',
+     strpos(file_get_contents(__DIR__ . '/../includes/voice_in.php'),
+            "voice_in_say('welcome_name', \$lang, ['name' => \$party['name']], false") !== false);
+
+t_group('Voice — the wording screen');
+
+$vw = file_get_contents(__DIR__ . '/../voice_words.php');
+t_ok('editing the wording needs the settings permission', strpos($vw, "require_perm('settings.edit')") !== false);
+t_ok('the computed menu sentence is not offered for editing',
+     strpos($vw, "'menu'") === false || strpos($vw, "name=\"line[menu]\"") === false);
+t_ok('each option can be switched off there', strpos($vw, 'name="on[]"') !== false);
+t_ok('and each line can be silenced separately from being cleared',
+     strpos($vw, 'name="say[]"') !== false);
+t_ok('the default is shown as the placeholder, so a blank box is not a blank sentence',
+     strpos($vw, 'placeholder="<?= e($defaults[$k]) ?>"') !== false);
+t_ok('the setup screen links to it', strpos(file_get_contents(__DIR__ . '/../voice_setup.php'), 'voice_words.php') !== false);
+t_ok('and so does the sidebar', strpos(file_get_contents(__DIR__ . '/../includes/menu.php'), 'voice_words.php') !== false);
+
 t_group('Voice — the setup screen is a list of steps, not one long scroll');
 
 // Fifteen headings, all open at once, with the day-to-day list at the bottom,

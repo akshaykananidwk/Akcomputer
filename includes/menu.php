@@ -22,6 +22,7 @@ return [
         ['collection.php', '📮 Collection Queue', 'payments.view', null, null],
         ['voice_calls.php', '📞 Calls (in & out)', 'payments.view', null, null],
         ['voice_setup.php', '⚙️ Call Setup', 'settings.view', null, null],
+        ['voice_words.php', '🗣 What the Phone Says', 'settings.edit', null, null],
         ['campaigns.php', '📣 Campaigns', 'campaigns.view', 'campaigns.php?action=new', 'campaigns.add'],
     ]],
     ['group', 'items', 'box', 'Items', [

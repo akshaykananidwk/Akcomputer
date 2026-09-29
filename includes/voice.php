@@ -114,6 +114,78 @@ function voice_phrases($lang) {
     return $p[$lang] ?? $p['en'];
 }
 
+/**
+ * The shop's own greeting, said before anything the software has to say.
+ *
+ * "જય દ્વારકાધીશ" is not a feature, it is how this shop answers its phone,
+ * and it belongs to the shop - so it is an ordinary editable line. Clearing
+ * it switches it off. It lives here rather than in the incoming menu's table
+ * because a reminder going OUT opens with it too, and one greeting that both
+ * directions read beats two that drift apart.
+ */
+function voice_greeting_default($lang) {
+    $d = ['gu' => 'જય દ્વારકાધીશ.', 'hi' => 'जय द्वारकाधीश.', 'en' => 'Jay Dwarkadhish.'];
+    return $d[$lang] ?? $d['en'];
+}
+function voice_greeting($lang) {
+    $edited = voice_lines_edited($lang);
+    if (!array_key_exists('hello', $edited)) return voice_greeting_default($lang);
+    return $edited['hello'] === null ? '' : trim((string)$edited['hello']);
+}
+
+/** What this shop has rewritten, for one language. Bad JSON is no wording. */
+function voice_lines_edited($lang) {
+    $raw = (string)setting('voice_lines_' . $lang, '');
+    if (trim($raw) === '') return [];
+    $j = json_decode($raw, true);
+    return is_array($j) ? $j : [];
+}
+
+/**
+ * Save this shop's wording.
+ *
+ * Only keys the software actually speaks are kept, and a line left the same
+ * as the default is DROPPED rather than frozen - so a later improvement to
+ * that sentence still reaches this shop, and clearing a box restores it.
+ */
+function voice_lines_save($lang, array $lines, array $off = []) {
+    $defaults = voice_in_defaults($lang);
+    $keep = []; $refused = [];
+    // Switched off is not the same as left blank. A blank box means "go back
+    // to the wording the software ships with"; switching a line off means
+    // "say nothing here", and that has to survive as a decision of its own or
+    // the next save would quietly turn the line back on.
+    foreach ($off as $k) if (isset($defaults[$k])) $keep[$k] = null;
+    foreach ($lines as $k => $text) {
+        $text = trim((string)$text);
+        if (!isset($defaults[$k]) || array_key_exists($k, $keep)) continue;
+        if ($text === '' || $text === $defaults[$k]) continue;
+        // A sentence that carries a figure must keep the slot the figure
+        // goes in. Drop {amount} and the call says "your is outstanding" -
+        // the one wording mistake that turns a reminder into nonsense and
+        // that nobody would notice until a customer heard it.
+        $bad = false;
+        foreach (voice_line_slots($defaults[$k]) as $slot)
+            if (strpos($text, '{' . $slot . '}') === false) { $bad = true; break; }
+        if ($bad) { $refused[] = $k; continue; }
+        $keep[$k] = mb_substr($text, 0, 600);
+    }
+    set_setting('voice_lines_' . $lang, $keep ? json_encode($keep, JSON_UNESCAPED_UNICODE) : '');
+    return ['saved' => count($keep), 'refused' => $refused];
+}
+
+/** The {slots} a sentence carries - the customer's name, their amount. */
+function voice_line_slots($text) {
+    preg_match_all('/\{(\w+)\}/', (string)$text, $m);
+    return array_values(array_unique($m[1]));
+}
+
+/** Is this line switched off - said by nobody, rather than merely unedited? */
+function voice_line_off($lang, $key) {
+    $e = voice_lines_edited($lang);
+    return array_key_exists($key, $e) && $e[$key] === null;
+}
+
 /** An amount as an exact, language-free list of tokens.
  *
  *  Indian grouping - crore, lakh, thousand, hundred, then what is left, which
@@ -173,16 +245,19 @@ function voice_tokens_text(array $tokens, $lang) {
 /** The full sentence, exactly as the customer will hear it. */
 function voice_script($name, $amount, $lang) {
     $ph = voice_phrases($lang);
+    // The shop's greeting opens the call. Empty means the shop cleared it.
+    $hello = trim(voice_greeting($lang));
+    $hello = $hello === '' ? '' : rtrim($hello, '.।') . '. ';
     $shop = setting('app_name', 'AK Computer');
     $amt = voice_tokens_text(voice_amount_tokens($amount), $lang);
     $name = trim((string)$name);
 
     if ($lang === 'en') {
-        return trim($ph['greet'] . ($name !== '' ? ' ' . $name : '') . ', ' . $ph['from_shop'] . ' ' . $shop
+        return trim($hello . $ph['greet'] . ($name !== '' ? ' ' . $name : '') . ', ' . $ph['from_shop'] . ' ' . $shop
                     . '. Your payment of ' . $amt . ' is pending. ' . $ph['request'] . '. ' . $ph['thanks'] . '.');
     }
     // Gujarati/Hindi read in the same order the clips are played in.
-    return trim($ph['greet'] . ($name !== '' ? ' ' . $name : '') . ', ' . $shop . ' ' . $ph['from_shop']
+    return trim($hello . $ph['greet'] . ($name !== '' ? ' ' . $name : '') . ', ' . $shop . ' ' . $ph['from_shop']
                 . '. ' . $ph['your'] . ' ' . $amt . ' ' . $ph['due'] . '. ' . $ph['request'] . '. ' . $ph['thanks'] . '.');
 }
 

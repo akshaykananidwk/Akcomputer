@@ -44,6 +44,8 @@ function cron_jobs() {
             fn() => (int)setting('voice_enabled', 0) === 1],
         'voice_followup' => ['📲 Call → WhatsApp follow-up', 'Sends the statement, ticket number or order status a caller asked for on the phone', 5,
             fn() => (int)setting('voice_inbound', 0) === 1],
+        'voice_greet' => ['🗣 Greetings by name', 'Makes each customer\'s own greeting ahead of time, so a caller hears their name', 30,
+            fn() => (int)setting('voice_inbound', 0) === 1 && (int)setting('voice_greet_ahead', 1) === 1],
         'voice_balance' => ['📞 Reminder-call Balance', 'Warns the owner before the Vobiz balance runs out and calls stop going through', 360,
             fn() => (int)setting('voice_enabled', 0) === 1],
         'housekeeping' => ['🧹 Log Cleanup', 'Trims every log table past its keep-for period — never business data (see Scaling)', 1440, null],
@@ -445,6 +447,22 @@ function cron_job_voice_dial() {
     if (!empty($r['holding'])) return 'holding ' . $r['left'] . ' — ' . $r['holding'];
     if (!$r['dialled'] && !$r['dropped']) return 'nothing waiting';
     return $r['dialled'] . ' dialled, ' . $r['dropped'] . ' dropped, ' . $r['left'] . ' still waiting';
+}
+
+/** A caller's own name, said back to them.
+ *
+ *  The greeting with the name in it is one sentence per customer, so it
+ *  cannot be made once and shared the way the fixed lines are - and nothing
+ *  may be generated while a caller is already on the line. Made here instead,
+ *  a few at a time, for the people likely to ring. Until one is ready that
+ *  caller simply hears the nameless greeting, which is what everybody heard
+ *  before this job existed. */
+function cron_job_voice_greet() {
+    require_once __DIR__ . '/voice_in.php';
+    $r = voice_in_greet_make();
+    if ($r['failed']) return $r['made'] . ' made, then stopped: ' . $r['error'];
+    if (!$r['made']) return 'everybody is already greeted by name';
+    return $r['made'] . ' greeting(s) made, ' . $r['left'] . ' to go';
 }
 
 /** What a caller asked for on the phone, delivered on WhatsApp.

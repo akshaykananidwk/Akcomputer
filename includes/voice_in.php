@@ -428,9 +428,12 @@ function voice_in_words($lang, array $v = []) {
             'welcome'      => 'નમસ્કાર, ' . $shop . ' માં આપનું સ્વાગત છે.',
             'welcome_name' => 'નમસ્કાર {name}, ' . $shop . ' માં આપનું સ્વાગત છે.',
             'closed'       => 'અત્યારે દુકાન બંધ છે.',
-            'menu'         => 'હિસાબ જાણવા એક દબાવો. ઓર્ડર આપવા બે દબાવો. ફરિયાદ કે રિપેરિંગ માટે ત્રણ દબાવો. '
-                            . 'માલ અને ભાવ પૂછવા ચાર દબાવો. તમારો ઓર્ડર ક્યાં પહોંચ્યો એ જાણવા પાંચ દબાવો. '
-                            . 'અમારી સાથે વાત કરવા નવ દબાવો.',
+            'menu_1'       => 'હિસાબ જાણવા એક દબાવો.',
+            'menu_2'       => 'ઓર્ડર આપવા બે દબાવો.',
+            'menu_3'       => 'ફરિયાદ કે રિપેરિંગ માટે ત્રણ દબાવો.',
+            'menu_4'       => 'માલ અને ભાવ પૂછવા ચાર દબાવો.',
+            'menu_5'       => 'તમારો ઓર્ડર ક્યાં પહોંચ્યો એ જાણવા પાંચ દબાવો.',
+            'menu_9'       => 'અમારી સાથે વાત કરવા નવ દબાવો.',
             'again'        => 'કંઈ દબાયું નથી. ફરી સાંભળો.',
             'bye'          => 'ફોન કરવા બદલ આભાર.',
             'not_known'    => 'તમારો નંબર અમારી પાસે નોંધાયેલો નથી. ઓર્ડર કે ફરિયાદ માટે બે કે ત્રણ દબાવો.',
@@ -452,9 +455,12 @@ function voice_in_words($lang, array $v = []) {
             'welcome'      => 'नमस्ते, ' . $shop . ' में आपका स्वागत है.',
             'welcome_name' => 'नमस्ते {name}, ' . $shop . ' में आपका स्वागत है.',
             'closed'       => 'अभी दुकान बंद है.',
-            'menu'         => 'हिसाब जानने के लिए एक दबाएँ. ऑर्डर देने के लिए दो दबाएँ. शिकायत या रिपेयरिंग के लिए तीन दबाएँ. '
-                            . 'सामान और दाम पूछने के लिए चार दबाएँ. अपना ऑर्डर कहाँ पहुँचा जानने के लिए पाँच दबाएँ. '
-                            . 'हमसे बात करने के लिए नौ दबाएँ.',
+            'menu_1'       => 'हिसाब जानने के लिए एक दबाएँ.',
+            'menu_2'       => 'ऑर्डर देने के लिए दो दबाएँ.',
+            'menu_3'       => 'शिकायत या रिपेयरिंग के लिए तीन दबाएँ.',
+            'menu_4'       => 'सामान और दाम पूछने के लिए चार दबाएँ.',
+            'menu_5'       => 'अपना ऑर्डर कहाँ पहुँचा जानने के लिए पाँच दबाएँ.',
+            'menu_9'       => 'हमसे बात करने के लिए नौ दबाएँ.',
             'again'        => 'कुछ नहीं दबाया गया. फिर से सुनिए.',
             'bye'          => 'फ़ोन करने के लिए धन्यवाद.',
             'not_known'    => 'आपका नंबर हमारे पास दर्ज नहीं है. ऑर्डर या शिकायत के लिए दो या तीन दबाएँ.',
@@ -476,9 +482,12 @@ function voice_in_words($lang, array $v = []) {
             'welcome'      => 'Hello, welcome to ' . $shop . '.',
             'welcome_name' => 'Hello {name}, welcome to ' . $shop . '.',
             'closed'       => 'The shop is closed right now.',
-            'menu'         => 'For your account balance press one. To place an order press two. '
-                            . 'For a complaint or a repair press three. To ask about stock or a price press four. '
-                            . 'To check your order press five. To speak to us press nine.',
+            'menu_1'       => 'For your account balance press one.',
+            'menu_2'       => 'To place an order press two.',
+            'menu_3'       => 'For a complaint or a repair press three.',
+            'menu_4'       => 'To ask about stock or a price press four.',
+            'menu_5'       => 'To check your order press five.',
+            'menu_9'       => 'To speak to us press nine.',
             'again'        => 'Nothing was pressed. Here is the menu again.',
             'bye'          => 'Thank you for calling.',
             'not_known'    => 'Your number is not registered with us. For an order or a complaint press two or three.',
@@ -497,9 +506,74 @@ function voice_in_words($lang, array $v = []) {
         ],
     ];
     $s = $t[$lang] ?? $t['en'];
+    // The shop's own greeting is spoken on the way out as well as on the way
+    // in, so it is defined once, in the shared module, rather than in this
+    // file's table where only incoming calls could reach it.
+    $s = ['hello' => voice_greeting_default($lang)] + $s;
+
+    // What this shop says instead. An empty box means "keep the wording the
+    // software ships with", so an upgrade that improves a sentence still
+    // reaches a shop that never edited it, and clearing a box restores it.
+    foreach (voice_lines_edited($lang) as $k => $line) {
+        if (!array_key_exists($k, $s)) continue;
+        if ($line === null) { $s[$k] = ''; continue; }   // switched off: said by nobody
+        if (trim((string)$line) !== '') $s[$k] = trim((string)$line);
+    }
+
+    // The menu is BUILT, not stored: an option that is switched off must
+    // disappear from what is read out as well as from what the keypad
+    // accepts, or the phone offers something the software then refuses.
+    $s['menu'] = voice_in_menu_text($s);
+
     if (!$v) return $s;
     foreach ($s as $k => $line) foreach ($v as $vk => $vv) $s[$k] = str_replace('{' . $vk . '}', (string)$vv, $s[$k]);
     return $s;
+}
+
+/** Every keypad option this software knows how to answer, in the order they
+ *  are read out. The digit is what the caller presses; the key is the line. */
+function voice_in_all_digits() { return ['1', '2', '3', '4', '5', '9']; }
+
+/**
+ * The options this shop offers. Empty setting means all of them, which is
+ * what every shop had before the menu could be edited at all.
+ *
+ * ONE list, read by the sentence the caller hears and by the branch that
+ * answers the keypress, so the two cannot drift apart.
+ */
+function voice_in_digits() {
+    $raw = trim((string)setting('voice_menu_opts', ''));
+    if ($raw === '') return voice_in_all_digits();
+    $want = array_filter(array_map('trim', explode(',', $raw)));
+    $on = array_values(array_intersect($want, voice_in_all_digits()));
+    // A menu with nothing on it is a phone that answers and then refuses
+    // everything. Treat "all off" as a mistake and offer the person.
+    return $on ?: ['9'];
+}
+
+function voice_in_digit_on($digit) { return in_array((string)$digit, voice_in_digits(), true); }
+
+/** The menu sentence, made of the options that are switched on. */
+function voice_in_menu_text(array $lines) {
+    $out = [];
+    foreach (voice_in_digits() as $d) {
+        $line = trim((string)($lines['menu_' . $d] ?? ''));
+        if ($line !== '') $out[] = $line;
+    }
+    return implode(' ', $out);
+}
+
+/** The wording the software ships with - what a cleared box goes back to. */
+function voice_in_defaults($lang) {
+    $was = setting('voice_lines_' . $lang, '');
+    if (trim((string)$was) === '') return voice_in_words($lang);
+    // Read the defaults with this shop's edits lifted off, then put them
+    // back. setting()'s third argument moves the in-request cache only - the
+    // stored row is never touched, so nothing is lost if this throws.
+    setting('voice_lines_' . $lang, '', '');
+    $d = voice_in_words($lang);
+    setting('voice_lines_' . $lang, '', $was);
+    return $d;
 }
 
 /** English of the same line, for the fallback when the Gujarati audio is not
@@ -592,6 +666,10 @@ function voice_in_intent($callId, $intent, $needsAction, $refType = null, $refId
  *  which is right for names and wrong for nothing else. */
 function voice_in_say($key, $lang, array $v = [], $live = false, array $vEn = null, $fallbackKey = null) {
     $line = voice_in_words($lang, $v)[$key] ?? '';
+    // A line the shop switched off says NOTHING. Without this it fell through
+    // to the English underneath, so clearing a sentence swapped it for the
+    // same sentence in a language the customer may not speak.
+    if (trim($line) === '') return '';
     $en = voice_in_en($key, $vEn ?? $v);
     $say = $live ? voice_say_now($line, $lang, $en) : voice_say_live($line, $lang, $en);
     if ($say['url']) return voice_xml_play($say['url']);
@@ -614,6 +692,74 @@ function voice_in_say($key, $lang, array $v = [], $live = false, array $vEn = nu
 function voice_in_fixed_keys() {
     return array_values(array_filter(array_keys(voice_in_words('en')),
         fn($k) => strpos(voice_in_words('en')[$k], '{') === false));
+}
+
+/**
+ * The customers whose greeting is worth making before they ring.
+ *
+ * "નમસ્કાર રમેશભાઈ, AK Computer માં આપનું સ્વાગત છે" is one sentence PER
+ * CUSTOMER, so it cannot be made once the way the fixed lines are - and the
+ * live path is rightly forbidden from making speech while somebody is
+ * already on the line. The result was that the line existed, was wired up,
+ * and was never heard: every call fell back to the nameless greeting.
+ *
+ * So it is made ahead of the call, for the people likely to ring: anybody
+ * who has rung before, and anybody who owes money (a reminder goes out, and
+ * they ring back). A few each run, inside the same monthly cap as everything
+ * else, so a shop with four thousand parties does not spend its budget
+ * greeting people who will never call.
+ */
+function voice_in_greet_parties($limit = 200) {
+    $limit = max(1, (int)$limit);
+    return all("SELECT p.id, p.name FROM parties p
+                WHERE p.name <> '' AND COALESCE(p.mobile, '') <> ''
+                  AND (EXISTS (SELECT 1 FROM voice_calls v
+                               WHERE v.party_id = p.id AND v.direction = 'in')
+                       OR " . party_balance_side_expr('p', 'in') . " > 0.009)
+                ORDER BY (SELECT MAX(v2.id) FROM voice_calls v2
+                          WHERE v2.party_id = p.id AND v2.direction = 'in') DESC,
+                         p.id DESC
+                LIMIT " . $limit);
+}
+
+/** That customer's own greeting, exactly as the call would say it. */
+function voice_in_greet_line($name, $lang) {
+    return voice_in_words($lang, ['name' => trim((string)$name)])['welcome_name'] ?? '';
+}
+
+/** How many of them can already be greeted by name. */
+function voice_in_greet_status($lang, $limit = 200) {
+    if ($lang === 'en') return ['ready' => 0, 'total' => 0, 'left' => 0];
+    $ready = 0; $total = 0;
+    foreach (voice_in_greet_parties($limit) as $p) {
+        $line = voice_in_greet_line($p['name'], $lang);
+        if ($line === '') continue;
+        $total++;
+        if (voice_tts_audio($line, $lang, true)['ok']) $ready++;
+    }
+    return ['ready' => $ready, 'total' => $total, 'left' => $total - $ready];
+}
+
+/** Make the next few greetings. Safe to run again: a cached one costs
+ *  nothing and is not counted. */
+function voice_in_greet_make($lang = null, $limit = null) {
+    $lang = $lang ?: voice_in_lang();
+    $limit = $limit ?: max(1, (int)setting('voice_greet_per_run', 10));
+    if ($lang === 'en') return ['made' => 0, 'failed' => 0, 'left' => 0, 'error' => ''];
+    $made = 0; $failed = 0; $err = '';
+    foreach (voice_in_greet_parties() as $p) {
+        if ($made + $failed >= $limit) break;
+        $line = voice_in_greet_line($p['name'], $lang);
+        if ($line === '' || voice_tts_audio($line, $lang, true)['ok']) continue;
+        $r = voice_tts_audio($line, $lang);
+        if ($r['ok']) { $made++; continue; }
+        $failed++; $err = $err ?: $r['error'];
+        // A cap or a missing key fails identically for every remaining name,
+        // so stop rather than burn the run proving it forty more times.
+        break;
+    }
+    return ['made' => $made, 'failed' => $failed, 'left' => voice_in_greet_status($lang)['left'],
+            'error' => $err];
 }
 
 /** Is the incoming menu ready to speak this language? */
@@ -667,6 +813,10 @@ function voice_in_menu_xml($call, $try = 1, $now = null) {
 
     $body = '';
     if ($try === 1) {
+        // The shop's own greeting, before anything the software has to say.
+        // It is a line like any other, so a shop that wants something else -
+        // or nothing at all - only has to edit or clear it.
+        $body .= voice_in_say('hello', $lang);
         $body .= $party
             ? voice_in_say('welcome_name', $lang, ['name' => $party['name']], false, null, 'welcome')
             : voice_in_say('welcome', $lang);
@@ -692,6 +842,16 @@ function voice_in_menu_xml($call, $try = 1, $now = null) {
 function voice_in_branch($call, $digit, $now = null) {
     $lang = $call['lang'];
     $known = (int)$call['party_id'] > 0;
+
+    // An option the shop has switched off is not read out, and pressing it
+    // anyway leads nowhere - the caller simply hears the menu again. The
+    // check is here, in the one place that acts on a keypress, rather than
+    // trusted to the sentence: a caller can press 5 whether or not it was
+    // offered, and a shop with no delivery must not be told to chase one.
+    if ($digit !== '' && !voice_in_digit_on($digit)) {
+        voice_in_log($call['id'], 'menu_off', $digit);
+        return voice_in_menu_xml($call, 2, $now);
+    }
 
     switch ($digit) {
         case '1':   // their own account

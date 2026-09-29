@@ -70,6 +70,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('voice_setup.php#hear');
     }
 
+    if (post('do') === 'make_greetings') {
+        $r = voice_in_greet_make();
+        flash($r['failed'] ? $r['made'] . ' made, then stopped: ' . $r['error']
+                           : ($r['made'] ? '🗣 ' . $r['made'] . ' greeting(s) made — ' . $r['left'] . ' still to go. '
+                                         . 'The rest are made by themselves every half hour.'
+                                        : 'Everybody who is likely to ring is already greeted by name.'),
+              $r['failed'] ? 'error' : 'success');
+        redirect('voice_setup.php');
+    }
+
     if (post('do') === 'make_in_voice') {
         $lang = post('lang') ?: voice_in_lang();
         $r = voice_in_pregenerate($lang);
@@ -268,6 +278,8 @@ include __DIR__ . '/includes/header.php';
   <?php endif; ?>
 
   <p class="muted" style="font-size:13px;margin:10px 0 0">
+    Change what the phone says — every sentence, and which menu options are offered — on
+    <a href="voice_words.php">What the Phone Says</a>.<br>
     Pick who to ring on the <a href="collection.php">Collection Queue</a> or the
     <a href="reports.php?r=aging">aging report</a> — tick the rows and press <strong>📞 Call the selected</strong>.
     Everything that came in or went out is on <a href="voice_calls.php">Calls</a>.
@@ -373,6 +385,9 @@ include __DIR__ . '/includes/header.php';
         <button class="btn btn-success mt" type="submit">Save</button>
       </form>
 
+      <p><a class="btn btn-outline" href="voice_words.php">🗣 Change what the phone says</a>
+        <span class="muted" style="font-size:12px"> — every sentence, and which menu options are offered.</span></p>
+
       <h4>The menu the callers hear</h4>
       <?php if ($inVoice['ready']): ?>
         <div class="flash flash-info">✅ Ready — callers hear <strong><?= e($langs[voice_in_lang()]) ?></strong>.</div>
@@ -392,6 +407,31 @@ include __DIR__ . '/includes/header.php';
           🔊 <?= $inVoice['ready'] ? 'Make it again' : 'Make the menu speak ' . e($langs[voice_in_lang()]) ?></button>
         <span class="muted" style="font-size:12px"> Do this again if you change the menu language or the AI voice.</span>
       </form>
+
+      <h4>Saying the caller's own name</h4>
+      <p class="muted" style="font-size:13px">
+        “નમસ્કાર રમેશભાઈ…” is one sentence per customer, so it cannot be made once and shared — and nothing may
+        be made while somebody is already on the line. It is made ahead of the call instead, for the people
+        likely to ring: anybody who has rung before, and anybody who owes money. Until a customer's greeting is
+        ready they hear the greeting without their name, exactly as before.
+      </p>
+      <?php $greet = voice_in_greet_status(voice_in_lang()); ?>
+      <?php if ($greet['total'] === 0): ?>
+        <p class="muted">Nobody to greet yet — no incoming calls and nothing outstanding.</p>
+      <?php elseif (!$greet['left']): ?>
+        <div class="flash flash-info">✅ All <?= (int)$greet['total'] ?> of them are greeted by name.</div>
+      <?php else: ?>
+        <div class="flash flash-info"><?= (int)$greet['ready'] ?> of <?= (int)$greet['total'] ?> customers are
+          greeted by name. The rest are made by themselves, <?= (int)setting('voice_greet_per_run', 10) ?> every
+          half hour — or press the button to do a batch now.</div>
+      <?php endif; ?>
+      <?php if ($greet['left']): ?>
+      <form method="post" class="mb">
+        <?= csrf_field() ?><input type="hidden" name="do" value="make_greetings">
+        <button class="btn btn-outline" type="submit" <?= voice_tts_enabled() ? '' : 'disabled' ?>>
+          🗣 Make the next <?= (int)setting('voice_greet_per_run', 10) ?> now</button>
+      </form>
+      <?php endif; ?>
 
       <h4>Hear the reminder before a customer does</h4>
       <form method="post">
