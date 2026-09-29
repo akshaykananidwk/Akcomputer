@@ -1071,8 +1071,10 @@ t_ok('and every reply the caller can reach',
 
 // anything with a placeholder cannot be made in advance
 $dyn = array_values(array_diff(array_keys(voice_in_words('en')), $fixed));
-t_eq('only the three that carry a value are left out', count($dyn), 3);
-t_ok('and they are the ones with a placeholder in them',
+t_ok('the ones left out are exactly the ones carrying a value',
+     count(array_filter($dyn, fn($k) => strpos(voice_in_words('en')[$k], '{') === false)) === 0,
+     implode(', ', $dyn));
+t_ok('and they include the greeting, the balance and the order status',
      count(array_intersect(['welcome_name', 'balance', 'order_status'], $dyn)) === 3);
 foreach ($fixed as $k) {
     if (strpos(voice_in_words('en')[$k], '{') !== false) { t_ok('no fixed line carries a placeholder', false, $k); break; }
@@ -1230,3 +1232,93 @@ t_ok('with the keys missing it refuses locally rather than asking Vobiz',
      $j === null && stripos($err, 'not configured') !== false, $err);
 set_setting('vobiz_auth_id', 'TESTAUTHID');
 set_setting('vobiz_auth_token', 'TESTTOKEN');
+
+t_group('Voice IN — the phone and the statement must never quote different figures');
+
+// A party that is BOTH a customer and a supplier is where the two rules part
+// company: the receivable side counts what they bought and ignores what the
+// shop bought from them. The shop's own record read ₹16,504 on the phone
+// against ₹300 on the WhatsApp statement - the same customer told two
+// different figures by the same shop in the same minute.
+$pidB = t_party('TEST_BOTH_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500091', type = 'customer' WHERE id = ?", [$pidB]);
+t_sale($pidB, 16504, 0, date('Y-m-d', strtotime('-40 days')), date('Y-m-d', strtotime('-10 days')));
+$co = (int)val('SELECT id FROM companies ORDER BY id LIMIT 1');
+$lo = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+q("INSERT INTO purchases (company_id, location_id, party_id, bill_no, purchase_date, subtotal, total, paid, status, created_by)
+   VALUES (?,?,?,?,?,?,?,0,'due',?)", [$co, $lo, $pidB, 'TSTPUR' . bin2hex(random_bytes(3)),
+   date('Y-m-d', strtotime('-30 days')), 16204, 16204, $_SESSION['user_id']]);
+
+$net  = round((float)party_balance($pidB), 2);
+$side = round((float)party_balance_side($pidB, 'in'), 2);
+t_eq('the net balance is what the customer actually owes', $net, 300.0);
+t_ok('the receivable side alone says something quite different', abs($side - $net) > 1, "side=$side net=$net");
+
+$cb = voice_in_start('919876500091', '918065354620', 'uuid-bal-' . bin2hex(random_bytes(4)));
+set_setting('voice_ivr_balance', 'speak');
+voice_in_balance_xml($cb);
+$read = (string)val("SELECT detail FROM voice_ivr_events WHERE call_id = ? AND step = 'balance_read' ORDER BY id DESC LIMIT 1", [$cb['id']]);
+t_eq('the phone reads the same figure the statement shows', $read, '₹' . money($net));
+t_ok('and not the receivable side', $read !== '₹' . money($side), $read);
+
+$pvB = voice_in_preview('9876500091');
+t_eq('the preview agrees with both', round((float)$pvB['due'], 2), $net);
+
+// money paid in advance is its own sentence, not "you owe nothing"
+$pidC = t_party('TEST_CRED_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500092' WHERE id = ?", [$pidC]);
+q("INSERT INTO payments (party_id, pay_date, amount, direction, mode, created_by) VALUES (?,?,?,'in','cash',?)",
+  [$pidC, today(), 500, $_SESSION['user_id']]);
+$pvC = voice_in_preview('9876500092');
+t_ok('a credit balance is read as credit, not as nothing owing',
+     strpos($pvC['lines']['press_1'], 'જમા') !== false, $pvC['lines']['press_1']);
+t_ok('with the amount in it', strpos($pvC['lines']['press_1'], 'પાંચ સો') !== false, $pvC['lines']['press_1']);
+
+// and the tie is written down where the next person will see it
+$vinB = file_get_contents(__DIR__ . '/../includes/voice_in.php');
+t_ok('the phone uses party_balance(), the statement rule',
+     strpos($vinB, "party_balance((int)\$call['party_id'])") !== false);
+t_ok('and says why, so the two are not separated again',
+     strpos($vinB, "wa_portal_route('portal:stmt') and here together") !== false);
+
+t_ok('the preview shows what a reminder call would say, so a mismatch is visible',
+     isset($pvB['chase']) && abs((float)$pvB['chase'] - (float)$pvB['due']) > 1);
+t_ok('and the screen explains the difference instead of hiding it',
+     strpos(file_get_contents(__DIR__ . '/../voice_setup.php'), 'would say ₹') !== false);
+
+t_group('Voice — a number written with a leading zero is still a number');
+
+// voice_mobile_ok() trimmed a leading 91 and nothing else, so 07990263599 -
+// the way half of India writes it down - was called invalid, while
+// voice_e164() beside it dialled that very number quite happily. Two rules
+// for one question, disagreeing, and a customer who could never be rung.
+t_ok('a leading zero is accepted', voice_mobile_ok('07990263599'));
+t_ok('and dials the right number', voice_e164('07990263599') === '917990263599');
+t_ok('a leading 0091 is accepted', voice_mobile_ok('0091 9824537749'));
+t_ok('plain ten digits still work', voice_mobile_ok('9824537749'));
+t_ok('+91 with spaces still works', voice_mobile_ok('+91 98245 37749'));
+t_ok('the shop\'s own Vobiz number is a valid destination', voice_mobile_ok('917965852012'));
+t_ok('nine digits are still refused', !voice_mobile_ok('987654321'));
+t_ok('a number starting 1 is still refused', !voice_mobile_ok('1234567890'));
+t_ok('empty is still refused', !voice_mobile_ok(''));
+
+// the two must never disagree again: anything e164 turns into a 10-digit
+// Indian number starting 6-9 must also pass the check
+foreach (['9824537749', '07990263599', '+91 98245 37749', '0091 9824537749', '918065354620'] as $m) {
+    $tail = substr(voice_e164($m), -10);
+    t_ok('e164 and the check agree on ' . $m,
+         voice_mobile_ok($m) === (strlen($tail) === 10 && strpos('6789', $tail[0]) !== false));
+}
+
+// and the places that depend on it
+$pidZ = t_party('TEST_ZERO_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '07990263599' WHERE id = ?", [$pidZ]);
+t_sale($pidZ, 700, 0, date('Y-m-d', strtotime('-30 days')), date('Y-m-d', strtotime('-9 days')));
+$gz = voice_can_call($pidZ, null, $NOON);
+t_ok('a customer whose number has a leading zero can be called', $gz['ok'], $gz['why']);
+$pvZ = voice_in_preview('07990263599');
+t_ok('and the preview can look them up', $pvZ['party'] !== null);
+
+set_setting('voice_agent_numbers', '07990263599, 9824537749');
+t_eq('agent numbers with a leading zero are not silently dropped', count(voice_in_agents()), 2);
+set_setting('voice_agent_numbers', '');

@@ -609,8 +609,15 @@ function voice_can_call($partyId, $ctx = null, $now = null) {
 
 /** 10 digits, Indian mobile. A landline or a short code is not called. */
 function voice_mobile_ok($mobile) {
+    // The last ten digits, whatever came before them.
+    //
+    // This used to trim a leading 91 and nothing else, so a number stored the
+    // way half of India writes it - 07990263599 - was declared invalid while
+    // voice_e164() beside it dialled the very same number quite happily. Two
+    // rules for one question, disagreeing. A customer whose number carried a
+    // leading zero could therefore never be rung at all.
     $d = preg_replace('/\D/', '', (string)$mobile);
-    if (strlen($d) > 10 && strncmp($d, '91', 2) === 0) $d = substr($d, -10);
+    if (strlen($d) > 10) $d = substr($d, -10);
     return strlen($d) === 10 && strpos('6789', $d[0]) !== false;
 }
 function voice_e164($mobile) {

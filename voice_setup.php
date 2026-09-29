@@ -597,7 +597,18 @@ include __DIR__ . '/includes/header.php';
       <div class="flash flash-info">
         Matched to <strong><a href="customer.php?id=<?= (int)$pv['party']['id'] ?>"><?= e($pv['party']['name']) ?></a></strong>
         (<?= e($pv['party']['mobile']) ?>) — outstanding <strong>₹<?= money($pv['due']) ?></strong>
+        <span class="muted" style="font-size:12px">— the same figure their WhatsApp statement shows</span>
       </div>
+      <?php if (abs((float)$pv['chase'] - (float)$pv['due']) > 0.009): ?>
+      <div class="flash flash-error">
+        <strong>A reminder call to this customer would say ₹<?= money($pv['chase']) ?>, not ₹<?= money($pv['due']) ?>.</strong><br>
+        The collection screen chases what a customer has bought and does not subtract what the shop has bought
+        <em>from</em> them. For a customer who only buys, the two are the same number — they differ here because
+        this party is on both sides. Their statement, and the phone menu, both say ₹<?= money($pv['due']) ?>.
+        <br><span class="muted" style="font-size:12px">Nothing is broken, but the shop would be quoting two figures.
+        Say the word and the reminder can be made to follow the statement too.</span>
+      </div>
+      <?php endif; ?>
     <?php endif; ?>
     <?php if (!empty($pv['short'])): ?>
       <div class="flash flash-error">

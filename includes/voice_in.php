@@ -424,6 +424,7 @@ function voice_in_words($lang, array $v = []) {
     $shop = setting('app_name', 'AK Computer');
     $t = [
         'gu' => [
+            'balance_adv'  => 'તમારા {amount} જમા છે. કોઈ બાકી નથી.',
             'welcome'      => 'નમસ્કાર, ' . $shop . ' માં આપનું સ્વાગત છે.',
             'welcome_name' => 'નમસ્કાર {name}, ' . $shop . ' માં આપનું સ્વાગત છે.',
             'closed'       => 'અત્યારે દુકાન બંધ છે.',
@@ -447,6 +448,7 @@ function voice_in_words($lang, array $v = []) {
             'closed_msg'   => 'દુકાન બંધ છે. બીપ પછી સંદેશ મૂકો, અમે સવારે સંપર્ક કરીશું.',
         ],
         'hi' => [
+            'balance_adv'  => 'आपके {amount} जमा हैं. कोई बकाया नहीं.',
             'welcome'      => 'नमस्ते, ' . $shop . ' में आपका स्वागत है.',
             'welcome_name' => 'नमस्ते {name}, ' . $shop . ' में आपका स्वागत है.',
             'closed'       => 'अभी दुकान बंद है.',
@@ -470,6 +472,7 @@ function voice_in_words($lang, array $v = []) {
             'closed_msg'   => 'दुकान बंद है. बीप के बाद संदेश छोड़ें, हम सुबह संपर्क करेंगे.',
         ],
         'en' => [
+            'balance_adv'  => 'You have {amount} in credit. Nothing is outstanding.',
             'welcome'      => 'Hello, welcome to ' . $shop . '.',
             'welcome_name' => 'Hello {name}, welcome to ' . $shop . '.',
             'closed'       => 'The shop is closed right now.',
@@ -746,8 +749,24 @@ function voice_in_balance_xml($call) {
     $mode = setting('voice_ivr_balance', 'speak');
     if ($mode === 'off') return voice_in_say('not_known', $lang);
 
-    $due = round((float)party_balance_side((int)$call['party_id'], 'in'), 2);
+    // party_balance(), NOT the receivable side.
+    //
+    // These give different answers for a party who is both a customer and a
+    // supplier: the receivable side counts what they have bought and ignores
+    // what the shop has bought from them. For this shop's own record that was
+    // ₹16,504 on the phone against ₹300 on the WhatsApp statement - the same
+    // customer told two different figures by the same shop in the same
+    // minute, which is worse than telling them nothing.
+    //
+    // The statement is the one the customer can check line by line, so the
+    // phone follows it. If this ever needs changing, change it in
+    // wa_portal_route('portal:stmt') and here together, or they drift apart
+    // again.
+    $due = round((float)party_balance((int)$call['party_id']), 2);
     voice_in_log($call['id'], 'balance_read', null, '₹' . money($due));
+    if ($due < -0.009) return voice_in_say('balance_adv', $lang,
+        ['amount' => voice_tokens_text(voice_amount_tokens(-$due), $lang)], true,
+        ['amount' => voice_tokens_text(voice_amount_tokens(-$due), 'en')]);
     if ($due <= 0.009) return voice_in_say('balance_nil', $lang);
 
     if ($mode === 'whatsapp') {
@@ -1050,12 +1069,19 @@ function voice_in_preview($mobile) {
         $out['lines']['press_1'] = $w['not_known'];
         return $out;
     }
-    $due = round((float)party_balance_side((int)$party['id'], 'in'), 2);
+    $due = round((float)party_balance((int)$party['id']), 2);
     $out['due'] = $due;
+    // What a REMINDER call would say. The collection screen chases the
+    // receivable side on purpose, and for a party who only ever buys the two
+    // are the same number. They part company for one who also sells to the
+    // shop - and then the shop quotes two figures. Showing both is how that
+    // is noticed before a customer notices it.
+    $out['chase'] = round((float)party_balance_side((int)$party['id'], 'in'), 2);
     $mode = setting('voice_ivr_balance', 'speak');
     $out['lines']['press_1'] = $mode === 'off' ? $w['not_known']
+        : ($due < -0.009 ? voice_in_words($lang, ['amount' => voice_tokens_text(voice_amount_tokens(-$due), $lang)])['balance_adv']
         : ($due <= 0.009 ? $w['balance_nil']
         : ($mode === 'whatsapp' ? $w['balance_wa']
-        : voice_in_words($lang, ['amount' => voice_tokens_text(voice_amount_tokens($due), $lang)])['balance']));
+        : voice_in_words($lang, ['amount' => voice_tokens_text(voice_amount_tokens($due), $lang)])['balance'])));
     return $out;
 }
