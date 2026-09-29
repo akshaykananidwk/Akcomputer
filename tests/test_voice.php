@@ -1368,3 +1368,72 @@ t_ok('the spoken menu folder does NOT deny anything — the provider must read i
      !is_file(__DIR__ . '/../uploads/voice/tts/.htaccess'));
 t_ok('and uploads does not block mp3 across the board',
      strpos((string)@file_get_contents(__DIR__ . '/../uploads/.htaccess'), 'mp3') === false);
+
+t_group('Voice — ringing a whole list, a few at a time');
+
+set_setting('voice_enabled', '1');
+set_setting('voice_bulk_per_run', '2');
+$bulk = [];
+for ($i = 0; $i < 3; $i++) {
+    $bp = t_party('TEST_BULK' . $i . '_' . bin2hex(random_bytes(3)));
+    q("UPDATE parties SET mobile = ? WHERE id = ?", ['98765111' . str_pad((string)$i, 2, '0', STR_PAD_LEFT), $bp]);
+    t_sale($bp, 1000 + $i, 0, date('Y-m-d', strtotime('-30 days')), date('Y-m-d', strtotime('-8 days')));
+    $bulk[] = $bp;
+}
+
+$before = voice_queue_count();
+foreach ($bulk as $bp) {
+    $r = voice_call_send($bp, ['queue' => true, 'test' => false, 'now' => $NOON]);
+    t_ok('queuing a call succeeds', $r['ok'], $r['error']);
+    t_eq('and it waits rather than dialling', $r['status'], 'waiting');
+}
+t_eq('all three are waiting', voice_queue_count(), $before + 3);
+t_ok('a waiting call is shown as waiting, in words', voice_status_label('waiting') === 'Waiting to go out');
+
+// Outside calling hours the queue HOLDS. Throwing thirty calls away because
+// the clock struck nine would be the software discarding work the owner had
+// already decided to do.
+$wasFrom = setting('voice_hour_from'); $wasTo = setting('voice_hour_to');
+$h = (int)date('G');
+set_setting('voice_hour_from', (string)max(0, min(23, ($h + 2) % 24)));
+set_setting('voice_hour_to', (string)max(1, min(24, ($h + 3) % 24 ?: 24)));
+$held = voice_queue_run(5);
+t_eq('outside calling hours nothing is dialled', $held['dialled'], 0);
+t_eq('and nothing is thrown away either', $held['dropped'], 0);
+t_eq('the whole list is still waiting', voice_queue_count(), $before + 3);
+t_ok('and the cron says what it is holding for', !empty($held['holding']), (string)($held['holding'] ?? ''));
+set_setting('voice_hour_from', '0');
+set_setting('voice_hour_to', '24');
+
+// the cron takes a handful, not the lot
+$res = voice_queue_run(2);
+t_eq('only the configured handful is dialled at a time', $res['dialled'] + $res['dropped'], 2);
+t_eq('and the rest keep waiting', voice_queue_count(), $before + 1);
+
+// a customer who promises in the meantime must be dropped, not rung
+$left = row("SELECT * FROM voice_calls WHERE status = 'waiting' ORDER BY id LIMIT 1");
+coll_log((int)$left['party_id'], 'promise', ['amount' => 1000, 'due_date' => date('Y-m-d', strtotime('+3 days'))]);
+$res2 = voice_queue_run(5);
+t_eq('the promise stops the queued call', $res2['dialled'], 0);
+t_eq('it is dropped, not left hanging', $res2['dropped'], 1);
+$dropped = row('SELECT * FROM voice_calls WHERE id = ?', [$left['id']]);
+t_eq('and the row says so', $dropped['status'], 'failed');
+t_ok('with the reason a person can read', stripos($dropped['error'], 'promised') !== false, (string)$dropped['error']);
+t_eq('nothing is left waiting', voice_queue_count(), $before);
+set_setting('voice_hour_from', $wasFrom); set_setting('voice_hour_to', $wasTo);
+
+// the guards still apply when the list is picked
+$dndP = t_party('TEST_BDND_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876511199', voice_dnd = 1 WHERE id = ?", [$dndP]);
+t_sale($dndP, 900, 0, date('Y-m-d', strtotime('-30 days')), date('Y-m-d', strtotime('-8 days')));
+$rd = voice_call_send($dndP, ['queue' => true, 'test' => false, 'now' => $NOON]);
+t_eq('a do-not-call customer cannot even be queued', $rd['ok'], false);
+t_eq('and no row is left behind', voice_queue_count(), $before);
+
+$cs = file_get_contents(__DIR__ . '/../collection.php');
+t_ok('the list screen has a call-the-selected button', strpos($cs, 'call_selected') !== false);
+t_ok('and it does not fight the WhatsApp button over one field',
+     substr_count($cs, 'name="do" value="preview_bulk"') === 1 && strpos($cs, 'name="do" value="preview_calls"') === false);
+t_ok('the waiting count is shown where the chasing is done', strpos($cs, 'voice_queue_count()') !== false);
+t_ok('a cron dials them', strpos(file_get_contents(__DIR__ . '/../includes/cron_jobs.php'), 'cron_job_voice_dial') !== false);
+set_setting('voice_bulk_per_run', '5');

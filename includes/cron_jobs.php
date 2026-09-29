@@ -40,6 +40,8 @@ function cron_jobs() {
             }],
         'campaign_queue' => ['📣 Campaign Sending', 'Sends the next batch of any running campaign, inside the allowed hours only', 15,
             fn() => cam_quiet_ok()],
+        'voice_dial' => ['📞 Reminder-call Queue', 'Dials the next few reminder calls picked from a list, a handful at a time', 5,
+            fn() => (int)setting('voice_enabled', 0) === 1],
         'voice_followup' => ['📲 Call → WhatsApp follow-up', 'Sends the statement, ticket number or order status a caller asked for on the phone', 5,
             fn() => (int)setting('voice_inbound', 0) === 1],
         'voice_balance' => ['📞 Reminder-call Balance', 'Warns the owner before the Vobiz balance runs out and calls stop going through', 360,
@@ -429,6 +431,20 @@ function cron_job_meta_tpl_sync() {
     $res = meta_wa_sync_templates();
     if (isset($res['_error'])) throw new Exception($res['_error']);
     return count($res) . ' template(s) refreshed';
+}
+
+/** The reminder calls picked from a list, dialled a few at a time.
+ *
+ *  Spread out on purpose. All of them at once is what a provider's
+ *  concurrency limit exists to stop, and it is how a shop's own number gets
+ *  a reputation as a dialler. Every guard is re-checked at dial time, so a
+ *  customer who promised to pay in the meantime is quietly dropped. */
+function cron_job_voice_dial() {
+    require_once __DIR__ . '/voice.php';
+    $r = voice_queue_run();
+    if (!empty($r['holding'])) return 'holding ' . $r['left'] . ' — ' . $r['holding'];
+    if (!$r['dialled'] && !$r['dropped']) return 'nothing waiting';
+    return $r['dialled'] . ' dialled, ' . $r['dropped'] . ' dropped, ' . $r['left'] . ' still waiting';
 }
 
 /** What a caller asked for on the phone, delivered on WhatsApp.

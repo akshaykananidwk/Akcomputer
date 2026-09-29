@@ -57,6 +57,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect($back);
     }
 
+    // ---- ring a whole list ----
+    //
+    // Same shape as the bulk message below it: show who, then do it. The
+    // difference is that calls are queued rather than placed, so pressing
+    // the button does not sit there dialling thirty people one by one.
+    if (post('call_selected') || post('do') === 'send_calls') {
+        require_perm('payments.add');
+        $queue = coll_queue(500, true);
+        $byId = [];
+        foreach ($queue as $c) $byId[$c['id']] = $c;
+        $ids = array_map('intval', post('pick', []));
+        $ctxs = voice_contexts($ids);
+        $picked = []; $skipped = [];
+        foreach ($ids as $pid2) {
+            $c = $byId[$pid2] ?? null;
+            if (!$c) continue;
+            $g = voice_can_call($pid2, $ctxs[$pid2] ?? null);
+            if ($g['ok']) $picked[] = $c + ['why' => ''];
+            else $skipped[] = $c + ['why' => $g['why']];
+        }
+
+        if (post('do') === 'send_calls') {
+            $n = 0;
+            foreach ($picked as $c) {
+                $r = voice_call_send($c['id'], ['queue' => true,
+                                                'client_uuid' => 'bulk-' . $c['id'] . '-' . date('YmdHi')]);
+                if ($r['ok']) $n++;
+            }
+            log_activity('voice_bulk', $n . ' call(s) queued');
+            flash($n ? '📞 ' . $n . ' call(s) queued — they go out a few at a time over the next few minutes.'
+                     : 'No call could be queued.', $n ? 'success' : 'error');
+            redirect($back);
+        }
+
+        $page_title = 'Before calling';
+        include __DIR__ . '/includes/header.php'; ?>
+        <div class="card">
+          <h2>📞 About to ring <?= count($picked) ?> customer(s)</h2>
+          <?php if (voice_test_mode()): ?>
+            <div class="flash flash-error"><strong>Test mode is on — nothing will actually be dialled.</strong>
+              Turn it off in <a href="voice_setup.php">Call Setup</a> when you are ready.</div>
+          <?php endif; ?>
+          <?php if ($skipped): ?>
+          <div class="flash flash-info"><?= count($skipped) ?> left out:<br>
+            <?php foreach ($skipped as $sk): ?>
+              <span class="muted" style="font-size:12px">• <?= e($sk['name']) ?> — <?= e($sk['why']) ?></span><br>
+            <?php endforeach; ?>
+          </div>
+          <?php endif; ?>
+          <?php if (!$picked): ?>
+            <p class="muted">Nobody on that list can be called right now.</p>
+            <a class="btn btn-outline" href="collection.php">← Back</a>
+          <?php else: ?>
+          <div class="table-wrap"><table class="table-sm">
+            <thead><tr><th>Customer</th><th>Mobile</th><th class="num">Will be told</th></tr></thead>
+            <tbody>
+            <?php $tot = 0; foreach ($picked as $c): $tot += $c['overdue']; ?>
+              <tr><td><?= e($c['name']) ?></td><td><?= e($c['mobile']) ?></td>
+                  <td class="num">₹<?= money($c['overdue']) ?></td></tr>
+            <?php endforeach; ?>
+            </tbody>
+          </table></div>
+          <p class="muted" style="font-size:13px">
+            Total ₹<?= money($tot) ?>. They go out <?= (int)setting('voice_bulk_per_run', 5) ?> at a time, every few
+            minutes — not all at once, which is what makes a number look like a spam dialler.
+            Every guard is checked again at the moment each one is dialled, so anybody who pays or promises
+            in the meantime is dropped.
+          </p>
+          <form method="post" class="mt" onsubmit="this.querySelector('button').disabled=true">
+            <?= csrf_field() ?><input type="hidden" name="do" value="send_calls">
+            <?php foreach ($picked as $c): ?><input type="hidden" name="pick[]" value="<?= (int)$c['id'] ?>"><?php endforeach; ?>
+            <button class="btn btn-success" type="submit">✅ Yes, call these <?= count($picked) ?></button>
+            <a class="btn btn-outline" href="collection.php">Leave it</a>
+          </form>
+          <?php endif; ?>
+        </div>
+        <?php include __DIR__ . '/includes/footer.php'; exit;
+    }
+
     // ---- bulk reminder: preview first, exactly like the aging report ----
     if (post('do') === 'preview_bulk') {
         $picked = [];
@@ -366,9 +445,20 @@ include __DIR__ . '/includes/header.php';
       </tbody>
     </table></div>
     <div class="page-actions no-print mt">
-      <button class="btn btn-wa" type="submit">📲 Send reminders to the selected</button>
-      <span class="muted" style="font-size:12px">Before sending, you are shown who, what and how much it costs.</span>
+      <button class="btn btn-wa" type="submit">📲 WhatsApp the selected</button>
+      <?php if (can('payments.add')): ?>
+        <?php /* A separate field, not a second "do". Two controls with the
+                 same name leave PHP taking whichever came last in the
+                 document, so the meaning of a button would depend on where
+                 it sits on the page. */ ?>
+        <button class="btn btn-success" type="submit" name="call_selected" value="1">📞 Call the selected</button>
+      <?php endif; ?>
+      <span class="muted" style="font-size:12px">Either way you are shown who, and what they will be told, before anything goes.</span>
     </div>
+    <?php if (($vq = voice_queue_count()) > 0): ?>
+      <p class="muted" style="font-size:13px">📞 <strong><?= $vq ?></strong> call(s) waiting to go out — a few every
+        five minutes. <a href="voice_calls.php">Watch them</a>.</p>
+    <?php endif; ?>
     <?php endif; ?>
   </div>
 </form>

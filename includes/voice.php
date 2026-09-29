@@ -583,10 +583,10 @@ function voice_can_call($partyId, $ctx = null, $now = null) {
     if (!voice_mobile_ok($c['mobile'])) return ['ok' => false, 'why' => 'No usable mobile number'];
     if ($c['due'] <= 0.009) return ['ok' => false, 'why' => 'Nothing is outstanding'];
 
-    if (!voice_hours_ok($now)) {
-        $h = voice_hours();
-        return ['ok' => false, 'why' => 'Calls go out between ' . $h['from'] . ':00 and ' . $h['to'] . ':00 only'];
-    }
+    // The refusals that pass by themselves. 'wait' tells the queue runner that
+    // this call is early, not failed, so it is kept rather than dropped.
+    $hold = voice_queue_hold($now);
+    if ($hold !== '') return ['ok' => false, 'wait' => true, 'why' => $hold];
 
     // everything the WhatsApp reminder respects, a call respects too
     $gate = coll_can_remind($c);
@@ -601,10 +601,28 @@ function voice_can_call($partyId, $ctx = null, $now = null) {
                                         . ($mins >= 60 ? (int)round($mins / 60) . ' hour(s)' : $mins . ' minutes')];
     }
 
-    $cap = max(1, (int)setting('voice_max_per_day', 50));
-    if (voice_calls_today() >= $cap) return ['ok' => false, 'why' => "Today's call limit ($cap) is used up"];
-
     return ['ok' => true, 'why' => ''];
+}
+
+/**
+ * The two reasons a call is EARLY rather than refused: the clock, and today's
+ * cap. Both pass by themselves - one when the hour comes round, the other at
+ * midnight - so a queued call that meets either must be kept, not thrown away.
+ * Losing thirty calls because the clock struck nine would be the software
+ * discarding an evening's work the owner had already decided to do.
+ *
+ * Both live here, in one place, so voice_can_call() (one customer, one button)
+ * and voice_queue_run() (a whole list, by itself) cannot disagree about them.
+ * Returns '' when neither applies.
+ */
+function voice_queue_hold($now = null) {
+    if (!voice_hours_ok($now)) {
+        $h = voice_hours();
+        return 'Calls go out between ' . $h['from'] . ':00 and ' . $h['to'] . ':00 only';
+    }
+    $cap = max(1, (int)setting('voice_max_per_day', 50));
+    if (voice_calls_today() >= $cap) return "Today's call limit ($cap) is used up";
+    return '';
 }
 
 /** 10 digits, Indian mobile. A landline or a short code is not called. */
@@ -717,6 +735,15 @@ function voice_call_send($partyId, array $opts = []) {
                 'script' => $script, 'plan' => $plan];
     }
 
+    // Picked from a list rather than pressed one at a time: everything is
+    // prepared and checked, and the dialling is left to voice_queue_run().
+    // Fifty calls leaving at once is what a provider's concurrency limit
+    // exists to stop, and what makes a shop's number look like a dialler.
+    if (!empty($opts['queue'])) {
+        q("UPDATE voice_calls SET status = 'waiting' WHERE id = ?", [$callId]);
+        return ['ok' => true, 'error' => '', 'call_id' => $callId, 'status' => 'waiting', 'script' => $script];
+    }
+
     [$uuid, $err] = voice_provider_call(voice_e164($ctx['mobile']), $token);
     if ($uuid === null) {
         q("UPDATE voice_calls SET status = 'failed', error = ? WHERE id = ?", [mb_substr($err, 0, 255), $callId]);
@@ -724,6 +751,50 @@ function voice_call_send($partyId, array $opts = []) {
     }
     q("UPDATE voice_calls SET call_uuid = ?, status = 'ringing' WHERE id = ?", [$uuid, $callId]);
     return ['ok' => true, 'error' => '', 'call_id' => $callId, 'status' => 'ringing', 'script' => $script];
+}
+
+/** How many calls are still waiting to go out. */
+function voice_queue_count() {
+    return (int)val("SELECT COUNT(*) FROM voice_calls WHERE status = 'waiting'");
+}
+
+/** Dial the next few waiting calls.
+ *
+ *  Every guard is checked AGAIN here, not just when the list was picked. A
+ *  customer can promise to pay, be marked do-not-call, or simply pay, in the
+ *  minutes between the owner ticking a box and the call going out - and
+ *  ringing them anyway would be the software doing something the shop had
+ *  already decided against.
+ *
+ *  Returns ['dialled', 'dropped', 'left']. */
+function voice_queue_run($limit = null, $now = null) {
+    $limit = $limit ?: max(1, (int)setting('voice_bulk_per_run', 5));
+    $dialled = 0; $dropped = 0;
+
+    // Outside calling hours, or past today's cap, nothing is dialled and
+    // nothing is thrown away - the queue simply waits for the hour.
+    $hold = voice_queue_hold($now);
+    if ($hold !== '') return ['dialled' => 0, 'dropped' => 0, 'left' => voice_queue_count(), 'holding' => $hold];
+
+    foreach (all("SELECT * FROM voice_calls WHERE status = 'waiting' ORDER BY id LIMIT " . (int)$limit) as $c) {
+        $gate = voice_can_call((int)$c['party_id'], null, $now);
+        if (!empty($gate['wait'])) break;           // the clock or the cap: stop, keep the rest
+        if (!$gate['ok']) {
+            q("UPDATE voice_calls SET status = 'failed', error = ? WHERE id = ?",
+              [mb_substr('Not called: ' . $gate['why'], 0, 255), $c['id']]);
+            $dropped++;
+            continue;
+        }
+        [$uuid, $err] = voice_provider_call($c['mobile'], $c['token']);
+        if ($uuid === null) {
+            q("UPDATE voice_calls SET status = 'failed', error = ? WHERE id = ?", [mb_substr($err, 0, 255), $c['id']]);
+            $dropped++;
+            continue;
+        }
+        q("UPDATE voice_calls SET call_uuid = ?, status = 'ringing', started_at = NOW() WHERE id = ?", [$uuid, $c['id']]);
+        $dialled++;
+    }
+    return ['dialled' => $dialled, 'dropped' => $dropped, 'left' => voice_queue_count()];
 }
 
 /** The HTTP call to Vobiz. Returns [request_uuid, ''] or [null, 'why not'].
@@ -904,7 +975,7 @@ function voice_status_label($status) {
     return [
         'queued' => 'Queued', 'ringing' => 'Ringing', 'answered' => 'Answered',
         'no_answer' => 'Not answered', 'busy' => 'Busy', 'failed' => 'Failed',
-        'test' => 'Test (not dialled)', 'refused' => 'Not sent',
+        'test' => 'Test (not dialled)', 'refused' => 'Not sent', 'waiting' => 'Waiting to go out',
     ][$status] ?? ucfirst((string)$status);
 }
 
