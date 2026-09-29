@@ -1055,3 +1055,44 @@ t_ok('spare applications are reported rather than left to confuse',
 $su4 = file_get_contents(__DIR__ . '/../voice_setup.php');
 t_ok('the button says it is safe to press twice', strpos($su4, 'pressing it twice is safe') !== false);
 t_ok('and says when it reused one', strpos($su4, 'was already there was used') !== false);
+
+t_group('Voice IN — the menu speaks the shop\'s language, not English');
+
+// An incoming call arrives unannounced. There is no moment to make speech
+// while somebody is already on the line, and the live path is forbidden from
+// trying - so the menu had nothing to play and fell back to English on every
+// single call. The fixed lines have to be made before the first call.
+$fixed = voice_in_fixed_keys();
+t_ok('the lines that never change are identified', count($fixed) >= 12, count($fixed) . ' lines');
+t_ok('the menu itself is one of them', in_array('menu', $fixed, true));
+t_ok('so is the greeting without a name', in_array('welcome', $fixed, true));
+t_ok('and every reply the caller can reach',
+     count(array_intersect(['noted', 'not_known', 'no_answer', 'closed_msg', 'bye'], $fixed)) === 5);
+
+// anything with a placeholder cannot be made in advance
+$dyn = array_values(array_diff(array_keys(voice_in_words('en')), $fixed));
+t_eq('only the three that carry a value are left out', count($dyn), 3);
+t_ok('and they are the ones with a placeholder in them',
+     count(array_intersect(['welcome_name', 'balance', 'order_status'], $dyn)) === 3);
+foreach ($fixed as $k) {
+    if (strpos(voice_in_words('en')[$k], '{') !== false) { t_ok('no fixed line carries a placeholder', false, $k); break; }
+}
+t_ok('no fixed line carries a placeholder',
+     count(array_filter($fixed, fn($k) => strpos(voice_in_words('en')[$k], '{') !== false)) === 0);
+
+// with nothing generated, the status says so rather than claiming readiness
+set_setting('gemini_api_key', '');
+$st = voice_in_voice_status('gu');
+t_eq('an unmade menu is reported as not ready', $st['ready'], false);
+t_eq('and counts what is missing', $st['done'] < $st['total'], true);
+t_eq('English needs nothing made', voice_in_voice_status('en')['ready'], true);
+
+$vin5 = file_get_contents(__DIR__ . '/../includes/voice_in.php');
+t_ok('the greeting falls back to the plain one in the SAME language first',
+     strpos($vin5, "'welcome_name', \$lang, ['name' => \$party['name']], false, null, 'welcome'") !== false);
+t_ok('language comes before politeness in that fallback',
+     strpos($vin5, 'Language first, politeness second') !== false);
+t_ok('the check tells the owner when callers are hearing English',
+     strpos($vin5, 'callers are hearing English') !== false);
+$su5 = file_get_contents(__DIR__ . '/../voice_setup.php');
+t_ok('and the screen has the button that fixes it', strpos($su5, 'make_in_voice') !== false);

@@ -41,6 +41,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('voice_setup.php');
     }
 
+    if (post('do') === 'make_in_voice') {
+        $lang = post('lang') ?: voice_in_lang();
+        $r = voice_in_pregenerate($lang);
+        flash($r['ok'] ? '🔊 The incoming menu can now speak ' . e($langs[$lang] ?? $lang)
+                       . ($r['made'] ? ' — ' . (int)$r['made'] . ' new line(s) made.' : ' — everything was already made.')
+                       : (int)$r['failed'] . ' line(s) could not be made: ' . $r['error'],
+              $r['ok'] ? 'success' : 'error');
+        redirect('voice_setup.php');
+    }
+
     if (post('do') === 'app_setup') {
         // Only makes (or refreshes) the application. Attaching is a separate
         // press against a number picked from the real list, because the two
@@ -141,6 +151,7 @@ $myNums = voice_configured() ? voice_in_numbers() : ['ok' => false, 'error' => '
 $diag = (get('check') === '1') ? voice_in_diagnose() : null;
 $rejects = voice_in_rejects(8);
 $attachTrail = json_decode((string)setting('vobiz_attach_trail', ''), true) ?: [];
+$inVoice = voice_in_voice_status(voice_in_lang());
 $hours = voice_hours();
 $recent = all('SELECT v.*, p.name FROM voice_calls v LEFT JOIN parties p ON p.id = v.party_id
                ORDER BY v.id DESC LIMIT 20');
@@ -529,6 +540,29 @@ include __DIR__ . '/includes/header.php';
         Answer incoming calls</label>
     </div>
     <button class="btn btn-success mt" type="submit">Save</button>
+  </form>
+  <?php endif; ?>
+
+  <h4>🔊 The voice the menu speaks</h4>
+  <?php if ($inVoice['ready']): ?>
+    <div class="flash flash-info">✅ Ready — callers hear <strong><?= e($langs[voice_in_lang()]) ?></strong>.</div>
+  <?php else: ?>
+    <div class="flash flash-error">
+      <strong>Callers are hearing English.</strong>
+      <?= (int)$inVoice['done'] ?> of <?= (int)$inVoice['total'] ?> lines have been made in <?= e($langs[voice_in_lang()]) ?>.
+      <br>An incoming call arrives unannounced — there is no moment to make speech while somebody is already on the line,
+      so the menu has to be made <em>before</em> the first call. Press the button once.
+    </div>
+  <?php endif; ?>
+  <?php if (can('settings.edit')): ?>
+  <form method="post" class="mb">
+    <?= csrf_field() ?><input type="hidden" name="do" value="make_in_voice">
+    <input type="hidden" name="lang" value="<?= e(voice_in_lang()) ?>">
+    <button class="btn <?= $inVoice['ready'] ? 'btn-outline' : 'btn-success' ?>" type="submit"
+            <?= voice_tts_enabled() ? '' : 'disabled' ?>>
+      🔊 <?= $inVoice['ready'] ? 'Make it again' : 'Make the menu speak ' . e($langs[voice_in_lang()]) ?></button>
+    <?php if (!voice_tts_enabled()): ?><span class="muted"> — the Gemini key is missing (Settings → AI)</span><?php endif; ?>
+    <span class="muted" style="font-size:12px"> Do this again if you change the menu language or the AI voice.</span>
   </form>
   <?php endif; ?>
 

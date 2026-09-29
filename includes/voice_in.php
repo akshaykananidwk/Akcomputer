@@ -395,6 +395,12 @@ function voice_in_diagnose() {
                                                   : 'ready')));
     }
     $add('Answering is switched on', voice_in_on(), voice_in_on() ? 'on' : 'tick "Answer incoming calls"');
+
+    $v = voice_in_voice_status(voice_in_lang());
+    $add('The menu can speak ' . (voice_langs()[voice_in_lang()] ?? voice_in_lang()), $v['ready'],
+         $v['ready'] ? 'all ' . $v['total'] . ' lines are made'
+                     : $v['done'] . ' of ' . $v['total'] . ' lines made — callers are hearing English. '
+                     . 'Press "Make the menu speak ..." below.');
     return $out;
 }
 
@@ -569,11 +575,64 @@ function voice_in_intent($callId, $intent, $needsAction, $refType = null, $refId
  *  નવ હજાર રૂપિયા" - half a sentence in each language, which is worse than
  *  either one whole. When it is not given the values are used as they are,
  *  which is right for names and wrong for nothing else. */
-function voice_in_say($key, $lang, array $v = [], $live = false, array $vEn = null) {
+function voice_in_say($key, $lang, array $v = [], $live = false, array $vEn = null, $fallbackKey = null) {
     $line = voice_in_words($lang, $v)[$key] ?? '';
     $en = voice_in_en($key, $vEn ?? $v);
     $say = $live ? voice_say_now($line, $lang, $en) : voice_say_live($line, $lang, $en);
-    return $say['url'] ? voice_xml_play($say['url']) : voice_xml_speak($say['text']);
+    if ($say['url']) return voice_xml_play($say['url']);
+
+    // Before dropping to English, try the plainer version of the same line in
+    // the SAME language. The greeting with the customer's name in it cannot
+    // be made in advance - there is one per customer - but the greeting
+    // without it can, and a Gujarati "hello, welcome" is a better answer than
+    // an English "hello, Ramesh, welcome". Language first, politeness second.
+    if ($fallbackKey !== null) {
+        $alt = voice_say_live(voice_in_words($lang)[$fallbackKey] ?? '', $lang, voice_in_en($fallbackKey));
+        if ($alt['url']) return voice_xml_play($alt['url']);
+    }
+    return voice_xml_speak($say['text']);
+}
+
+/** The lines that never change, so they can be made once and then cost
+ *  nothing. Everything with a {placeholder} is left out - those are made per
+ *  call, on a short leash. */
+function voice_in_fixed_keys() {
+    return array_values(array_filter(array_keys(voice_in_words('en')),
+        fn($k) => strpos(voice_in_words('en')[$k], '{') === false));
+}
+
+/** Is the incoming menu ready to speak this language? */
+function voice_in_voice_status($lang) {
+    if ($lang === 'en') return ['ready' => true, 'done' => 0, 'total' => 0, 'missing' => []];
+    $missing = [];
+    foreach (voice_in_fixed_keys() as $k) {
+        $line = voice_in_words($lang)[$k] ?? '';
+        if ($line === '') continue;
+        if (!voice_tts_audio($line, $lang, true)['ok']) $missing[] = $k;
+    }
+    $total = count(voice_in_fixed_keys());
+    return ['ready' => !$missing, 'done' => $total - count($missing), 'total' => $total, 'missing' => $missing];
+}
+
+/** Make every fixed line of the incoming menu, once.
+ *
+ *  This exists because an incoming call has no "before". An outgoing call is
+ *  prepared while the owner is looking at a confirmation screen; a customer
+ *  ringing the shop arrives unannounced, and the answer URL has seconds to
+ *  reply - far too few to make speech. Without this the menu had no Gujarati
+ *  to play and fell back to English on every single call. */
+function voice_in_pregenerate($lang) {
+    if ($lang === 'en') return ['ok' => true, 'made' => 0, 'failed' => 0, 'error' => ''];
+    $made = 0; $failed = 0; $err = '';
+    foreach (voice_in_fixed_keys() as $k) {
+        $line = voice_in_words($lang)[$k] ?? '';
+        if ($line === '') continue;
+        $r = voice_tts_audio($line, $lang);
+        if ($r['ok']) { if (!$r['cached']) $made++; }
+        else { $failed++; if ($err === '') $err = $r['error']; }
+    }
+    log_activity('voice_in_voice', $lang . ': ' . $made . ' made, ' . $failed . ' failed');
+    return ['ok' => $failed === 0, 'made' => $made, 'failed' => $failed, 'error' => $err];
 }
 
 function voice_in_url($call, $step) {
@@ -594,7 +653,7 @@ function voice_in_menu_xml($call, $try = 1, $now = null) {
     $body = '';
     if ($try === 1) {
         $body .= $party
-            ? voice_in_say('welcome_name', $lang, ['name' => $party['name']])
+            ? voice_in_say('welcome_name', $lang, ['name' => $party['name']], false, null, 'welcome')
             : voice_in_say('welcome', $lang);
         if (!voice_in_open($now)) $body .= voice_in_say('closed', $lang);
     } else {
@@ -708,7 +767,7 @@ function voice_in_order_status_xml($call) {
         $o = ['status' => $r['status']];
     }
     voice_in_log($call['id'], 'status_read', null, (string)$o['status']);
-    return voice_in_say('order_status', $lang, ['status' => voice_in_status_word($o['status'], $lang)], false,
+    return voice_in_say('order_status', $lang, ['status' => voice_in_status_word($o['status'], $lang)], true,
                         ['status' => voice_in_status_word($o['status'], 'en')])
          . voice_in_say('bye', $lang);
 }
