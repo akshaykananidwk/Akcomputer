@@ -615,8 +615,13 @@ foreach (['voice.php', 'voice_in.php'] as $mod) {
 $called = [];
 foreach (array_merge(glob(__DIR__ . '/../*.php'), glob(__DIR__ . '/../includes/*.php')) as $f) {
     if (in_array(basename($f), ['voice.php', 'voice_in.php'], true)) continue;
-    preg_match_all('/\b(voice_\w+)\s*\(/', file_get_contents($f), $mm);
+    $body = file_get_contents($f);
+    // A page may also define a helper of its own - a screen-only one that has
+    // no business in the shared module. Those exist too.
+    preg_match_all('/^function (voice_\w+)\s*\(/m', $body, $own);
+    preg_match_all('/\b(voice_\w+)\s*\(/', $body, $mm);
     foreach ($mm[1] as $fn) {
+        if (in_array($fn, $own[1], true)) continue;
         // "INSERT INTO voice_calls (" and "voice_ivr_events (" look exactly
         // like calls. They are tables - the only voice_* names that are not
         // functions.
@@ -1368,6 +1373,39 @@ t_ok('the spoken menu folder does NOT deny anything — the provider must read i
      !is_file(__DIR__ . '/../uploads/voice/tts/.htaccess'));
 t_ok('and uploads does not block mp3 across the board',
      strpos((string)@file_get_contents(__DIR__ . '/../uploads/.htaccess'), 'mp3') === false);
+
+t_group('Voice — the setup screen is a list of steps, not one long scroll');
+
+// Fifteen headings, all open at once, with the day-to-day list at the bottom,
+// is a screen nobody can work down. It is five numbered steps now: the one
+// still to be done is open, the finished ones fold away.
+$sp = file_get_contents(__DIR__ . '/../voice_setup.php');
+t_ok('there is a step count the owner can read', strpos($sp, 'Setting up —') !== false);
+t_ok('only the first unfinished step is open', strpos($sp, "\$firstOpen === \$key ? ' open'") !== false);
+t_ok('a finished step is marked done', strpos($sp, 'vdone') !== false);
+t_ok('the everyday list is above the setting up', strpos($sp, 'Last 20 calls') < strpos($sp, 'this software cannot check'));
+t_ok('and the chasing screens are linked from the top',
+     strpos($sp, 'collection.php') !== false && strpos($sp, 'reports.php?r=aging') !== false);
+t_ok('test mode is called out where it is switched', strpos($sp, 'Test mode is ON') !== false);
+
+// Splitting one form into five is only safe if a form says which settings it
+// carries: an UNTICKED checkbox posts nothing at all, which reads exactly like
+// "that box was not on this form". Without own[], saving the hours on step 5
+// would have switched the Gujarati voice off on step 2.
+t_ok('a form declares which settings it owns', strpos($sp, "name=\"own[]\"") !== false);
+t_ok('and the save writes only those', strpos($sp, 'voice_setup_own(') !== false
+                                      && strpos($sp, 'voice_setup_owns(') !== false);
+// Every save form on the page must declare it, or it silently blanks the rest.
+$forms = 0; $declared = 0;
+foreach (preg_split('/<form\b/', $sp) as $k => $frag) {
+    if ($k === 0) continue;
+    $frag = substr($frag, 0, strpos($frag, '</form>') === false ? strlen($frag) : strpos($frag, '</form>'));
+    if (!preg_match('/name="do" value="(save|inbound_save)"/', $frag)) continue;
+    $forms++;
+    if (strpos($frag, 'name="own[]"') !== false) $declared++;
+}
+t_ok('every settings form on the page says what it owns', $forms > 0 && $forms === $declared,
+     $declared . ' of ' . $forms);
 
 t_group('Voice — ringing a whole list, a few at a time');
 
