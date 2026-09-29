@@ -84,11 +84,23 @@ function voice_api($method, $path, array $body = null) {
     $cerr = curl_error($ch);
     curl_close($ch);
 
-    if ($res === false) return [null, 'Could not reach Vobiz: ' . $cerr];
+    $where = $method . ' ' . ltrim($path, '/');
+    if ($res === false) return [null, 'Could not reach Vobiz (' . $where . '): ' . $cerr];
+
     $j = json_decode($res, true);
     if ($code < 200 || $code >= 300) {
-        $msg = $j['error'] ?? $j['message'] ?? mb_substr((string)$res, 0, 200);
-        return [null, 'Vobiz returned HTTP ' . $code . ': ' . (is_string($msg) ? $msg : json_encode($msg))];
+        // Vobiz nests the real words: {"error":{"code":..,"message":..,
+        // "details":..}}. Printing the JSON at the owner made them read
+        // punctuation to find the sentence, and never said WHICH call failed.
+        $e = is_array($j) ? ($j['error'] ?? $j) : [];
+        $msg = '';
+        if (is_array($e)) {
+            $msg = trim((string)($e['message'] ?? '') . ' ' . (string)($e['details'] ?? ''));
+        } elseif (is_string($e)) {
+            $msg = $e;
+        }
+        if ($msg === '') $msg = (string)($j['message'] ?? mb_substr((string)$res, 0, 160));
+        return [null, 'Vobiz said ' . $code . ' to ' . $where . ': ' . trim($msg)];
     }
     return [is_array($j) ? $j : [], ''];
 }

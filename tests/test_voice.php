@@ -1206,3 +1206,27 @@ t_ok('and which keys were pressed', strpos($tbl, 'ivr_path') !== false);
 t_ok('and whether the WhatsApp follow-up went', strpos($tbl, 'wa_sent_at') !== false);
 t_ok('an outgoing call still shows the amount and the answer',
      strpos($tbl, "money(\$r['amount'])") !== false && strpos($tbl, "'yes'") !== false);
+
+t_group('Voice — a Vobiz error says which call failed, in words');
+
+// The owner was handed {"error":{"code":401,"message":"Authentication
+// required","details":"X-Auth-ID and X-Auth-Token headers are required"}}
+// with no indication of which request produced it. Both halves of that were
+// failures of this code, not of Vobiz.
+$vinE = file_get_contents(__DIR__ . '/../includes/voice_in.php');
+t_ok('the failing request is named in the message', strpos($vinE, "'Vobiz said ' . \$code . ' to ' . \$where") !== false);
+t_ok('the nested message and details are unwrapped',
+     strpos($vinE, "\$e['message']") !== false && strpos($vinE, "\$e['details']") !== false);
+t_ok('a JSON blob is no longer printed at the owner', strpos($vinE, 'json_encode($msg)') === false);
+t_ok('a network failure names the request too', strpos($vinE, 'Could not reach Vobiz (') !== false);
+
+// and nothing is attempted at all without the keys, so a 401 from our own
+// calls should be impossible
+t_ok('no request is made without the keys', strpos($vinE, "return [null, 'Vobiz is not configured.']") !== false);
+set_setting('vobiz_auth_id', '');
+set_setting('vobiz_auth_token', '');
+[$j, $err] = voice_api('GET', 'Application/');
+t_ok('with the keys missing it refuses locally rather than asking Vobiz',
+     $j === null && stripos($err, 'not configured') !== false, $err);
+set_setting('vobiz_auth_id', 'TESTAUTHID');
+set_setting('vobiz_auth_token', 'TESTTOKEN');
