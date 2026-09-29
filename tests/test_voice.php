@@ -608,18 +608,249 @@ t_ok('voice_can_call() defers to the message rules instead of copying them',
 // then dies - the top of the screen looks fine, so it is easy to miss. This
 // caught exactly that when the hand-recorded clip system was replaced.
 $defined = [];
-preg_match_all('/^function (voice_\w+)\s*\(/m', $vsrc, $m);
-foreach ($m[1] as $fn) $defined[$fn] = true;
+foreach (['voice.php', 'voice_in.php'] as $mod) {
+    preg_match_all('/^function (voice_\w+)\s*\(/m', file_get_contents(__DIR__ . '/../includes/' . $mod), $m);
+    foreach ($m[1] as $fn) $defined[$fn] = true;
+}
 $called = [];
 foreach (array_merge(glob(__DIR__ . '/../*.php'), glob(__DIR__ . '/../includes/*.php')) as $f) {
-    if (basename($f) === 'voice.php') continue;
+    if (in_array(basename($f), ['voice.php', 'voice_in.php'], true)) continue;
     preg_match_all('/\b(voice_\w+)\s*\(/', file_get_contents($f), $mm);
     foreach ($mm[1] as $fn) {
-        // "INSERT INTO voice_calls (" looks exactly like a call. It is the
-        // table, and the only voice_* name that is not a function.
-        if ($fn === 'voice_calls') continue;
+        // "INSERT INTO voice_calls (" and "voice_ivr_events (" look exactly
+        // like calls. They are tables - the only voice_* names that are not
+        // functions.
+        if (in_array($fn, ['voice_calls', 'voice_ivr_events'], true)) continue;
         if (!isset($defined[$fn])) $called[$fn] = basename($f);
     }
 }
 t_ok('every voice_* function a page calls actually exists', !$called,
      implode(', ', array_map(fn($f, $fn) => "$fn in $f", $called, array_keys($called))));
+
+// ---------------------------------------------------------------------------
+require_once __DIR__ . '/../includes/voice_in.php';
+
+t_group('Voice IN — the menu a caller hears');
+
+set_setting('voice_inbound', '1');
+set_setting('voice_inbound_lang', 'gu');
+set_setting('vobiz_inbound_number', '919999900000');
+set_setting('voice_shop_open', '9');
+set_setting('voice_shop_close', '21');
+set_setting('voice_ivr_balance', 'speak');
+
+$w = voice_in_words('gu', ['name' => 'રમેશભાઈ']);
+t_ok('the greeting uses their name', strpos($w['welcome_name'], 'રમેશભાઈ') !== false);
+t_ok('the menu offers the balance', strpos($w['menu'], 'એક દબાવો') !== false);
+t_ok('the menu offers ordering', strpos($w['menu'], 'બે દબાવો') !== false);
+t_ok('the menu offers a complaint', strpos($w['menu'], 'ત્રણ દબાવો') !== false);
+t_ok('the menu offers a person', strpos($w['menu'], 'નવ દબાવો') !== false);
+t_ok('Hindi says the same things', strpos(voice_in_words('hi')['menu'], 'दो दबाएँ') !== false);
+t_ok('English exists as the fallback', strpos(voice_in_words('en')['menu'], 'press two') !== false);
+foreach (['gu', 'hi', 'en'] as $L) {
+    $ww = voice_in_words($L);
+    t_eq("every line exists in $L", count(array_filter($ww, fn($x) => trim((string)$x) !== '')), count($ww));
+}
+
+t_group('Voice IN — shop hours');
+
+t_ok('open at 2pm', voice_in_open(strtotime('today 14:00')));
+t_ok('a call at 3am still reaches the menu — only "talk to us" changes',
+     strpos(voice_in_menu_xml($call ?? voice_in_start('919000022222', '919999900000', 'uuid-n-' . bin2hex(random_bytes(3))),
+                              1, strtotime('today 03:00')), '<Gather') !== false);
+t_ok('shut at 11pm', !voice_in_open(strtotime('today 23:00')));
+t_ok('shut at 6am', !voice_in_open(strtotime('today 06:00')));
+set_setting('voice_shop_open', '20');
+set_setting('voice_shop_close', '8');       // nonsense
+t_ok('a backwards window falls back to 9-21', voice_in_open(strtotime('today 10:00')));
+set_setting('voice_shop_open', '9');
+set_setting('voice_shop_close', '21');
+
+t_group('Voice IN — who is calling');
+
+$pidA = t_party('TEST_IN_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876512345' WHERE id = ?", [$pidA]);
+t_sale($pidA, 4500, 0, date('Y-m-d', strtotime('-30 days')), date('Y-m-d', strtotime('-7 days')));
+
+$call = voice_in_start('919876512345', '919999900000', 'uuid-in-' . bin2hex(random_bytes(4)));
+t_ok('an incoming call is recorded', (int)$call['id'] > 0);
+t_eq('marked as incoming', $call['direction'], 'in');
+t_eq('and matched to the customer by their number', (int)$call['party_id'], $pidA);
+t_eq('it is answered by definition — we are speaking to them', (int)$call['answered'], 1);
+t_ok('it has its own token for the rest of the call', strlen($call['token']) === 40);
+
+// A retried webhook must not become a second call in the shop's records.
+$again = voice_in_start('919876512345', '919999900000', $call['call_uuid']);
+t_eq('a retried webhook finds the same call', (int)$again['id'], (int)$call['id']);
+
+$unknown = voice_in_start('919000011111', '919999900000', 'uuid-unk-' . bin2hex(random_bytes(4)));
+t_eq('a stranger is recorded too', $unknown['direction'], 'in');
+t_eq('but tied to no customer', (int)$unknown['party_id'], 0);
+
+t_group('Voice IN — what each key does');
+
+$xml = voice_in_menu_xml($call, 1);
+t_ok('the greeting XML parses', @simplexml_load_string($xml) !== false);
+t_ok('it waits for one key', strpos($xml, 'numDigits="1"') !== false);
+t_ok('the keypress comes back with this call token', strpos($xml, 'voice_in.php?step=menu&amp;t=' . $call['token']) !== false);
+t_ok('pressing nothing gets one more go', strpos($xml, '<Redirect>') !== false);
+
+// 2 = order -> records, and is left needing somebody
+$x2 = voice_in_branch($call, '2');
+t_ok('pressing 2 asks them to speak', strpos($x2, '<Record') !== false);
+t_ok('and the recording comes back to us', strpos($x2, 'step=rec_done') !== false);
+t_ok('hash ends the recording', strpos($x2, 'finishOnKey="#"') !== false);
+$after = row('SELECT * FROM voice_calls WHERE id = ?', [$call['id']]);
+t_eq('the call is filed as an order', $after['intent'], 'order');
+t_eq('and marked as still needing somebody', (int)$after['needs_action'], 1);
+
+// 3 = complaint
+$x3 = voice_in_branch($call, '3');
+t_ok('pressing 3 records too', strpos($x3, '<Record') !== false);
+t_eq('and is filed as a complaint', val('SELECT intent FROM voice_calls WHERE id = ?', [$call['id']]), 'complaint');
+
+// 1 = balance, for someone we know
+$x1 = voice_in_branch($call, '1');
+t_ok('pressing 1 says something back', strpos($x1, '<Speak') !== false || strpos($x1, '<Play') !== false);
+t_ok('and the amount was read from the ledger, not invented',
+     (int)val("SELECT COUNT(*) FROM voice_ivr_events WHERE call_id = ? AND step = 'balance_read'", [$call['id']]) === 1);
+$readOut = (string)val("SELECT detail FROM voice_ivr_events WHERE call_id = ? AND step = 'balance_read' ORDER BY id DESC LIMIT 1", [$call['id']]);
+t_eq('and it is the real outstanding amount', $readOut, '₹' . money(party_balance_side($pidA, 'in')));
+
+// 1 = balance, for a stranger — must not fish for information
+$x1u = voice_in_branch($unknown, '1');
+t_ok('a stranger is told their number is not registered',
+     strpos($x1u, 'નોંધાયેલો નથી') !== false || stripos($x1u, 'not registered') !== false);
+t_ok('and no amount is read to them',
+     (int)val("SELECT COUNT(*) FROM voice_ivr_events WHERE call_id = ? AND step = 'balance_read'", [$unknown['id']]) === 0);
+
+// the owner can refuse to discuss money by phone at all
+set_setting('voice_ivr_balance', 'off');
+$xOff = voice_in_branch($call, '1');
+t_ok('with money questions switched off, nothing is read out',
+     strpos($xOff, 'નોંધાયેલો નથી') !== false || stripos($xOff, 'not registered') !== false);
+set_setting('voice_ivr_balance', 'speak');
+
+// 9 = a person
+set_setting('voice_agent_numbers', '9824537749, 9825012345');
+$x9 = voice_in_branch($call, '9', $NOON);
+t_ok('pressing 9 rings the shop phones', strpos($x9, '<Dial') !== false);
+t_ok('both numbers are rung', substr_count($x9, '<Number>') === 2);
+t_ok('and the result comes back to us', strpos($x9, 'step=dial_done') !== false);
+
+set_setting('voice_agent_numbers', '');
+$x9b = voice_in_branch($call, '9', $NOON);
+t_ok('with no phones configured it takes a message instead', strpos($x9b, '<Record') !== false);
+t_ok('and does not dial nobody', strpos($x9b, '<Dial') === false);
+
+// a key that means nothing
+$xBad = voice_in_branch($call, '7');
+t_ok('a key that means nothing repeats the menu', strpos($xBad, '<Gather') !== false);
+
+t_group('Voice IN — the keys pressed are kept');
+
+$path = (string)val('SELECT ivr_path FROM voice_calls WHERE id = ?', [$call['id']]);
+t_ok('every key is remembered in order', substr_count($path, '-') >= 3, $path);
+t_ok('and each one has its own event row',
+     (int)val('SELECT COUNT(*) FROM voice_ivr_events WHERE call_id = ?', [$call['id']]) >= 5);
+
+t_group('Voice IN — a recording becomes work the shop tracks');
+
+$tk = bin2hex(random_bytes(20));
+q("INSERT INTO voice_calls (party_id, mobile, direction, from_number, to_number, token, lang, status, answered)
+   VALUES (?, '919876512345', 'in', '919876512345', '919999900000', ?, 'gu', 'answered', 1)", [$pidA, $tk]);
+$recCall = row('SELECT * FROM voice_calls WHERE token = ?', [$tk]);
+$ticketsBefore = (int)val('SELECT COUNT(*) FROM tickets');
+voice_in_recording_done($recCall, ['RecordUrl' => 'https://rec.example/abc.mp3', 'RecordingDuration' => '31'], 'complaint');
+$recCall = row('SELECT * FROM voice_calls WHERE id = ?', [$recCall['id']]);
+t_eq('the recording is kept on the call', $recCall['recording_url'], 'https://rec.example/abc.mp3');
+t_eq('with its length', (int)$recCall['recording_secs'], 31);
+t_eq('a spoken complaint becomes a real ticket', (int)val('SELECT COUNT(*) FROM tickets'), $ticketsBefore + 1);
+t_eq('and the call points at it', $recCall['ref_type'], 'ticket');
+$tkt = row('SELECT * FROM tickets WHERE id = ?', [(int)$recCall['ref_id']]);
+t_ok('the ticket is numbered like any other', !empty($tkt['ticket_no']), (string)($tkt['ticket_no'] ?? ''));
+t_ok('and carries the number to call back', strpos((string)$tkt['customer_mobile'], '9876512345') !== false);
+t_ok('and where to hear what they said', strpos((string)$tkt['description'], 'rec.example') !== false);
+
+$leadsBefore = (int)val('SELECT COUNT(*) FROM leads');
+$tk2 = bin2hex(random_bytes(20));
+q("INSERT INTO voice_calls (party_id, mobile, direction, from_number, to_number, token, lang, status, answered)
+   VALUES (0, '919000011111', 'in', '919000011111', '919999900000', ?, 'gu', 'answered', 1)", [$tk2]);
+$rc2 = row('SELECT * FROM voice_calls WHERE token = ?', [$tk2]);
+voice_in_recording_done($rc2, ['RecordUrl' => 'https://rec.example/def.mp3', 'RecordingDuration' => '12'], 'order');
+t_eq('a spoken order becomes a lead', (int)val('SELECT COUNT(*) FROM leads'), $leadsBefore + 1);
+t_eq('even from somebody we have never heard of',
+     val('SELECT ref_type FROM voice_calls WHERE id = ?', [$rc2['id']]), 'lead');
+t_ok('a recording with no url is ignored rather than filed empty',
+     (function () use ($rc2) {
+         $before = (int)val('SELECT COUNT(*) FROM leads');
+         voice_in_recording_done($rc2, ['RecordingDuration' => '5'], 'order');
+         return (int)val('SELECT COUNT(*) FROM leads') === $before;
+     })());
+
+t_group('Voice IN — nobody is left waiting silently');
+
+t_ok('the waiting list has these calls', voice_in_pending_count() >= 2);
+voice_call_handled($recCall['id'], 'rang them back');
+$done = row('SELECT * FROM voice_calls WHERE id = ?', [$recCall['id']]);
+t_eq('marking one done clears it', (int)$done['needs_action'], 0);
+t_ok('and records who did it', (int)$done['handled_by'] > 0);
+t_eq('with the note', $done['notes'], 'rang them back');
+
+t_group('Voice IN — the door is not open to anyone');
+
+$src = file_get_contents(__DIR__ . '/../voice_in.php');
+t_ok('a call to a number that is not ours is refused', strpos($src, '$to !== $mine') !== false);
+t_ok('the first request is rate limited', strpos($src, 'api_rate_ok(') !== false);
+t_ok('every later step needs the call token', strpos($src, 'voice_call_by_token(get(\'t\'))') !== false);
+t_ok('an outgoing call token cannot drive the incoming menu',
+     strpos($src, "\$call['direction'] !== 'in'") !== false);
+t_ok('the incoming page is exempt from CSRF, like the other phone-network pages',
+     strpos(file_get_contents(__DIR__ . '/../includes/helpers.php'), "'voice_in.php'") !== false);
+
+t_group('Voice — speech is never made while somebody is on the line');
+
+// Generating a sentence takes seconds and is allowed up to forty-five. The
+// live paths must play what exists and say the rest in English instead.
+set_setting('gemini_api_key', 'TESTKEY');
+set_setting('voice_tts', '1');
+$fresh = voice_tts_audio('કદી ન બોલાયેલું વાક્ય ' . bin2hex(random_bytes(6)), 'gu', true);
+t_eq('a sentence never spoken before is not made on the live path', $fresh['ok'], false);
+t_ok('and says why without pretending', stripos($fresh['error'], 'not generated') !== false, $fresh['error']);
+set_setting('gemini_api_key', '');
+
+foreach (['voice_answer.php' => 'the answer URL', 'voice_gather.php' => 'the keypress URL'] as $f => $label) {
+    $fs = file_get_contents(__DIR__ . '/../' . $f);
+    $usesPlan = strpos($fs, 'voice_audio_plan(') !== false;
+    t_ok($label . ' never waits for new speech',
+         !$usesPlan || preg_match('/voice_audio_plan\([^;]*,\s*true\s*\)/s', $fs) === 1);
+}
+$vs = file_get_contents(__DIR__ . '/../includes/voice.php');
+t_ok('the answer XML asks for cached audio only',
+     preg_match('/voice_audio_plan\([^;]*\$promise,\s*true\)/', $vs) === 1);
+
+t_group('Voice IN — a sentence falls back whole, or not at all');
+
+// A line that could not be made in Gujarati is said in English - but the
+// values put INTO it must switch language too. "Your outstanding amount is
+// નવ હજાર રૂપિયા" is half a sentence in each, which is worse than either.
+set_setting('gemini_api_key', '');          // force the English fallback
+set_setting('voice_ivr_balance', 'speak');
+$pidM = t_party('TEST_MIX_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876543211' WHERE id = ?", [$pidM]);
+t_sale($pidM, 9000, 0, date('Y-m-d', strtotime('-20 days')), date('Y-m-d', strtotime('-5 days')));
+$cm = voice_in_start('919876543211', '919999900000', 'uuid-mix-' . bin2hex(random_bytes(4)));
+$xb = voice_in_balance_xml($cm);
+
+$hasGu = preg_match('/[\x{0A80}-\x{0AFF}]/u', $xb) === 1;
+$hasEn = preg_match('/\b(outstanding|Thank you)\b/', $xb) === 1;
+t_ok('the balance line does not mix the two languages', !($hasGu && $hasEn),
+     trim(strip_tags($xb)));
+t_ok('and the amount is still there, in whichever one it chose',
+     stripos($xb, 'nine thousand') !== false || strpos($xb, 'નવ હજાર') !== false,
+     trim(strip_tags($xb)));
+
+// the same rule for the delivery line
+$xs = voice_in_status_word('shipped', 'en');
+t_eq('status words exist in English too', $xs, 'on its way');
+t_ok('and in Gujarati', voice_in_status_word('shipped', 'gu') === 'નીકળી ગયો છે');

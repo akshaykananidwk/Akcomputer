@@ -1,0 +1,566 @@
+<?php
+// The shop's number answers by itself.
+//
+// Vobiz routes an incoming call to an Application, and the Application's
+// answer_url is ours. Every decision about what the caller hears is made
+// here - the menu, who is recognised, what they may be told, and when a
+// person is rung instead.
+//
+// Three things shape the whole design:
+//
+//   * Caller ID is not proof. It can be forged, so this file treats the
+//     number as a convenience, not a password. What a recognised caller may
+//     be TOLD is a setting the owner chooses (voice_ivr_balance), and the
+//     safe option sends the figures to WhatsApp - which needs the actual SIM
+//     - instead of reading them to whoever is on the line.
+//   * Nobody waits in silence. Speech that has never been said before takes
+//     seconds to make, so every fixed sentence is generated once and cached,
+//     and only the one line that cannot be (their own balance) may generate
+//     mid-call, on an eight-second leash with English underneath it.
+//   * A call that asked for something is not finished when it hangs up. An
+//     order left at nine at night is worth money only if somebody sees it in
+//     the morning, so those calls are marked needing action and stay on the
+//     screen until a person closes them.
+//
+// The caller is matched to a party by wa_bot_party_for() - the same function
+// the WhatsApp bot uses, so a customer is recognised the same way on both,
+// and there is one rule to get wrong instead of two.
+
+require_once __DIR__ . '/voice.php';
+require_once __DIR__ . '/wa_bot.php';   // wa_bot_party_for()
+
+function voice_in_on() { return (int)setting('voice_inbound', 0) === 1; }
+function voice_in_lang() {
+    $l = setting('voice_inbound_lang', 'gu');
+    return isset(voice_langs()[$l]) ? $l : 'gu';
+}
+
+/** Is the shop open right now? Outside these hours the menu still works -
+ *  orders and complaints are recorded all night - but "talk to someone"
+ *  offers a message instead of ringing a phone at somebody's bedside. */
+function voice_in_open($now = null) {
+    $from = max(0, min(24, (int)setting('voice_shop_open', 9)));
+    $to   = max(0, min(24, (int)setting('voice_shop_close', 21)));
+    if ($to <= $from) { $from = 9; $to = 21; }
+    $h = (int)date('G', $now ?: time());
+    return $h >= $from && $h < $to;
+}
+
+/** The phones that ring when a caller asks for a person, in order. */
+function voice_in_agents() {
+    $out = [];
+    foreach (preg_split('/[,\s]+/', (string)setting('voice_agent_numbers', '')) as $n) {
+        $n = trim($n);
+        if ($n !== '' && voice_mobile_ok($n)) $out[] = voice_e164($n);
+    }
+    return $out;
+}
+
+// ---------- telling Vobiz where to send the calls ----------
+//
+// A Vobiz number does not hold a URL of its own. The URL lives on an
+// "Application", and a number is pointed at one. So going live is two calls:
+// make the application, then attach the number to it. Both are done from the
+// setup screen so the owner never has to open a console.
+
+/** One authenticated request to Vobiz. Returns [decoded body, ''] or [null, why]. */
+function voice_api($method, $path, array $body = null) {
+    if (!function_exists('curl_init')) return [null, 'The server does not have curl.'];
+    $authId = setting('vobiz_auth_id', '');
+    $authTok = setting('vobiz_auth_token', '');
+    if ($authId === '' || $authTok === '') return [null, 'Vobiz is not configured.'];
+
+    $ch = curl_init('https://api.vobiz.ai/api/v1/Account/' . rawurlencode($authId) . '/' . ltrim($path, '/'));
+    $opts = [
+        CURLOPT_CUSTOMREQUEST => $method,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-Auth-ID: ' . $authId, 'X-Auth-Token: ' . $authTok],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 20,
+    ];
+    if ($body !== null) $opts[CURLOPT_POSTFIELDS] = json_encode($body, JSON_UNESCAPED_UNICODE);
+    curl_setopt_array($ch, $opts);
+    $res = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+
+    if ($res === false) return [null, 'Could not reach Vobiz: ' . $cerr];
+    $j = json_decode($res, true);
+    if ($code < 200 || $code >= 300) {
+        $msg = $j['error'] ?? $j['message'] ?? mb_substr((string)$res, 0, 200);
+        return [null, 'Vobiz returned HTTP ' . $code . ': ' . (is_string($msg) ? $msg : json_encode($msg))];
+    }
+    return [is_array($j) ? $j : [], ''];
+}
+
+/** Create (or re-point) the application that answers our number. */
+function voice_in_app_setup() {
+    [$j, $err] = voice_api('POST', 'Application/', [
+        'app_name'      => preg_replace('/[^A-Za-z0-9_-]/', '-', setting('app_name', 'AK Computer')) . '-inbound',
+        'answer_url'    => voice_public_url('voice_in.php'),
+        'answer_method' => 'POST',
+        'hangup_url'    => voice_public_url('voice_webhook.php'),
+        'hangup_method' => 'POST',
+    ]);
+    if ($j === null) return ['ok' => false, 'error' => $err, 'app_id' => ''];
+    $appId = (string)($j['app_id'] ?? $j['application_id'] ?? $j['id'] ?? '');
+    if ($appId === '') return ['ok' => false, 'error' => 'Vobiz did not return an application id.', 'app_id' => ''];
+    set_setting('vobiz_app_id', $appId);
+    log_activity('voice_app', 'application ' . $appId);
+    return ['ok' => true, 'error' => '', 'app_id' => $appId];
+}
+
+/** Point the shop's number at that application. */
+function voice_in_number_attach($number, $appId) {
+    $e164 = voice_e164($number);
+    [$j, $err] = voice_api('POST', 'numbers/' . rawurlencode('+' . $e164) . '/application',
+                           ['application_id' => $appId]);
+    if ($j === null) return ['ok' => false, 'error' => $err];
+    set_setting('vobiz_inbound_number', $e164);
+    log_activity('voice_number', $e164 . ' -> ' . $appId);
+    return ['ok' => true, 'error' => ''];
+}
+
+// ---------- everything the menu says ----------
+
+/** One table, three languages. Kept together so a change to the menu is one
+ *  edit and the three never drift apart. */
+function voice_in_words($lang, array $v = []) {
+    $shop = setting('app_name', 'AK Computer');
+    $t = [
+        'gu' => [
+            'welcome'      => 'નમસ્કાર, ' . $shop . ' માં આપનું સ્વાગત છે.',
+            'welcome_name' => 'નમસ્કાર {name}, ' . $shop . ' માં આપનું સ્વાગત છે.',
+            'closed'       => 'અત્યારે દુકાન બંધ છે.',
+            'menu'         => 'હિસાબ જાણવા એક દબાવો. ઓર્ડર આપવા બે દબાવો. ફરિયાદ કે રિપેરિંગ માટે ત્રણ દબાવો. '
+                            . 'માલ અને ભાવ પૂછવા ચાર દબાવો. તમારો ઓર્ડર ક્યાં પહોંચ્યો એ જાણવા પાંચ દબાવો. '
+                            . 'અમારી સાથે વાત કરવા નવ દબાવો.',
+            'again'        => 'કંઈ દબાયું નથી. ફરી સાંભળો.',
+            'bye'          => 'ફોન કરવા બદલ આભાર.',
+            'not_known'    => 'તમારો નંબર અમારી પાસે નોંધાયેલો નથી. ઓર્ડર કે ફરિયાદ માટે બે કે ત્રણ દબાવો.',
+            'balance'      => 'તમારા {amount} બાકી છે.',
+            'balance_nil'  => 'તમારું કોઈ બાકી નથી. આભાર.',
+            'balance_wa'   => 'તમારો હિસાબ તમારા WhatsApp પર મોકલી દીધો છે.',
+            'ask_order'    => 'બીપ પછી તમારે શું જોઈએ છે એ બોલો. પૂરું થાય એટલે હેશ દબાવો.',
+            'ask_problem'  => 'બીપ પછી તમારી ફરિયાદ બોલો. પૂરું થાય એટલે હેશ દબાવો.',
+            'ask_stock'    => 'બીપ પછી તમારે કઈ વસ્તુનો ભાવ જોઈએ છે એ બોલો. પૂરું થાય એટલે હેશ દબાવો.',
+            'noted'        => 'નોંધી લીધું. અમે તમારો સંપર્ક કરીશું. આભાર.',
+            'order_status' => 'તમારો છેલ્લો ઓર્ડર {status} છે.',
+            'order_none'   => 'તમારો કોઈ ચાલુ ઓર્ડર નથી.',
+            'connecting'   => 'જોડી રહ્યા છીએ, થોડી રાહ જુઓ.',
+            'no_answer'    => 'અત્યારે કોઈ ફોન ઉપાડતું નથી. બીપ પછી સંદેશ મૂકો.',
+            'closed_msg'   => 'દુકાન બંધ છે. બીપ પછી સંદેશ મૂકો, અમે સવારે સંપર્ક કરીશું.',
+        ],
+        'hi' => [
+            'welcome'      => 'नमस्ते, ' . $shop . ' में आपका स्वागत है.',
+            'welcome_name' => 'नमस्ते {name}, ' . $shop . ' में आपका स्वागत है.',
+            'closed'       => 'अभी दुकान बंद है.',
+            'menu'         => 'हिसाब जानने के लिए एक दबाएँ. ऑर्डर देने के लिए दो दबाएँ. शिकायत या रिपेयरिंग के लिए तीन दबाएँ. '
+                            . 'सामान और दाम पूछने के लिए चार दबाएँ. अपना ऑर्डर कहाँ पहुँचा जानने के लिए पाँच दबाएँ. '
+                            . 'हमसे बात करने के लिए नौ दबाएँ.',
+            'again'        => 'कुछ नहीं दबाया गया. फिर से सुनिए.',
+            'bye'          => 'फ़ोन करने के लिए धन्यवाद.',
+            'not_known'    => 'आपका नंबर हमारे पास दर्ज नहीं है. ऑर्डर या शिकायत के लिए दो या तीन दबाएँ.',
+            'balance'      => 'आपका {amount} बाकी है.',
+            'balance_nil'  => 'आपका कोई बकाया नहीं है. धन्यवाद.',
+            'balance_wa'   => 'आपका हिसाब आपके WhatsApp पर भेज दिया है.',
+            'ask_order'    => 'बीप के बाद बताइए आपको क्या चाहिए. पूरा होने पर हैश दबाएँ.',
+            'ask_problem'  => 'बीप के बाद अपनी शिकायत बताइए. पूरा होने पर हैश दबाएँ.',
+            'ask_stock'    => 'बीप के बाद बताइए किस सामान का दाम चाहिए. पूरा होने पर हैश दबाएँ.',
+            'noted'        => 'दर्ज कर लिया. हम आपसे संपर्क करेंगे. धन्यवाद.',
+            'order_status' => 'आपका पिछला ऑर्डर {status} है.',
+            'order_none'   => 'आपका कोई चालू ऑर्डर नहीं है.',
+            'connecting'   => 'जोड़ रहे हैं, थोड़ा इंतज़ार करें.',
+            'no_answer'    => 'अभी कोई फ़ोन नहीं उठा रहा. बीप के बाद संदेश छोड़ें.',
+            'closed_msg'   => 'दुकान बंद है. बीप के बाद संदेश छोड़ें, हम सुबह संपर्क करेंगे.',
+        ],
+        'en' => [
+            'welcome'      => 'Hello, welcome to ' . $shop . '.',
+            'welcome_name' => 'Hello {name}, welcome to ' . $shop . '.',
+            'closed'       => 'The shop is closed right now.',
+            'menu'         => 'For your account balance press one. To place an order press two. '
+                            . 'For a complaint or a repair press three. To ask about stock or a price press four. '
+                            . 'To check your order press five. To speak to us press nine.',
+            'again'        => 'Nothing was pressed. Here is the menu again.',
+            'bye'          => 'Thank you for calling.',
+            'not_known'    => 'Your number is not registered with us. For an order or a complaint press two or three.',
+            'balance'      => 'Your outstanding amount is {amount}.',
+            'balance_nil'  => 'You have nothing outstanding. Thank you.',
+            'balance_wa'   => 'Your statement has been sent to your WhatsApp.',
+            'ask_order'    => 'After the beep, say what you need. Press hash when you are done.',
+            'ask_problem'  => 'After the beep, describe the problem. Press hash when you are done.',
+            'ask_stock'    => 'After the beep, say which item you want the price of. Press hash when you are done.',
+            'noted'        => 'Noted. We will get back to you. Thank you.',
+            'order_status' => 'Your last order is {status}.',
+            'order_none'   => 'You have no order in progress.',
+            'connecting'   => 'Connecting you, please hold.',
+            'no_answer'    => 'Nobody is picking up right now. Please leave a message after the beep.',
+            'closed_msg'   => 'The shop is closed. Leave a message after the beep and we will call in the morning.',
+        ],
+    ];
+    $s = $t[$lang] ?? $t['en'];
+    if (!$v) return $s;
+    foreach ($s as $k => $line) foreach ($v as $vk => $vv) $s[$k] = str_replace('{' . $vk . '}', (string)$vv, $s[$k]);
+    return $s;
+}
+
+/** English of the same line, for the fallback when the Gujarati audio is not
+ *  ready. Written as one call so no caller ever hears a gap. */
+function voice_in_en($key, array $v = []) { return voice_in_words('en', $v)[$key] ?? ''; }
+
+// ---------- the call row ----------
+
+/** Start (or find) the row for an incoming call.
+ *
+ *  Found rather than always created, because Vobiz retries a webhook that
+ *  did not answer 200 - and a retried greeting must not become a second call
+ *  in the shop's records. */
+function voice_in_start($from, $to, $callUuid) {
+    $from = voice_e164($from);
+    if ($callUuid !== '') {
+        $existing = row('SELECT * FROM voice_calls WHERE call_uuid = ? AND direction = ?', [$callUuid, 'in']);
+        if ($existing) return $existing;
+    }
+    $party = wa_bot_party_for($from);
+    $token = bin2hex(random_bytes(20));
+    q("INSERT INTO voice_calls (party_id, mobile, direction, from_number, to_number, call_uuid, token,
+                                lang, provider, status, answered, started_at)
+       VALUES (?,?,'in',?,?,?,?,?,?,'answered',1,NOW())",
+      [(int)($party['id'] ?? 0), $from, $from, voice_e164($to), $callUuid ?: null, $token,
+       voice_in_lang(), setting('voice_provider', 'vobiz')]);
+    $id = (int)insert_id();
+    log_activity('voice_in', 'incoming from ' . $from . ($party ? ' (' . $party['name'] . ')' : ' (unknown)'));
+    return row('SELECT * FROM voice_calls WHERE id = ?', [$id]);
+}
+
+/** Which shop a call belongs to.
+ *
+ *  tickets.location_id and leads.location_id are NOT NULL with no default,
+ *  and a call has no logged-in user to take one from. The configured inbound
+ *  location wins; otherwise the first location, which is the only one most
+ *  shops have. Getting this wrong meant every spoken order was silently
+ *  dropped - the recording survived, but the lead it should have become
+ *  never appeared. */
+function voice_in_location() {
+    $l = (int)setting('voice_inbound_location', 0);
+    if ($l > 0) return $l;
+    return (int)val('SELECT id FROM locations ORDER BY id LIMIT 1') ?: 1;
+}
+
+/** Whose name a record made by the phone goes under.
+ *
+ *  tickets.created_by and leads.created_by are NOT NULL, and a call has
+ *  nobody logged in. The owner's account stands in - they are the one
+ *  answerable for what the shop's phone promises - and the note on the
+ *  record says plainly that it came off the phone, so nobody reading it
+ *  later thinks the owner typed it. */
+function voice_in_actor() {
+    static $id = null;
+    if ($id === null) {
+        $id = (int)val("SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id
+                        WHERE u.is_active = 1 AND r.permissions LIKE '%*%' ORDER BY u.id LIMIT 1");
+        if (!$id) $id = (int)val('SELECT id FROM users WHERE is_active = 1 ORDER BY id LIMIT 1');
+    }
+    return $id ?: null;
+}
+
+function voice_in_log($callId, $step, $digit = null, $detail = null) {
+    q('INSERT INTO voice_ivr_events (call_id, step, digit, detail) VALUES (?,?,?,?)',
+      [(int)$callId, mb_substr((string)$step, 0, 30), $digit !== '' ? mb_substr((string)$digit, 0, 4) : null,
+       $detail !== null ? mb_substr((string)$detail, 0, 255) : null]);
+    // the path is kept on the row too, so the list screen needs no join
+    $path = (string)val('SELECT ivr_path FROM voice_calls WHERE id = ?', [(int)$callId]);
+    if ($digit !== null && $digit !== '') {
+        $path = trim($path . '-' . $digit, '-');
+        q('UPDATE voice_calls SET ivr_path = ? WHERE id = ?', [mb_substr($path, 0, 60), (int)$callId]);
+    }
+}
+
+/** Mark what the caller came for, and whether somebody must act on it. */
+function voice_in_intent($callId, $intent, $needsAction, $refType = null, $refId = null) {
+    q('UPDATE voice_calls SET intent = ?, needs_action = ?, ref_type = ?, ref_id = ? WHERE id = ?',
+      [$intent, $needsAction ? 1 : 0, $refType, $refId, (int)$callId]);
+}
+
+// ---------- XML helpers ----------
+
+/** Say one line: the cached Gujarati file if it exists, English otherwise.
+ *
+ *  $vEn is the same substitutions written for the English fallback. Without
+ *  it a line that fell back to English still carried the Gujarati values
+ *  that were put into it, and the caller heard "Your outstanding amount is
+ *  નવ હજાર રૂપિયા" - half a sentence in each language, which is worse than
+ *  either one whole. When it is not given the values are used as they are,
+ *  which is right for names and wrong for nothing else. */
+function voice_in_say($key, $lang, array $v = [], $live = false, array $vEn = null) {
+    $line = voice_in_words($lang, $v)[$key] ?? '';
+    $en = voice_in_en($key, $vEn ?? $v);
+    $say = $live ? voice_say_now($line, $lang, $en) : voice_say_live($line, $lang, $en);
+    return $say['url'] ? voice_xml_play($say['url']) : voice_xml_speak($say['text']);
+}
+
+function voice_in_url($call, $step) {
+    return voice_public_url('voice_in.php?step=' . $step . '&t=' . $call['token']);
+}
+
+function voice_in_xml($body) {
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n" . $body . "</Response>\n";
+}
+
+// ---------- the menu itself ----------
+
+/** The greeting and the main menu. $try=2 is the one repeat before hanging up. */
+function voice_in_menu_xml($call, $try = 1, $now = null) {
+    $lang = $call['lang'];
+    $party = (int)$call['party_id'] > 0 ? row('SELECT name FROM parties WHERE id = ?', [(int)$call['party_id']]) : null;
+
+    $body = '';
+    if ($try === 1) {
+        $body .= $party
+            ? voice_in_say('welcome_name', $lang, ['name' => $party['name']])
+            : voice_in_say('welcome', $lang);
+        if (!voice_in_open($now)) $body .= voice_in_say('closed', $lang);
+    } else {
+        $body .= voice_in_say('again', $lang);
+    }
+
+    $body .= '  <Gather action="' . htmlspecialchars(voice_in_url($call, 'menu') . '&try=' . $try, ENT_XML1)
+           . '" method="POST" inputType="dtmf" numDigits="1" finishOnKey="none" executionTimeout="8">' . "\n";
+    $body .= '  ' . voice_in_say('menu', $lang);
+    $body .= "  </Gather>\n";
+
+    // Nothing pressed: one more go, then goodbye. Falling through the Gather
+    // is how "pressed nothing" is handled - there is no separate timeout URL.
+    $body .= $try === 1
+        ? '  <Redirect>' . htmlspecialchars(voice_in_url($call, 'menu') . '&try=2&Digits=', ENT_XML1) . "</Redirect>\n"
+        : voice_in_say('bye', $lang);
+    return voice_in_xml($body);
+}
+
+/** What one keypress leads to. Returns the XML to answer with. */
+function voice_in_branch($call, $digit, $now = null) {
+    $lang = $call['lang'];
+    $known = (int)$call['party_id'] > 0;
+
+    switch ($digit) {
+        case '1':   // their own account
+            voice_in_log($call['id'], 'balance', $digit);
+            if (!$known) { voice_in_intent($call['id'], 'balance', 1); return voice_in_xml(voice_in_say('not_known', $lang)); }
+            return voice_in_xml(voice_in_balance_xml($call));
+
+        case '2':   // place an order
+            voice_in_log($call['id'], 'order', $digit);
+            voice_in_intent($call['id'], 'order', 1);
+            return voice_in_xml(voice_in_record_xml($call, 'ask_order', 'order'));
+
+        case '3':   // complaint or repair
+            voice_in_log($call['id'], 'complaint', $digit);
+            voice_in_intent($call['id'], 'complaint', 1);
+            return voice_in_xml(voice_in_record_xml($call, 'ask_problem', 'complaint'));
+
+        case '4':   // stock or price
+            voice_in_log($call['id'], 'stock', $digit);
+            voice_in_intent($call['id'], 'stock', 1);
+            return voice_in_xml(voice_in_record_xml($call, 'ask_stock', 'stock'));
+
+        case '5':   // where is my order
+            voice_in_log($call['id'], 'delivery', $digit);
+            voice_in_intent($call['id'], 'delivery', $known ? 0 : 1);
+            if (!$known) return voice_in_xml(voice_in_say('not_known', $lang));
+            return voice_in_xml(voice_in_order_status_xml($call));
+
+        case '9':   // a person
+            voice_in_log($call['id'], 'agent', $digit);
+            voice_in_intent($call['id'], 'agent', 1);
+            return voice_in_xml(voice_in_agent_xml($call, $now));
+
+        default:
+            voice_in_log($call['id'], 'menu_unknown', $digit);
+            return voice_in_menu_xml($call, 2, $now);
+    }
+}
+
+/** Their balance, read out or sent to WhatsApp - the owner's choice.
+ *
+ *  voice_ivr_balance:
+ *    speak     - read the figure to whoever is on the line (default)
+ *    whatsapp  - send the statement to the registered number instead, which
+ *                needs the actual SIM rather than a forged caller ID
+ *    off       - do not answer money questions by phone at all */
+function voice_in_balance_xml($call) {
+    $lang = $call['lang'];
+    $mode = setting('voice_ivr_balance', 'speak');
+    if ($mode === 'off') return voice_in_say('not_known', $lang);
+
+    $due = round((float)party_balance_side((int)$call['party_id'], 'in'), 2);
+    voice_in_log($call['id'], 'balance_read', null, '₹' . money($due));
+    if ($due <= 0.009) return voice_in_say('balance_nil', $lang);
+
+    if ($mode === 'whatsapp') {
+        require_once __DIR__ . '/wa_portal.php';
+        wa_portal_route($call['from_number'], 'portal:stmt');
+        return voice_in_say('balance_wa', $lang);
+    }
+
+    // The one line of a call that cannot be prepared in advance, so it is the
+    // one allowed to generate - on a short leash, English underneath. The
+    // amount is written out twice, once per language, so a sentence that
+    // falls back to English falls back whole.
+    $tokens = voice_amount_tokens($due);
+    return voice_in_say('balance', $lang, ['amount' => voice_tokens_text($tokens, $lang)], true,
+                        ['amount' => voice_tokens_text($tokens, 'en') ])
+         . voice_in_say('bye', $lang);
+}
+
+/** Where their last order or unfinished repair has got to. */
+function voice_in_order_status_xml($call) {
+    $lang = $call['lang'];
+    $pid = (int)$call['party_id'];
+    // web_orders is keyed by the mobile the order was placed with, not by
+    // party_id - it has no such column, because an order can be placed by
+    // somebody who is not a party yet.
+    $last10 = substr(preg_replace('/\D/', '', (string)$call['from_number']), -10);
+    $o = row("SELECT status FROM web_orders
+              WHERE mobile <> '' AND RIGHT(REPLACE(REPLACE(mobile,'+',''),' ',''), 10) = ?
+              ORDER BY id DESC LIMIT 1", [$last10]);
+    if (!$o) {
+        // nothing ordered online - a repair they are waiting for is the other
+        // thing "where is my thing" usually means
+        $r = row("SELECT status FROM repairs WHERE party_id = ? AND status <> 'delivered' ORDER BY id DESC LIMIT 1", [$pid]);
+        if (!$r) return voice_in_say('order_none', $lang);
+        $o = ['status' => $r['status']];
+    }
+    voice_in_log($call['id'], 'status_read', null, (string)$o['status']);
+    return voice_in_say('order_status', $lang, ['status' => voice_in_status_word($o['status'], $lang)], false,
+                        ['status' => voice_in_status_word($o['status'], 'en')])
+         . voice_in_say('bye', $lang);
+}
+
+/** Status codes are English words in the database; these are what a customer
+ *  should actually hear. */
+function voice_in_status_word($status, $lang) {
+    $map = [
+        'gu' => ['new' => 'મળી ગયો છે', 'confirmed' => 'નક્કી થઈ ગયો છે', 'packed' => 'તૈયાર છે',
+                 'ready' => 'તૈયાર છે', 'shipped' => 'નીકળી ગયો છે', 'delivered' => 'પહોંચી ગયો છે',
+                 'cancelled' => 'રદ થયો છે', 'pending' => 'ચાલુ છે', 'in_progress' => 'ચાલુ છે',
+                 'done' => 'તૈયાર છે'],
+        'en' => ['new' => 'received', 'confirmed' => 'confirmed', 'packed' => 'ready',
+                 'ready' => 'ready', 'shipped' => 'on its way', 'delivered' => 'delivered',
+                 'cancelled' => 'cancelled', 'pending' => 'in progress', 'in_progress' => 'in progress',
+                 'done' => 'ready'],
+        'hi' => ['new' => 'मिल गया है', 'confirmed' => 'तय हो गया है', 'packed' => 'तैयार है',
+                 'ready' => 'तैयार है', 'shipped' => 'निकल गया है', 'delivered' => 'पहुँच गया है',
+                 'cancelled' => 'रद्द हो गया है', 'pending' => 'चालू है', 'in_progress' => 'चालू है',
+                 'done' => 'तैयार है'],
+    ];
+    $s = strtolower(trim((string)$status));
+    return $map[$lang][$s] ?? $s;
+}
+
+/** Ask them to speak, and record it. The recording arrives later at the
+ *  callback; the caller is not kept waiting for it. */
+function voice_in_record_xml($call, $promptKey, $what) {
+    $lang = $call['lang'];
+    $body = voice_in_say($promptKey, $lang);
+    $body .= '  <Record action="' . htmlspecialchars(voice_in_url($call, 'rec_start') . '&what=' . $what, ENT_XML1) . '"'
+           . ' method="POST"'
+           . ' callbackUrl="' . htmlspecialchars(voice_in_url($call, 'rec_done') . '&what=' . $what, ENT_XML1) . '"'
+           . ' callbackMethod="POST" maxLength="120" timeout="8" finishOnKey="#"'
+           . " playBeep=\"true\" fileFormat=\"mp3\" redirect=\"false\"/>\n";
+    $body .= voice_in_say('noted', $lang);
+    return $body;
+}
+
+/** Put them through to a person - or take a message when nobody can answer. */
+function voice_in_agent_xml($call, $now = null) {
+    $lang = $call['lang'];
+    $agents = voice_in_agents();
+
+    if (!$agents || !voice_in_open($now)) {
+        return (voice_in_open($now) ? voice_in_say('no_answer', $lang) : voice_in_say('closed_msg', $lang))
+             . voice_in_record_xml($call, 'bye', 'message');
+    }
+    $body = voice_in_say('connecting', $lang);
+    $body .= '  <Dial callerId="' . htmlspecialchars(voice_e164(setting('vobiz_inbound_number', '')), ENT_XML1) . '"'
+           . ' timeout="' . max(10, (int)setting('voice_agent_timeout', 25)) . '"'
+           . ' action="' . htmlspecialchars(voice_in_url($call, 'dial_done'), ENT_XML1) . '" method="POST">' . "\n";
+    foreach ($agents as $a) $body .= '    <Number>' . htmlspecialchars($a, ENT_XML1) . "</Number>\n";
+    $body .= "  </Dial>\n";
+    return $body;
+}
+
+/** Nobody picked up: take a message rather than drop the caller. */
+function voice_in_dial_done_xml($call, array $p) {
+    $status = strtolower((string)($p['DialStatus'] ?? ''));
+    voice_in_log($call['id'], 'dial_done', null, $status);
+    if ($status === 'completed') {
+        // a person handled it, so it is not left on the follow-up list
+        q('UPDATE voice_calls SET needs_action = 0 WHERE id = ?', [$call['id']]);
+        return voice_in_xml('');
+    }
+    return voice_in_xml(voice_in_say('no_answer', $call['lang']) . voice_in_record_xml($call, 'bye', 'message'));
+}
+
+/** The recording is ready. Attach it to the call and turn the call into work
+ *  the shop actually tracks - a lead, a ticket - so it does not live only
+ *  inside a list of phone calls nobody opens. */
+function voice_in_recording_done($call, array $p, $what) {
+    $url = (string)($p['RecordUrl'] ?? $p['RecordFile'] ?? '');
+    $secs = (int)round((float)($p['RecordingDuration'] ?? 0));
+    if ($url === '') return;
+    q('UPDATE voice_calls SET recording_url = ?, recording_secs = ? WHERE id = ?',
+      [mb_substr($url, 0, 255), $secs, $call['id']]);
+    voice_in_log($call['id'], 'recorded', null, $secs . 's');
+
+    $who = $call['party_id'] ? (string)val('SELECT name FROM parties WHERE id = ?', [(int)$call['party_id']]) : '';
+    $label = ['order' => 'Order by phone', 'complaint' => 'Complaint by phone',
+              'stock' => 'Price/stock question by phone', 'message' => 'Message on the shop phone'][$what] ?? 'Phone call';
+    $note = $label . ' — ' . ($who ?: $call['from_number']) . ' · ' . $secs . 's · ' . $url;
+
+    try {
+        // Numbered the way tickets.php and leads.php number them - insert,
+        // then stamp doc_no() with the new id - so a record born on the phone
+        // is indistinguishable from one typed at the counter.
+        if ($what === 'complaint') {
+            q("INSERT INTO tickets (party_id, customer_name, customer_mobile, subject, description, priority, status, location_id, created_by)
+               VALUES (?,?,?,?,?,'medium','open',?,?)",
+              [(int)$call['party_id'] ?: null, $who ?: 'Phone caller', $call['from_number'], $label, $note, voice_in_location(), voice_in_actor()]);
+            $tid = (int)insert_id();
+            q('UPDATE tickets SET ticket_no = ? WHERE id = ?', [doc_no('TKT', $tid), $tid]);
+            voice_in_intent($call['id'], $what, 1, 'ticket', $tid);
+        } else {
+            q("INSERT INTO leads (name, mobile, source, notes, status, party_id, location_id, created_by)
+               VALUES (?,?,'phone',?,'new',?,?,?)",
+              [$who ?: 'Phone caller', $call['from_number'], $note, (int)$call['party_id'] ?: null, voice_in_location(), voice_in_actor()]);
+            $lid = (int)insert_id();
+            q('UPDATE leads SET lead_no = ? WHERE id = ?', [doc_no('LED', $lid), $lid]);
+            voice_in_intent($call['id'], $what, 1, 'lead', $lid);
+        }
+    } catch (Exception $e) {
+        // the recording is safely on the call row either way - never lose a
+        // customer's words because a follow-up table moved
+        voice_in_log($call['id'], 'ref_failed', null, mb_substr($e->getMessage(), 0, 200));
+    }
+}
+
+// ---------- the calls that still need somebody ----------
+
+function voice_in_pending($limit = 50) {
+    return all("SELECT v.*, p.name FROM voice_calls v LEFT JOIN parties p ON p.id = v.party_id
+                WHERE v.direction = 'in' AND v.needs_action = 1
+                ORDER BY v.id DESC LIMIT " . (int)$limit);
+}
+function voice_in_pending_count() {
+    return (int)val("SELECT COUNT(*) FROM voice_calls WHERE direction = 'in' AND needs_action = 1");
+}
+function voice_call_handled($callId, $note = '') {
+    q('UPDATE voice_calls SET needs_action = 0, handled_by = ?, handled_at = NOW(), notes = ? WHERE id = ?',
+      [$_SESSION['user_id'] ?? null, mb_substr((string)$note, 0, 500), (int)$callId]);
+    log_activity('voice_handled', 'call ' . (int)$callId);
+}
+
+function voice_intent_label($i) {
+    return ['balance' => '💰 Balance', 'order' => '🛒 Order', 'complaint' => '🔧 Complaint',
+            'stock' => '🏷 Price / stock', 'delivery' => '🚚 Delivery', 'agent' => '🙋 Wanted a person',
+            'message' => '💬 Message'][$i] ?? ($i ? ucfirst($i) : '—');
+}

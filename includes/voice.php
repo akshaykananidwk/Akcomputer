@@ -246,13 +246,38 @@ function voice_public_ok() {
  *  here, so the fallback is the same everywhere: if the Gujarati cannot be
  *  made, that line is said in English rather than skipped. A call that
  *  drops a sentence is worse than one that changes language for it. */
-function voice_say($text, $lang, $englishText = null) {
+function voice_say($text, $lang, $englishText = null, $cachedOnly = false) {
     if ($lang !== 'en') {
-        $tts = voice_tts_audio($text, $lang);
+        $tts = voice_tts_audio($text, $lang, $cachedOnly);
         if ($tts['ok']) return ['url' => $tts['url'], 'text' => '', 'lang' => $lang, 'error' => ''];
         return ['url' => '', 'text' => $englishText ?? $text, 'lang' => 'en', 'error' => $tts['error']];
     }
     return ['url' => '', 'text' => $text, 'lang' => 'en', 'error' => ''];
+}
+
+/** The same thing, for code running while somebody is on the line.
+ *
+ *  Generating speech takes seconds and is allowed up to forty-five. The
+ *  answer URL has far less than that before the network gives up, so a call
+ *  that had to make a new sentence mid-conversation was a call that rang,
+ *  went quiet, and died - and it only happened for sentences nobody had
+ *  spoken before, which is exactly the case nobody tests.
+ *
+ *  On the live path we play what is already on disk, and say the rest in
+ *  English. The shop hears an English line instead of losing the call. */
+function voice_say_live($text, $lang, $englishText = null) {
+    return voice_say($text, $lang, $englishText, true);
+}
+
+/** For the one line per call that cannot be prepared in advance - the
+ *  caller's own balance, their own delivery status. It may generate, but on
+ *  a short leash: eight seconds, then English. A caller waiting in silence
+ *  hangs up long before a forty-five second timeout would notice. */
+function voice_say_now($text, $lang, $englishText = null) {
+    if ($lang === 'en') return ['url' => '', 'text' => $text, 'lang' => 'en', 'error' => ''];
+    $tts = voice_tts_audio($text, $lang, false, 8);
+    if ($tts['ok']) return ['url' => $tts['url'], 'text' => '', 'lang' => $lang, 'error' => ''];
+    return ['url' => '', 'text' => $englishText ?? $text, 'lang' => 'en', 'error' => $tts['error']];
 }
 
 /** Everything one call will say, prepared before it is dialled.
@@ -266,18 +291,18 @@ function voice_say($text, $lang, $englishText = null) {
  *  of the shop and then cost nothing, and preparing them here means the
  *  moment after the customer presses a key is a file that already exists
  *  rather than a pause on the line. */
-function voice_audio_plan($partyName, $amount, $lang, $promiseDate = null) {
+function voice_audio_plan($partyName, $amount, $lang, $promiseDate = null, $cachedOnly = false) {
     $q = voice_question($lang, $promiseDate);
     $qEn = voice_question('en', $promiseDate);
     $key = $promiseDate ? 'promise' : 'plain';
 
-    $main = voice_say(voice_script($partyName, $amount, $lang), $lang, voice_script($partyName, $amount, 'en'));
+    $main = voice_say(voice_script($partyName, $amount, $lang), $lang, voice_script($partyName, $amount, 'en'), $cachedOnly);
     $plan = ['lang' => $main['lang'], 'main' => $main, 'error' => $main['error'],
              'fell_back' => $lang !== 'en' && $main['lang'] === 'en'];
 
     if (voice_ivr_on()) {
-        $plan['question'] = voice_say($q[$key], $lang, $qEn[$key]);
-        foreach (['yes', 'no', 'none'] as $r) $plan['replies'][$r] = voice_say($q[$r], $lang, $qEn[$r]);
+        $plan['question'] = voice_say($q[$key], $lang, $qEn[$key], $cachedOnly);
+        foreach (['yes', 'no', 'none'] as $r) $plan['replies'][$r] = voice_say($q[$r], $lang, $qEn[$r], $cachedOnly);
         if ($plan['question']['error'] && !$plan['error']) $plan['error'] = $plan['question']['error'];
     }
     return $plan;
@@ -334,7 +359,7 @@ function voice_tts_file($text, $lang) {
  *
  *  Returns ['ok'=>bool, 'file'=>'tts_gu_ab12.wav', 'url'=>..., 'error'=>..., 'cached'=>bool].
  *  A cached hit never touches the network and never counts against the cap. */
-function voice_tts_audio($text, $lang) {
+function voice_tts_audio($text, $lang, $cachedOnly = false, $timeout = 45) {
     $text = trim((string)$text);
     if ($text === '') return ['ok' => false, 'file' => '', 'url' => '', 'error' => 'nothing to say', 'cached' => false];
 
@@ -345,13 +370,15 @@ function voice_tts_audio($text, $lang) {
                 'error' => '', 'cached' => true];
     }
 
+    // Called from a live call: play what exists, never wait to make more.
+    if ($cachedOnly) return ['ok' => false, 'file' => '', 'url' => '', 'error' => 'not generated yet', 'cached' => false];
     if (!voice_tts_enabled()) return ['ok' => false, 'file' => '', 'url' => '', 'error' => 'Generated voice is off, or the Gemini key is missing', 'cached' => false];
     $u = voice_tts_usage();
     if ($u['used'] >= $u['cap'])
         return ['ok' => false, 'file' => '', 'url' => '', 'error' => "This month's voice limit ({$u['cap']}) is used up", 'cached' => false];
     if (!function_exists('curl_init')) return ['ok' => false, 'file' => '', 'url' => '', 'error' => 'The server does not have curl.', 'cached' => false];
 
-    [$wav, $err] = voice_tts_fetch($text);
+    [$wav, $err] = voice_tts_fetch($text, $timeout);
     if ($wav === null) return ['ok' => false, 'file' => '', 'url' => '', 'error' => $err, 'cached' => false];
 
     if (!is_dir($dir)) mkdir($dir, 0755, true);
@@ -370,7 +397,7 @@ function voice_tts_audio($text, $lang) {
  *  comes back in a Gujarati voice with nothing else to configure. A unary
  *  request returns audio/wav - 24kHz mono 16-bit with a RIFF header - which
  *  is a format Vobiz plays directly, so nothing has to be converted here. */
-function voice_tts_fetch($text) {
+function voice_tts_fetch($text, $timeout = 45) {
     $key = setting('gemini_api_key', '');
     if ($key === '') return [null, 'No Gemini API key (Settings → AI).'];
 
@@ -396,7 +423,7 @@ function voice_tts_fetch($text) {
         CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_UNICODE),
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'x-goog-api-key: ' . $key],
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 45,
+        CURLOPT_TIMEOUT => max(5, (int)$timeout),
     ]);
     $res = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -537,7 +564,8 @@ function voice_cooldown_hours() { return max(1, (int)setting('voice_cooldown_hou
  *  keep reading the count from before the first one and sail past the cap. */
 function voice_calls_today($bump = false) {
     static $n = null;
-    if ($n === null) $n = (int)val('SELECT COUNT(*) FROM voice_calls WHERE DATE(created_at) = CURDATE() AND test_mode = 0');
+    if ($n === null) $n = (int)val("SELECT COUNT(*) FROM voice_calls
+                                    WHERE DATE(created_at) = CURDATE() AND test_mode = 0 AND direction = 'out'");
     if ($bump) $n++;
     return $n;
 }
@@ -892,7 +920,8 @@ function voice_answer_xml($call) {
         : voice_xml_speak($call['script'] ?: voice_script($party['name'] ?? '', (float)$call['amount'], 'en'));
 
     if (voice_ivr_on() && (int)$call['question_asked'] === 1) {
-        $plan = voice_audio_plan($party['name'] ?? '', (float)$call['amount'], $call['lang'], $promise);
+        // cached-only: this runs with the customer already on the line
+        $plan = voice_audio_plan($party['name'] ?? '', (float)$call['amount'], $call['lang'], $promise, true);
         $q = $plan['question'] ?? null;
         // One digit, ten seconds, and no # needed - an older customer should
         // not have to know what a hash key is. Pressing nothing simply falls

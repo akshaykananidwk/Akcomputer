@@ -33,8 +33,9 @@ if (!$p) {
 $answer = voice_response_apply($call, $p['Digits'] ?? '');
 
 $party = row('SELECT name FROM parties WHERE id = ?', [(int)$call['party_id']]);
+// cached-only: the caller is still on the line waiting to hear the answer.
 $plan = voice_audio_plan($party['name'] ?? '', (float)$call['amount'], $call['lang'],
-                         voice_call_promise_date($call));
+                         voice_call_promise_date($call), true);
 $say = $plan['replies'][$answer] ?? null;
 
 echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n";

@@ -13,7 +13,7 @@
 // the browser, the page cache and anyone looking over a shoulder never see
 // it. Nothing about the provider is ever sent to the customer-facing side.
 require_once __DIR__ . '/includes/init.php';
-require_once __DIR__ . '/includes/voice.php';
+require_once __DIR__ . '/includes/voice_in.php';
 require_perm('settings.view');
 
 $langs = voice_langs();
@@ -21,6 +21,30 @@ $langs = voice_langs();
 // ---------- actions ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_perm('settings.edit');
+
+    if (post('do') === 'inbound_save') {
+        foreach (['voice_agent_numbers', 'voice_agent_timeout', 'voice_shop_open', 'voice_shop_close',
+                  'voice_inbound_lang', 'voice_ivr_balance', 'vobiz_inbound_number'] as $k) set_setting($k, post($k));
+        set_setting('voice_inbound', post('voice_inbound') ? '1' : '0');
+        log_activity('voice_inbound_settings', 'incoming call settings saved');
+        flash('Saved.');
+        redirect('voice_setup.php');
+    }
+
+    if (post('do') === 'app_setup') {
+        $r = voice_in_app_setup();
+        if (!$r['ok']) { flash('Could not set up the application: ' . $r['error'], 'error'); redirect('voice_setup.php'); }
+        $num = trim(post('vobiz_inbound_number'));
+        if ($num !== '' && voice_mobile_ok($num)) {
+            $a = voice_in_number_attach($num, $r['app_id']);
+            flash($a['ok'] ? 'Done — ' . e($num) . ' now rings this software.'
+                           : 'Application made, but the number did not attach: ' . $a['error'],
+                  $a['ok'] ? 'success' : 'error');
+        } else {
+            flash('Application made (' . e($r['app_id']) . '). Now enter the number and attach it.');
+        }
+        redirect('voice_setup.php');
+    }
 
     if (post('do') === 'save') {
         foreach (['vobiz_auth_id', 'vobiz_caller_id', 'voice_lang', 'voice_hour_from', 'voice_hour_to',
@@ -227,6 +251,95 @@ include __DIR__ . '/includes/header.php';
     </tbody>
   </table>
   <?php endif; ?>
+</div>
+
+<div class="card">
+  <h3>📥 Incoming calls — the shop's number answers by itself</h3>
+  <p class="muted" style="font-size:13px">
+    A Vobiz number does not hold a web address of its own. The address lives on an <strong>Application</strong>,
+    and the number is pointed at one. Both steps are done from here.
+  </p>
+  <div class="grid-stats">
+    <div class="stat <?= voice_in_on() ? 's-ok' : 's-warn' ?>">
+      <div class="stat-label">Answering</div><div class="stat-value" style="font-size:18px"><?= voice_in_on() ? 'On' : 'Off' ?></div></div>
+    <div class="stat <?= setting('vobiz_app_id') ? 's-ok' : 's-bad' ?>">
+      <div class="stat-label">Application</div>
+      <div class="stat-value" style="font-size:14px"><?= setting('vobiz_app_id') ? e(setting('vobiz_app_id')) : 'not made' ?></div></div>
+    <div class="stat <?= setting('vobiz_inbound_number') ? 's-ok' : 's-bad' ?>">
+      <div class="stat-label">Number</div>
+      <div class="stat-value" style="font-size:16px"><?= setting('vobiz_inbound_number') ? e(setting('vobiz_inbound_number')) : 'none' ?></div></div>
+    <div class="stat <?= voice_in_pending_count() ? 's-bad' : 's-ok' ?>">
+      <div class="stat-label">Waiting for an answer</div>
+      <div class="stat-value"><?= voice_in_pending_count() ?></div></div>
+  </div>
+
+  <?php if (can('settings.edit')): ?>
+  <h4>Step 1 — point the number at this software</h4>
+  <form method="post" class="mb">
+    <?= csrf_field() ?><input type="hidden" name="do" value="app_setup">
+    <div class="grid-2">
+      <label>The shop's Vobiz number
+        <input name="vobiz_inbound_number" value="<?= e(setting('vobiz_inbound_number')) ?>" placeholder="919824537749"></label>
+    </div>
+    <button class="btn btn-success mt" type="submit" <?= voice_configured() ? '' : 'disabled' ?>>Make the application and attach the number</button>
+    <?php if (!voice_configured()): ?><span class="muted"> — save the Vobiz keys first</span><?php endif; ?>
+  </form>
+
+  <h4>Step 2 — how it should answer</h4>
+  <form method="post">
+    <?= csrf_field() ?><input type="hidden" name="do" value="inbound_save">
+    <div class="grid-2">
+      <label>Language of the menu
+        <select name="voice_inbound_lang">
+          <?php foreach ($langs as $lk => $lv): ?>
+            <option value="<?= $lk ?>" <?= voice_in_lang() === $lk ? 'selected' : '' ?>><?= e($lv) ?></option>
+          <?php endforeach; ?>
+        </select></label>
+      <label>When a caller asks for their balance
+        <select name="voice_ivr_balance">
+          <?php foreach (['speak' => 'Read the amount out to them',
+                          'whatsapp' => 'Send it to their WhatsApp instead (safer)',
+                          'off' => 'Do not answer money questions by phone'] as $mk => $mv): ?>
+            <option value="<?= $mk ?>" <?= setting('voice_ivr_balance', 'speak') === $mk ? 'selected' : '' ?>><?= e($mv) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <span class="muted" style="font-size:11px">Caller ID can be faked. Reading the figure out trusts whoever is on the line;
+          sending it to WhatsApp needs their actual SIM.</span></label>
+      <label>Ring these phones for "talk to us"
+        <input name="voice_agent_numbers" value="<?= e(setting('voice_agent_numbers')) ?>" placeholder="9824537749, 9825012345">
+        <span class="muted" style="font-size:11px">Comma separated. They ring together; first to pick up gets the call.</span></label>
+      <label>Ring for how many seconds
+        <input name="voice_agent_timeout" type="number" min="10" max="60" value="<?= (int)setting('voice_agent_timeout', 25) ?>"></label>
+      <label>Shop opens at
+        <input name="voice_shop_open" type="number" min="0" max="24" value="<?= (int)setting('voice_shop_open', 9) ?>"></label>
+      <label>Shop closes at
+        <input name="voice_shop_close" type="number" min="0" max="24" value="<?= (int)setting('voice_shop_close', 21) ?>">
+        <span class="muted" style="font-size:11px">Outside these hours orders and complaints are still recorded — only "talk to us" takes a message instead of ringing a phone.</span></label>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" name="voice_inbound" value="1" <?= voice_in_on() ? 'checked' : '' ?>>
+        Answer incoming calls</label>
+    </div>
+    <button class="btn btn-success mt" type="submit">Save</button>
+  </form>
+  <?php endif; ?>
+
+  <h4>What a caller hears</h4>
+  <pre style="white-space:pre-wrap;background:var(--bg);padding:12px;border-radius:10px;font-family:inherit;font-size:14px"><?php
+    $w = voice_in_words(voice_in_lang(), ['name' => 'રમેશભાઈ']);
+    echo e($w['welcome_name']) . "\n" . e($w['menu']);
+  ?></pre>
+  <div class="table-wrap"><table class="table-sm">
+    <thead><tr><th>Key</th><th>What happens</th><th>What the shop gets</th></tr></thead>
+    <tbody>
+      <tr><td><strong>1</strong></td><td>Their outstanding amount</td><td><span class="muted">nothing to do — answered itself</span></td></tr>
+      <tr><td><strong>2</strong></td><td>They say what they want to order</td><td><span class="badge badge-ok">a lead, with the recording</span></td></tr>
+      <tr><td><strong>3</strong></td><td>They describe the fault</td><td><span class="badge badge-ok">a ticket, with the recording</span></td></tr>
+      <tr><td><strong>4</strong></td><td>They ask a price or whether something is in stock</td><td><span class="badge badge-ok">a lead, with the recording</span></td></tr>
+      <tr><td><strong>5</strong></td><td>Where their order or repair has got to</td><td><span class="muted">nothing to do</span></td></tr>
+      <tr><td><strong>9</strong></td><td>The phones above ring; nobody answers → they leave a message</td><td><span class="badge badge-warn">on the waiting list</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted" style="font-size:12px">Everything a caller leaves shows on <a href="voice_calls.php">Calls</a> until somebody marks it done.</p>
 </div>
 
 <?php if (can('settings.edit')): ?>
