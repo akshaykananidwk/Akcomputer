@@ -1431,6 +1431,30 @@ t_eq('a do-not-call customer cannot even be queued', $rd['ok'], false);
 t_eq('and no row is left behind', voice_queue_count(), $before);
 
 $cs = file_get_contents(__DIR__ . '/../collection.php');
+// ---- the aging report can ring too ----
+//
+// This is the screen the owner is actually on when they decide to chase money,
+// and it had only a WhatsApp button - so "I go into the reminder to make a call
+// and it doesn't go" was simply true.
+$rb = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
+t_ok('the aging report has a call-the-selected button', strpos($rb, 'Call the selected') !== false);
+t_ok('and it posts to the one preview that decides who may be called',
+     strpos($rb, 'formaction="collection.php"') !== false);
+t_ok('the tick carries the customer, not just a phone number',
+     strpos($rb, "\$x['party_id']") !== false);
+t_ok('voice.php is loaded by the report itself, not left to the including page',
+     strpos($rb, "require_once __DIR__ . '/voice.php'") !== false);
+
+// the collection preview must read an aging tick, which is not a bare id
+$coll = file_get_contents(dirname(__DIR__) . '/collection.php');
+t_ok('the preview accepts an aging-report tick', strpos($coll, "post('rem', [])") !== false);
+// only inside the CALL block: the WhatsApp block beside it has its own figure
+$callBlock = substr($coll, strpos($coll, "post('call_selected')"),
+                    strpos($coll, '---- bulk reminder') - strpos($coll, "post('call_selected')"));
+t_ok('and the amount shown is the one the call will speak',
+     strpos($callBlock, "\$c['due']") !== false && strpos($callBlock, "\$c['overdue']") === false);
+t_ok('a back link off our own site is refused', strpos($coll, "is_file(__DIR__ . '/'") !== false);
+
 t_ok('the list screen has a call-the-selected button', strpos($cs, 'call_selected') !== false);
 t_ok('and it does not fight the WhatsApp button over one field',
      substr_count($cs, 'name="do" value="preview_bulk"') === 1 && strpos($cs, 'name="do" value="preview_calls"') === false);

@@ -540,7 +540,13 @@ if ($r === 'aging') {
 
     // ---- the table (wrapped in a bulk-send form on screen) ----
     $canWa = !$isPdf && can('payments.view');
-    if ($canWa) echo '<form method="post" id="agingForm">' . csrf_field() . '<input type="hidden" name="do" value="preview_aging_bulk">';
+    // Loaded here, not left to the including page: this same file is drawn by
+    // reports.php, the PDF writer and the spreadsheet writer, and the call
+    // button must not quietly vanish depending on which one drew it.
+    if ($canWa) require_once __DIR__ . '/voice.php';
+    if ($canWa) echo '<form method="post" id="agingForm">' . csrf_field()
+        . '<input type="hidden" name="do" value="preview_aging_bulk">'
+        . '<input type="hidden" name="back" value="reports.php?r=aging">';
     echo '<div class="table-wrap"><table class="aging-table"><thead><tr>';
     if ($canWa) echo '<th style="width:26px"><input type="checkbox" title="Select all" onclick="document.querySelectorAll(\'.agchk\').forEach(c=>{if(!c.disabled)c.checked=this.checked})"></th>';
     // data-w hints give the PDF export a wide party column (name + phone +
@@ -561,8 +567,11 @@ if ($r === 'aging') {
         // amount/name always stays glued to its own mobile. (Separate hidden
         // amount[]/pname[] inputs submitted for every row, ticked or not, which
         // misaligned the arrays and sent one party's dues to another.)
-        if ($canWa) echo '<td><input type="checkbox" class="agchk" name="rem[]" value="'
-            . e($x['mobile'] . '|' . $x['total'] . '|' . $x['pname']) . '"'
+        // The party id rides along as a fourth part so the same tick can also
+        // place a CALL, which needs the customer (ledger, do-not-call, cooldown)
+        // and not just a phone number. A walk-in has no id and is message-only.
+        if ($canWa) echo '<td><input type="checkbox" class="agchk" data-pid="' . (int)$x['party_id'] . '" name="rem[]" value="'
+            . e($x['mobile'] . '|' . $x['total'] . '|' . $x['pname'] . '|' . (int)$x['party_id']) . '"'
             . ($x['mobile'] ? '' : ' disabled title="No mobile number"') . '></td>';
         echo '<td><strong>' . e($x['pname']) . '</strong>';
         if ($isPdf) {
@@ -598,7 +607,17 @@ if ($r === 'aging') {
     if ($canWa) {
         // goes to the preview screen first - who, what and how much it costs -
         // rather than firing messages straight off a confirm() box
-        echo '<div class="page-actions no-print mt"><button class="btn btn-wa" type="submit">📲 Send reminder to selected</button></div>';
+        echo '<div class="page-actions no-print mt"><button class="btn btn-wa" type="submit">📲 Send reminder to selected</button>';
+        // Ringing them is the other half of chasing money, and this report is
+        // where the owner is actually looking when they decide to chase. It
+        // posts the ticked parties to the collection screen's own preview, so
+        // there is one place that decides who may be called and what is said.
+        // formaction sends the very same ticked list to the collection screen's
+        // preview instead - one place decides who may be rung and what is said.
+        if (can('payments.add') && voice_enabled())
+            echo ' <button class="btn btn-success" type="submit" formaction="collection.php"'
+               . ' name="call_selected" value="1">📞 Call the selected</button>';
+        echo '</div>';
         echo '</form>';
     }
 }

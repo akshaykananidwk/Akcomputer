@@ -19,6 +19,12 @@ $u = current_user();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pid = (int)post('id');
     $back = 'collection.php' . (get('show') === 'all' ? '?show=all' : '');
+    // The aging report sends its picked customers here too, so "back" has to be
+    // able to mean that report. Only a bare page name of ours is accepted, never
+    // whatever arrived in the field, so the button cannot be pointed off-site.
+    $from = (string)post('back');
+    if ($from !== '' && preg_match('~^[a-z0-9_]+\.php(\?[A-Za-z0-9_=&-]*)?$~', $from)
+        && is_file(__DIR__ . '/' . explode('?', $from)[0])) $back = $from;
 
     if (post('do') === 'snooze') {
         $days = max(1, (int)post('days'));
@@ -64,16 +70,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // the button does not sit there dialling thirty people one by one.
     if (post('call_selected') || post('do') === 'send_calls') {
         require_perm('payments.add');
-        $queue = coll_queue(500, true);
-        $byId = [];
-        foreach ($queue as $c) $byId[$c['id']] = $c;
+        // The picked ids are taken as they come, from wherever they came from -
+        // this screen's own list, or the aging report, which chases parties this
+        // queue's own rule leaves out. Reading them back through coll_queue()
+        // meant a party the queue did not list was dropped in silence.
+        //
+        // The figures shown are the context's, which is exactly what the call
+        // will SAY (voice_call_send() speaks $ctx['due']). Showing a different
+        // number here - the queue's own 'overdue' - would be the same fault as
+        // the phone quoting one balance while the statement quoted another.
         $ids = array_map('intval', post('pick', []));
+        // The aging report ticks carry "mobile|amount|name|party_id", because the
+        // same tick has to serve a WhatsApp message as well as a call. Only the
+        // id is taken from them: the amount spoken and the name said are read
+        // from the customer here, not from a field the page sent us.
+        $walkins = 0;
+        foreach (post('rem', []) as $val) {
+            $parts = explode('|', (string)$val);
+            $rid = (int)end($parts);
+            // A walk-in sale has no customer record, so there is no ledger, no
+            // do-not-call flag and no cooldown to check - it cannot be rung.
+            // It is COUNTED rather than dropped in silence, or the owner ticks
+            // five rows, sees three on the next screen and never learns why.
+            if ($rid > 0) $ids[] = $rid; else $walkins++;
+        }
+        $ids = array_values(array_unique($ids));
         $ctxs = voice_contexts($ids);
         $picked = []; $skipped = [];
         foreach ($ids as $pid2) {
-            $c = $byId[$pid2] ?? null;
-            if (!$c) continue;
-            $g = voice_can_call($pid2, $ctxs[$pid2] ?? null);
+            $c = $ctxs[$pid2] ?? null;
+            if (!$c) { $skipped[] = ['name' => '#' . $pid2, 'mobile' => '', 'due' => 0,
+                                     'why' => 'This customer no longer exists']; continue; }
+            $g = voice_can_call($pid2, $c);
             if ($g['ok']) $picked[] = $c + ['why' => ''];
             else $skipped[] = $c + ['why' => $g['why']];
         }
@@ -95,6 +123,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         include __DIR__ . '/includes/header.php'; ?>
         <div class="card">
           <h2>📞 About to ring <?= count($picked) ?> customer(s)</h2>
+          <?php if (!empty($walkins)): ?>
+            <div class="flash flash-info"><?= (int)$walkins ?> walk-in row(s) left out — a walk-in sale has no
+              customer record, so there is no balance to read out. Save them as a party to call them.</div>
+          <?php endif; ?>
           <?php if (voice_test_mode()): ?>
             <div class="flash flash-error"><strong>Test mode is on — nothing will actually be dialled.</strong>
               Turn it off in <a href="voice_setup.php">Call Setup</a> when you are ready.</div>
@@ -108,14 +140,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <?php endif; ?>
           <?php if (!$picked): ?>
             <p class="muted">Nobody on that list can be called right now.</p>
-            <a class="btn btn-outline" href="collection.php">← Back</a>
+            <a class="btn btn-outline" href="<?= e($back) ?>">← Back</a>
           <?php else: ?>
           <div class="table-wrap"><table class="table-sm">
             <thead><tr><th>Customer</th><th>Mobile</th><th class="num">Will be told</th></tr></thead>
             <tbody>
-            <?php $tot = 0; foreach ($picked as $c): $tot += $c['overdue']; ?>
+            <?php $tot = 0; foreach ($picked as $c): $tot += $c['due']; ?>
               <tr><td><?= e($c['name']) ?></td><td><?= e($c['mobile']) ?></td>
-                  <td class="num">₹<?= money($c['overdue']) ?></td></tr>
+                  <td class="num">₹<?= money($c['due']) ?></td></tr>
             <?php endforeach; ?>
             </tbody>
           </table></div>
@@ -127,6 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           </p>
           <form method="post" class="mt" onsubmit="this.querySelector('button').disabled=true">
             <?= csrf_field() ?><input type="hidden" name="do" value="send_calls">
+            <input type="hidden" name="back" value="<?= e($back) ?>">
             <?php foreach ($picked as $c): ?><input type="hidden" name="pick[]" value="<?= (int)$c['id'] ?>"><?php endforeach; ?>
             <button class="btn btn-success" type="submit">✅ Yes, call these <?= count($picked) ?></button>
             <a class="btn btn-outline" href="collection.php">Leave it</a>
@@ -169,7 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <?php endif; ?>
           <?php if (!$picked): ?>
             <p class="muted">No customer is left to send to.</p>
-            <a class="btn btn-outline" href="collection.php">← Back</a>
+            <a class="btn btn-outline" href="<?= e($back) ?>">← Back</a>
           <?php else: ?>
           <div class="grid-stats">
             <div class="stat"><div class="stat-label">How many customers</div><div class="stat-value"><?= count($picked) ?></div></div>
