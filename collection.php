@@ -171,8 +171,15 @@ if (($callPid = (int)get('call')) > 0) {
     if (!$vc) { flash('No such customer.', 'error'); redirect('collection.php'); }
     $gate = voice_can_call($callPid, $vc);
     $lang = setting('voice_lang', 'gu');
-    $plan = voice_clip_plan($vc['name'], $vc['due'], $lang, $vc['name_clip']);
+    // Planning here also MAKES the audio, which is the point: by the time the
+    // owner presses "Yes, call now" the voice already exists, and the preview
+    // below is the very file the customer will hear.
+    $vpromise = (!empty($vc['promise_open']) && $vc['promise_open']['due_date'] <= today())
+        ? $vc['promise_open']['due_date'] : null;
+    $plan = $gate['ok'] ? voice_audio_plan($vc['name'], $vc['due'], $lang, $vpromise)
+                        : ['lang' => $lang, 'main' => ['url' => '', 'text' => ''], 'error' => '', 'fell_back' => false];
     $script = voice_script($vc['name'], $vc['due'], $plan['lang']);
+    $question = voice_question($plan['lang'], $vpromise)[$vpromise ? 'promise' : 'plain'];
     $last = $vc['last_call'];
     $page_title = 'Before calling';
     include __DIR__ . '/includes/header.php'; ?>
@@ -192,17 +199,26 @@ if (($callPid = (int)get('call')) > 0) {
       <?php else: ?>
       <h3>What they will hear</h3>
       <p class="muted" style="font-size:12px">
-        <?php if ($plan['mode'] === 'clips'): ?>
-          Played in <?= e(voice_langs()[$plan['lang']]) ?>, from the shop's own recordings — <?= count($plan['urls']) ?> clips.
-        <?php else: ?>
+        <?php if ($plan['fell_back']): ?>
+          <strong>In English</strong> — the Gujarati voice could not be made: <?= e($plan['error']) ?>
+          <a href="voice_setup.php">Check the setup →</a>
+        <?php elseif ($plan['lang'] === 'en'): ?>
           <strong>In English</strong>, spoken by the provider.
-          <?php if ($plan['fell_back']): ?>
-            Vobiz has no Gujarati or Hindi voice, and <?= count($plan['missing']) ?> recordings are still missing, so the call falls back to English.
-            <a href="voice_setup.php">Record them →</a>
-          <?php endif; ?>
+        <?php else: ?>
+          In <?= e(voice_langs()[$plan['lang']]) ?>. <strong>Listen to it before you call</strong> —
+          it is the very recording the customer will hear.
         <?php endif; ?>
       </p>
-      <pre style="white-space:pre-wrap;background:var(--bg);padding:12px;border-radius:10px;font-family:inherit;font-size:15px"><?= e($script) ?></pre>
+      <pre style="white-space:pre-wrap;background:var(--bg);padding:12px;border-radius:10px;font-family:inherit;font-size:15px"><?= e($script) ?><?= voice_ivr_on() ? "\n\n" . e($question) : '' ?></pre>
+      <?php if (!empty($plan['main']['url'])): ?>
+        <audio controls preload="none" src="<?= e($plan['main']['url']) ?>" style="width:100%"></audio>
+      <?php endif; ?>
+      <?php if (voice_ivr_on()): ?>
+        <p class="muted" style="font-size:12px">
+          They press <strong>1</strong> → written down as a promise to pay today, and no more reminders go to them until the day is out.<br>
+          They press <strong>2</strong> → written down as “said no”, so whoever looks next knows the phone was answered.
+        </p>
+      <?php endif; ?>
 
         <?php if (voice_test_mode()): ?>
           <div class="flash flash-info">🧪 Test mode is on — nothing will actually be dialled.
@@ -327,6 +343,8 @@ include __DIR__ . '/includes/header.php';
                    it on a phone, where a ninth pushes the buttons off-screen */ ?>
           <?php if ($vl): ?>
             <br><span class="badge <?= $vl['status'] === 'answered' ? 'badge-ok' : ($vl['status'] === 'failed' ? 'badge-bad' : 'badge-warn') ?>" style="font-size:10px">📞 <?= e(voice_status_label($vl['status'])) ?></span>
+            <?php if ($vl['response'] === 'yes'): ?><span class="badge badge-ok" style="font-size:10px">✅ said yes</span>
+            <?php elseif ($vl['response'] === 'no'): ?><span class="badge badge-bad" style="font-size:10px">❌ said no</span><?php endif; ?>
             <span class="muted" style="font-size:11px"><?= e(voice_ago($vl['created_at'])) ?></span>
           <?php endif; ?>
         </td>

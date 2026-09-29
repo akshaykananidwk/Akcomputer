@@ -186,9 +186,42 @@ function voice_script($name, $amount, $lang) {
                 . '. ' . $ph['your'] . ' ' . $amt . ' ' . $ph['due'] . '. ' . $ph['request'] . '. ' . $ph['thanks'] . '.');
 }
 
-// ---------- audio clips ----------
+/** The question the call ends on, and what is said to each answer.
+ *
+ *  Two versions of the question, because the shop is in two different
+ *  conversations. A customer who has promised a date gets reminded of their
+ *  own words; everybody else just gets asked. Anything else would either
+ *  accuse somebody of breaking a promise they never made, or let somebody
+ *  who did make one off the hook. */
+function voice_question($lang, $promiseDate = null) {
+    $on = $promiseDate ? dmy($promiseDate) : '';
+    $q = [
+        'gu' => [
+            'plain'   => 'શું તમે આજે ચૂકવણી કરી દેશો? હા માટે એક દબાવો, ના માટે બે દબાવો.',
+            'promise' => 'તમે ' . $on . ' ના રોજ ચૂકવવાનું કહ્યું હતું. શું તમે આજે ચૂકવણી કરી દેશો? હા માટે એક દબાવો, ના માટે બે દબાવો.',
+            'yes'     => 'આભાર. અમે આજની રાહ જોઈશું.',
+            'no'      => 'ઠીક છે, જણાવવા બદલ આભાર. અમે ફરી સંપર્ક કરીશું.',
+            'none'    => 'આભાર.',
+        ],
+        'hi' => [
+            'plain'   => 'क्या आप आज भुगतान कर देंगे? हाँ के लिए एक दबाएँ, ना के लिए दो दबाएँ.',
+            'promise' => 'आपने ' . $on . ' को भुगतान करने को कहा था. क्या आप आज भुगतान कर देंगे? हाँ के लिए एक दबाएँ, ना के लिए दो दबाएँ.',
+            'yes'     => 'धन्यवाद. हम आज का इंतज़ार करेंगे.',
+            'no'      => 'ठीक है, बताने के लिए धन्यवाद. हम दोबारा संपर्क करेंगे.',
+            'none'    => 'धन्यवाद.',
+        ],
+        'en' => [
+            'plain'   => 'Will you be paying today? Press one for yes, press two for no.',
+            'promise' => 'You had told us you would pay on ' . $on . '. Will you be paying today? Press one for yes, press two for no.',
+            'yes'     => 'Thank you. We will expect it today.',
+            'no'      => 'That is alright, thank you for telling us. We will be in touch again.',
+            'none'    => 'Thank you.',
+        ],
+    ];
+    return $q[$lang] ?? $q['en'];
+}
 
-function voice_clip_dir($lang) { return dirname(__DIR__) . '/uploads/voice/' . $lang; }
+function voice_ivr_on() { return (int)setting('voice_ivr', 1) === 1; }
 
 /** A URL the phone network can actually fetch.
  *
@@ -205,49 +238,202 @@ function voice_public_ok() {
     return strncasecmp(base_url(''), 'https://', 8) === 0;
 }
 
-/** Every clip a language needs, in the order the checklist prints them. */
-function voice_clip_tokens() {
-    $t = ['greet', 'shop', 'your', 'due', 'request', 'thanks',
-          'hundred', 'thousand', 'lakh', 'crore', 'rupees', 'paise'];
-    for ($i = 0; $i <= 99; $i++) $t[] = 'n' . $i;
-    return $t;
-}
-
-function voice_clip_exists($token, $lang) {
-    return is_file(voice_clip_dir($lang) . '/' . $token . '.mp3');
-}
-
-/** Which clips a language is still missing. Empty means calls can go out in
- *  that language; anything else and voice_clip_plan() falls back to English. */
-function voice_clips_missing($lang) {
-    if ($lang === 'en') return [];               // the provider speaks English itself
-    $miss = [];
-    foreach (voice_clip_tokens() as $t) if (!voice_clip_exists($t, $lang)) $miss[] = $t;
-    return $miss;
-}
-
-/** How this particular call will be delivered.
+/** One thing the call has to say, and how it will be said.
  *
- *  Returns either a list of clip URLs to play in order, or the English text
- *  to hand the provider's TTS. One missing clip in the middle of a sentence
- *  would be heard as a gap where the amount should be - the provider simply
- *  skips a file it cannot fetch - so a language is used only when it is
- *  complete. Half a spoken amount is worse than a whole English one. */
-function voice_clip_plan($partyName, $amount, $lang, $nameClip = '') {
-    $tokens = array_merge(['greet'], $nameClip ? ['__name'] : [], ['shop', 'your'],
-                          voice_amount_tokens($amount), ['due', 'request', 'thanks']);
-    $missing = voice_clips_missing($lang);
-    if ($lang === 'en' || $missing) {
-        return ['mode' => 'tts', 'lang' => 'en', 'text' => voice_script($partyName, $amount, 'en'),
-                'missing' => $missing, 'fell_back' => $lang !== 'en'];
+ *  Returns ['url' => '...'] to play a file, or ['text' => '...'] for the
+ *  provider to speak in English. Every spoken moment in a call - the
+ *  reminder, the question, the reply to what was pressed - goes through
+ *  here, so the fallback is the same everywhere: if the Gujarati cannot be
+ *  made, that line is said in English rather than skipped. A call that
+ *  drops a sentence is worse than one that changes language for it. */
+function voice_say($text, $lang, $englishText = null) {
+    if ($lang !== 'en') {
+        $tts = voice_tts_audio($text, $lang);
+        if ($tts['ok']) return ['url' => $tts['url'], 'text' => '', 'lang' => $lang, 'error' => ''];
+        return ['url' => '', 'text' => $englishText ?? $text, 'lang' => 'en', 'error' => $tts['error']];
     }
-    $urls = [];
-    foreach ($tokens as $t) {
-        $urls[] = $t === '__name'
-            ? voice_public_url('uploads/voice/names/' . $nameClip)
-            : voice_public_url('uploads/voice/' . $lang . '/' . $t . '.mp3');
+    return ['url' => '', 'text' => $text, 'lang' => 'en', 'error' => ''];
+}
+
+/** Everything one call will say, prepared before it is dialled.
+ *
+ *  Built here and not inside the answer URL because the answer URL has
+ *  seconds to reply and generating speech takes longer than that. By the
+ *  time the customer's phone rings, every file already exists.
+ *
+ *  The three replies are prepared too, even though at most one will be
+ *  used: they are fixed sentences, so they are generated once in the life
+ *  of the shop and then cost nothing, and preparing them here means the
+ *  moment after the customer presses a key is a file that already exists
+ *  rather than a pause on the line. */
+function voice_audio_plan($partyName, $amount, $lang, $promiseDate = null) {
+    $q = voice_question($lang, $promiseDate);
+    $qEn = voice_question('en', $promiseDate);
+    $key = $promiseDate ? 'promise' : 'plain';
+
+    $main = voice_say(voice_script($partyName, $amount, $lang), $lang, voice_script($partyName, $amount, 'en'));
+    $plan = ['lang' => $main['lang'], 'main' => $main, 'error' => $main['error'],
+             'fell_back' => $lang !== 'en' && $main['lang'] === 'en'];
+
+    if (voice_ivr_on()) {
+        $plan['question'] = voice_say($q[$key], $lang, $qEn[$key]);
+        foreach (['yes', 'no', 'none'] as $r) $plan['replies'][$r] = voice_say($q[$r], $lang, $qEn[$r]);
+        if ($plan['question']['error'] && !$plan['error']) $plan['error'] = $plan['question']['error'];
     }
-    return ['mode' => 'clips', 'lang' => $lang, 'urls' => $urls, 'missing' => [], 'fell_back' => false];
+    return $plan;
+}
+
+// ---------- the spoken audio, generated ----------
+//
+// Vobiz has no Gujarati and no Hindi voice, and recording a hundred and
+// twelve clips by hand is a chore that will never get done. So the sentence
+// is spoken by a text-to-speech model that does have those languages, saved
+// as a file, and played down the phone as ordinary audio - which is all the
+// provider ever needs to know.
+//
+// Four rules, because this is an outside AI service and the shop's own rules
+// about those apply:
+//
+//   * It runs BEFORE the call is dialled, never while the customer's phone
+//     is connecting. The answer URL has seconds to reply; generating speech
+//     inside it would be a call that rings and then dies in silence.
+//   * The same sentence is generated once. The file is named after a hash of
+//     the words, so the second customer who owes twelve thousand four hundred
+//     costs nothing, and the question at the end - which never changes - is
+//     generated once in the life of the shop.
+//   * Every generation is counted against a monthly cap. Past it, calls keep
+//     going out in English rather than running up a bill nobody approved.
+//   * If it fails for any reason, the call still happens. English, spoken by
+//     the provider, is always there underneath.
+//
+// The amount in the sentence comes from the ledger and is written by
+// voice_script(). The model is given words to pronounce, never a number to
+// interpret and never any say over what the number is.
+
+function voice_tts_enabled() { return (int)setting('voice_tts', 1) === 1 && setting('gemini_api_key', '') !== ''; }
+function voice_tts_dir() { return dirname(__DIR__) . '/uploads/voice/tts'; }
+
+/** How many sentences were generated this month, and the cap. */
+function voice_tts_usage() {
+    $month = date('Y-m');
+    $n = setting('voice_tts_month', '') === $month ? (int)setting('voice_tts_count', 0) : 0;
+    return ['month' => $month, 'used' => $n, 'cap' => max(1, (int)setting('voice_tts_month_cap', 2000))];
+}
+function voice_tts_count_up() {
+    $u = voice_tts_usage();
+    set_setting('voice_tts_month', $u['month']);
+    set_setting('voice_tts_count', (string)($u['used'] + 1));
+}
+
+/** The file one sentence lives in. Same words, same language, same file. */
+function voice_tts_file($text, $lang) {
+    return 'tts_' . $lang . '_' . substr(hash('sha256', $lang . '|' . setting('voice_tts_voice', 'Kore') . '|' . $text), 0, 24) . '.wav';
+}
+
+/** Speak this sentence, or say why not.
+ *
+ *  Returns ['ok'=>bool, 'file'=>'tts_gu_ab12.wav', 'url'=>..., 'error'=>..., 'cached'=>bool].
+ *  A cached hit never touches the network and never counts against the cap. */
+function voice_tts_audio($text, $lang) {
+    $text = trim((string)$text);
+    if ($text === '') return ['ok' => false, 'file' => '', 'url' => '', 'error' => 'nothing to say', 'cached' => false];
+
+    $name = voice_tts_file($text, $lang);
+    $dir = voice_tts_dir();
+    if (is_file($dir . '/' . $name) && filesize($dir . '/' . $name) > 1000) {
+        return ['ok' => true, 'file' => $name, 'url' => voice_public_url('uploads/voice/tts/' . $name),
+                'error' => '', 'cached' => true];
+    }
+
+    if (!voice_tts_enabled()) return ['ok' => false, 'file' => '', 'url' => '', 'error' => 'Generated voice is off, or the Gemini key is missing', 'cached' => false];
+    $u = voice_tts_usage();
+    if ($u['used'] >= $u['cap'])
+        return ['ok' => false, 'file' => '', 'url' => '', 'error' => "This month's voice limit ({$u['cap']}) is used up", 'cached' => false];
+    if (!function_exists('curl_init')) return ['ok' => false, 'file' => '', 'url' => '', 'error' => 'The server does not have curl.', 'cached' => false];
+
+    [$wav, $err] = voice_tts_fetch($text);
+    if ($wav === null) return ['ok' => false, 'file' => '', 'url' => '', 'error' => $err, 'cached' => false];
+
+    if (!is_dir($dir)) mkdir($dir, 0755, true);
+    if (file_put_contents($dir . '/' . $name, $wav) === false)
+        return ['ok' => false, 'file' => '', 'url' => '', 'error' => 'Could not save the audio file', 'cached' => false];
+
+    voice_tts_count_up();
+    log_activity('voice_tts', $lang . ' ' . strlen($wav) . ' bytes · ' . mb_substr($text, 0, 80));
+    return ['ok' => true, 'file' => $name, 'url' => voice_public_url('uploads/voice/tts/' . $name),
+            'error' => '', 'cached' => false];
+}
+
+/** The HTTP call to Gemini TTS. Returns [wav bytes, ''] or [null, 'why not'].
+ *
+ *  The model detects the language from the words themselves, so Gujarati text
+ *  comes back in a Gujarati voice with nothing else to configure. A unary
+ *  request returns audio/wav - 24kHz mono 16-bit with a RIFF header - which
+ *  is a format Vobiz plays directly, so nothing has to be converted here. */
+function voice_tts_fetch($text) {
+    $key = setting('gemini_api_key', '');
+    if ($key === '') return [null, 'No Gemini API key (Settings → AI).'];
+
+    $body = [
+        'model' => setting('voice_tts_model', 'gemini-3.8-flash-tts'),
+        'input' => [[
+            'type' => 'user_input',
+            'content' => [[
+                'type' => 'text',
+                'text' => $text,
+                // said plainly and warmly: this is a shop asking for its
+                // money, not an advertisement and not a threat
+                'annotations' => [['type' => 'speech_metadata', 'style' => 'calm, polite and clear']],
+            ]],
+        ]],
+        'response_format' => ['type' => 'audio', 'mime_type' => 'audio/wav', 'sample_rate' => 24000],
+        'generation_config' => ['speech_config' => [['voice' => setting('voice_tts_voice', 'Kore')]]],
+    ];
+
+    $ch = curl_init('https://generativelanguage.googleapis.com/v1beta/interactions');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_UNICODE),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'x-goog-api-key: ' . $key],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 45,
+    ]);
+    $res = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+    if ($res === false) return [null, 'Could not reach the voice service: ' . $cerr];
+
+    $j = json_decode($res, true);
+    if ($code < 200 || $code >= 300) {
+        $msg = $j['error']['message'] ?? mb_substr((string)$res, 0, 200);
+        return [null, 'Voice service returned HTTP ' . $code . ': ' . $msg];
+    }
+    $b64 = voice_tts_find_audio($j);
+    if ($b64 === '') return [null, 'The voice service sent no audio back.'];
+    $wav = base64_decode($b64, true);
+    if ($wav === false || strlen($wav) < 1000) return [null, 'The audio that came back was empty or unreadable.'];
+    return [$wav, ''];
+}
+
+/** Dig the base64 audio out of the reply.
+ *
+ *  Walked rather than indexed on purpose. This is the one part of the whole
+ *  feature that depends on somebody else's JSON shape, and that shape is
+ *  versioned, renamed and reorganised by people who do not know this shop
+ *  exists. A walk keeps working when a field moves one level; a hard-coded
+ *  path turns a working Gujarati call into a silent English one. */
+function voice_tts_find_audio($node, $depth = 0) {
+    if ($depth > 8 || !is_array($node)) return '';
+    // a long base64 string sitting under a data/audio-ish key is the payload
+    foreach (['data', 'audio', 'audio_data', 'inline_data', 'inlineData', 'bytes'] as $k) {
+        if (isset($node[$k]) && is_string($node[$k]) && strlen($node[$k]) > 1000) return $node[$k];
+    }
+    foreach ($node as $v) {
+        if (is_array($v)) { $found = voice_tts_find_audio($v, $depth + 1); if ($found !== '') return $found; }
+        elseif (is_string($v) && strlen($v) > 5000 && preg_match('#^[A-Za-z0-9+/=\r\n]+$#', substr($v, 0, 200))) return $v;
+    }
+    return '';
 }
 
 // ---------- configuration ----------
@@ -349,7 +535,7 @@ function voice_calls_today($bump = false) {
 /** May a call go to this party right now, and if not, why not - in words a
  *  shop owner can read off the screen. Every caller asks this; nobody is
  *  allowed to decide for themselves. */
-function voice_can_call($partyId, $ctx = null) {
+function voice_can_call($partyId, $ctx = null, $now = null) {
     if (!voice_enabled())    return ['ok' => false, 'why' => 'Reminder calls are switched off (Settings → Reminder Calls)'];
     if (!voice_configured()) return ['ok' => false, 'why' => 'Vobiz is not set up yet — Auth ID, token and caller ID are needed'];
 
@@ -359,7 +545,7 @@ function voice_can_call($partyId, $ctx = null) {
     if (!voice_mobile_ok($c['mobile'])) return ['ok' => false, 'why' => 'No usable mobile number'];
     if ($c['due'] <= 0.009) return ['ok' => false, 'why' => 'Nothing is outstanding'];
 
-    if (!voice_hours_ok()) {
+    if (!voice_hours_ok($now)) {
         $h = voice_hours();
         return ['ok' => false, 'why' => 'Calls go out between ' . $h['from'] . ':00 and ' . $h['to'] . ':00 only'];
     }
@@ -415,6 +601,10 @@ function voice_ago($ts) {
  *  Returns ['ok'=>bool, 'error'=>string, 'call_id'=>int, 'status'=>string]. */
 function voice_call_send($partyId, array $opts = []) {
     $partyId = (int)$partyId;
+    // $opts['now'] exists so the suite can check the rules at a fixed hour
+    // instead of only passing between nine and nine. Nothing in the app
+    // passes it, so a real call is always judged against the real clock.
+    $now = $opts['now'] ?? null;
 
     // A repeat of a press that already went through returns that call rather
     // than ringing the customer a second time.
@@ -426,7 +616,7 @@ function voice_call_send($partyId, array $opts = []) {
     }
 
     $ctx = voice_party_context($partyId);
-    $gate = voice_can_call($partyId, $ctx);
+    $gate = voice_can_call($partyId, $ctx, $now);
     if (!$gate['ok']) return ['ok' => false, 'error' => $gate['why'], 'call_id' => 0, 'status' => 'refused'];
 
     $amount = isset($opts['amount']) ? round((float)$opts['amount'], 2) : $ctx['due'];
@@ -442,18 +632,24 @@ function voice_call_send($partyId, array $opts = []) {
 
     $lang = $opts['lang'] ?? setting('voice_lang', 'gu');
     if (!isset(voice_langs()[$lang])) $lang = 'gu';
-    $plan = voice_clip_plan($ctx['name'], $amount, $lang, $ctx['name_clip']);
+
+    // The voice is made here, before anything is dialled, so that the file
+    // already exists by the time the phone is answered.
+    $promise = (!empty($ctx['promise_open']) && $ctx['promise_open']['due_date'] <= today())
+        ? $ctx['promise_open']['due_date'] : null;
+    $plan = voice_audio_plan($ctx['name'], $amount, $lang, $promise);
     $script = voice_script($ctx['name'], $amount, $plan['lang']);
     $test = array_key_exists('test', $opts) ? (bool)$opts['test'] : voice_test_mode();
 
     // ---- from here on it is really happening ----
     $token = bin2hex(random_bytes(20));
     q('INSERT INTO voice_calls (party_id, mobile, amount, due_date, lang, script, provider, token,
-                                status, test_mode, client_uuid, created_by, started_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NOW())',
+                                status, test_mode, client_uuid, created_by, audio_file, question_asked, started_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())',
       [$partyId, voice_e164($ctx['mobile']), $amount, $due ?: null, $plan['lang'], $script,
        setting('voice_provider', 'vobiz'), $token, 'queued', $test ? 1 : 0,
-       $cuid !== '' ? $cuid : null, $_SESSION['user_id'] ?? null]);
+       $cuid !== '' ? $cuid : null, $_SESSION['user_id'] ?? null,
+       voice_audio_basename($plan['main']['url'] ?? ''), voice_ivr_on() ? 1 : 0]);
     $callId = (int)insert_id();
     if (!$test) voice_calls_today(true);   // keep the daily cap honest inside one request
 
@@ -608,6 +804,57 @@ function voice_mark_answered($call) {
     }
 }
 
+/** Just the filename out of a generated-audio URL, or '' for none. */
+function voice_audio_basename($url) {
+    $url = (string)$url;
+    if ($url === '') return null;
+    $base = basename(parse_url($url, PHP_URL_PATH) ?: '');
+    return preg_match('/^tts_[a-z]{2}_[a-f0-9]{24}\.wav$/', $base) ? $base : null;
+}
+
+/** What the customer pressed, and what the shop does about it.
+ *
+ *  This is the part that matters. A "yes" is not filed as a note nobody
+ *  reads - it is logged as a promise to pay today, through the very same
+ *  coll_log() a promise taken across the counter goes through. From that
+ *  moment the customer appears in the Promises card on the collection
+ *  screen, reminders to them stop until the day is out, and the nightly job
+ *  marks the promise kept or broken depending on whether the money arrives.
+ *  A "no" is filed as a contact with what they said, so the next person to
+ *  look at this customer knows the phone was answered and the answer was no.
+ *
+ *  Returns 'yes' | 'no' | 'none'. */
+function voice_response_apply($call, $digit) {
+    $digit = preg_replace('/\D/', '', (string)$digit);
+    $answer = $digit === '1' ? 'yes' : ($digit === '2' ? 'no' : 'none');
+
+    // A network retry of the same keypress must not stack up two promises.
+    if (!empty($call['response'])) return $call['response'];
+
+    q("UPDATE voice_calls SET response = ?, response_at = NOW() WHERE id = ?", [$answer, $call['id']]);
+
+    $pid = (int)$call['party_id'];
+    if ($pid > 0 && $answer === 'yes') {
+        coll_log($pid, 'promise', [
+            'amount' => (float)$call['amount'], 'due_date' => today(), 'channel' => 'voice',
+            'note' => 'Said yes on the reminder call — ₹' . money($call['amount']) . ' today',
+            'ref_id' => (int)$call['id'], 'status' => 'open',
+        ]);
+    } elseif ($pid > 0 && $answer === 'no') {
+        coll_log($pid, 'call', [
+            'amount' => (float)$call['amount'], 'channel' => 'voice',
+            'note' => 'Said no on the reminder call — not paying today',
+            'ref_id' => (int)$call['id'], 'status' => 'done',
+        ]);
+    }
+    log_activity('voice_response', 'call ' . $call['id'] . ' party ' . $pid . ' pressed ' . ($digit ?: '-') . ' = ' . $answer);
+    return $answer;
+}
+
+function voice_response_label($r) {
+    return ['yes' => 'Said yes — paying today', 'no' => 'Said no', 'none' => 'Did not answer the question'][$r] ?? '';
+}
+
 function voice_status_label($status) {
     return [
         'queued' => 'Queued', 'ringing' => 'Ringing', 'answered' => 'Answered',
@@ -623,17 +870,48 @@ function voice_status_label($status) {
  *  paid") is added later it is one more element here and one more column on
  *  the row - which is why this function, and not the caller, owns the XML. */
 function voice_answer_xml($call) {
-    $party = row('SELECT name, voice_name_clip FROM parties WHERE id = ?', [(int)$call['party_id']]);
-    $plan = voice_clip_plan($party['name'] ?? '', (float)$call['amount'], $call['lang'], $party['voice_name_clip'] ?? '');
+    $party = row('SELECT name FROM parties WHERE id = ?', [(int)$call['party_id']]);
+    $promise = voice_call_promise_date($call);
 
+    // The reminder itself was made before dialling and its file is on the
+    // row. Re-planning here would be a second generation - and a wait - at
+    // the worst possible moment, with the customer already on the line.
     $xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n";
-    if ($plan['mode'] === 'clips') {
-        foreach ($plan['urls'] as $u) $xml .= '  <Play>' . htmlspecialchars($u, ENT_XML1) . "</Play>\n";
-    } else {
-        $xml .= '  <Speak voice="WOMAN" language="en-US">' . htmlspecialchars($plan['text'], ENT_XML1) . "</Speak>\n";
+    $xml .= $call['audio_file']
+        ? voice_xml_play(voice_public_url('uploads/voice/tts/' . $call['audio_file']))
+        : voice_xml_speak($call['script'] ?: voice_script($party['name'] ?? '', (float)$call['amount'], 'en'));
+
+    if (voice_ivr_on() && (int)$call['question_asked'] === 1) {
+        $plan = voice_audio_plan($party['name'] ?? '', (float)$call['amount'], $call['lang'], $promise);
+        $q = $plan['question'] ?? null;
+        // One digit, ten seconds, and no # needed - an older customer should
+        // not have to know what a hash key is. Pressing nothing simply falls
+        // through to the goodbye below, which is why the Gather is not the
+        // last thing in the document.
+        $xml .= '  <Gather action="' . htmlspecialchars(voice_public_url('voice_gather.php?t=' . $call['token']), ENT_XML1)
+              . '" method="POST" inputType="dtmf" numDigits="1" finishOnKey="none" executionTimeout="10">' . "\n";
+        if ($q) $xml .= '  ' . ($q['url'] ? voice_xml_play($q['url']) : voice_xml_speak($q['text']));
+        $xml .= "  </Gather>\n";
+        $none = $plan['replies']['none'] ?? null;
+        if ($none) $xml .= $none['url'] ? voice_xml_play($none['url']) : voice_xml_speak($none['text']);
     }
     $xml .= "</Response>\n";
     return $xml;
+}
+
+function voice_xml_play($url) { return '  <Play>' . htmlspecialchars($url, ENT_XML1) . "</Play>\n"; }
+function voice_xml_speak($text) {
+    return '  <Speak voice="WOMAN" language="en-US">' . htmlspecialchars((string)$text, ENT_XML1) . "</Speak>\n";
+}
+
+/** The date this customer promised to pay, if they did and it has arrived.
+ *  A promise still in the future is why the call would not have gone out at
+ *  all, so anything found here is today's or already past. */
+function voice_call_promise_date($call) {
+    if ((int)$call['party_id'] <= 0) return null;
+    return val("SELECT due_date FROM collection_events
+                WHERE party_id = ? AND event_type = 'promise' AND status = 'open' AND due_date IS NOT NULL
+                ORDER BY due_date DESC LIMIT 1", [(int)$call['party_id']]) ?: null;
 }
 
 // ---------- balance ----------

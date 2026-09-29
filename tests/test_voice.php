@@ -26,6 +26,11 @@ set_setting('voice_max_per_day', '50');
 set_setting('collection_cooldown_days', '3');
 set_setting('collection_max_reminders', '4');
 
+// Every gate below is checked at a fixed two in the afternoon. Without this
+// the suite passed or failed depending on what time of day it was run, which
+// is the opposite of what a regression test is for.
+$NOON = strtotime('today 14:00');
+
 t_group('Voice — the amount, said exactly');
 
 // The decomposition is what drives which clip plays, so it is checked as
@@ -83,28 +88,106 @@ t_ok('the script thanks them', strpos($script, 'આભાર') !== false);
 t_ok('a customer with no name still gets a clean sentence',
      strpos(voice_script('', 500, 'gu'), ' ,') === false);
 
-t_group('Voice — Vobiz cannot speak Gujarati, so it falls back honestly');
+t_group('Voice — Vobiz cannot speak Gujarati, so the voice is made elsewhere');
 
-// This is the finding the whole design rests on: their TTS has 16 languages
-// and no Indian one. Without every clip, a Gujarati call would play a silent
-// gap where the amount belongs, so the call goes out in English instead.
-$plan = voice_clip_plan('Ramesh', 12400, 'gu');
-if (voice_clips_missing('gu')) {
-    t_eq('with recordings missing, the call falls back to English', $plan['mode'], 'tts');
-    t_eq('and it is honest about having fallen back', $plan['fell_back'], true);
-    t_ok('the English text still carries the amount', strpos($plan['text'], 'twelve thousand four hundred') !== false);
-    t_ok('the fallback names how many recordings are missing', count($plan['missing']) > 0);
-} else {
-    t_eq('with every recording in place, clips are played', $plan['mode'], 'clips');
-}
-$enPlan = voice_clip_plan('Ramesh', 12400, 'en');
-t_eq('English never needs recordings', $enPlan['mode'], 'tts');
+// The finding the whole design rests on: their TTS has 16 languages and no
+// Indian one. The sentence is generated as an audio file instead - and when
+// that cannot be done, the call still happens, in English, rather than not
+// at all or in silence.
+set_setting('voice_tts', '1');
+set_setting('gemini_api_key', '');            // no key -> generation must fail
+$plan = voice_audio_plan('Ramesh', 12400, 'gu');
+t_eq('with no AI key the call falls back to English', $plan['lang'], 'en');
+t_eq('and it is honest about having fallen back', $plan['fell_back'], true);
+t_ok('the reason is in words the owner can read', strlen((string)$plan['error']) > 5, (string)$plan['error']);
+t_ok('the English sentence still carries the amount',
+     strpos($plan['main']['text'], 'twelve thousand four hundred') !== false);
+t_ok('a fallback speaks rather than plays', $plan['main']['url'] === '' && $plan['main']['text'] !== '');
+
+$enPlan = voice_audio_plan('Ramesh', 12400, 'en');
+t_eq('English needs nothing generated', $enPlan['lang'], 'en');
 t_eq('and is not a fallback from anything', $enPlan['fell_back'], false);
-t_eq('the checklist asks for 112 recordings', count(voice_clip_tokens()), 112);
-t_ok('the checklist covers every number 0-99', in_array('n0', voice_clip_tokens(), true) && in_array('n99', voice_clip_tokens(), true));
-t_ok('the checklist covers the scale words',
-     in_array('thousand', voice_clip_tokens(), true) && in_array('lakh', voice_clip_tokens(), true)
-     && in_array('crore', voice_clip_tokens(), true) && in_array('paise', voice_clip_tokens(), true));
+
+// The fallback has to reach EVERY spoken moment, not just the first. A call
+// that gives the reminder in English and then goes silent for the question
+// is a call the customer cannot answer.
+t_ok('the question falls back too', !empty($plan['question']['text']));
+t_ok('and so does every reply',
+     !empty($plan['replies']['yes']['text']) && !empty($plan['replies']['no']['text'])
+     && !empty($plan['replies']['none']['text']));
+
+t_group('Voice — the generated audio is made once, and capped');
+
+t_eq('the same sentence maps to the same file',
+     voice_tts_file('નમસ્કાર', 'gu'), voice_tts_file('નમસ્કાર', 'gu'));
+t_ok('a different sentence maps to a different file',
+     voice_tts_file('નમસ્કાર', 'gu') !== voice_tts_file('નમસ્તે', 'gu'));
+t_ok('a different language maps to a different file',
+     voice_tts_file('નમસ્કાર', 'gu') !== voice_tts_file('નમસ્કાર', 'hi'));
+t_ok('the file name is safe to write to disk',
+     preg_match('/^tts_[a-z]{2}_[a-f0-9]{24}\.wav$/', voice_tts_file('x', 'gu')) === 1, voice_tts_file('x', 'gu'));
+
+// Only a name this system generated is ever written onto a call row.
+t_eq('a generated name is accepted',
+     voice_audio_basename('https://x.example/uploads/voice/tts/tts_gu_' . str_repeat('a', 24) . '.wav'),
+     'tts_gu_' . str_repeat('a', 24) . '.wav');
+t_ok('a path walking out of the folder is refused',
+     voice_audio_basename('https://x.example/uploads/voice/tts/../../config.php') === null);
+t_ok('someone else\'s file name is refused',
+     voice_audio_basename('https://evil.example/hello.wav') === null);
+t_ok('an empty url is refused', voice_audio_basename('') === null);
+
+set_setting('voice_tts_month', date('Y-m'));
+set_setting('voice_tts_count', '5');
+$u = voice_tts_usage();
+t_eq('this month\'s count is read back', $u['used'], 5);
+set_setting('voice_tts_month', date('Y-m', strtotime('-2 months')));
+t_eq('last month\'s count does not carry over', voice_tts_usage()['used'], 0);
+
+set_setting('gemini_api_key', 'TESTKEY');
+set_setting('voice_tts_month', date('Y-m'));
+set_setting('voice_tts_count', '99999');
+$capped = voice_tts_audio('કંઈક નવું ' . bin2hex(random_bytes(4)), 'gu');
+t_eq('past the monthly cap nothing is generated', $capped['ok'], false);
+t_ok('and the reason says so', stripos($capped['error'], 'limit') !== false, $capped['error']);
+set_setting('voice_tts_count', '0');
+set_setting('gemini_api_key', '');
+
+t_group('Voice — reading the reply from the voice service');
+
+// The one part of this feature that depends on somebody else's JSON shape.
+// It is walked rather than indexed, so a field moving one level deeper does
+// not turn every Gujarati call into a silent English one - and these are the
+// shapes it has to survive.
+$big = base64_encode(random_bytes(4000));
+t_eq('the documented shape is read',
+     voice_tts_find_audio(['steps' => [['content' => [['type' => 'audio', 'data' => $big]]]]]), $big);
+t_eq('a shape one level deeper still works',
+     voice_tts_find_audio(['response' => ['output' => [['parts' => [['inline_data' => $big]]]]]]), $big);
+t_eq('the older inlineData spelling works',
+     voice_tts_find_audio(['candidates' => [['content' => ['parts' => [['inlineData' => $big]]]]]]), $big);
+t_ok('a reply with no audio in it returns nothing, rather than guessing',
+     voice_tts_find_audio(['error' => ['message' => 'quota exceeded']]) === '');
+t_ok('short strings are not mistaken for audio',
+     voice_tts_find_audio(['data' => 'abc', 'mime' => 'audio/wav']) === '');
+t_ok('a flat refusal is not mistaken for audio', voice_tts_find_audio([]) === '');
+
+t_group('Voice — the question at the end');
+
+$q = voice_question('gu');
+t_ok('the Gujarati question asks about paying today', strpos($q['plain'], 'આજે') !== false);
+t_ok('and explains which key means yes', strpos($q['plain'], 'એક') !== false);
+t_ok('and which means no', strpos($q['plain'], 'બે') !== false);
+$qp = voice_question('gu', '2026-09-20');
+t_ok('a customer who promised is reminded of their own words',
+     strpos($qp['promise'], 'કહ્યું હતું') !== false && strpos($qp['promise'], dmy('2026-09-20')) !== false);
+t_ok('somebody who promised nothing is not accused of it',
+     strpos($q['plain'], 'કહ્યું હતું') === false);
+$qh = voice_question('hi');
+t_ok('Hindi asks the same thing', strpos($qh['plain'], 'आज') !== false);
+t_ok('there is something to say to yes', $q['yes'] !== '');
+t_ok('something to say to no', $q['no'] !== '');
+t_ok('and something to say when nothing is pressed', $q['none'] !== '');
 
 t_group('Voice — who may be called');
 
@@ -114,12 +197,12 @@ t_sale($pid, 5000, 0, date('Y-m-d', strtotime('-40 days')), date('Y-m-d', strtot
 
 $ctx = voice_party_context($pid);
 t_eq('the context reads the debt off the ledger', $ctx['due'], 5000);
-$gate = voice_can_call($pid, $ctx);
+$gate = voice_can_call($pid, $ctx, $NOON);
 t_ok('a customer who owes money can be called', $gate['ok'], $gate['why']);
 
 // ---- each guard, one at a time ----
 q('UPDATE parties SET voice_dnd = 1 WHERE id = ?', [$pid]);
-$g = voice_can_call($pid);
+$g = voice_can_call($pid, null, $NOON);
 t_eq('"do not call" stops the call', $g['ok'], false);
 t_ok('and says so in words', stripos($g['why'], 'not to be called') !== false, $g['why']);
 q('UPDATE parties SET voice_dnd = 0 WHERE id = ?', [$pid]);
@@ -127,7 +210,7 @@ q('UPDATE parties SET voice_dnd = 0 WHERE id = ?', [$pid]);
 // The do-not-call switch is NOT the message opt-out. A customer may want the
 // WhatsApp and not the phone call; the two must not be the same flag.
 q('UPDATE parties SET collection_opt_out = 1 WHERE id = ?', [$pid]);
-$g = voice_can_call($pid);
+$g = voice_can_call($pid, null, $NOON);
 t_eq('a message opt-out also stops the call', $g['ok'], false);
 q('UPDATE parties SET collection_opt_out = 0, voice_dnd = 1 WHERE id = ?', [$pid]);
 $after = row('SELECT collection_opt_out, voice_dnd FROM parties WHERE id = ?', [$pid]);
@@ -136,7 +219,7 @@ t_ok('but they are two separate switches, not one',
 q('UPDATE parties SET voice_dnd = 0 WHERE id = ?', [$pid]);
 
 q("UPDATE parties SET mobile = '0221234567' WHERE id = ?", [$pid]);   // a landline
-$g = voice_can_call($pid);
+$g = voice_can_call($pid, null, $NOON);
 t_eq('a landline is not dialled', $g['ok'], false);
 q("UPDATE parties SET mobile = '9876500001' WHERE id = ?", [$pid]);
 
@@ -172,20 +255,18 @@ set_setting('voice_hour_to', '21');
 t_group('Voice — not twice, and not while switched off');
 
 set_setting('voice_enabled', '0');
-$g = voice_can_call($pid);
+$g = voice_can_call($pid, null, $NOON);
 t_eq('nothing goes out while calling is off', $g['ok'], false);
 set_setting('voice_enabled', '1');
 
 set_setting('vobiz_auth_token', '');
-$g = voice_can_call($pid);
+$g = voice_can_call($pid, null, $NOON);
 t_eq('nothing goes out without the provider keys', $g['ok'], false);
 set_setting('vobiz_auth_token', 'TESTTOKEN');
 
-// Only run the send tests inside calling hours; outside them the hours guard
-// is the one that fires, which is correct behaviour rather than a failure.
-if (voice_hours_ok()) {
+{
     $before = (int)val('SELECT COUNT(*) FROM voice_calls');
-    $r1 = voice_call_send($pid, ['test' => true]);
+    $r1 = voice_call_send($pid, ['test' => true, 'now' => $NOON]);
     t_ok('a first call goes', $r1['ok'], $r1['error']);
     t_eq('and is recorded', (int)val('SELECT COUNT(*) FROM voice_calls'), $before + 1);
 
@@ -205,7 +286,7 @@ if (voice_hours_ok()) {
          (int)val("SELECT COUNT(*) FROM collection_events WHERE party_id = ? AND event_type = 'call' AND channel = 'voice'", [$pid]), 0);
 
     // the cooldown - the thing that stops an anxious second press
-    $r2 = voice_call_send($pid, ['test' => true]);
+    $r2 = voice_call_send($pid, ['test' => true, 'now' => $NOON]);
     t_eq('a second call inside the cooldown is refused', $r2['ok'], false);
     t_ok('and it is the CALL cooldown that says so, in hours',
          stripos($r2['error'], 'called') !== false && stripos($r2['error'], 'hour') !== false, $r2['error']);
@@ -220,7 +301,7 @@ if (voice_hours_ok()) {
     voice_mark_answered(row('SELECT * FROM voice_calls WHERE id = ?', [$r1['call_id']]));
     t_eq('and a repeated answer callback does not log it twice',
          (int)val("SELECT COUNT(*) FROM collection_events WHERE party_id = ? AND event_type = 'call' AND channel = 'voice'", [$pid]), 1);
-    $g2 = voice_can_call($pid);
+    $g2 = voice_can_call($pid, null, $NOON);
     t_eq('after being reached, the message cooldown covers them too', $g2['ok'], false);
 
     // idempotency - the same press arriving twice
@@ -229,8 +310,8 @@ if (voice_hours_ok()) {
     t_sale($pid2, 2500, 0, date('Y-m-d', strtotime('-30 days')), date('Y-m-d', strtotime('-5 days')));
     $uuid = 'test-uuid-' . bin2hex(random_bytes(6));
     $n0 = (int)val('SELECT COUNT(*) FROM voice_calls');
-    $a = voice_call_send($pid2, ['test' => true, 'client_uuid' => $uuid]);
-    $b = voice_call_send($pid2, ['test' => true, 'client_uuid' => $uuid]);
+    $a = voice_call_send($pid2, ['test' => true, 'now' => $NOON, 'client_uuid' => $uuid]);
+    $b = voice_call_send($pid2, ['test' => true, 'now' => $NOON, 'client_uuid' => $uuid]);
     t_ok('the first press places the call', $a['ok'], $a['error']);
     t_ok('the same press arriving twice is not a second call', !empty($b['duplicate']));
     t_eq('and the customer is called once', (int)val('SELECT COUNT(*) FROM voice_calls'), $n0 + 1);
@@ -242,7 +323,7 @@ if (voice_hours_ok()) {
     t_sale($pid3, 900, 0, date('Y-m-d', strtotime('-20 days')), date('Y-m-d', strtotime('-2 days')));
     $n1 = (int)val('SELECT COUNT(*) FROM voice_calls');
     $e1 = (int)val('SELECT COUNT(*) FROM collection_events');
-    $r3 = voice_call_send($pid3, ['test' => true]);
+    $r3 = voice_call_send($pid3, ['test' => true, 'now' => $NOON]);
     t_eq('a refused call does not go', $r3['ok'], false);
     t_eq('a refused call writes no call row', (int)val('SELECT COUNT(*) FROM voice_calls'), $n1);
     t_eq('a refused call writes no history either', (int)val('SELECT COUNT(*) FROM collection_events'), $e1);
@@ -251,10 +332,8 @@ if (voice_hours_ok()) {
     // a customer who owes nothing is never called
     $pid4 = t_party('TEST_VOICE4_' . bin2hex(random_bytes(3)));
     q("UPDATE parties SET mobile = '9876500004' WHERE id = ?", [$pid4]);
-    $r4 = voice_call_send($pid4, ['test' => true]);
+    $r4 = voice_call_send($pid4, ['test' => true, 'now' => $NOON]);
     t_eq('nobody is called about nothing', $r4['ok'], false);
-} else {
-    t_ok('(send tests skipped — outside calling hours, which is itself correct)', true);
 }
 
 t_group('Voice — the guards the WhatsApp reminder already had');
@@ -266,13 +345,13 @@ q("UPDATE parties SET mobile = '9876500005' WHERE id = ?", [$pid5]);
 t_sale($pid5, 7000, 0, date('Y-m-d', strtotime('-50 days')), date('Y-m-d', strtotime('-20 days')));
 
 coll_log($pid5, 'promise', ['amount' => 7000, 'due_date' => date('Y-m-d', strtotime('+5 days'))]);
-$g = voice_can_call($pid5);
+$g = voice_can_call($pid5, null, $NOON);
 t_eq('an open promise stops the call too', $g['ok'], false);
 t_ok('and explains it is a promise', stripos($g['why'], 'promised') !== false, $g['why']);
 q("DELETE FROM collection_events WHERE party_id = ? AND event_type = 'promise'", [$pid5]);
 
 coll_log($pid5, 'snooze', ['due_date' => date('Y-m-d', strtotime('+3 days'))]);
-$g = voice_can_call($pid5);
+$g = voice_can_call($pid5, null, $NOON);
 t_eq('a snooze stops the call', $g['ok'], false);
 q("DELETE FROM collection_events WHERE party_id = ? AND event_type = 'snooze'", [$pid5]);
 
@@ -340,13 +419,8 @@ t_ok('clip URLs are forced to https', strncmp(voice_public_url('uploads/voice/gu
      voice_public_url('uploads/voice/gu/n12.mp3'));
 t_ok('so are the callback URLs', strncmp(voice_public_url('voice_answer.php?t=x'), 'https://', 8) === 0);
 t_ok('an https site is left alone', voice_public_url('a.mp3') === preg_replace('#^http://#', 'https://', base_url('a.mp3')));
-$plan2 = voice_clip_plan('X', 100, 'gu');
-if ($plan2['mode'] === 'clips') {
-    t_ok('no clip is ever handed over as plain http',
-         !array_filter($plan2['urls'], fn($u) => strncmp($u, 'http://', 7) === 0));
-} else {
-    t_ok('(clips not recorded yet — the https rule is checked above)', true);
-}
+t_ok('generated audio is served over https too',
+     strncmp(voice_public_url('uploads/voice/tts/tts_gu_x.wav'), 'https://', 8) === 0);
 
 t_group('Voice — the key never reaches a page');
 
@@ -372,6 +446,103 @@ foreach (['voice_setup.php', 'collection.php'] as $f) {
          && strpos($page, 'value="<?= e(setting(\'vobiz_auth_token\')') === false);
 }
 
+t_group('Voice — what they pressed, and what the shop does about it');
+
+set_setting('voice_ivr', '1');
+$pid7 = t_party('TEST_VOICE7_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500007' WHERE id = ?", [$pid7]);
+t_sale($pid7, 3300, 0, date('Y-m-d', strtotime('-25 days')), date('Y-m-d', strtotime('-9 days')));
+q("INSERT INTO voice_calls (party_id, mobile, amount, lang, token, status, answered, question_asked)
+   VALUES (?, '919876500007', 3300, 'gu', ?, 'answered', 1, 1)", [$pid7, str_repeat('d', 40)]);
+$c7 = row('SELECT * FROM voice_calls WHERE token = ?', [str_repeat('d', 40)]);
+
+$promisesBefore = (int)val("SELECT COUNT(*) FROM collection_events WHERE party_id = ? AND event_type = 'promise'", [$pid7]);
+t_eq('pressing 1 is recorded as yes', voice_response_apply($c7, '1'), 'yes');
+t_eq('and it is written onto the call', val('SELECT response FROM voice_calls WHERE id = ?', [$c7['id']]), 'yes');
+t_ok('the time is stamped', val('SELECT response_at FROM voice_calls WHERE id = ?', [$c7['id']]) !== null);
+
+// This is the point of the whole feature: a spoken yes becomes the same
+// promise a yes across the counter would, so every screen and the nightly
+// job already know what to do with it.
+t_eq('a yes becomes a real promise to pay',
+     (int)val("SELECT COUNT(*) FROM collection_events WHERE party_id = ? AND event_type = 'promise'", [$pid7]),
+     $promisesBefore + 1);
+$pr = row("SELECT * FROM collection_events WHERE party_id = ? AND event_type = 'promise' ORDER BY id DESC LIMIT 1", [$pid7]);
+t_eq('the promise is for today', $pr['due_date'], today());
+t_eq('for the amount that was read out', (float)$pr['amount'], 3300.0);
+t_eq('and it is open, so the nightly job will judge it', $pr['status'], 'open');
+t_ok('the note says where it came from', stripos($pr['note'], 'reminder call') !== false, $pr['note']);
+
+// having promised, they must now be left alone until the day is out
+$g7 = voice_can_call($pid7, null, $NOON);
+t_eq('a customer who just promised is not called again', $g7['ok'], false);
+t_ok('and the reason is the promise', stripos($g7['why'], 'promised') !== false, $g7['why']);
+
+// a retried callback must not stack a second promise
+t_eq('a repeated callback returns the same answer', voice_response_apply(row('SELECT * FROM voice_calls WHERE id = ?', [$c7['id']]), '1'), 'yes');
+t_eq('and does not record a second promise',
+     (int)val("SELECT COUNT(*) FROM collection_events WHERE party_id = ? AND event_type = 'promise'", [$pid7]),
+     $promisesBefore + 1);
+
+// "no" is information too
+$pid8 = t_party('TEST_VOICE8_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500008' WHERE id = ?", [$pid8]);
+q("INSERT INTO voice_calls (party_id, mobile, amount, lang, token, status, answered, question_asked)
+   VALUES (?, '919876500008', 1500, 'gu', ?, 'answered', 1, 1)", [$pid8, str_repeat('e', 40)]);
+$c8 = row('SELECT * FROM voice_calls WHERE token = ?', [str_repeat('e', 40)]);
+t_eq('pressing 2 is recorded as no', voice_response_apply($c8, '2'), 'no');
+t_eq('a no does NOT create a promise',
+     (int)val("SELECT COUNT(*) FROM collection_events WHERE party_id = ? AND event_type = 'promise'", [$pid8]), 0);
+t_eq('but it is kept as a contact, so the next person knows',
+     (int)val("SELECT COUNT(*) FROM collection_events WHERE party_id = ? AND event_type = 'call'", [$pid8]), 1);
+t_ok('with what they actually said',
+     stripos((string)val("SELECT note FROM collection_events WHERE party_id = ? ORDER BY id DESC LIMIT 1", [$pid8]), 'no') !== false);
+
+// pressing nothing, or pressing something else
+$pid9 = t_party('TEST_VOICE9_' . bin2hex(random_bytes(3)));
+q("INSERT INTO voice_calls (party_id, mobile, amount, lang, token, status, answered, question_asked)
+   VALUES (?, '919876500009', 800, 'gu', ?, 'answered', 1, 1)", [$pid9, str_repeat('f', 40)]);
+$c9 = row('SELECT * FROM voice_calls WHERE token = ?', [str_repeat('f', 40)]);
+t_eq('pressing nothing is recorded as no answer', voice_response_apply($c9, ''), 'none');
+t_eq('and promises nothing',
+     (int)val("SELECT COUNT(*) FROM collection_events WHERE party_id = ? AND event_type = 'promise'", [$pid9]), 0);
+
+$pid10 = t_party('TEST_VOICE10_' . bin2hex(random_bytes(3)));
+q("INSERT INTO voice_calls (party_id, mobile, amount, lang, token, status, answered, question_asked)
+   VALUES (?, '919876500010', 800, 'gu', ?, 'answered', 1, 1)", [$pid10, str_repeat('0', 40)]);
+$c10 = row('SELECT * FROM voice_calls WHERE token = ?', [str_repeat('0', 40)]);
+t_eq('a stray key is not read as a yes', voice_response_apply($c10, '7'), 'none');
+t_eq('and promises nothing either',
+     (int)val("SELECT COUNT(*) FROM collection_events WHERE party_id = ? AND event_type = 'promise'", [$pid10]), 0);
+
+t_group('Voice — the XML that asks the question');
+
+q("UPDATE voice_calls SET lang = 'en', audio_file = NULL, question_asked = 1, created_at = NOW() WHERE id = ?", [$c9['id']]);
+$xml = voice_answer_xml(row('SELECT * FROM voice_calls WHERE id = ?', [$c9['id']]));
+t_ok('it parses as XML', @simplexml_load_string($xml) !== false);
+t_ok('it asks for one key', strpos($xml, 'numDigits="1"') !== false);
+t_ok('it waits, but not forever', strpos($xml, 'executionTimeout="10"') !== false);
+t_ok('it does not make an old customer find the hash key', strpos($xml, 'finishOnKey="none"') !== false);
+t_ok('the keypress comes back to us with the call token',
+     strpos($xml, 'voice_gather.php?t=' . $c9['token']) !== false);
+t_ok('the question is asked INSIDE the wait, not before it',
+     strpos($xml, '<Gather') < strpos($xml, 'Press one') && strpos($xml, 'Press one') < strpos($xml, '</Gather>'));
+t_ok('and there is still a goodbye for somebody who presses nothing',
+     strpos($xml, '</Gather>') < strrpos($xml, '<Speak'));
+
+q("UPDATE voice_calls SET question_asked = 0 WHERE id = ?", [$c9['id']]);
+$xml2 = voice_answer_xml(row('SELECT * FROM voice_calls WHERE id = ?', [$c9['id']]));
+t_ok('with the question switched off the call just gives the reminder',
+     strpos($xml2, '<Gather') === false);
+
+// the generated file is played, not re-generated while the customer waits
+q("UPDATE voice_calls SET audio_file = ?, question_asked = 0 WHERE id = ?",
+  ['tts_gu_' . str_repeat('a', 24) . '.wav', $c9['id']]);
+$xml3 = voice_answer_xml(row('SELECT * FROM voice_calls WHERE id = ?', [$c9['id']]));
+t_ok('a call with generated audio plays the file it already made',
+     strpos($xml3, 'tts_gu_' . str_repeat('a', 24) . '.wav') !== false && strpos($xml3, '<Play>') !== false);
+t_ok('and does not speak English over the top of it', strpos($xml3, '<Speak') === false);
+
 t_group('Voice — one rule, one place');
 
 // The whole point of includes/voice.php. If a second screen ever starts
@@ -394,3 +565,23 @@ t_ok('the calling-hours rule is written once',
      substr_count($vsrc, 'function voice_hours_ok') === 1);
 t_ok('voice_can_call() defers to the message rules instead of copying them',
      strpos($vsrc, 'coll_can_remind($c)') !== false);
+
+// A page that calls a function which no longer exists renders halfway and
+// then dies - the top of the screen looks fine, so it is easy to miss. This
+// caught exactly that when the hand-recorded clip system was replaced.
+$defined = [];
+preg_match_all('/^function (voice_\w+)\s*\(/m', $vsrc, $m);
+foreach ($m[1] as $fn) $defined[$fn] = true;
+$called = [];
+foreach (array_merge(glob(__DIR__ . '/../*.php'), glob(__DIR__ . '/../includes/*.php')) as $f) {
+    if (basename($f) === 'voice.php') continue;
+    preg_match_all('/\b(voice_\w+)\s*\(/', file_get_contents($f), $mm);
+    foreach ($mm[1] as $fn) {
+        // "INSERT INTO voice_calls (" looks exactly like a call. It is the
+        // table, and the only voice_* name that is not a function.
+        if ($fn === 'voice_calls') continue;
+        if (!isset($defined[$fn])) $called[$fn] = basename($f);
+    }
+}
+t_ok('every voice_* function a page calls actually exists', !$called,
+     implode(', ', array_map(fn($f, $fn) => "$fn in $f", $called, array_keys($called))));
