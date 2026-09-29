@@ -854,3 +854,24 @@ t_ok('and the amount is still there, in whichever one it chose',
 $xs = voice_in_status_word('shipped', 'en');
 t_eq('status words exist in English too', $xs, 'on its way');
 t_ok('and in Gujarati', voice_in_status_word('shipped', 'gu') === 'નીકળી ગયો છે');
+
+t_group('Voice IN — attaching a number is not a guessing game');
+
+// Vobiz answers "access denied" for a number it never sold you, which reads
+// like a permissions problem and almost never is. The message has to say so.
+$vsrc2 = file_get_contents(__DIR__ . '/../includes/voice_in.php');
+t_ok('the numbers on the account can be listed', strpos($vsrc2, "voice_api('GET', 'numbers") !== false);
+t_ok('an access-denied is explained in terms of the real cause',
+     strpos($vsrc2, 'not one of your Vobiz numbers') !== false);
+t_ok('and the numbers you DO own are named in the message',
+     strpos($vsrc2, "array_column(\$mine['numbers'], 'e164')") !== false);
+t_ok('a number that needs KYC is flagged rather than silently attached',
+     strpos($vsrc2, 'aadhaar_verification_required') !== false);
+
+$setup2 = file_get_contents(__DIR__ . '/../voice_setup.php');
+t_ok('making the application and attaching a number are separate presses',
+     strpos($setup2, "post('do') === 'attach_number'") !== false
+     && strpos($setup2, "post('do') === 'app_setup'") !== false);
+t_ok('the application step no longer tries to attach anything',
+     strpos(substr($setup2, strpos($setup2, "post('do') === 'app_setup'"), 700), 'voice_in_number_attach') === false);
+t_ok('the numbers are shown as a list to choose from', strpos($setup2, 'Use this one') !== false);

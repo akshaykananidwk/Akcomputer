@@ -31,18 +31,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('voice_setup.php');
     }
 
+    if (post('do') === 'attach_number') {
+        $appId = setting('vobiz_app_id', '');
+        if ($appId === '') { flash('Make the application first.', 'error'); redirect('voice_setup.php'); }
+        $a = voice_in_number_attach(post('number'), $appId);
+        flash($a['ok'] ? '✅ ' . e(post('number')) . ' now rings this software.' : $a['error'],
+              $a['ok'] ? 'success' : 'error');
+        redirect('voice_setup.php');
+    }
+
     if (post('do') === 'app_setup') {
+        // Only makes (or refreshes) the application. Attaching is a separate
+        // press against a number picked from the real list, because the two
+        // fail for entirely different reasons and rolling them into one
+        // button made a number problem look like an application problem.
         $r = voice_in_app_setup();
-        if (!$r['ok']) { flash('Could not set up the application: ' . $r['error'], 'error'); redirect('voice_setup.php'); }
-        $num = trim(post('vobiz_inbound_number'));
-        if ($num !== '' && voice_mobile_ok($num)) {
-            $a = voice_in_number_attach($num, $r['app_id']);
-            flash($a['ok'] ? 'Done — ' . e($num) . ' now rings this software.'
-                           : 'Application made, but the number did not attach: ' . $a['error'],
-                  $a['ok'] ? 'success' : 'error');
-        } else {
-            flash('Application made (' . e($r['app_id']) . '). Now enter the number and attach it.');
-        }
+        flash($r['ok'] ? '✅ Application ready (' . e($r['app_id']) . '). Now pick a number below and press "Use this one".'
+                       : 'Could not set up the application: ' . $r['error'],
+              $r['ok'] ? 'success' : 'error');
         redirect('voice_setup.php');
     }
 
@@ -127,6 +133,7 @@ if (!isset($langs[$lang])) $lang = 'gu';
 $bal = voice_configured() ? voice_balance() : null;
 $tts = voice_tts_usage();
 $preview = json_decode(setting('voice_preview_last', ''), true) ?: null;
+$myNums = voice_configured() ? voice_in_numbers() : ['ok' => false, 'error' => '', 'numbers' => []];
 $hours = voice_hours();
 $recent = all('SELECT v.*, p.name FROM voice_calls v LEFT JOIN parties p ON p.id = v.party_id
                ORDER BY v.id DESC LIMIT 20');
@@ -336,16 +343,68 @@ include __DIR__ . '/includes/header.php';
   </div>
 
   <?php if (can('settings.edit')): ?>
-  <h4>Step 1 — point the number at this software</h4>
+  <h4>Step 1 — point a number at this software</h4>
+  <p class="muted" style="font-size:13px">
+    Only a number <strong>Vobiz sold you</strong> can be attached — your own mobile cannot.
+    These are the ones on your account right now.
+  </p>
+
+  <?php if (!voice_configured()): ?>
+    <p class="muted">Save the Vobiz keys above first.</p>
+  <?php elseif (!$myNums['ok']): ?>
+    <div class="flash flash-error">Could not read your numbers: <?= e($myNums['error']) ?></div>
+  <?php elseif (!$myNums['numbers']): ?>
+    <div class="flash flash-error">
+      This Vobiz account owns <strong>no numbers yet</strong>. Buy one in the Vobiz console
+      (Phone Numbers → Buy), then come back here — it will appear in this list.
+    </div>
+  <?php else: ?>
+    <div class="table-wrap"><table class="table-sm">
+      <thead><tr><th>Number</th><th>Can take calls</th><th>Now pointed at</th><th></th></tr></thead>
+      <tbody>
+      <?php foreach ($myNums['numbers'] as $n):
+        $mineNow = $n['app_id'] !== '' && $n['app_id'] === setting('vobiz_app_id');
+        $usable = $n['voice'] && !$n['blocked'] && (!$n['kyc_need'] || $n['kyc_done']); ?>
+        <tr>
+          <td><strong><?= e($n['e164']) ?></strong>
+            <?php if ($n['status']): ?><br><span class="muted" style="font-size:11px"><?= e($n['status']) ?></span><?php endif; ?></td>
+          <td>
+            <?php if ($n['blocked']): ?><span class="badge badge-bad">blocked</span>
+            <?php elseif (!$n['voice']): ?><span class="badge badge-bad">no voice</span>
+            <?php elseif ($n['kyc_need'] && !$n['kyc_done']): ?><span class="badge badge-warn">KYC not done</span>
+            <?php else: ?><span class="badge badge-ok">yes</span><?php endif; ?>
+          </td>
+          <td>
+            <?php if ($mineNow): ?><span class="badge badge-ok">✔ this software</span>
+            <?php elseif ($n['app_id']): ?><span class="muted" style="font-size:11px">another application</span>
+            <?php else: ?><span class="muted">nothing</span><?php endif; ?>
+          </td>
+          <td>
+            <?php if (!$mineNow && can('settings.edit')): ?>
+            <form method="post" style="display:inline">
+              <?= csrf_field() ?><input type="hidden" name="do" value="attach_number">
+              <input type="hidden" name="number" value="<?= e($n['e164']) ?>">
+              <button class="btn btn-sm btn-success" type="submit" <?= $usable ? '' : 'disabled title="This number cannot take calls yet"' ?>>Use this one</button>
+            </form>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table></div>
+  <?php endif; ?>
+
+  <?php if (can('settings.edit')): ?>
+  <p class="muted" style="font-size:12px;margin-top:10px">
+    <?= setting('vobiz_app_id') ? 'Application already made.' : 'No application yet.' ?>
+    The button below makes (or refreshes) it — do it once, or again after the site address changes.
+  </p>
   <form method="post" class="mb">
     <?= csrf_field() ?><input type="hidden" name="do" value="app_setup">
-    <div class="grid-2">
-      <label>The shop's Vobiz number
-        <input name="vobiz_inbound_number" value="<?= e(setting('vobiz_inbound_number')) ?>" placeholder="919824537749"></label>
-    </div>
-    <button class="btn btn-success mt" type="submit" <?= voice_configured() ? '' : 'disabled' ?>>Make the application and attach the number</button>
-    <?php if (!voice_configured()): ?><span class="muted"> — save the Vobiz keys first</span><?php endif; ?>
+    <button class="btn btn-outline" type="submit" <?= voice_configured() ? '' : 'disabled' ?>>
+      <?= setting('vobiz_app_id') ? 'Refresh the application' : 'Make the application' ?></button>
   </form>
+  <?php endif; ?>
 
   <h4>Step 2 — how it should answer</h4>
   <form method="post">

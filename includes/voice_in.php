@@ -110,12 +110,52 @@ function voice_in_app_setup() {
     return ['ok' => true, 'error' => '', 'app_id' => $appId];
 }
 
+/** The numbers this Vobiz account actually owns.
+ *
+ *  Worth a screen of its own because the commonest way to get stuck here is
+ *  to type the shop's ordinary mobile into the box. A number can only be
+ *  attached if Vobiz sold it to you; anything else comes back as a flat
+ *  "access denied" that explains nothing. Showing the real list turns a
+ *  guess into a choice. */
+function voice_in_numbers() {
+    [$j, $err] = voice_api('GET', 'numbers?per_page=50');
+    if ($j === null) return ['ok' => false, 'error' => $err, 'numbers' => []];
+    $out = [];
+    foreach (($j['items'] ?? []) as $n) {
+        $out[] = [
+            'e164'     => (string)($n['e164'] ?? ''),
+            'status'   => (string)($n['status'] ?? ''),
+            'voice'    => !empty($n['voice_enabled']) || !empty($n['capabilities']['voice']),
+            'app_id'   => (string)($n['application_id'] ?? ''),
+            'blocked'  => !empty($n['is_blocked']),
+            // India requires the number's holder to be verified before it
+            // will carry traffic; an unverified one attaches and then simply
+            // does not ring, which is the worst kind of working.
+            'kyc_need' => !empty($n['aadhaar_verification_required']),
+            'kyc_done' => !empty($n['aadhaar_verified']),
+        ];
+    }
+    return ['ok' => true, 'error' => '', 'numbers' => $out];
+}
+
 /** Point the shop's number at that application. */
 function voice_in_number_attach($number, $appId) {
     $e164 = voice_e164($number);
     [$j, $err] = voice_api('POST', 'numbers/' . rawurlencode('+' . $e164) . '/application',
                            ['application_id' => $appId]);
-    if ($j === null) return ['ok' => false, 'error' => $err];
+    if ($j === null) {
+        // Vobiz says "access denied" for a number it did not sell you, which
+        // reads like a permissions problem and almost never is. Say what it
+        // usually means, and prove it by naming the numbers you do own.
+        if (stripos($err, 'access denied') !== false || strpos($err, '400') !== false) {
+            $mine = voice_in_numbers();
+            $list = $mine['ok'] ? implode(', ', array_column($mine['numbers'], 'e164')) : '';
+            $err .= ' — this usually means ' . $e164 . ' is not one of your Vobiz numbers.'
+                  . ($list !== '' ? ' Yours are: ' . $list . '.'
+                                  : ' Buy one under Phone Numbers in the Vobiz console first.');
+        }
+        return ['ok' => false, 'error' => $err];
+    }
     set_setting('vobiz_inbound_number', $e164);
     log_activity('voice_number', $e164 . ' -> ' . $appId);
     return ['ok' => true, 'error' => ''];
