@@ -229,7 +229,7 @@ t_ok('9 digits are refused', !voice_mobile_ok('987654321'));
 t_ok('a number starting 1 is refused', !voice_mobile_ok('1234567890'));
 t_eq('the number goes to the provider in E.164', voice_e164('98765 43210'), '919876543210');
 
-t_group('Voice — calling hours (TRAI 9am-9pm)');
+t_group('Voice — calling hours');
 
 t_ok('8am is too early', !voice_hours_ok(strtotime('today 08:30')));
 t_ok('9am is fine', voice_hours_ok(strtotime('today 09:15')));
@@ -238,19 +238,57 @@ t_ok('8:59pm is the last minute', voice_hours_ok(strtotime('today 20:59')));
 t_ok('9pm is too late', !voice_hours_ok(strtotime('today 21:00')));
 t_ok('midnight is refused', !voice_hours_ok(strtotime('today 00:30')));
 
-// The window is clamped, not trusted: a setting outside 9-21 cannot put the
-// shop on the wrong side of the rule.
-set_setting('voice_hour_from', '6');
-set_setting('voice_hour_to', '23');
+// The window is the shop's to set. It used to be clamped to 9-21 in code,
+// which also stopped the owner testing their own system in the evening -
+// the wrong place to enforce a rule about customers. The screen warns
+// instead, and these assertions are about the warning being right.
+set_setting('voice_hour_from', '9');
+set_setting('voice_hour_to', '21');
 $h = voice_hours();
-t_eq('an over-wide "from" is pulled back to 9', $h['from'], 9);
-t_eq('an over-wide "to" is pulled back to 21', $h['to'], 21);
+t_ok('the default window is the legal one', $h['from'] === 9 && $h['to'] === 21);
+t_eq('and is reported as legal', $h['legal'], true);
+t_eq('and is not all day', $h['all_day'], false);
+
 set_setting('voice_hour_from', '10');
 set_setting('voice_hour_to', '18');
 $h = voice_hours();
-t_ok('but a NARROWER window the shop chose is kept', $h['from'] === 10 && $h['to'] === 18);
+t_ok('a narrower window the shop chose is kept', $h['from'] === 10 && $h['to'] === 18);
+t_eq('and is still legal', $h['legal'], true);
+
+set_setting('voice_hour_from', '0');
+set_setting('voice_hour_to', '24');
+$h = voice_hours();
+t_ok('0 to 24 means any hour', $h['from'] === 0 && $h['to'] === 24);
+t_eq('which the screen must flag as outside the law', $h['legal'], false);
+t_eq('and name as all day', $h['all_day'], true);
+t_ok('a call at midnight is allowed once it is set that way', voice_hours_ok(strtotime('today 00:30')));
+t_ok('and at eleven at night', voice_hours_ok(strtotime('today 23:00')));
+
+set_setting('voice_hour_from', '6');
+set_setting('voice_hour_to', '23');
+$h = voice_hours();
+t_ok('a wider-than-legal window is obeyed', $h['from'] === 6 && $h['to'] === 23);
+t_eq('but reported as outside the law', $h['legal'], false);
+t_ok('and 6am now passes', voice_hours_ok(strtotime('today 06:30')));
+
+// A typo must not quietly turn into "call at any hour".
+set_setting('voice_hour_from', '20');
+set_setting('voice_hour_to', '8');
+$h = voice_hours();
+t_ok('a backwards window falls back to the legal one', $h['from'] === 9 && $h['to'] === 21);
+t_ok('so a typo does not start calls at midnight', !voice_hours_ok(strtotime('today 02:00')));
+
 set_setting('voice_hour_from', '9');
 set_setting('voice_hour_to', '21');
+
+// The owner ringing their own phone is not a customer being disturbed, so
+// the setup screen's test call does not consult the hours at all.
+$setup = file_get_contents(__DIR__ . '/../voice_setup.php');
+$testBlock = substr($setup, strpos($setup, "post('do') === 'test_call'"), 1200);
+t_ok('the test call does not check the calling hours',
+     strpos($testBlock, 'voice_hours_ok()') === false);
+t_ok('but a call to a CUSTOMER still does',
+     strpos(file_get_contents(__DIR__ . '/../includes/voice.php'), 'if (!voice_hours_ok($now))') !== false);
 
 t_group('Voice — not twice, and not while switched off');
 

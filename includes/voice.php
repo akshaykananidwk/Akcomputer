@@ -446,15 +446,25 @@ function voice_configured() {
 function voice_test_mode() { return (int)setting('voice_test_mode', 1) === 1; }
 function voice_enabled()   { return (int)setting('voice_enabled', 0) === 1; }
 
-/** Calling hours. TRAI's rule for commercial calls is 9am to 9pm, and the
- *  shop is free to narrow it further but not to widen it: the two settings
- *  are clamped here rather than trusted, so a stray 0-24 in the settings
- *  table cannot put the shop on the wrong side of the regulator. */
+/** Calling hours, exactly as the shop set them.
+ *
+ *  These used to be clamped to 9-21 and could not be widened. That is TRAI's
+ *  window for commercial calls and it is still the default, but clamping it
+ *  in code was the wrong place to enforce it: it also blocked the owner from
+ *  testing their own system in the evening, which is when a shopkeeper has
+ *  time to sit down with it. The window is the owner's to set; the setup
+ *  screen says plainly what the legal one is and warns when the setting is
+ *  outside it, so the choice is informed rather than prevented.
+ *
+ *  0 to 24 means any hour. A window that makes no sense (to <= from) falls
+ *  back to the legal one rather than blocking every call or allowing all of
+ *  them - a typo should not silently change what the shop does at night. */
 function voice_hours($now = null) {
-    $from = max(9, min(21, (int)setting('voice_hour_from', 9)));
-    $to   = max(9, min(21, (int)setting('voice_hour_to', 21)));
+    $from = max(0, min(24, (int)setting('voice_hour_from', 9)));
+    $to   = max(0, min(24, (int)setting('voice_hour_to', 21)));
     if ($to <= $from) { $from = 9; $to = 21; }
-    return ['from' => $from, 'to' => $to];
+    return ['from' => $from, 'to' => $to, 'all_day' => $from === 0 && $to === 24,
+            'legal' => $from >= 9 && $to <= 21];
 }
 function voice_hours_ok($now = null) {
     $h = voice_hours();

@@ -52,11 +52,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $lang = post('test_lang') ?: setting('voice_lang', 'gu');
         if (!voice_mobile_ok($to)) { flash('That does not look like a 10-digit mobile number.', 'error'); redirect('voice_setup.php'); }
         if (!voice_configured()) { flash('Fill in the Vobiz Auth ID, token and caller ID first.', 'error'); redirect('voice_setup.php'); }
-        if (!voice_hours_ok()) {
-            $h = voice_hours();
-            flash('Calls are allowed between ' . $h['from'] . ':00 and ' . $h['to'] . ':00 only — a test is a real call too.', 'error');
-            redirect('voice_setup.php');
-        }
+        // No calling-hours check here, deliberately. This dials the number
+        // typed on this screen by the person who pressed the button - the
+        // owner ringing their own phone to hear what it sounds like. The
+        // hours exist to protect customers from being rung at a bad time,
+        // and there is no customer in a test call.
 
         $amount = round((float)post('test_amount'), 2) ?: 12400.00;
         $plan = voice_audio_plan(post('test_name') ?: 'Test', $amount, $lang);
@@ -141,6 +141,14 @@ include __DIR__ . '/includes/header.php';
     This site is not on <strong>https</strong>. Vobiz fetches the recordings and the call instructions over https only,
     and it skips anything it cannot fetch <em>without reporting an error</em> — so calls would ring, play silence, and hang up.
     Fix the site's address before switching calls on.
+  </div>
+  <?php endif; ?>
+  <?php if (!$hours['legal']): ?>
+  <div class="flash flash-error">
+    Reminder calls are set to go out
+    <?= $hours['all_day'] ? '<strong>at any hour of the day or night</strong>' : 'between <strong>' . $hours['from'] . ':00 and ' . $hours['to'] . ':00</strong>' ?>.
+    The law allows calls to customers between <strong>9:00 and 21:00</strong> only.
+    Fine while you are testing on your own number — put it back to 9–21 before real customers are called.
   </div>
   <?php endif; ?>
   <p class="muted" style="font-size:13px;margin:8px 0 0">
@@ -242,10 +250,13 @@ include __DIR__ . '/includes/header.php';
           <?php endforeach; ?>
         </select></label>
       <label>Call only from
-        <input name="voice_hour_from" type="number" min="9" max="21" value="<?= (int)setting('voice_hour_from', 9) ?>"></label>
+        <input name="voice_hour_from" type="number" min="0" max="24" value="<?= (int)setting('voice_hour_from', 9) ?>"></label>
       <label>Call only until
-        <input name="voice_hour_to" type="number" min="9" max="21" value="<?= (int)setting('voice_hour_to', 21) ?>">
-        <span class="muted" style="font-size:11px">9–21 is the legal limit; a narrower window is allowed, a wider one is not.</span></label>
+        <input name="voice_hour_to" type="number" min="0" max="24" value="<?= (int)setting('voice_hour_to', 21) ?>">
+        <span class="muted" style="font-size:11px">
+          <strong>9 to 21</strong> is what the law allows for calls to customers, and is the default.
+          <strong>0 to 24</strong> means any hour — useful while testing.
+          The test call below ignores this setting either way.</span></label>
       <label>Same customer not called again for (hours)
         <input name="voice_cooldown_hours" type="number" min="1" max="72" value="<?= (int)setting('voice_cooldown_hours', 6) ?>"></label>
       <label>Most calls in a day
@@ -283,7 +294,8 @@ include __DIR__ . '/includes/header.php';
 <div class="card">
   <h3>🧪 Try it on your own phone first</h3>
   <p class="muted" style="font-size:13px">This dials for real, even when test mode is on — that is the point of it.
-    Ring yourself, listen to the whole thing, and only then let it near a customer.</p>
+    Ring yourself, listen to the whole thing, and only then let it near a customer.
+    <strong>It works at any hour</strong>: the calling-hours setting protects customers, and there is no customer here.</p>
   <form method="post">
     <?= csrf_field() ?><input type="hidden" name="do" value="test_call">
     <div class="grid-2">
