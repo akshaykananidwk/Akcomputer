@@ -391,6 +391,12 @@ include __DIR__ . '/includes/header.php';
   <?php endif; ?>
 
   <?php if ($attachTrail && !setting('vobiz_inbound_number')): ?>
+  <div class="flash flash-info">
+    <strong>Do it in the Vobiz console instead — it is the same thing.</strong><br>
+    Phone Numbers → <?= e($myNums['numbers'][0]['e164'] ?? 'your number') ?> →
+    set its <strong>Application</strong> to <strong><?= e(setting('vobiz_app_id')) ?></strong>, and save.<br>
+    Then press <strong>Check my setup</strong> above — it should turn green without anything else being done here.
+  </div>
   <h4>What Vobiz said to each way of attaching it</h4>
   <p class="muted" style="font-size:12px">
     All of these are the same request written four ways. If every one was refused, the number is on your
@@ -406,6 +412,19 @@ include __DIR__ . '/includes/header.php';
     <?php endforeach; ?>
     </tbody>
   </table></div>
+  <?php endif; ?>
+
+  <?php if (!setting('vobiz_inbound_number') && $myNums['numbers'] && can('settings.edit')): ?>
+  <form method="post" class="mb">
+    <?= csrf_field() ?><input type="hidden" name="do" value="inbound_save">
+    <?php foreach (['voice_agent_numbers','voice_agent_timeout','voice_shop_open','voice_shop_close',
+                    'voice_inbound_lang','voice_ivr_balance'] as $k): ?>
+      <input type="hidden" name="<?= $k ?>" value="<?= e(setting($k)) ?>">
+    <?php endforeach; ?>
+    <input type="hidden" name="voice_inbound" value="<?= voice_in_on() ? '1' : '' ?>">
+    <input type="hidden" name="vobiz_inbound_number" value="<?= e($myNums['numbers'][0]['e164']) ?>">
+    <button class="btn btn-outline" type="submit">I attached it in the Vobiz console — remember <?= e($myNums['numbers'][0]['e164']) ?> here</button>
+  </form>
   <?php endif; ?>
 
   <h4>Step 1 — point a number at this software</h4>

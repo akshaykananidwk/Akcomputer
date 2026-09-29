@@ -123,6 +123,7 @@ function voice_in_numbers() {
     $out = [];
     foreach (($j['items'] ?? []) as $n) {
         $out[] = [
+            'id'       => (string)($n['id'] ?? ''),
             'e164'     => (string)($n['e164'] ?? ''),
             'status'   => (string)($n['status'] ?? ''),
             'voice'    => !empty($n['voice_enabled']) || !empty($n['capabilities']['voice']),
@@ -158,17 +159,33 @@ function voice_num_same($a, $b) {
  *  All four are the same request - attach this number to this application -
  *  written the way four different versions of this API have spelled it.
  *  None of them can do anything else. */
-function voice_in_attach_shapes($e164, $appId) {
-    return [
+function voice_in_attach_shapes($e164, $appId, $numId = '') {
+    $shapes = [
         ['POST', 'numbers/' . rawurlencode('+' . $e164) . '/application', ['application_id' => $appId],
-         'documented: numbers/%2B<number>/application'],
+         'documented: POST numbers/%2B<number>/application'],
         ['POST', 'numbers/' . rawurlencode($e164) . '/application', ['application_id' => $appId],
          'same, without the plus'],
         ['POST', 'Number/' . rawurlencode($e164) . '/', ['app_id' => $appId],
-         'compatible: Number/<number>/ with app_id'],
+         'compatible: POST Number/<number>/ with app_id'],
         ['POST', 'numbers/' . rawurlencode('+' . $e164) . '/application', ['app_id' => $appId],
          'documented path, app_id instead of application_id'],
+        // The listing gives each number an id of its own. An API that keys
+        // everything else by id may well key this by id too, and the E.164
+        // in the path may simply not be what it is looking for.
+        ['PUT', 'numbers/' . rawurlencode('+' . $e164) . '/application', ['application_id' => $appId],
+         'documented path as a PUT rather than a POST'],
+        ['PATCH', 'numbers/' . rawurlencode('+' . $e164), ['application_id' => $appId],
+         'update the number itself (PATCH)'],
     ];
+    if ($numId !== '') {
+        array_splice($shapes, 4, 0, [
+            ['POST', 'numbers/' . rawurlencode($numId) . '/application', ['application_id' => $appId],
+             'by the number\'s own id, not its digits'],
+            ['PATCH', 'numbers/' . rawurlencode($numId), ['application_id' => $appId],
+             'update the number by its id (PATCH)'],
+        ]);
+    }
+    return $shapes;
 }
 
 function voice_in_number_attach($number, $appId) {
@@ -176,10 +193,12 @@ function voice_in_number_attach($number, $appId) {
 
     $mine = voice_in_numbers();
     $owned = $mine['ok'] ? $mine['numbers'] : [];
-    $isMine = (bool)array_filter($owned, fn($n) => voice_num_same($n['e164'], $e164));
+    $match = array_values(array_filter($owned, fn($n) => voice_num_same($n['e164'], $e164)));
+    $isMine = (bool)$match;
+    $numId = $match[0]['id'] ?? '';
 
     $trail = [];
-    foreach (voice_in_attach_shapes($e164, $appId) as [$m, $path, $body, $label]) {
+    foreach (voice_in_attach_shapes($e164, $appId, $numId) as [$m, $path, $body, $label]) {
         [$j, $err] = voice_api($m, $path, $body);
         if ($j !== null) {
             set_setting('vobiz_inbound_number', $e164);
@@ -193,8 +212,10 @@ function voice_in_number_attach($number, $appId) {
 
     // Everything refused. Say what is true rather than guess a cause.
     $err = $isMine
-        ? 'Vobiz refused every way of attaching ' . $e164 . ', even though the number IS on your account. '
-        . 'This is on their side — send them the list below and ask them to point it at application ' . $appId . '.'
+        ? 'Vobiz refused every way of attaching ' . $e164 . ' over the API, although the number IS on your '
+        . 'account. Do it in the Vobiz console instead — it is the same thing, and it works: '
+        . 'Phone Numbers → ' . $e164 . ' → set its Application to ' . $appId . '. '
+        . 'Then press "Check my setup" here.'
         : $e164 . ' is not on your Vobiz account. Buy a number under Phone Numbers first.';
     log_activity('voice_number_fail', $e164 . ': ' . count($trail) . ' shapes refused');
     return ['ok' => false, 'error' => $err, 'trail' => $trail];

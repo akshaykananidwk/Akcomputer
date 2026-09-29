@@ -1006,3 +1006,25 @@ t_ok('the cached number list is dropped once something attaches',
 
 $su2 = file_get_contents(__DIR__ . '/../voice_setup.php');
 t_ok('the screen prints what Vobiz said to each attempt', strpos($su2, 'What Vobiz said to each way') !== false);
+
+t_group('Voice IN — when the API will not, the console still will');
+
+$sh = voice_in_attach_shapes('918065354620', 'APP1', 'NUMID7');
+t_eq('every known spelling is tried, including by the number id', count($sh), 8);
+t_ok('the number id is used as a path of its own',
+     (bool)array_filter($sh, fn($x) => strpos($x[1], 'NUMID7') !== false));
+t_ok('other verbs are tried, not just POST',
+     count(array_unique(array_column($sh, 0))) >= 3, implode(',', array_unique(array_column($sh, 0))));
+t_ok('without an id, the id-based shapes are simply not attempted',
+     count(voice_in_attach_shapes('918065354620', 'APP1')) === 6);
+t_ok('the numbers listing keeps each number id',
+     strpos(file_get_contents(__DIR__ . '/../includes/voice_in.php'), "'id'       => (string)(\$n['id'] ?? '')") !== false);
+
+$vin3 = file_get_contents(__DIR__ . '/../includes/voice_in.php');
+t_ok('total refusal points at the console rather than blaming and stopping',
+     strpos($vin3, 'Do it in the Vobiz console instead') !== false);
+t_ok('and names the number and the application to set there',
+     strpos($vin3, 'set its Application to') !== false);
+$su3 = file_get_contents(__DIR__ . '/../voice_setup.php');
+t_ok('the screen offers to remember a number attached by hand',
+     strpos($su3, 'I attached it in the Vobiz console') !== false);
