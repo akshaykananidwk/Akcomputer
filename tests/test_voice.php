@@ -800,7 +800,8 @@ t_eq('with the note', $done['notes'], 'rang them back');
 t_group('Voice IN — the door is not open to anyone');
 
 $src = file_get_contents(__DIR__ . '/../voice_in.php');
-t_ok('a call to a number that is not ours is refused', strpos($src, '$to !== $mine') !== false);
+t_ok('a call to a number that is not ours is refused',
+     strpos($src, 'voice_in_to_ok($to)') !== false && strpos($src, "if (!\$gate['ok'])") !== false);
 t_ok('the first request is rate limited', strpos($src, 'api_rate_ok(') !== false);
 t_ok('every later step needs the call token', strpos($src, 'voice_call_by_token(get(\'t\'))') !== false);
 t_ok('an outgoing call token cannot drive the incoming menu',
@@ -875,3 +876,74 @@ t_ok('making the application and attaching a number are separate presses',
 t_ok('the application step no longer tries to attach anything',
      strpos(substr($setup2, strpos($setup2, "post('do') === 'app_setup'"), 700), 'voice_in_number_attach') === false);
 t_ok('the numbers are shown as a list to choose from', strpos($setup2, 'Use this one') !== false);
+
+t_group('Voice IN — a dead line is the worst failure, so the guard fails open');
+
+// The first version of this guard compared the dialled number against one
+// setting, and that setting is only written when a number attaches. Until
+// the attach worked, EVERY real call was refused and the caller heard the
+// line cut dead - the shop's main number, silently broken by its own guard.
+set_setting('vobiz_inbound_number', '');
+set_setting('vobiz_numbers_cache', json_encode(['at' => time(), 'nums' => []]));
+$g = voice_in_to_ok('918065354620');
+t_eq('with nothing set up at all, the call is still answered', $g['ok'], true);
+t_eq('but not treated as proven', $g['strict'], false);
+t_ok('and it says why in words', strlen($g['why']) > 10, $g['why']);
+
+// once a number IS known, only that number is answered
+set_setting('vobiz_inbound_number', '918065354620');
+$g = voice_in_to_ok('918065354620');
+t_ok('the configured number is answered, and proven', $g['ok'] && $g['strict']);
+t_ok('+91 and spacing do not matter', voice_in_to_ok('+91 80653 54620')['ok']);
+$g = voice_in_to_ok('919111122223');
+t_eq('a call to some other number is refused', $g['ok'], false);
+t_ok('with the number in the reason', strpos($g['why'], '919111122223') !== false, $g['why']);
+t_eq('a call carrying no number at all is refused', voice_in_to_ok('')['ok'], false);
+
+// a number bought later must work without anyone re-saving a setting
+set_setting('vobiz_inbound_number', '');
+set_setting('vobiz_numbers_cache', json_encode(['at' => time(), 'nums' => ['918065354620', '918065354621']]));
+$g = voice_in_to_ok('918065354621');
+t_ok('any number the account owns is answered, and proven', $g['ok'] && $g['strict']);
+$g = voice_in_to_ok('919111122223');
+t_eq('but still not a number we do not own', $g['ok'], false);
+set_setting('vobiz_numbers_cache', '');
+
+t_group('Voice IN — everybody gets answered');
+
+// Refusing callers we could not identify was wrong: not recognising a number
+// is normal, and is no reason to hang up on a customer.
+$src = file_get_contents(__DIR__ . '/../voice_in.php');
+t_ok('a caller is no longer refused for being unrecognisable',
+     !preg_match('/if \(!voice_mobile_ok\(\$from\)\).*exit/', $src));
+t_ok('an unproven call is stripped of any customer match',
+     strpos($src, "UPDATE voice_calls SET party_id = 0") !== false);
+
+$land = voice_in_start('02212345678', '918065354620', 'uuid-land-' . bin2hex(random_bytes(4)));
+t_ok('a landline caller gets a call record', (int)$land['id'] > 0);
+$xl = voice_in_menu_xml($land, 1, $NOON);
+t_ok('and hears the menu', strpos($xl, '<Gather') !== false);
+
+t_group('Voice IN — the setup checks itself');
+
+$checks = voice_in_diagnose();
+t_ok('the diagnosis returns a list of checks', count($checks) >= 2);
+t_ok('every check has a name and a verdict',
+     count(array_filter($checks, fn($c) => isset($c['name'], $c['ok'], $c['detail']))) === count($checks));
+t_ok('https is checked first — nothing works without it', strpos($checks[0]['name'], 'https') !== false);
+t_ok('a failing check explains what to press',
+     (bool)array_filter($checks, fn($c) => !$c['ok'] && strlen($c['detail']) > 5) || !array_filter($checks, fn($c) => !$c['ok']));
+
+// refusals must be readable by the owner, not only by whoever reads the log
+t_ok('refusals are recorded where the screen can show them',
+     strpos(file_get_contents(__DIR__ . '/../includes/voice_in.php'), "action = 'voice_in_reject'") !== false);
+$setup3 = file_get_contents(__DIR__ . '/../voice_setup.php');
+t_ok('and the screen does show them', strpos($setup3, 'turned away') !== false);
+t_ok('with a button to run the whole check', strpos($setup3, 'Check my setup') !== false);
+
+// An unproven call must not leak the customer's NAME either - the greeting
+// is built from the copy already in hand, so clearing only the row left the
+// name being read out to whoever was on the line.
+$srcIn = file_get_contents(__DIR__ . '/../voice_in.php');
+t_ok('an unproven call is stripped in memory as well as in the row',
+     preg_match("/UPDATE voice_calls SET party_id = 0.*?\\\$call\\['party_id'\\] = 0;/s", $srcIn) === 1);

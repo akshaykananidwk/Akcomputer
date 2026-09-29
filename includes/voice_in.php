@@ -161,6 +161,106 @@ function voice_in_number_attach($number, $appId) {
     return ['ok' => true, 'error' => ''];
 }
 
+/** May we answer a call made to this number?
+ *
+ *  This guard exists so a stranger cannot drive the menu by posting to the
+ *  URL. Its first version compared against one setting, and that setting is
+ *  only written when a number attaches successfully - so until the attach
+ *  worked, EVERY real call was refused and the caller heard the line cut
+ *  dead. A guard that fails closed on a shop's main number is worse than the
+ *  thing it guards against.
+ *
+ *  So it now matches against every number the Vobiz account owns, not just
+ *  the stored one. And when it cannot tell - no keys, no numbers, nothing
+ *  configured - it answers anyway, in a limited way: the menu works, but
+ *  nothing private is read out. A working line that says less beats a dead
+ *  line that says nothing.
+ *
+ *  Returns ['ok', 'strict', 'why']. strict=false means "answered, but this
+ *  call is not proven to be ours, so keep it to public information". */
+function voice_in_to_ok($to) {
+    $to = voice_e164($to);
+    if ($to === '91') return ['ok' => false, 'strict' => false, 'why' => 'the call carried no number to us'];
+
+    $stored = voice_e164(setting('vobiz_inbound_number', ''));
+    if ($stored !== '91' && $to === $stored) return ['ok' => true, 'strict' => true, 'why' => ''];
+
+    foreach (voice_in_account_numbers() as $n) {
+        if (voice_e164($n) === $to) return ['ok' => true, 'strict' => true, 'why' => ''];
+    }
+
+    if ($stored === '91' && !voice_in_account_numbers()) {
+        return ['ok' => true, 'strict' => false,
+                'why' => 'no number is set up yet, so this call was answered without reading out anything private'];
+    }
+    return ['ok' => false, 'strict' => false, 'why' => 'the call was to ' . $to . ', which is not one of our numbers'];
+}
+
+/** The account's numbers, cached - this is consulted on every incoming call
+ *  and must not become an API request per ring. */
+function voice_in_account_numbers() {
+    $c = json_decode((string)setting('vobiz_numbers_cache', ''), true);
+    if (is_array($c) && ($c['at'] ?? 0) > time() - 900) return $c['nums'] ?? [];
+    if (!voice_configured()) return [];
+    $r = voice_in_numbers();
+    $nums = $r['ok'] ? array_values(array_filter(array_column($r['numbers'], 'e164'))) : [];
+    if ($r['ok']) set_setting('vobiz_numbers_cache', json_encode(['at' => time(), 'nums' => $nums]));
+    return $nums;
+}
+
+/** Why an incoming call was refused, most recent first - so a dead line can
+ *  be diagnosed from the screen instead of from a guess. */
+function voice_in_rejects($limit = 10) {
+    return all("SELECT details, created_at FROM activity_log
+                WHERE action = 'voice_in_reject' ORDER BY id DESC LIMIT " . (int)$limit);
+}
+
+/** Walk the whole chain and say which link is broken. */
+function voice_in_diagnose() {
+    $out = [];
+    $add = function ($name, $ok, $detail) use (&$out) { $out[] = ['name' => $name, 'ok' => $ok, 'detail' => $detail]; };
+
+    $add('The site is on https', voice_public_ok(),
+         voice_public_ok() ? base_url('') : 'Vobiz fetches over https only — it cannot reach ' . base_url(''));
+    $add('Vobiz keys are saved', voice_configured(), voice_configured() ? 'Auth ID, token and caller ID are in' : 'missing');
+    if (!voice_configured()) return $out;
+
+    $appId = setting('vobiz_app_id', '');
+    $add('An application exists', $appId !== '', $appId ?: 'press "Make the application"');
+
+    $want = voice_public_url('voice_in.php');
+    if ($appId !== '') {
+        [$app, $err] = voice_api('GET', 'Application/' . rawurlencode($appId) . '/');
+        if ($app === null) {
+            $add('Vobiz can see that application', false, $err);
+        } else {
+            $have = (string)($app['answer_url'] ?? '');
+            $add('It points at this software', $have === $want,
+                 $have === $want ? $want : 'it points at ' . ($have ?: '(nothing)') . ' — press "Refresh the application"');
+        }
+    }
+
+    $nums = voice_in_numbers();
+    if (!$nums['ok']) { $add('Your numbers can be read', false, $nums['error']); return $out; }
+    $add('This account owns a number', (bool)$nums['numbers'],
+         $nums['numbers'] ? count($nums['numbers']) . ' number(s)' : 'buy one in the Vobiz console first');
+
+    $attached = array_values(array_filter($nums['numbers'], fn($n) => $n['app_id'] !== '' && $n['app_id'] === $appId));
+    $add('A number is pointed at this software', (bool)$attached,
+         $attached ? implode(', ', array_column($attached, 'e164')) : 'press "Use this one" on a number above');
+
+    foreach ($attached as $n) {
+        $ready = $n['voice'] && !$n['blocked'] && (!$n['kyc_need'] || $n['kyc_done']);
+        $add($n['e164'] . ' can take calls', $ready,
+             $n['blocked'] ? 'blocked by Vobiz' :
+             (!$n['voice'] ? 'this number has no voice capability' :
+             (($n['kyc_need'] && !$n['kyc_done']) ? 'KYC not finished — it will accept the attach and then never ring'
+                                                  : 'ready')));
+    }
+    $add('Answering is switched on', voice_in_on(), voice_in_on() ? 'on' : 'tick "Answer incoming calls"');
+    return $out;
+}
+
 // ---------- everything the menu says ----------
 
 /** One table, three languages. Kept together so a change to the menu is one

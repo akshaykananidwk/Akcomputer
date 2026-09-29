@@ -134,6 +134,8 @@ $bal = voice_configured() ? voice_balance() : null;
 $tts = voice_tts_usage();
 $preview = json_decode(setting('voice_preview_last', ''), true) ?: null;
 $myNums = voice_configured() ? voice_in_numbers() : ['ok' => false, 'error' => '', 'numbers' => []];
+$diag = (get('check') === '1') ? voice_in_diagnose() : null;
+$rejects = voice_in_rejects(8);
 $hours = voice_hours();
 $recent = all('SELECT v.*, p.name FROM voice_calls v LEFT JOIN parties p ON p.id = v.party_id
                ORDER BY v.id DESC LIMIT 20');
@@ -343,6 +345,41 @@ include __DIR__ . '/includes/header.php';
   </div>
 
   <?php if (can('settings.edit')): ?>
+  <h4>🩺 Is it working?</h4>
+  <p class="muted" style="font-size:13px">
+    A call that cuts off the moment it connects means one link in the chain is broken.
+    This walks all of them and names the broken one.
+  </p>
+  <p><a class="btn btn-outline" href="voice_setup.php?check=1#check">Check my setup</a></p>
+  <?php if ($diag !== null): ?>
+  <div id="check" class="table-wrap mb"><table class="table-sm">
+    <tbody>
+    <?php foreach ($diag as $d): ?>
+      <tr>
+        <td style="width:26px"><?= $d['ok'] ? '✅' : '❌' ?></td>
+        <td><?= e($d['name']) ?></td>
+        <td class="muted" style="font-size:12px"><?= e($d['detail']) ?></td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table></div>
+  <?php endif; ?>
+
+  <?php if ($rejects): ?>
+  <h4>📵 Calls that arrived and were turned away</h4>
+  <p class="muted" style="font-size:12px">If your test call is in this list, the reason next to it is the whole answer.</p>
+  <div class="table-wrap mb"><table class="table-sm">
+    <thead><tr><th>When</th><th>Why</th></tr></thead>
+    <tbody>
+    <?php foreach ($rejects as $rj): ?>
+      <tr><td style="white-space:nowrap"><?= e(dmy(substr($rj['created_at'], 0, 10))) ?>
+            <span class="muted"><?= e(substr($rj['created_at'], 11, 5)) ?></span></td>
+          <td><?= e($rj['details']) ?></td></tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table></div>
+  <?php endif; ?>
+
   <h4>Step 1 — point a number at this software</h4>
   <p class="muted" style="font-size:13px">
     Only a number <strong>Vobiz sold you</strong> can be attached — your own mobile cannot.

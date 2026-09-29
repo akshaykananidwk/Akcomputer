@@ -39,19 +39,31 @@ if (!voice_in_on()) { echo $empty; exit; }
 if ($step === '') {
     if (!api_rate_ok('voice_in:' . client_ip(), 60, 60)) { echo $empty; exit; }
 
-    $to = voice_e164((string)($p['To'] ?? $_GET['To'] ?? ''));
-    $mine = voice_e164(setting('vobiz_inbound_number', ''));
-    // Answering calls that were never made to us would mean anybody could
-    // drive this menu by posting to the URL.
-    if ($mine === '91' || $to !== $mine) {
-        log_activity('voice_in_reject', 'To=' . $to . ' expected ' . $mine);
+    $to = (string)($p['To'] ?? $_GET['To'] ?? '');
+    $gate = voice_in_to_ok($to);
+    if (!$gate['ok']) {
+        // Written down where the owner can read it. A line that cuts dead is
+        // impossible to diagnose from the caller's end, and this is the one
+        // place that knows why.
+        log_activity('voice_in_reject', 'To=' . voice_e164($to) . ' — ' . $gate['why']);
         echo $empty; exit;
     }
+    if (!$gate['strict']) log_activity('voice_in_reject', 'ANSWERED ANYWAY — ' . $gate['why']);
 
+    // Any caller is answered, including from a landline or a withheld
+    // number. Refusing those was wrong: not recognising who is calling is
+    // normal, and is no reason to hang up on them.
     $from = (string)($p['From'] ?? $_GET['From'] ?? '');
-    if (!voice_mobile_ok($from)) { log_activity('voice_in_reject', 'bad From'); echo $empty; exit; }
 
     $call = voice_in_start($from, $to, (string)($p['CallUUID'] ?? ''));
+    // An unproven call hears the menu but is told nothing private - not the
+    // balance, and not even the customer's name in the greeting. Clearing it
+    // in the row alone was not enough: the greeting is built from the copy
+    // already in hand, so that copy has to be cleared too.
+    if (!$gate['strict']) {
+        q('UPDATE voice_calls SET party_id = 0 WHERE id = ?', [$call['id']]);
+        $call['party_id'] = 0;
+    }
     voice_in_log($call['id'], 'answered');
     echo voice_in_menu_xml($call, 1);
     exit;
