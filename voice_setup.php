@@ -253,6 +253,68 @@ include __DIR__ . '/includes/header.php';
   <?php endif; ?>
 </div>
 
+<?php if (can('settings.edit')): ?>
+<div class="card">
+  <h3>⚙️ Settings</h3>
+  <form method="post">
+    <?= csrf_field() ?><input type="hidden" name="do" value="save">
+    <div class="grid-2">
+      <label>Vobiz Auth ID
+        <input name="vobiz_auth_id" value="<?= e(setting('vobiz_auth_id')) ?>" placeholder="from the Vobiz console"></label>
+      <label>Vobiz Auth Token
+        <input name="vobiz_auth_token" type="password" autocomplete="new-password"
+               placeholder="<?= setting('vobiz_auth_token') ? '•••••••• saved — leave blank to keep it' : 'not saved yet' ?>">
+        <span class="muted" style="font-size:11px">Stored encrypted. Never shown again, never sent to the browser.</span></label>
+      <label>Caller ID (the number customers see)
+        <input name="vobiz_caller_id" value="<?= e(setting('vobiz_caller_id')) ?>" placeholder="919876543210"></label>
+      <label>Language
+        <select name="voice_lang">
+          <?php foreach ($langs as $lk => $lv): ?>
+            <option value="<?= $lk ?>" <?= setting('voice_lang', 'gu') === $lk ? 'selected' : '' ?>><?= e($lv) ?></option>
+          <?php endforeach; ?>
+        </select></label>
+      <label>Call only from
+        <input name="voice_hour_from" type="number" min="0" max="24" value="<?= (int)setting('voice_hour_from', 9) ?>"></label>
+      <label>Call only until
+        <input name="voice_hour_to" type="number" min="0" max="24" value="<?= (int)setting('voice_hour_to', 21) ?>">
+        <span class="muted" style="font-size:11px">
+          <strong>9 to 21</strong> is what the law allows for calls to customers, and is the default.
+          <strong>0 to 24</strong> means any hour — useful while testing.
+          The test call below ignores this setting either way.</span></label>
+      <label>Same customer not called again for (hours)
+        <input name="voice_cooldown_hours" type="number" min="1" max="72" value="<?= (int)setting('voice_cooldown_hours', 6) ?>"></label>
+      <label>Most calls in a day
+        <input name="voice_max_per_day" type="number" min="1" max="500" value="<?= (int)setting('voice_max_per_day', 50) ?>"></label>
+      <label>Warn me when balance falls below (₹)
+        <input name="voice_balance_min" type="number" min="0" value="<?= (int)setting('voice_balance_min', 100) ?>"></label>
+      <label>AI voice
+        <select name="voice_tts_voice">
+          <?php foreach (['Kore' => 'Kore (woman, calm)', 'Leda' => 'Leda (woman, warm)', 'Aoede' => 'Aoede (woman, bright)',
+                          'Charon' => 'Charon (man, steady)', 'Puck' => 'Puck (man, light)'] as $vk => $vv): ?>
+            <option value="<?= $vk ?>" <?= setting('voice_tts_voice', 'Kore') === $vk ? 'selected' : '' ?>><?= e($vv) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <span class="muted" style="font-size:11px">Changing this makes every sentence again — listen before you switch.</span></label>
+      <label>Most sentences made in a month
+        <input name="voice_tts_month_cap" type="number" min="1" value="<?= (int)setting('voice_tts_month_cap', 2000) ?>">
+        <span class="muted" style="font-size:11px">Past this, calls keep going out in English rather than run up a bill.</span></label>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" name="voice_tts" value="1" <?= (int)setting('voice_tts', 1) === 1 ? 'checked' : '' ?>>
+        Speak Gujarati/Hindi with the AI voice</label>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" name="voice_ivr" value="1" <?= voice_ivr_on() ? 'checked' : '' ?>>
+        Ask “will you pay today?” and record the answer</label>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" name="voice_test_mode" value="1" <?= voice_test_mode() ? 'checked' : '' ?>>
+        Test mode — show what would be said, dial nothing</label>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" name="voice_enabled" value="1" <?= voice_enabled() ? 'checked' : '' ?>>
+        Reminder calls are switched on</label>
+    </div>
+    <button class="btn btn-success mt" type="submit">Save</button>
+  </form>
+</div>
+
 <div class="card">
   <h3>📥 Incoming calls — the shop's number answers by itself</h3>
   <p class="muted" style="font-size:13px">
@@ -342,67 +404,6 @@ include __DIR__ . '/includes/header.php';
   <p class="muted" style="font-size:12px">Everything a caller leaves shows on <a href="voice_calls.php">Calls</a> until somebody marks it done.</p>
 </div>
 
-<?php if (can('settings.edit')): ?>
-<div class="card">
-  <h3>⚙️ Settings</h3>
-  <form method="post">
-    <?= csrf_field() ?><input type="hidden" name="do" value="save">
-    <div class="grid-2">
-      <label>Vobiz Auth ID
-        <input name="vobiz_auth_id" value="<?= e(setting('vobiz_auth_id')) ?>" placeholder="from the Vobiz console"></label>
-      <label>Vobiz Auth Token
-        <input name="vobiz_auth_token" type="password" autocomplete="new-password"
-               placeholder="<?= setting('vobiz_auth_token') ? '•••••••• saved — leave blank to keep it' : 'not saved yet' ?>">
-        <span class="muted" style="font-size:11px">Stored encrypted. Never shown again, never sent to the browser.</span></label>
-      <label>Caller ID (the number customers see)
-        <input name="vobiz_caller_id" value="<?= e(setting('vobiz_caller_id')) ?>" placeholder="919876543210"></label>
-      <label>Language
-        <select name="voice_lang">
-          <?php foreach ($langs as $lk => $lv): ?>
-            <option value="<?= $lk ?>" <?= setting('voice_lang', 'gu') === $lk ? 'selected' : '' ?>><?= e($lv) ?></option>
-          <?php endforeach; ?>
-        </select></label>
-      <label>Call only from
-        <input name="voice_hour_from" type="number" min="0" max="24" value="<?= (int)setting('voice_hour_from', 9) ?>"></label>
-      <label>Call only until
-        <input name="voice_hour_to" type="number" min="0" max="24" value="<?= (int)setting('voice_hour_to', 21) ?>">
-        <span class="muted" style="font-size:11px">
-          <strong>9 to 21</strong> is what the law allows for calls to customers, and is the default.
-          <strong>0 to 24</strong> means any hour — useful while testing.
-          The test call below ignores this setting either way.</span></label>
-      <label>Same customer not called again for (hours)
-        <input name="voice_cooldown_hours" type="number" min="1" max="72" value="<?= (int)setting('voice_cooldown_hours', 6) ?>"></label>
-      <label>Most calls in a day
-        <input name="voice_max_per_day" type="number" min="1" max="500" value="<?= (int)setting('voice_max_per_day', 50) ?>"></label>
-      <label>Warn me when balance falls below (₹)
-        <input name="voice_balance_min" type="number" min="0" value="<?= (int)setting('voice_balance_min', 100) ?>"></label>
-      <label>AI voice
-        <select name="voice_tts_voice">
-          <?php foreach (['Kore' => 'Kore (woman, calm)', 'Leda' => 'Leda (woman, warm)', 'Aoede' => 'Aoede (woman, bright)',
-                          'Charon' => 'Charon (man, steady)', 'Puck' => 'Puck (man, light)'] as $vk => $vv): ?>
-            <option value="<?= $vk ?>" <?= setting('voice_tts_voice', 'Kore') === $vk ? 'selected' : '' ?>><?= e($vv) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <span class="muted" style="font-size:11px">Changing this makes every sentence again — listen before you switch.</span></label>
-      <label>Most sentences made in a month
-        <input name="voice_tts_month_cap" type="number" min="1" value="<?= (int)setting('voice_tts_month_cap', 2000) ?>">
-        <span class="muted" style="font-size:11px">Past this, calls keep going out in English rather than run up a bill.</span></label>
-      <label style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" name="voice_tts" value="1" <?= (int)setting('voice_tts', 1) === 1 ? 'checked' : '' ?>>
-        Speak Gujarati/Hindi with the AI voice</label>
-      <label style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" name="voice_ivr" value="1" <?= voice_ivr_on() ? 'checked' : '' ?>>
-        Ask “will you pay today?” and record the answer</label>
-      <label style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" name="voice_test_mode" value="1" <?= voice_test_mode() ? 'checked' : '' ?>>
-        Test mode — show what would be said, dial nothing</label>
-      <label style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" name="voice_enabled" value="1" <?= voice_enabled() ? 'checked' : '' ?>>
-        Reminder calls are switched on</label>
-    </div>
-    <button class="btn btn-success mt" type="submit">Save</button>
-  </form>
-</div>
 
 <div class="card">
   <h3>🧪 Try it on your own phone first</h3>
