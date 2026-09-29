@@ -947,3 +947,23 @@ t_ok('with a button to run the whole check', strpos($setup3, 'Check my setup') !
 $srcIn = file_get_contents(__DIR__ . '/../voice_in.php');
 t_ok('an unproven call is stripped in memory as well as in the row',
      preg_match("/UPDATE voice_calls SET party_id = 0.*?\\\$call\\['party_id'\\] = 0;/s", $srcIn) === 1);
+
+t_group('Voice IN — the diagnosis points at the fix, not at a scroll');
+
+// "press Use this one on a number above" is no help when the table above is
+// empty. Each outcome has to read differently, and the one that can be fixed
+// on the spot offers to do it.
+$vin = file_get_contents(__DIR__ . '/../includes/voice_in.php');
+t_ok('owning no numbers says so, and says caller ID is a different thing',
+     strpos($vin, 'the caller ID you are using for outgoing calls is not the same thing') !== false);
+t_ok('a free number is named rather than gestured at',
+     strpos($vin, "\$free[0]['e164'] . ' is free — attach it'") !== false);
+t_ok('and the check carries the number so it can be attached in place',
+     strpos($vin, "'attach' => \$free[0]['e164']") !== false);
+t_ok('numbers that exist but cannot take calls say that instead',
+     strpos($vin, 'none of your numbers can take calls yet') !== false);
+t_ok('and no numbers at all says there is nothing to point',
+     strpos($vin, 'there is no number to point') !== false);
+
+$su = file_get_contents(__DIR__ . '/../voice_setup.php');
+t_ok('the screen turns that into a button', strpos($su, 'Attach <?= e($d[\'attach\']) ?> now') !== false);

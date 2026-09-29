@@ -243,11 +243,28 @@ function voice_in_diagnose() {
     $nums = voice_in_numbers();
     if (!$nums['ok']) { $add('Your numbers can be read', false, $nums['error']); return $out; }
     $add('This account owns a number', (bool)$nums['numbers'],
-         $nums['numbers'] ? count($nums['numbers']) . ' number(s)' : 'buy one in the Vobiz console first');
+         $nums['numbers'] ? implode(', ', array_column($nums['numbers'], 'e164'))
+                          : 'none — the caller ID you are using for outgoing calls is not the same thing. '
+                          . 'Buy a number in the Vobiz console under Phone Numbers, then come back.');
 
     $attached = array_values(array_filter($nums['numbers'], fn($n) => $n['app_id'] !== '' && $n['app_id'] === $appId));
-    $add('A number is pointed at this software', (bool)$attached,
-         $attached ? implode(', ', array_column($attached, 'e164')) : 'press "Use this one" on a number above');
+    // Name the number to attach, and offer to do it right here. Saying
+    // "press Use this one on a number above" is no help when the table above
+    // is empty, and not much when it is not.
+    $free = array_values(array_filter($nums['numbers'],
+        fn($n) => $n['app_id'] !== $appId && $n['voice'] && !$n['blocked'] && (!$n['kyc_need'] || $n['kyc_done'])));
+    if ($attached) {
+        $add('A number is pointed at this software', true, implode(', ', array_column($attached, 'e164')));
+    } elseif ($free) {
+        $out[] = ['name' => 'A number is pointed at this software', 'ok' => false,
+                  'detail' => $free[0]['e164'] . ' is free — attach it',
+                  'attach' => $free[0]['e164']];
+    } elseif ($nums['numbers']) {
+        $add('A number is pointed at this software', false,
+             'none of your numbers can take calls yet — see the reason next to each one above');
+    } else {
+        $add('A number is pointed at this software', false, 'there is no number to point — buy one first');
+    }
 
     foreach ($attached as $n) {
         $ready = $n['voice'] && !$n['blocked'] && (!$n['kyc_need'] || $n['kyc_done']);

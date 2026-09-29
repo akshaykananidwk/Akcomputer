@@ -358,7 +358,15 @@ include __DIR__ . '/includes/header.php';
       <tr>
         <td style="width:26px"><?= $d['ok'] ? '✅' : '❌' ?></td>
         <td><?= e($d['name']) ?></td>
-        <td class="muted" style="font-size:12px"><?= e($d['detail']) ?></td>
+        <td class="muted" style="font-size:12px"><?= e($d['detail']) ?>
+          <?php if (!empty($d['attach']) && can('settings.edit')): ?>
+            <form method="post" style="display:inline;margin-left:6px">
+              <?= csrf_field() ?><input type="hidden" name="do" value="attach_number">
+              <input type="hidden" name="number" value="<?= e($d['attach']) ?>">
+              <button class="btn btn-sm btn-success" type="submit">Attach <?= e($d['attach']) ?> now</button>
+            </form>
+          <?php endif; ?>
+        </td>
       </tr>
     <?php endforeach; ?>
     </tbody>
