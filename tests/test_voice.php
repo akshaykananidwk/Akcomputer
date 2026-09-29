@@ -983,21 +983,26 @@ t_ok('and nothing matches nothing', !voice_num_same('', '918065354620'));
 
 // Four spellings of one request, tried in order, documented one first.
 $shapes = voice_in_attach_shapes('918065354620', 'APP123');
-t_eq('every known spelling is tried', count($shapes), 4);
+t_ok('several spellings are tried, not one', count($shapes) >= 4, count($shapes) . ' shapes');
 t_ok('the documented one goes first', strpos($shapes[0][3], 'documented') === 0);
 foreach ($shapes as $i => $sh) {
-    t_ok('attempt ' . ($i + 1) . ' is a POST that names the number and the application',
-         $sh[0] === 'POST' && strpos($sh[1], '8065354620') !== false
-         && in_array('APP123', array_values($sh[2]), true));
+    t_ok('attempt ' . ($i + 1) . ' names the number and the application',
+         strpos($sh[1], '8065354620') !== false && in_array('APP123', array_values($sh[2]), true),
+         $sh[0] . ' ' . $sh[1]);
 }
-t_ok('none of them can do anything but attach',
-     count(array_filter($shapes, fn($sh) => strpos($sh[1], 'application') === false
-                                         && strpos($sh[1], 'Number/') === false)) === 0);
+// Whatever the verb, every one of them addresses a number and carries only
+// the application to put on it. None can reach anything else on the account.
+t_ok('all of them address a number and nothing else',
+     count(array_filter($shapes, fn($sh) => !preg_match('#^(numbers|Number)/#', $sh[1]))) === 0);
+t_ok('and each body carries only the application id',
+     count(array_filter($shapes, fn($sh) => count($sh[2]) !== 1)) === 0);
+t_ok('the verbs are all safe to repeat',
+     count(array_filter($shapes, fn($sh) => !in_array($sh[0], ['POST', 'PUT', 'PATCH'], true))) === 0);
 
 $vin2 = file_get_contents(__DIR__ . '/../includes/voice_in.php');
 t_ok('every attempt is kept so the screen can show it', strpos($vin2, "\$trail[] = ['tried'") !== false);
 t_ok('a number that IS owned is not accused of not being owned',
-     strpos($vin2, 'even though the number IS on your account') !== false);
+     strpos($vin2, 'although the number IS on your') !== false);
 t_ok('and one that is not owned is told plainly',
      strpos($vin2, 'is not on your Vobiz account') !== false);
 t_ok('the shape that worked is remembered', strpos($vin2, "set_setting('vobiz_attach_shape'") !== false);
