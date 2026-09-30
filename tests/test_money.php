@@ -483,3 +483,69 @@ t_ok('the server still checks the permission', strpos($slsSrc, "require_perm(\$i
 t_ok('the form still carries a CSRF token', strpos($slsSrc, 'csrf_field()') !== false);
 t_ok('a credit bill still needs somebody to put it on',
      strpos($slsSrc, "Select a party (or add a new one) for a Credit bill") !== false);
+
+t_group('the Sales list tells the truth about the whole filter, not one page of it');
+
+// The old screen pulled 500 rows and added the totals up in PHP. Three things
+// were wrong with that and all three are money or speed:
+//   - the figures silently stopped being true at bill 501
+//   - the browser was handed 500 rows whatever the owner wanted to see
+//   - a shop with a year of history got slower every month
+t_ok('the totals are one aggregate over everything that matches',
+     strpos($slsSrc, 'SELECT COUNT(*) n,') !== false && strpos($slsSrc, '$agg = row(') !== false);
+t_ok('...and the rows are one page of it',
+     strpos($slsSrc, '$per  = 25;') !== false
+     && strpos($slsSrc, 'LIMIT $per OFFSET " . (($page - 1) * $per)') !== false);
+t_ok('the page number cannot run past the end', strpos($slsSrc, '$page  = min($page, $pages);') !== false);
+t_ok('nothing fetches 500 rows any more', strpos($slsSrc, 'LIMIT 500') === false);
+
+// A CANCELLED BILL IS NOT A SALE. The period total used to include them,
+// because it was array_sum() over every row fetched and cancelled bills were
+// among those rows. The figure could not be tied back to the ledger or to a
+// GST return, and nothing on the screen said why.
+t_ok('a cancelled bill does not count towards what the shop sold',
+     strpos($slsSrc, 'SUM(IF(s.is_cancelled = 0, s.total, 0))') !== false);
+t_ok('...nor towards what is still owed',
+     strpos($slsSrc, 'SUM(IF(s.is_cancelled = 0, s.total - s.paid, 0))') !== false);
+t_ok('...and the card says so rather than leaving a gap to wonder about',
+     strpos($slsSrc, 'cancelled bill') !== false && strpos($slsSrc, 'not counted') !== false);
+
+// Searching for what a person has in their hand at the counter.
+t_ok('the search covers the invoice number, the name and the phone',
+     strpos($slsSrc, 's.invoice_no LIKE ? OR s.customer_name LIKE ? OR s.customer_mobile LIKE ?') !== false);
+t_ok('...and the party name, for a bill whose name box was left empty',
+     strpos($slsSrc, 'EXISTS (SELECT 1 FROM parties pp WHERE pp.id = s.party_id AND pp.name LIKE ?)') !== false);
+t_ok('every search term is bound, never pasted into the SQL',
+     strpos($slsSrc, "\$lk = '%' . \$qs . '%';") !== false
+     && strpos($slsSrc, 'array_push($a, $lk, $lk, $lk, $lk);') !== false);
+t_ok('the status filter is bound too', strpos($slsSrc, "\$w[] = \"s.is_cancelled = 0 AND s.status = ?\"; \$a[] = \$stF;") !== false);
+t_ok('and who may see which bills is still decided by own_scope()',
+     strpos($slsSrc, "own_scope('sales', 's.created_by')") !== false
+     && strpos($slsSrc, "\$where = implode(' AND ', \$w) . ' ' . \$scope;") !== false);
+
+// Following a link must not throw the other filters away.
+t_ok('a filter link keeps the filters already set', strpos($slsSrc, '$keep = function (array $over = [])') !== false);
+t_ok('the figures are themselves the links that narrow them',
+     strpos($slsSrc, "\$keep(['st' => 'paid', 'p' => 1])") !== false
+     && strpos($slsSrc, "\$keep(['st' => 'partial', 'p' => 1])") !== false);
+
+// Nothing about a bill changed; these are the links the screen must keep.
+foreach (['sale_view.php?id=' => 'opening a bill',
+          'action=new&copy=' => 'writing the same bill again',
+          'sale_pdf.php?id=' => 'the PDF',
+          "parties.php?action=ledger&id=" => 'the customer ledger',
+          'action=new&park=' => 'reopening a parked bill',
+          'render_saved_filters($u[\'id\'], \'sales\')' => 'saved filters'] as $needle => $what)
+    t_ok($what . ' still works from the list', strpos($slsSrc, $needle) !== false);
+t_ok('copying a bill still needs permission to write one',
+     strpos($slsSrc, "can('sales.add') && !\$s['is_cancelled']") !== false);
+t_ok('a cancelled bill is still marked as cancelled', strpos($slsSrc, 'CANCELLED</span>') !== false);
+t_ok('and an empty result says what to do about it',
+     strpos($slsSrc, 'No bill matches that.') !== false && strpos($slsSrc, 'Write the first one') !== false);
+
+$css2 = file_get_contents(dirname(__DIR__) . '/assets/style.css');
+t_ok('a nine-column table becomes cards before it reaches a tablet',
+     strpos($css2, '@media (min-width: 761px) and (max-width: 1023px) {') !== false
+     && strpos($css2, '.rowlist.rl-wide thead { display: none; }') !== false);
+t_ok('44px is said once for the whole app, not per screen',
+     strpos($css2, 'TOUCH TARGETS — one rule for the whole app') !== false);

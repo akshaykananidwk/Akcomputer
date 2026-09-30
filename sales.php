@@ -1438,51 +1438,139 @@ if ($action === 'new' || $action === 'edit') {
 }
 
 // ---------- list ----------
+//
+// THE WHOLE FILTERED SET DECIDES THE FIGURES, AND ONE PAGE OF IT IS DRAWN.
+//
+// The old screen pulled 500 rows and added the totals up in PHP, which meant
+// three things: the figures silently stopped being true at bill 501, the
+// browser was handed 500 rows to draw whatever the owner wanted to see, and
+// a shop with a year of history would have got slower every month. The
+// totals are now one aggregate over everything that matches, and the rows
+// are one page of twenty-five.
 list($scope, $params) = own_scope('sales', 's.created_by');
 $from = get('from', date('Y-m-01'));
-$to = get('to', today());
+$to   = get('to', today());
+$qs   = trim((string)get('q', ''));
+$stF  = get('st', '');
+$coF  = (int)get('co', 0);
+$per  = 25;
+$page = max(1, (int)get('p', 1));
+
+$w = ['s.sale_date BETWEEN ? AND ?'];
+$a = [$from, $to];
+if ($qs !== '') {
+    // Invoice number, customer name or phone - the three things somebody at
+    // the counter actually has in their hand when they come looking. The
+    // party's own name is searched too, because a bill written against a
+    // party can have the name box left empty, and then the customer is
+    // findable on every screen in the software except this one.
+    $w[] = '(s.invoice_no LIKE ? OR s.customer_name LIKE ? OR s.customer_mobile LIKE ?
+             OR EXISTS (SELECT 1 FROM parties pp WHERE pp.id = s.party_id AND pp.name LIKE ?))';
+    $lk = '%' . $qs . '%';
+    array_push($a, $lk, $lk, $lk, $lk);
+}
+if ($stF === 'cancelled')                           $w[] = 's.is_cancelled = 1';
+elseif (in_array($stF, ['paid', 'partial', 'due'], true)) { $w[] = "s.is_cancelled = 0 AND s.status = ?"; $a[] = $stF; }
+if ($coF)                                           { $w[] = 's.company_id = ?'; $a[] = $coF; }
+$where = implode(' AND ', $w) . ' ' . $scope;
+$a = array_merge($a, $params);
+
+// A CANCELLED BILL IS NOT A SALE.
+// The period's "Total Sale" used to include them, because the old total was
+// array_sum() over every row the screen had fetched and cancelled bills are
+// among those rows. A bill that was torn up has no business adding to what
+// the shop sold that month, and the figure it produced could not be tied
+// back to anything - not the ledger, not the GST return.
+$agg = row("SELECT COUNT(*) n,
+                   COALESCE(SUM(IF(s.is_cancelled = 0, s.total, 0)), 0) total,
+                   COALESCE(SUM(IF(s.is_cancelled = 0, s.total - s.paid, 0)), 0) due,
+                   COALESCE(SUM(s.is_cancelled = 0 AND s.status = 'paid'), 0) n_paid,
+                   COALESCE(SUM(s.is_cancelled = 0 AND s.status = 'partial'), 0) n_part,
+                   COALESCE(SUM(s.is_cancelled = 0 AND s.status = 'due'), 0) n_due,
+                   COALESCE(SUM(s.is_cancelled = 1), 0) n_canc
+            FROM sales s WHERE $where", $a);
+$nAll  = (int)$agg['n'];
+$pages = max(1, (int)ceil($nAll / $per));
+$page  = min($page, $pages);
 $sales = all("SELECT s.*, c.name AS company_name, u2.name AS staff_name
               FROM sales s
               JOIN companies c ON c.id = s.company_id
               JOIN users u2 ON u2.id = s.created_by
-              WHERE s.sale_date BETWEEN ? AND ? $scope
-              ORDER BY s.id DESC LIMIT 500", array_merge([$from, $to], $params));
-$sumTotal = array_sum(array_column($sales, 'total'));
-// status IN (...) is identical to <> 'paid' on this NOT NULL 3-value enum, and
-// lets idx_sale_status_due be used instead of scanning every bill.
-$sumDue = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales s WHERE s.status IN ('due','partial') AND s.is_cancelled = 0 " . str_replace('s.created_by', 'created_by', $scope), $params);
+              WHERE $where
+              ORDER BY s.id DESC LIMIT $per OFFSET " . (($page - 1) * $per), $a);
+
+// every filter except the one being drawn, so a link keeps the rest of them
+$keep = function (array $over = []) use ($from, $to, $qs, $stF, $coF) {
+    $p = array_filter(['from' => $from, 'to' => $to, 'q' => $qs, 'st' => $stF, 'co' => $coF ?: ''] + [], 'strlen');
+    return 'sales.php?' . http_build_query(array_filter($over + $p, fn($v) => $v !== '' && $v !== null));
+};
 $page_title = 'Sales / Billing';
 include __DIR__ . '/includes/header.php';
 ?>
-<div class="duo-cards">
-  <div class="duo-card" style="background:#e0f2fe"><div class="duo-label" style="color:#075985">Total Sale (period)</div><div class="duo-value" style="color:#0369a1">₹ <?= money($sumTotal) ?></div></div>
-  <div class="duo-card duo-give"><div class="duo-label">Balance Due</div><div class="duo-value">₹ <?= money($sumDue) ?></div></div>
+<div class="pg-head">
+  <div class="pg-main">
+    <div class="pg-crumb">Sale › Bills</div>
+    <h1>🧾 Sales / Billing</h1>
+    <div class="pg-sub"><?= dmy($from) ?> to <?= dmy($to) ?> · <?= $nAll ?> bill<?= $nAll === 1 ? '' : 's' ?><?= $qs !== '' ? ' matching “' . e($qs) . '”' : '' ?></div>
+  </div>
+  <?php if (can('sales.add')): ?>
+  <div><a class="btn" href="sales.php?action=new" style="min-height:44px;display:inline-flex;align-items:center">＋ New Bill</a></div>
+  <?php endif; ?>
 </div>
-<div class="page-actions">
-  <?php if (can('sales.add')): ?><a class="btn" href="sales.php?action=new">+ New Bill</a><?php endif; ?>
+
+<!-- Every figure here is over the WHOLE filter, not the page on screen, and
+     every one of them is a link that narrows the filter further. -->
+<div class="kpi-row">
+  <a class="kpi k-info" href="<?= e($keep(['st' => '', 'p' => 1])) ?>">
+    <div class="kpi-top">🧾 Total Sale</div>
+    <div class="kpi-val">₹<?= money($agg['total']) ?></div>
+    <div class="kpi-sub"><?= $agg['n_canc'] ? (int)$agg['n_canc'] . ' cancelled bill' . ($agg['n_canc'] == 1 ? '' : 's') . ' not counted' : 'in this period' ?></div>
+  </a>
+  <a class="kpi k-bad" href="<?= e($keep(['st' => 'due', 'p' => 1])) ?>">
+    <div class="kpi-top">⏳ Balance Due</div>
+    <div class="kpi-val">₹<?= money($agg['due']) ?></div>
+    <div class="kpi-sub">still to come in</div>
+  </a>
+  <a class="kpi k-ok" href="<?= e($keep(['st' => 'paid', 'p' => 1])) ?>">
+    <div class="kpi-top">✅ Paid</div>
+    <div class="kpi-val"><?= (int)$agg['n_paid'] ?></div>
+    <div class="kpi-sub">bills settled in full</div>
+  </a>
+  <a class="kpi k-warn" href="<?= e($keep(['st' => 'partial', 'p' => 1])) ?>">
+    <div class="kpi-top">🟠 Partial</div>
+    <div class="kpi-val"><?= (int)$agg['n_part'] ?></div>
+    <div class="kpi-sub">part paid</div>
+  </a>
+  <a class="kpi k-bad" href="<?= e($keep(['st' => 'due', 'p' => 1])) ?>">
+    <div class="kpi-top">🔴 Due</div>
+    <div class="kpi-val"><?= (int)$agg['n_due'] ?></div>
+    <div class="kpi-sub">nothing paid yet</div>
+  </a>
 </div>
+
 <?php
 // Bills put aside mid-counter. They are not sales - no number, no stock, no
 // ledger - so they live here until they are finished or thrown away.
 $parked = can('sales.add') ? all('SELECT pb.*, us.name staff FROM parked_bills pb
         LEFT JOIN users us ON us.id = pb.created_by ORDER BY pb.id DESC LIMIT 20') : [];
 if ($parked): ?>
-<div class="card">
-  <h3>⏸️ Parked bills (<?= count($parked) ?>)</h3>
-  <div class="table-wrap" style="box-shadow:none">
-  <table class="table-sm">
-    <thead><tr><th>Customer</th><th class="num">Item</th><th class="num">about</th><th>When</th><th>Who</th><th></th></tr></thead>
+<div class="pane">
+  <div class="pane-head"><h3>⏸️ Parked bills (<?= count($parked) ?>)</h3>
+    <span class="pane-note" style="padding:0">Waiting for the customer to come back</span></div>
+  <div class="pane-body tight">
+  <table class="rowlist">
+    <thead><tr><th>Customer</th><th class="num">Items</th><th class="num">About</th><th>When</th><th>Who</th><th class="act"></th></tr></thead>
     <tbody>
     <?php foreach ($parked as $pb): ?>
       <tr>
-        <td><strong><?= e($pb['label']) ?></strong></td>
-        <td class="num"><?= (int)$pb['items'] ?></td>
-        <td class="num">₹<?= money($pb['amount']) ?></td>
-        <td class="muted"><?= dmyt($pb['created_at']) ?></td>
-        <td class="muted"><?= e($pb['staff'] ?: '-') ?></td>
-        <td style="white-space:nowrap">
+        <td data-l="Customer"><strong><?= e($pb['label']) ?></strong></td>
+        <td class="num" data-l="Items"><?= (int)$pb['items'] ?></td>
+        <td class="num" data-l="About">₹<?= money($pb['amount']) ?></td>
+        <td data-l="When" class="muted"><?= dmyt($pb['created_at']) ?></td>
+        <td data-l="Who" class="muted"><?= e($pb['staff'] ?: '-') ?></td>
+        <td class="act">
           <a class="btn btn-sm" href="sales.php?action=new&park=<?= (int)$pb['id'] ?>">▶️ Reopen</a>
-          <form method="post" style="display:inline" onsubmit="return confirm('Delete this parked bill?')">
+          <form method="post" style="display:inline" onsubmit="return confirm('Delete this parked bill? It has no number and nothing in the ledger, so nothing else changes.')">
             <?= csrf_field() ?><input type="hidden" name="do" value="park_delete"><input type="hidden" name="id" value="<?= (int)$pb['id'] ?>">
             <button class="btn btn-sm btn-danger" type="submit">✕</button>
           </form>
@@ -1494,30 +1582,103 @@ if ($parked): ?>
   </div>
 </div>
 <?php endif; ?>
-<form method="get" class="filterbar">
-  <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>
-  <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>
-  <button class="btn btn-sm" type="submit">Filter</button>
-</form>
-<?= render_saved_filters($u['id'], 'sales') ?>
-<div class="list-count"><?= count($sales) ?> bills · Total ₹<?= money($sumTotal) ?></div>
-<div class="table-wrap">
-<table>
-  <thead><tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Firm</th><th class="num">Total</th><th>Status</th><th></th></tr></thead>
-  <tbody>
-  <?php foreach ($sales as $s): ?>
-    <tr>
-      <td><a href="sale_view.php?id=<?= $s['id'] ?>"><strong><?= e($s['invoice_no']) ?></strong></a><br><span class="muted"><?= e($s['staff_name']) ?></span></td>
-      <td><?= dmy($s['sale_date']) ?></td>
-      <td><?= $s['party_id'] ? '<a href="parties.php?action=ledger&id=' . $s['party_id'] . '">' . e($s['customer_name'] ?: 'Walk-in') . '</a>' : e($s['customer_name'] ?: 'Walk-in') ?><br><span class="muted"><?= e($s['customer_mobile']) ?></span></td>
-      <td><?= e($s['company_name']) ?></td>
-      <td class="num">₹<?= money($s['total']) ?></td>
-      <td><?= $s['is_cancelled'] ? '<span class="badge badge-bad">CANCELLED</span>' : status_badge($s['status']) ?></td>
-      <td style="white-space:nowrap"><a class="btn btn-sm btn-outline" href="sale_view.php?id=<?= $s['id'] ?>">View</a>
-        <?php if (can('sales.add')): ?><a class="btn btn-sm btn-outline" href="sales.php?action=new&copy=<?= $s['id'] ?>" title="Make this same bill again">⧉</a><?php endif; ?></td>
-    </tr>
-  <?php endforeach; ?>
-  </tbody>
-</table>
+
+<div class="pane">
+  <div class="pane-head"><h3>🔎 Find a bill</h3></div>
+  <div class="pane-body">
+    <form method="get" class="filterbar ff-stack">
+      <div class="ff-wide" style="flex:2;min-width:180px"><label>Invoice no., customer or phone</label>
+        <input type="search" name="q" value="<?= e($qs) ?>" placeholder="e.g. 00276, Raj, 99781…"></div>
+      <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>
+      <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>
+      <?php if (count($companies) > 1): ?>
+      <div><label>Firm</label>
+        <select name="co"><option value="">All firms</option>
+          <?php foreach ($companies as $c): ?><option value="<?= $c['id'] ?>" <?= $coF === (int)$c['id'] ? 'selected' : '' ?>><?= e($c['name']) ?></option><?php endforeach; ?>
+        </select></div>
+      <?php endif; ?>
+      <input type="hidden" name="st" value="<?= e($stF) ?>">
+      <button class="btn btn-sm" type="submit">Search</button>
+      <?php if ($qs !== '' || $stF !== '' || $coF): ?><a class="btn btn-sm btn-outline" href="sales.php?from=<?= e($from) ?>&to=<?= e($to) ?>">Clear</a><?php endif; ?>
+    </form>
+    <div class="seg mt">
+      <?php foreach (['' => 'All', 'paid' => 'Paid', 'partial' => 'Partial', 'due' => 'Due', 'cancelled' => 'Cancelled'] as $k => $lbl):
+        $on = $stF === $k ? ($k === 'paid' ? ' on-ok' : ($k === 'partial' ? ' on-warn' : ($k === '' ? ' on' : ' on-bad'))) : ''; ?>
+      <a class="<?= trim($on) ?>" href="<?= e($keep(['st' => $k, 'p' => 1])) ?>"><?= $lbl ?></a>
+      <?php endforeach; ?>
+    </div>
+    <div class="mt"><?= render_saved_filters($u['id'], 'sales') ?></div>
+  </div>
+</div>
+
+<div class="pane">
+  <div class="pane-head">
+    <h3>Bills</h3>
+    <span class="pane-note" style="padding:0"><?= $nAll ?> found<?= $pages > 1 ? ' · page ' . $page . ' of ' . $pages : '' ?></span>
+  </div>
+  <div class="pane-body tight">
+  <?php if (!$sales): ?>
+    <p class="pane-note" style="padding:22px 14px">
+      <?php if ($qs !== '' || $stF !== '' || $coF): ?>
+        No bill matches that. <a href="sales.php?from=<?= e($from) ?>&to=<?= e($to) ?>">Clear the filters</a> or widen the dates.
+      <?php else: ?>
+        No bills between <?= dmy($from) ?> and <?= dmy($to) ?>.
+        <?php if (can('sales.add')): ?><a href="sales.php?action=new">Write the first one →</a><?php endif; ?>
+      <?php endif; ?>
+    </p>
+  <?php else: ?>
+  <table class="rowlist rl-wide">
+    <thead><tr>
+      <th>Invoice</th><th>Date</th><th>Customer</th><th>Phone</th><th>Firm</th>
+      <th class="num">Amount</th><th>Status</th><th>By</th><th class="act"></th>
+    </tr></thead>
+    <tbody>
+    <?php foreach ($sales as $s): ?>
+      <tr>
+        <td data-l="Invoice"><a href="sale_view.php?id=<?= $s['id'] ?>"><strong><?= e($s['invoice_no']) ?></strong></a></td>
+        <td data-l="Date"><?= dmy($s['sale_date']) ?></td>
+        <td data-l="Customer"><?= $s['party_id']
+              ? '<a href="parties.php?action=ledger&id=' . (int)$s['party_id'] . '">' . e($s['customer_name'] ?: 'Walk-in') . '</a>'
+              : e($s['customer_name'] ?: 'Walk-in') ?></td>
+        <td data-l="Phone"><?= $s['customer_mobile'] ? '<a href="tel:' . e($s['customer_mobile']) . '">' . e($s['customer_mobile']) . '</a>' : '<span class="muted">—</span>' ?></td>
+        <td data-l="Firm" class="muted"><?= e($s['company_name']) ?></td>
+        <!-- one element, so that in card mode the amount and what is left on
+             it stay together on the right instead of drifting apart -->
+        <td class="num" data-l="Amount"><span>
+          <strong>₹<?= money($s['total']) ?></strong>
+          <?php if (!$s['is_cancelled'] && $s['total'] - $s['paid'] > 0.009): ?>
+          <span class="muted" style="display:block;font-size:11.5px">₹<?= money($s['total'] - $s['paid']) ?> due</span>
+          <?php endif; ?></span></td>
+        <td data-l="Status"><?= $s['is_cancelled'] ? '<span class="badge badge-bad">CANCELLED</span>' : status_badge($s['status']) ?></td>
+        <td data-l="By" class="muted"><?= e($s['staff_name']) ?></td>
+        <td class="act">
+          <a class="btn btn-sm btn-outline" href="sale_view.php?id=<?= $s['id'] ?>">View</a>
+          <?php if (can('sales.add') && !$s['is_cancelled']): ?>
+          <a class="btn btn-sm btn-outline" href="sales.php?action=new&copy=<?= $s['id'] ?>" title="Write this same bill again">⧉ Copy</a>
+          <?php endif; ?>
+          <a class="btn btn-sm btn-outline" href="sale_pdf.php?id=<?= $s['id'] ?>" title="Download the PDF">⬇ PDF</a>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+  <?php endif; ?>
+  </div>
+  <?php if ($pages > 1): ?>
+  <div class="pane-head" style="border-top:1px solid var(--line);border-bottom:0;justify-content:space-between">
+    <span class="muted" style="font-size:12.5px">Showing <?= ($page - 1) * $per + 1 ?>–<?= min($nAll, $page * $per) ?> of <?= $nAll ?></span>
+    <span class="seg">
+      <?php if ($page > 1): ?><a href="<?= e($keep(['p' => $page - 1])) ?>">‹ Previous</a><?php endif; ?>
+      <?php
+      // first, last and a window around where we are - a shop with 4,000
+      // bills does not want 160 page numbers on the screen
+      for ($i = 1; $i <= $pages; $i++):
+        if ($i > 2 && $i < $pages - 1 && abs($i - $page) > 1) { if ($i === 3) echo '<a style="pointer-events:none">…</a>'; continue; } ?>
+      <a class="<?= $i === $page ? 'on' : '' ?>" href="<?= e($keep(['p' => $i])) ?>"><?= $i ?></a>
+      <?php endfor; ?>
+      <?php if ($page < $pages): ?><a href="<?= e($keep(['p' => $page + 1])) ?>">Next ›</a><?php endif; ?>
+    </span>
+  </div>
+  <?php endif; ?>
 </div>
 <?php include __DIR__ . '/includes/footer.php'; ?>

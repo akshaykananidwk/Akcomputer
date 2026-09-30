@@ -1209,3 +1209,52 @@ body:has(.bf) .fab-center { display: none; }
 .cat-hit:empty { display: none; }
 .cat-hit span { font-size: 11.5px; font-weight: 600; border-radius: 6px; padding: 2px 7px;
   background: color-mix(in srgb, var(--primary) 11%, transparent); color: var(--primary); }
+
+/* ============================================================
+   TOUCH TARGETS — one rule for the whole app
+   ------------------------------------------------------------
+   Below the desktop breakpoint the pointer is a thumb, not a
+   mouse, and 28px of pill is a miss waiting to happen. Rather
+   than each redesigned screen remembering to say so, it is said
+   once here and every screen gets it, old ones included.
+
+   44px is Apple's and Google's published minimum and it is what
+   the shop's own phones behave like.
+   ============================================================ */
+/* A filter bar on a phone: the box people actually type in gets the whole
+   width, and the pair of dates shares a line. flex: 1 with a 130px floor put
+   a search box and a date field side by side in 390px, and neither was
+   usable. */
+@media (max-width: 700px) {
+  .filterbar.ff-stack > div { flex: 1 1 calc(50% - 4px); min-width: 0; }
+  .filterbar.ff-stack > div.ff-wide { flex: 1 1 100%; }
+  .filterbar.ff-stack input, .filterbar.ff-stack select { width: 100%; }
+  .filterbar.ff-stack > button, .filterbar.ff-stack > .btn { flex: 1 1 100%; }
+}
+
+@media (max-width: 1023px) {
+  .btn, .btn-sm { min-height: 44px; }
+  .seg a { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 15px; }
+  .filterbar button, .filterbar .btn { min-height: 44px; }
+  .rowlist td.act .btn { min-height: 44px; padding: 8px 14px; }
+}
+
+/* A table with nine columns needs more room than one with five, so it turns
+   into cards earlier. Same rules as the .rowlist block above - repeated
+   rather than merged because a media query cannot take a variable, and a
+   nine-column table squeezed into a tablet is how the Copy and PDF buttons
+   ended up off the right-hand edge where nobody could reach them. */
+@media (min-width: 761px) and (max-width: 1023px) {
+  .rowlist.rl-wide, .rowlist.rl-wide tbody, .rowlist.rl-wide tr, .rowlist.rl-wide td {
+    display: block; width: 100%; min-width: 0; }
+  .rowlist.rl-wide thead { display: none; }
+  .rowlist.rl-wide tr { border: 1px solid var(--line); border-radius: 12px; padding: 4px 0; margin: 0 0 10px; }
+  .rowlist.rl-wide tbody tr:hover { background: transparent; }
+  .rowlist.rl-wide td { border: 0; padding: 6px 12px; display: flex; justify-content: space-between;
+                        align-items: center; gap: 12px; text-align: right; }
+  .rowlist.rl-wide td::before { content: attr(data-l); font-size: 11.5px; color: var(--muted);
+                                font-weight: 600; text-align: left; flex: 0 0 auto; }
+  .rowlist.rl-wide td:empty { display: none; }
+  .rowlist.rl-wide td.act { justify-content: flex-end; padding-top: 10px; }
+  .rowlist.rl-wide td.act::before { content: ''; }
+}
