@@ -646,3 +646,60 @@ $svB = file_get_contents(dirname(__DIR__) . '/sale_view.php');
 t_ok('the customer sees their own instalment plan on their bill link',
      strpos($svB, '$planPub = $public ? installment_plan($id) : [];') !== false);
 t_ok('...but cannot change it', strpos($svB, "if (!\$public && \$_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'inst_make'") !== false);
+
+t_group('Payments screen — new look, same money');
+
+// The screen was redesigned. The one thing that must not have changed is
+// where its figures come from: every one still has to be the SAME rule the
+// rest of the software uses, or two screens start telling a customer two
+// different totals.
+$pay = file_get_contents(dirname(__DIR__) . '/payments.php');
+t_ok('what is owed either way comes from dash_balances()', strpos($pay, 'dash_balances()') !== false);
+t_ok('money held comes from parties_with_advance()', strpos($pay, 'parties_with_advance(') !== false);
+t_ok('who to chase comes from coll_queue()', strpos($pay, 'coll_queue(') !== false);
+t_ok('a bill\'s real due is still capped by the ledger',
+     strpos($pay, "money_cap_bill_dues(\$dueSales, 'in')") !== false
+     && strpos($pay, "money_cap_bill_dues(\$duePurchases, 'out')") !== false);
+t_ok('the advance total uses the shared side expression, not new arithmetic',
+     strpos($pay, "party_balance_side_expr('p', 'out')") !== false);
+// Only the LIST view was rewritten; the contra/settle form above it has its
+// own older query and is not what this is about.
+$payList = substr($pay, strpos($pay, '// ---------- list ----------'));
+t_ok('no second copy of the balance rule was written into the rebuilt list',
+     strpos($payList, 'SELECT SUM(total - paid)') === false
+     && strpos($payList, 'SUM(s.total - s.paid)') === false);
+
+// Every action that was on the page before is still on it, permission and all.
+foreach ([["action=new&dir=in", 'Payment In'], ["action=new&dir=out", 'Payment Out'],
+          ["action=contra", 'Contra'], ["do\" value=\"delete", 'delete'],
+          ["do\" value=\"remind", 'the WhatsApp reminder'],
+          ["do\" value=\"backfill_alloc", 'linking old payments'],
+          ["action=edit&id=", 'edit'], ["action=view&id=", 'view']] as [$needle, $what])
+    t_ok($what . ' is still there', strpos($pay, $needle) !== false);
+foreach (['payments.add', 'payments.edit', 'payments.delete'] as $perm)
+    t_ok($perm . ' is still checked', strpos($pay, "can('" . $perm . "')") !== false);
+t_ok('and linking old payments is still admin only', strpos($pay, 'is_full_admin()') !== false);
+
+// Big shops: the recent list is paged in SQL, not in PHP.
+t_ok('recent payments are paged in the query', strpos($pay, 'LIMIT $per OFFSET') !== false);
+t_ok('with the page count taken from a COUNT, not from loading them all',
+     strpos($pay, 'SELECT COUNT(*) FROM payments p WHERE') !== false);
+t_ok('and the filter goes in as a parameter, never as text',
+     strpos($pay, '$ra[] = $fRec') !== false);
+t_ok('only the filters we know are accepted',
+     strpos($pay, "in_array(get('f'), ['in', 'out', 'cash', 'bank', 'upi', 'contra', 'discount'], true)") !== false);
+t_ok('and only the receivable views we know',
+     strpos($pay, "in_array(get('r'), ['overdue', 'soon', 'nodue'], true)") !== false);
+
+// The phone layout: a squeezed table is how a Receive button ends up three
+// pixels wide.
+$css = file_get_contents(dirname(__DIR__) . '/assets/style.css');
+t_ok('there is a row list that becomes cards on a phone', strpos($css, '.rowlist td::before') !== false);
+t_ok('each cell carries its own label for that', strpos($pay, 'data-l="Customer"') !== false);
+t_ok('the shared 550px table minimum is cancelled for it — without that every '
+     . 'value sits off the right edge of the phone',
+     strpos($css, '.rowlist, .rowlist tbody, .rowlist tr, .rowlist td { display: block; width: 100%; min-width: 0; }') !== false);
+t_ok('and the buttons are thumb-sized there', strpos($css, '.rowlist td.act .btn { min-height: 36px') !== false);
+t_ok('the pieces are named for reuse on the other accounting screens',
+     strpos($css, 'MONEY PANELS') !== false && strpos($css, '.kpi-row') !== false
+     && strpos($css, '.pane > .pane-head') !== false && strpos($css, '.seg a.on') !== false);

@@ -811,3 +811,95 @@ a.stat { text-decoration: none; color: inherit; display: block; }
 .more-opts[open] > summary::after { content: ' ▴'; }
 .more-opts > *:not(summary) { padding: 0 14px; }
 .more-opts > *:last-child { padding-bottom: 12px; }
+
+/* ============================================================
+   MONEY PANELS — the accounting-screen layer
+   ------------------------------------------------------------
+   Built for the Payments screen and deliberately generic, so the
+   other accounting screens can use the same pieces instead of
+   each inventing its own. Nothing here replaces .card / .stat /
+   .badge; it sits on top of them and uses the same tokens, so a
+   theme change still reaches all of it.
+
+   The pieces:
+     .kpi-row / .kpi      a row of figures you can tap
+     .pane                a titled block with a header bar
+     .seg                 the All / Overdue / Upcoming switches
+     .rowlist / .rowcard  a table on a desktop, cards on a phone
+     .mini                a small label above a number
+   ============================================================ */
+
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpi { display: block; background: var(--card); border-radius: var(--radius); padding: 13px 14px;
+       box-shadow: 0 1px 3px rgba(15,23,42,.06); border-left: 3px solid var(--line);
+       text-decoration: none; color: inherit; transition: box-shadow .15s, transform .15s; }
+a.kpi:hover { box-shadow: 0 4px 14px rgba(15,23,42,.12); transform: translateY(-1px); }
+.kpi .kpi-top { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+.kpi .kpi-val { font-size: 21px; font-weight: 800; margin-top: 3px; letter-spacing: -.3px; }
+.kpi .kpi-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.kpi.k-ok   { border-left-color: var(--ok); }   .kpi.k-ok   .kpi-val { color: var(--ok); }
+.kpi.k-bad  { border-left-color: var(--bad); }  .kpi.k-bad  .kpi-val { color: var(--bad); }
+.kpi.k-warn { border-left-color: var(--warn); } .kpi.k-warn .kpi-val { color: var(--warn); }
+.kpi.k-info { border-left-color: #2563eb; }     .kpi.k-info .kpi-val { color: #2563eb; }
+
+.pane { background: var(--card); border-radius: var(--radius); box-shadow: 0 1px 3px rgba(15,23,42,.06);
+        margin-bottom: 14px; overflow: hidden; }
+.pane > .pane-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+                     padding: 13px 14px; border-bottom: 1px solid var(--line); }
+.pane > .pane-head h3 { margin: 0; font-size: 15px; flex: 1; min-width: 0; }
+.pane > .pane-body { padding: 14px; }
+.pane > .pane-body.tight { padding: 0; }
+.pane-note { font-size: 12px; color: var(--muted); padding: 10px 14px 0; }
+
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg a { font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px;
+         text-decoration: none; color: var(--muted); background: var(--bg); white-space: nowrap; }
+.seg a.on { background: #2563eb; color: #fff; }
+.seg a.on-bad  { background: #fee2e2; color: #991b1b; }
+.seg a.on-ok   { background: #d1fae5; color: #065f46; }
+.seg a.on-warn { background: #fef3c7; color: #92400e; }
+
+/* A table on a desktop and a stack of cards on a phone, from ONE bit of
+   markup: the cells carry their own label and it only shows when the table
+   head is gone. A squeezed table on a phone is how a Receive button ends up
+   three pixels wide. */
+.rowlist { width: 100%; border-collapse: collapse; min-width: 0; }
+.rowlist th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
+              text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.rowlist td { padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: middle; }
+.rowlist tbody tr:last-child td { border-bottom: 0; }
+.rowlist tbody tr:hover { background: var(--bg); }
+.rowlist .num { text-align: right; font-variant-numeric: tabular-nums; }
+.rowlist .act { white-space: nowrap; text-align: right; }
+.rowlist .act .btn { margin-left: 4px; }
+
+@media (max-width: 760px) {
+  /* min-width: 0 matters as much as display: block here. The shared table
+     rule sets min-width: 550px so an ordinary wide table scrolls sideways
+     inside .table-wrap instead of squashing. A .rowlist does not scroll - it
+     becomes cards - and .pane clips its overflow, so without this the row
+     stayed 550px wide inside a 390px phone and every VALUE sat off the right
+     edge, invisible, with only the label showing. */
+  .rowlist, .rowlist tbody, .rowlist tr, .rowlist td { display: block; width: 100%; min-width: 0; }
+  .rowlist thead { display: none; }
+  .rowlist tr { border: 1px solid var(--line); border-radius: 12px; padding: 4px 0; margin: 0 0 10px; }
+  .rowlist tbody tr:hover { background: transparent; }
+  .rowlist td { border: 0; padding: 6px 12px; display: flex; justify-content: space-between;
+                align-items: center; gap: 12px; text-align: right; }
+  .rowlist td::before { content: attr(data-l); font-size: 11.5px; color: var(--muted);
+                        font-weight: 600; text-align: left; flex: 0 0 auto; }
+  .rowlist td:empty { display: none; }
+  .rowlist td.act { justify-content: flex-end; padding-top: 10px; }
+  .rowlist td.act::before { content: ''; }
+  .rowlist td.act .btn { min-height: 36px; padding: 7px 14px; }   /* thumbs, not pixels */
+}
+
+.mini { font-size: 11px; color: var(--muted); }
+.money-in  { color: var(--ok); font-weight: 700; }
+.money-out { color: var(--bad); font-weight: 700; }
+.pill-in  { background: #d1fae5; color: #065f46; }
+.pill-out { background: #fee2e2; color: #991b1b; }
+
+/* Two panes side by side on a desktop, stacked on a phone. */
+.row-2 { display: grid; grid-template-columns: 1fr; gap: 0 14px; }
+@media (min-width: 900px) { .row-2 { grid-template-columns: 1fr 1fr; } }

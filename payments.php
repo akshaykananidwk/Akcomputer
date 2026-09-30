@@ -866,10 +866,42 @@ if ($action === 'edit' && $id) {
 }
 
 // ---------- list ----------
+//
+// Every figure on this screen comes from a rule that already exists
+// somewhere else - dash_balances() for what is owed either way,
+// parties_with_advance() for money held, coll_queue() for who to chase,
+// money_cap_bill_dues() for a bill's real due. Not one of them is worked out
+// again here. A second copy of a money rule is how two screens in the same
+// software come to show a customer two different totals.
+require_once __DIR__ . '/includes/dashboard.php';   // dash_balances()
+require_once __DIR__ . '/includes/customer.php';    // coll_queue()
+require_once __DIR__ . '/includes/voice.php';       // voice_call_button()
+
 $parties = all('SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name');
-$recent = all('SELECT p.*, pt.name party_name, u2.name by_name FROM payments p
+
+// ---- the filters, all read from the query string ----
+$fRecv = in_array(get('r'), ['overdue', 'soon', 'nodue'], true) ? get('r') : 'all';
+$fPay  = in_array(get('p'), ['overdue', 'soon'], true) ? get('p') : 'all';
+$fRec  = in_array(get('f'), ['in', 'out', 'cash', 'bank', 'upi', 'contra', 'discount'], true) ? get('f') : 'all';
+$pg    = max(1, (int)get('pg'));
+$per   = 25;
+
+// Recent payments: filtered and paged in SQL, not in PHP. A shop with thirty
+// thousand payments must not load thirty thousand rows to show twenty-five.
+$rw = ['1=1']; $ra = [];
+if ($fRec === 'in' || $fRec === 'out') { $rw[] = 'p.direction = ?'; $ra[] = $fRec; }
+elseif ($fRec === 'cash')     { $rw[] = "p.mode = 'cash'"; }
+elseif ($fRec === 'bank')     { $rw[] = "p.mode IN ('bank','cheque','neft','rtgs','imps')"; }
+elseif ($fRec === 'upi')      { $rw[] = "p.mode IN ('upi','gpay','phonepe','paytm')"; }
+elseif ($fRec === 'contra')   { $rw[] = "p.mode = 'contra'"; }
+elseif ($fRec === 'discount') { $rw[] = "p.mode = 'discount'"; }
+$rwSql = implode(' AND ', $rw);
+$recTotal = (int)val("SELECT COUNT(*) FROM payments p WHERE $rwSql", $ra);
+$pgMax = max(1, (int)ceil($recTotal / $per));
+if ($pg > $pgMax) $pg = $pgMax;
+$recent = all("SELECT p.*, pt.name party_name, u2.name by_name FROM payments p
                LEFT JOIN parties pt ON pt.id = p.party_id JOIN users u2 ON u2.id = p.created_by
-               ORDER BY p.id DESC LIMIT 100');
+               WHERE $rwSql ORDER BY p.id DESC LIMIT $per OFFSET " . (($pg - 1) * $per), $ra);
 // status IN ('due','partial') rather than <> 'paid': the column is a NOT NULL
 // enum of exactly those three values, so the two are identical - but only the
 // IN form can use idx_sale_status_due, which is what makes this list fast
@@ -885,41 +917,83 @@ $duePurchases = all("SELECT p.*, pt.name party_name FROM purchases p JOIN partie
 $dueSales = money_cap_bill_dues($dueSales, 'in');
 $duePurchases = money_cap_bill_dues($duePurchases, 'out');
 
+// ---- the figures at the top ----
+$bal     = dash_balances();
+$advList = parties_with_advance(20);
+$advTot  = array_sum(array_map(fn($x) => (float)$x['adv'], $advList));
+$advAll  = (float)val('SELECT COALESCE(SUM(adv),0) FROM (SELECT ' . party_balance_side_expr('p', 'out')
+                      . ' adv FROM parties p WHERE p.is_active = 1 HAVING adv > 0.009) x');
+
+// Overdue and due-this-week are counted off the bills already loaded and
+// already capped above - a date comparison, not a second money rule.
+$today = today();
+$weekEnd = date('Y-m-d', strtotime('+7 days'));
+$sumDue = function (array $bills, $from, $to) {
+    $amt = 0.0; $n = 0;
+    foreach ($bills as $b) {
+        $d = $b['due_date'] ?: null;
+        if ($from !== null && (!$d || $d >= $from)) continue;   // "before $from" = overdue
+        if ($to !== null && (!$d || $d < today() || $d > $to)) continue;
+        $amt += (float)($b['adj_due'] ?? ($b['total'] - $b['paid'])); $n++;
+    }
+    return [round($amt, 2), $n];
+};
+
+$today2 = row("SELECT
+    COALESCE(SUM(CASE WHEN direction = 'in'  THEN amount END), 0) got,
+    COALESCE(SUM(CASE WHEN direction = 'out' THEN amount END), 0) gave,
+    SUM(direction = 'in')  n_in,
+    SUM(direction = 'out') n_out
+  FROM payments WHERE pay_date = ? AND mode NOT IN ('contra','discount')", [$today]);
+
 $page_title = 'Payments';
 include __DIR__ . '/includes/header.php';
 ?>
 <?php
-// Money of other people's that the shop is holding. It is not a separate pot
-// - it is simply a party whose ledger has gone the other way - but it is the
-// easiest thing in a shop to forget, and the most embarrassing to be
-// reminded of by the customer.
-$advList = parties_with_advance(20);
-if ($advList): $advTot = array_sum(array_map(fn($x) => (float)$x['adv'], $advList)); ?>
-<div class="card">
-  <h3>💰 Advance / money held — Rs <?= money($advTot) ?></h3>
-  <p class="muted">We are holding money for these parties. It is used automatically against their next bill.</p>
-  <div class="table-wrap" style="box-shadow:none">
-    <table class="table-sm">
-      <thead><tr><th>Party</th><th>Mobile</th><th class="num">Credit</th></tr></thead>
-      <tbody>
-      <?php foreach ($advList as $a): ?>
-        <tr>
-          <td><a href="parties.php?action=ledger&id=<?= (int)$a['id'] ?>"><?= e($a['name']) ?></a></td>
-          <td class="muted"><?= e($a['mobile']) ?></td>
-          <td class="num" style="color:var(--ok);font-weight:700">₹<?= money($a['adv']) ?></td>
-        </tr>
-      <?php endforeach; ?>
-      </tbody>
-    </table>
-  </div>
+// ---------- 1. the figures, and where each one goes ----------
+//
+// Every card is a link. A number you cannot open is a number you have to go
+// and look for somewhere else, which is how a summary stops being used.
+[$odAmt, $odN]   = $sumDue($dueSales, $today, null);
+[$wkAmt, $wkN]   = $sumDue($dueSales, null, $weekEnd);
+[$opAmt, $opN]   = $sumDue($duePurchases, $today, null);
+[$wpAmt, $wpN]   = $sumDue($duePurchases, null, $weekEnd);
+?>
+<div class="kpi-row">
+  <a class="kpi k-ok" href="payments.php?r=all#receivables">
+    <div class="kpi-top">👥 Total Receivable</div>
+    <div class="kpi-val">₹<?= money($bal['receivable']) ?></div>
+    <div class="kpi-sub"><?= (int)$bal['receivable_parties'] ?> parties</div></a>
+
+  <a class="kpi k-warn" href="#advance">
+    <div class="kpi-top">🪙 Advance / Money Held</div>
+    <div class="kpi-val">₹<?= money($advAll) ?></div>
+    <div class="kpi-sub"><?= count($advList) ?> parties</div></a>
+
+  <a class="kpi k-bad" href="payments.php?p=all#payables">
+    <div class="kpi-top">🏦 Total Payable</div>
+    <div class="kpi-val">₹<?= money($bal['payable']) ?></div>
+    <div class="kpi-sub"><?= (int)$bal['payable_parties'] ?> parties</div></a>
+
+  <a class="kpi k-bad" href="payments.php?r=overdue#receivables">
+    <div class="kpi-top">❗ Overdue</div>
+    <div class="kpi-val">₹<?= money($odAmt + $opAmt) ?></div>
+    <div class="kpi-sub"><?= $odN ?> invoices · <?= $opN ?> bills</div></a>
+
+  <a class="kpi k-info" href="payments.php?r=soon#receivables">
+    <div class="kpi-top">📅 Due This Week</div>
+    <div class="kpi-val">₹<?= money($wkAmt + $wpAmt) ?></div>
+    <div class="kpi-sub"><?= $wkN + $wpN ?> invoices / bills</div></a>
 </div>
-<?php endif; ?>
-<div class="page-actions">
+
+<?php // ---------- 2. what to do ---------- ?>
+<div class="page-actions no-print">
   <?php if (can('payments.add')): ?>
-  <a class="btn btn-success" href="payments.php?action=new&dir=in">⬇ Payment-In</a>
-  <a class="btn btn-danger" href="payments.php?action=new&dir=out">⬆ Payment-Out</a>
+  <a class="btn btn-success" href="payments.php?action=new&dir=in">+ Payment In</a>
+  <a class="btn btn-danger" href="payments.php?action=new&dir=out">− Payment Out</a>
   <a class="btn btn-outline" href="payments.php?action=contra">🔄 Contra / Settle</a>
   <?php endif; ?>
+  <a class="btn btn-outline" href="collection.php">📮 Collection Queue</a>
   <?php if (is_full_admin()): ?>
   <form method="post" style="display:inline" onsubmit="return confirm('Link every old unlinked payment to its party oldest outstanding bills automatically? No balance changes — only the per-bill dues become correct.')">
     <?= csrf_field() ?><input type="hidden" name="do" value="backfill_alloc">
@@ -928,74 +1002,276 @@ if ($advList): $advTot = array_sum(array_map(fn($x) => (float)$x['adv'], $advLis
   <?php endif; ?>
 </div>
 
-<div class="card">
-  <h2>💰 Receivables</h2>
-  <div class="table-wrap" style="box-shadow:none">
-  <table>
-    <thead><tr><th>Invoice</th><th>Customer</th><th class="num">Due ₹</th><th>Due date</th><th></th></tr></thead>
-    <tbody><?php foreach ($dueSales as $s): $d = $s['adj_due'] ?? ($s['total'] - $s['paid']); ?>
-      <tr>
-        <td><a href="sale_view.php?id=<?= $s['id'] ?>"><?= e($s['invoice_no']) ?></a></td>
-        <td><?= $s['party_id'] ? '<a href="parties.php?action=ledger&id=' . $s['party_id'] . '">' . e($s['customer_name'] ?: 'Walk-in') . '</a>' : e($s['customer_name'] ?: 'Walk-in') ?></td>
-        <td class="num">₹<?= money($d) ?></td>
-        <td><?= dmy($s['due_date']) ?><?= $s['due_date'] && $s['due_date'] < today() ? ' <span class="badge badge-bad">overdue</span>' : '' ?></td>
-        <td style="white-space:nowrap">
-          <?php if (can('payments.add') && $s['party_id']): ?>
-            <a class="btn btn-sm btn-success" href="payments.php?action=new&dir=in&party=<?= $s['party_id'] ?>">Receive</a>
-          <?php endif; ?>
-          <?php if ($s['customer_mobile']): ?>
-          <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="remind"><input type="hidden" name="sale_id" value="<?= $s['id'] ?>">
-            <button class="btn btn-sm btn-wa" type="submit">📲</button></form>
-          <?php endif; ?>
-        </td>
-      </tr>
-    <?php endforeach; if (!$dueSales): ?><tr><td colspan="5" class="muted">All clear 🎉</td></tr><?php endif; ?></tbody>
-  </table>
+<div class="row-2">
+<?php // ---------- 3. today ---------- ?>
+<div class="pane">
+  <div class="pane-head"><h3>📅 Today's Money</h3>
+    <span class="mini"><?= e(dmy($today)) ?></span>
+    <a class="btn btn-sm btn-outline" href="reports.php?r=cashbook">View all today →</a></div>
+  <div class="pane-body">
+    <div class="grid-stats" style="margin:0">
+      <div class="stat s-ok"><div class="stat-label">Received</div>
+        <div class="stat-value">₹<?= money($today2['got'] ?? 0) ?></div>
+        <div class="mini"><?= (int)($today2['n_in'] ?? 0) ?> entries</div></div>
+      <div class="stat s-bad"><div class="stat-label">Paid</div>
+        <div class="stat-value">₹<?= money($today2['gave'] ?? 0) ?></div>
+        <div class="mini"><?= (int)($today2['n_out'] ?? 0) ?> entries</div></div>
+      <div class="stat"><div class="stat-label">Net</div>
+        <div class="stat-value">₹<?= money(($today2['got'] ?? 0) - ($today2['gave'] ?? 0)) ?></div></div>
+      <div class="stat"><div class="stat-label">Entries</div>
+        <div class="stat-value"><?= (int)($today2['n_in'] ?? 0) + (int)($today2['n_out'] ?? 0) ?></div></div>
+    </div>
+    <p class="mini" style="margin-top:8px">Contra and discount entries are left out — they move money between
+      accounts rather than in or out of the shop.</p>
   </div>
 </div>
 
-<div class="card">
-  <h2>📤 Payables</h2>
-  <div class="table-wrap" style="box-shadow:none">
-  <table>
-    <thead><tr><th>Bill</th><th>Supplier</th><th class="num">Due ₹</th><th>Due date</th><th></th></tr></thead>
-    <tbody><?php foreach ($duePurchases as $p): ?>
-      <tr>
-        <td><a href="purchase_view.php?id=<?= $p['id'] ?>">#<?= $p['id'] ?> <?= e($p['bill_no']) ?></a></td>
-        <td><a href="parties.php?action=ledger&id=<?= $p['party_id'] ?>"><?= e($p['party_name']) ?></a></td>
-        <td class="num">₹<?= money($p['adj_due'] ?? ($p['total'] - $p['paid'])) ?></td>
-        <td><?= dmy($p['due_date']) ?><?= $p['due_date'] && $p['due_date'] < today() ? ' <span class="badge badge-bad">overdue</span>' : '' ?></td>
-        <td><?php if (can('payments.add')): ?><a class="btn btn-sm btn-danger" href="payments.php?action=new&dir=out&party=<?= $p['party_id'] ?>">Pay</a><?php endif; ?></td>
-      </tr>
-    <?php endforeach; if (!$duePurchases): ?><tr><td colspan="5" class="muted">All clear 🎉</td></tr><?php endif; ?></tbody>
-  </table>
+<?php // ---------- 4. take money, without leaving the page ---------- ?>
+<?php if (can('payments.add')): ?>
+<div class="pane">
+  <div class="pane-head"><h3>⚡ Quick Collection</h3></div>
+  <div class="pane-body">
+    <p class="mini" style="margin-top:0">Pick the customer and the rest of the form opens with their
+      outstanding already filled in — the same screen as Payment In, so the same rules apply.</p>
+    <form method="get" action="payments.php" class="filterbar" style="margin:0">
+      <input type="hidden" name="action" value="new">
+      <input type="hidden" name="dir" value="in">
+      <div style="flex:1;min-width:200px"><label>Customer</label>
+        <select name="party" required>
+          <option value="">Search name…</option>
+          <?php foreach ($parties as $pp): ?>
+            <option value="<?= (int)$pp['id'] ?>"><?= e($pp['name']) ?></option>
+          <?php endforeach; ?>
+        </select></div>
+      <button class="btn btn-success" type="submit">Receive Payment →</button>
+    </form>
+  </div>
+</div>
+<?php endif; ?>
+</div>
+
+<?php // ---------- 5. who to chase first ---------- ?>
+<?php
+$cq = [];
+try { $cq = array_slice(coll_queue(60, false), 0, 6); } catch (Exception $e) { $cq = []; }
+if ($cq): ?>
+<div class="pane">
+  <div class="pane-head"><h3>🔴 Collection Priority <span class="mini">(most overdue first)</span></h3>
+    <a class="btn btn-sm btn-outline" href="collection.php">View all →</a></div>
+  <div class="pane-body tight">
+    <table class="rowlist">
+      <thead><tr><th>Customer</th><th class="num">Overdue ₹</th><th class="num">Days</th><th class="act"></th></tr></thead>
+      <tbody>
+      <?php foreach ($cq as $c): ?>
+        <tr>
+          <td data-l="Customer"><a href="parties.php?action=ledger&id=<?= (int)$c['id'] ?>"><?= e($c['name']) ?></a>
+            <?php if (!empty($c['mobile'])): ?><br><span class="mini"><?= e($c['mobile']) ?></span><?php endif; ?></td>
+          <td class="num money-out" data-l="Overdue">₹<?= money($c['overdue']) ?></td>
+          <td class="num" data-l="Days"><span class="badge badge-bad"><?= (int)($c['days'] ?? 0) ?>d</span></td>
+          <td class="act">
+            <?= voice_call_button((int)$c['id'], 'payments.php') ?>
+            <?php if (!empty($c['mobile']) && $c['can_remind']['ok']): ?>
+            <form method="post" action="collection.php" style="display:inline">
+              <?= csrf_field() ?><input type="hidden" name="do" value="preview_bulk">
+              <input type="hidden" name="pick[]" value="<?= (int)$c['id'] ?>">
+              <button class="btn btn-sm btn-wa" type="submit" title="Send a WhatsApp reminder">📲</button>
+            </form>
+            <?php endif; ?>
+            <?php if (can('payments.add')): ?>
+            <a class="btn btn-sm btn-success" href="payments.php?action=new&dir=in&party=<?= (int)$c['id'] ?>">Receive</a>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
+
+<?php // ---------- 6. money that is not ours ---------- ?>
+<?php if ($advList): ?>
+<div class="pane" id="advance">
+  <div class="pane-head"><h3>🪙 Advance / Money Held — ₹<?= money($advAll) ?></h3>
+    <a class="btn btn-sm btn-outline" href="parties.php?bal=give">View all →</a></div>
+  <p class="pane-note">We are holding this money for them. It goes against their next bill automatically —
+    and it is the easiest thing in a shop to forget.</p>
+  <div class="pane-body tight">
+    <table class="rowlist">
+      <thead><tr><th>Party</th><th>Mobile</th><th class="num">Credit ₹</th></tr></thead>
+      <tbody>
+      <?php foreach ($advList as $a): ?>
+        <tr>
+          <td data-l="Party"><a href="parties.php?action=ledger&id=<?= (int)$a['id'] ?>"><?= e($a['name']) ?></a></td>
+          <td class="mini" data-l="Mobile"><?= e($a['mobile'] ?: '—') ?></td>
+          <td class="num money-in" data-l="Credit">₹<?= money($a['adv']) ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+</div>
+<?php endif; ?>
+
+<?php // ---------- 7. receivables ---------- ?>
+<?php
+// Filtered here, on rows already loaded and already capped. The list is
+// bounded at 100 bills by the query above, so this costs nothing.
+$recvRows = array_values(array_filter($dueSales, function ($x) use ($fRecv, $today, $weekEnd) {
+    $d = $x['due_date'] ?: null;
+    if ($fRecv === 'overdue') return $d && $d < $today;
+    if ($fRecv === 'soon')    return $d && $d >= $today && $d <= $weekEnd;
+    if ($fRecv === 'nodue')   return !$d || $d > $weekEnd;
+    return true;
+}));
+$cnt = fn($k) => count(array_filter($dueSales, function ($x) use ($k, $today, $weekEnd) {
+    $d = $x['due_date'] ?: null;
+    if ($k === 'overdue') return $d && $d < $today;
+    if ($k === 'soon')    return $d && $d >= $today && $d <= $weekEnd;
+    if ($k === 'nodue')   return !$d || $d > $weekEnd;
+    return true;
+}));
+?>
+<div class="pane" id="receivables">
+  <div class="pane-head"><h3>💰 Receivables <span class="mini">(customer dues)</span></h3>
+    <div class="seg">
+      <a class="<?= $fRecv === 'all' ? 'on' : '' ?>" href="payments.php?r=all#receivables">All (<?= $cnt('all') ?>)</a>
+      <a class="<?= $fRecv === 'overdue' ? 'on-bad' : '' ?>" href="payments.php?r=overdue#receivables">Overdue (<?= $cnt('overdue') ?>)</a>
+      <a class="<?= $fRecv === 'soon' ? 'on-warn' : '' ?>" href="payments.php?r=soon#receivables">This week (<?= $cnt('soon') ?>)</a>
+      <a class="<?= $fRecv === 'nodue' ? 'on-ok' : '' ?>" href="payments.php?r=nodue#receivables">Later (<?= $cnt('nodue') ?>)</a>
+    </div>
+  </div>
+  <div class="pane-body tight">
+    <table class="rowlist">
+      <thead><tr><th>Invoice</th><th>Customer</th><th class="num">Due ₹</th><th>Due date</th><th class="act"></th></tr></thead>
+      <tbody>
+      <?php foreach ($recvRows as $sl): $d = $sl['adj_due'] ?? ($sl['total'] - $sl['paid']);
+            $late = $sl['due_date'] && $sl['due_date'] < $today; ?>
+        <tr>
+          <td data-l="Invoice"><a href="sale_view.php?id=<?= (int)$sl['id'] ?>"><?= e($sl['invoice_no']) ?></a></td>
+          <td data-l="Customer"><?= $sl['party_id']
+              ? '<a href="parties.php?action=ledger&id=' . (int)$sl['party_id'] . '">' . e($sl['customer_name'] ?: 'Walk-in') . '</a>'
+              : e($sl['customer_name'] ?: 'Walk-in') ?></td>
+          <td class="num money-out" data-l="Due">₹<?= money($d) ?></td>
+          <td data-l="Due date"><?= $sl['due_date'] ? e(dmy($sl['due_date'])) : '<span class="mini">no date</span>' ?>
+            <?= $late ? ' <span class="badge badge-bad">' . (int)days_between($sl['due_date']) . 'd</span>' : '' ?></td>
+          <td class="act">
+            <?php if (can('payments.add') && $sl['party_id']): ?>
+              <a class="btn btn-sm btn-success" href="payments.php?action=new&dir=in&party=<?= (int)$sl['party_id'] ?>">Receive</a>
+            <?php endif; ?>
+            <?php if ($sl['customer_mobile']): ?>
+            <form method="post" style="display:inline"><?= csrf_field() ?>
+              <input type="hidden" name="do" value="remind"><input type="hidden" name="sale_id" value="<?= (int)$sl['id'] ?>">
+              <button class="btn btn-sm btn-wa" type="submit" title="WhatsApp this bill">📲</button></form>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      <?php if (!$recvRows): ?><tr><td colspan="5" class="mini" style="padding:16px">Nothing here 🎉</td></tr><?php endif; ?>
+      </tbody>
+    </table>
   </div>
 </div>
 
-<div class="card">
-  <h2>Recent entries</h2>
-  <div class="table-wrap" style="box-shadow:none">
-  <table>
-    <thead><tr><th>#</th><th>Date</th><th>Party</th><th>Dir</th><th class="num">Amount</th><th>Mode</th><th>Notes</th><th></th></tr></thead>
-    <tbody><?php foreach ($recent as $pm): ?>
-      <tr>
-        <td><a href="payments.php?action=view&id=<?= $pm['id'] ?>">P-<?= str_pad($pm['id'], 5, '0', STR_PAD_LEFT) ?></a></td>
-        <td><?= dmy($pm['pay_date']) ?></td>
-        <td><?= $pm['party_id'] ? '<a href="parties.php?action=ledger&id=' . $pm['party_id'] . '">' . e($pm['party_name']) . '</a>' : '<span class="muted">Walk-in</span>' ?></td>
-        <td><?= $pm['direction'] === 'in' ? '<span class="badge badge-ok">IN</span>' : '<span class="badge badge-bad">OUT</span>' ?></td>
-        <td class="num">₹<?= money($pm['amount']) ?></td>
-        <td><?= e($pm['mode']) ?></td>
-        <td><?= e($pm['notes']) ?> <span class="muted">(<?= e($pm['by_name']) ?>)</span></td>
-        <td style="white-space:nowrap">
-          <a class="btn btn-sm btn-outline" href="payments.php?action=view&id=<?= $pm['id'] ?>">Open</a>
-          <?php if ($pm['mode'] !== 'contra' && can('payments.edit')): ?><a class="btn btn-sm btn-outline" href="payments.php?action=edit&id=<?= $pm['id'] ?>">✏️</a><?php endif; ?>
-          <?php if (can('payments.delete')): ?>
-          <form method="post" onsubmit="return confirm('Delete entry?')" style="display:inline"><?= csrf_field() ?>
-          <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $pm['id'] ?>">
-          <button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?></td>
-      </tr>
-    <?php endforeach; ?></tbody>
-  </table>
+<?php // ---------- 8. payables ---------- ?>
+<?php
+$payRows = array_values(array_filter($duePurchases, function ($x) use ($fPay, $today, $weekEnd) {
+    $d = $x['due_date'] ?: null;
+    if ($fPay === 'overdue') return $d && $d < $today;
+    if ($fPay === 'soon')    return $d && $d >= $today && $d <= $weekEnd;
+    return true;
+}));
+$cntP = fn($k) => count(array_filter($duePurchases, function ($x) use ($k, $today, $weekEnd) {
+    $d = $x['due_date'] ?: null;
+    if ($k === 'overdue') return $d && $d < $today;
+    if ($k === 'soon')    return $d && $d >= $today && $d <= $weekEnd;
+    return true;
+}));
+?>
+<div class="pane" id="payables">
+  <div class="pane-head"><h3>📤 Payables <span class="mini">(supplier dues)</span></h3>
+    <div class="seg">
+      <a class="<?= $fPay === 'all' ? 'on' : '' ?>" href="payments.php?p=all#payables">All (<?= $cntP('all') ?>)</a>
+      <a class="<?= $fPay === 'overdue' ? 'on-bad' : '' ?>" href="payments.php?p=overdue#payables">Overdue (<?= $cntP('overdue') ?>)</a>
+      <a class="<?= $fPay === 'soon' ? 'on-warn' : '' ?>" href="payments.php?p=soon#payables">This week (<?= $cntP('soon') ?>)</a>
+    </div>
+  </div>
+  <div class="pane-body tight">
+    <table class="rowlist">
+      <thead><tr><th>Bill</th><th>Supplier</th><th class="num">Due ₹</th><th>Due date</th><th class="act"></th></tr></thead>
+      <tbody>
+      <?php foreach ($payRows as $pu): $late = $pu['due_date'] && $pu['due_date'] < $today; ?>
+        <tr>
+          <td data-l="Bill"><a href="purchase_view.php?id=<?= (int)$pu['id'] ?>">#<?= (int)$pu['id'] ?> <?= e($pu['bill_no']) ?></a></td>
+          <td data-l="Supplier"><a href="parties.php?action=ledger&id=<?= (int)$pu['party_id'] ?>"><?= e($pu['party_name']) ?></a></td>
+          <td class="num money-out" data-l="Due">₹<?= money($pu['adj_due'] ?? ($pu['total'] - $pu['paid'])) ?></td>
+          <td data-l="Due date"><?= $pu['due_date'] ? e(dmy($pu['due_date'])) : '<span class="mini">no date</span>' ?>
+            <?= $late ? ' <span class="badge badge-bad">overdue</span>' : '' ?></td>
+          <td class="act">
+            <?php if (can('payments.add')): ?>
+            <a class="btn btn-sm btn-danger" href="payments.php?action=new&dir=out&party=<?= (int)$pu['party_id'] ?>">Pay</a>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      <?php if (!$payRows): ?><tr><td colspan="5" class="mini" style="padding:16px">Nothing here 🎉</td></tr><?php endif; ?>
+      </tbody>
+    </table>
   </div>
 </div>
+
+<?php // ---------- 9. what has been entered ---------- ?>
+<div class="pane" id="recent">
+  <div class="pane-head"><h3>🕘 Recent Payments</h3>
+    <div class="seg">
+      <?php foreach (['all' => 'All', 'in' => 'IN', 'out' => 'OUT', 'cash' => 'Cash', 'bank' => 'Bank',
+                      'upi' => 'UPI', 'contra' => 'Contra', 'discount' => 'Discount'] as $k => $lbl): ?>
+        <a class="<?= $fRec === $k ? 'on' : '' ?>" href="payments.php?f=<?= $k ?>#recent"><?= e($lbl) ?></a>
+      <?php endforeach; ?>
+    </div>
+  </div>
+  <div class="pane-body tight">
+    <table class="rowlist">
+      <thead><tr><th>#</th><th>Date</th><th>Party</th><th>Dir</th><th class="num">Amount</th>
+                 <th>Mode</th><th>Notes</th><th class="act"></th></tr></thead>
+      <tbody>
+      <?php foreach ($recent as $pm): $in = $pm['direction'] === 'in'; ?>
+        <tr>
+          <td data-l="#"><a href="payments.php?action=view&id=<?= (int)$pm['id'] ?>">P-<?= str_pad($pm['id'], 5, '0', STR_PAD_LEFT) ?></a></td>
+          <td data-l="Date"><?= e(dmy($pm['pay_date'])) ?></td>
+          <td data-l="Party"><?= $pm['party_id']
+              ? '<a href="parties.php?action=ledger&id=' . (int)$pm['party_id'] . '">' . e($pm['party_name']) . '</a>'
+              : '<span class="mini">Walk-in</span>' ?></td>
+          <td data-l="Direction"><span class="badge <?= $in ? 'pill-in' : 'pill-out' ?>"><?= $in ? 'IN' : 'OUT' ?></span></td>
+          <td class="num <?= $in ? 'money-in' : 'money-out' ?>" data-l="Amount">₹<?= money($pm['amount']) ?></td>
+          <td data-l="Mode"><?= e($pm['mode']) ?></td>
+          <td data-l="Notes"><span class="mini"><?= e(mb_substr((string)$pm['notes'], 0, 90)) ?>
+            <?= $pm['by_name'] ? '(' . e($pm['by_name']) . ')' : '' ?></span></td>
+          <td class="act">
+            <a class="btn btn-sm btn-outline" href="payments.php?action=view&id=<?= (int)$pm['id'] ?>">View</a>
+            <?php if ($pm['mode'] !== 'contra' && can('payments.edit')): ?>
+              <a class="btn btn-sm btn-outline" href="payments.php?action=edit&id=<?= (int)$pm['id'] ?>">✏️</a>
+            <?php endif; ?>
+            <?php if (can('payments.delete')): ?>
+            <form method="post" onsubmit="return confirm('Delete entry?')" style="display:inline"><?= csrf_field() ?>
+              <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= (int)$pm['id'] ?>">
+              <button class="btn btn-sm btn-danger" type="submit">✕</button></form>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      <?php if (!$recent): ?><tr><td colspan="8" class="mini" style="padding:16px">Nothing matches that filter.</td></tr><?php endif; ?>
+      </tbody>
+    </table>
+  </div>
+  <?php if ($pgMax > 1): ?>
+  <div class="pane-note" style="display:flex;align-items:center;gap:10px;padding:12px 14px">
+    <span>Page <?= $pg ?> of <?= $pgMax ?> · <?= $recTotal ?> entries</span>
+    <span style="flex:1"></span>
+    <?php if ($pg > 1): ?><a class="btn btn-sm btn-outline" href="payments.php?f=<?= e($fRec) ?>&pg=<?= $pg - 1 ?>#recent">← Newer</a><?php endif; ?>
+    <?php if ($pg < $pgMax): ?><a class="btn btn-sm btn-outline" href="payments.php?f=<?= e($fRec) ?>&pg=<?= $pg + 1 ?>#recent">Older →</a><?php endif; ?>
+  </div>
+  <?php endif; ?>
+</div>
+
 <?php include __DIR__ . '/includes/footer.php'; ?>
