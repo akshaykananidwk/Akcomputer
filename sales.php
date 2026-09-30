@@ -1455,6 +1455,7 @@ $stF  = get('st', '');
 $coF  = (int)get('co', 0);
 $per  = 25;
 $page = max(1, (int)get('p', 1));
+$today = today();   // for deciding whether a bill is past its due date
 
 $w = ['s.sale_date BETWEEN ? AND ?'];
 $a = [$from, $to];
@@ -1627,7 +1628,77 @@ if ($parked): ?>
       <?php endif; ?>
     </p>
   <?php else: ?>
-  <table class="rowlist rl-wide">
+  <!-- A PHONE GETS A BILL, NOT A TABLE WITH ITS HEAD CUT OFF.
+       The generic label/value stack the other screens use was nine labelled
+       rows per bill, which is honest but reads like a form. A bill has a
+       shape of its own - who, how much, is it paid, when was it due - so on
+       a phone it is drawn as that shape, and the table below is for a mouse
+       and a wide screen. Same data, same links, two layouts; only one of
+       them is in the page at a time. -->
+  <div class="sl-cards">
+  <?php foreach ($sales as $s):
+      $sDue  = $s['is_cancelled'] ? 0.0 : (float)$s['total'] - (float)$s['paid'];
+      $sLate = !$s['is_cancelled'] && $sDue > 0.009 && $s['due_date'] && $s['due_date'] < $today;
+      $sWho  = $s['customer_name'] ?: 'Walk-in'; ?>
+    <div class="slcard<?= $s['is_cancelled'] ? ' sl-canc' : ($sLate ? ' sl-late' : ($sDue > 0.009 ? ' sl-due' : ' sl-paid')) ?>">
+      <div class="sl-top">
+        <div class="sl-who">
+          <a href="sale_view.php?id=<?= $s['id'] ?>"><strong><?= e($sWho) ?></strong></a>
+          <?= $s['is_cancelled'] ? '<span class="badge badge-bad">CANCELLED</span>'
+              : ($sLate ? '<span class="badge badge-warn">OVERDUE</span>' : status_badge($s['status'])) ?>
+        </div>
+        <div class="sl-no"><?= e($s['invoice_no']) ?><span><?= dmy($s['sale_date']) ?></span></div>
+      </div>
+      <div class="sl-amt">₹<?= money($s['total']) ?></div>
+      <div class="sl-foot">
+        <div class="sl-meta">
+          <div>Balance: <strong class="<?= $sDue > 0.009 ? 'money-out' : '' ?>">₹<?= money($sDue) ?></strong></div>
+          <?php if ($s['due_date']): ?><div>Due date: <?= dmy($s['due_date']) ?></div><?php endif; ?>
+          <div class="muted"><?= e($s['company_name']) ?> · <?= e($s['staff_name']) ?></div>
+        </div>
+        <div class="sl-acts">
+          <a class="ricon" href="sale_pdf.php?id=<?= $s['id'] ?>" target="_blank" rel="noopener" title="Print or save the PDF">🖨️</a>
+          <?php if ($s['customer_mobile']): ?>
+          <form method="post" action="sale_view.php?id=<?= $s['id'] ?>" style="display:inline">
+            <?= csrf_field() ?><input type="hidden" name="do" value="whatsapp">
+            <input type="hidden" name="mobile" value="<?= e($s['customer_mobile']) ?>">
+            <button class="ricon" type="submit" title="Send this bill on WhatsApp">📲</button>
+          </form>
+          <?php endif; ?>
+          <details class="rowmenu">
+            <summary class="ricon" title="More">⋮</summary>
+            <div class="rowmenu-box">
+              <a href="sale_view.php?id=<?= $s['id'] ?>">Open the bill</a>
+              <?php if (can('sales.add') && !$s['is_cancelled']): ?>
+              <a href="sales.php?action=new&copy=<?= $s['id'] ?>">Duplicate</a>
+              <?php endif; ?>
+              <?php if ($sDue > 0.009 && can('payments.add')): ?>
+              <!-- A walk-in bill has no ledger to post against, so its money is
+                   taken on the bill itself - the Payment-In screen says so too.
+                   Either way the item is here, pointing at the place it works. -->
+              <a href="<?= $s['party_id']
+                    ? 'payments.php?action=new&dir=in&party=' . (int)$s['party_id']
+                    : 'sale_view.php?id=' . (int)$s['id'] ?>">Receive payment</a>
+              <?php endif; ?>
+              <?php if (can('sales_return.add') && !$s['is_cancelled']): ?>
+              <a href="sales_return.php?action=new&invoice_ref=<?= urlencode($s['invoice_no']) ?>">Return</a>
+              <?php endif; ?>
+              <?php if ($s['party_id'] && can('parties.view')): ?>
+              <a href="parties.php?action=ledger&id=<?= (int)$s['party_id'] ?>">Payment history</a>
+              <?php endif; ?>
+              <a href="sale_pdf.php?id=<?= $s['id'] ?>" target="_blank" rel="noopener">Share as PDF</a>
+              <?php if (can('sales.edit') && !$s['is_cancelled']): ?>
+              <a href="sales.php?action=edit&id=<?= $s['id'] ?>">Edit</a>
+              <?php endif; ?>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+  <?php endforeach; ?>
+  </div>
+
+  <table class="rowlist sl-table">
     <thead><tr>
       <th>Invoice</th><th>Date</th><th>Customer</th><th>Phone</th><th>Firm</th>
       <th class="num">Amount</th><th>Status</th><th>By</th><th class="act"></th>
@@ -1681,4 +1752,15 @@ if ($parked): ?>
   </div>
   <?php endif; ?>
 </div>
+<script>
+// Only one ⋮ menu open at a time, and a tap anywhere else shuts it. <details>
+// has no idea other <details> exist, which on a list is how you end up with
+// six menus open on top of each other.
+document.addEventListener('click', function (ev) {
+  var inside = ev.target.closest('.rowmenu');
+  document.querySelectorAll('.rowmenu[open]').forEach(function (d) {
+    if (d !== inside) d.removeAttribute('open');
+  });
+});
+</script>
 <?php include __DIR__ . '/includes/footer.php'; ?>

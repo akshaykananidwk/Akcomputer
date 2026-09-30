@@ -1366,3 +1366,71 @@ body:has(.bf) .fab-center { display: none; }
   border-radius: 10px; font-size: 13.5px; font-weight: 600; text-decoration: none; }
 .alertrow:last-child { margin-bottom: 0; }
 .alertrow:hover { border-color: currentColor; }
+
+/* ============================================================
+   DOCUMENT CARDS — a bill on a phone
+   ------------------------------------------------------------
+   The generic .rowlist stack is right for a list of figures. A
+   BILL has a shape of its own and people read it in a fixed
+   order: who it is for, is it paid, how much, what is left, when
+   was it due. So on a phone it is drawn as that shape, and the
+   table stays for a mouse and a wide screen.
+
+   Built generic on purpose - Purchase, Estimate, Sale Return and
+   Delivery Challan are the same document with a different noun.
+
+     .sl-cards / .slcard    the list and one document in it
+     .sl-top .sl-who .sl-no who, its state, its number and date
+     .sl-amt                the figure, big
+     .sl-foot .sl-meta      what is left and when it was due
+     .sl-acts .ricon        print, send, and the rest behind ⋮
+     .rowmenu               that ⋮ menu, no JavaScript needed
+   ============================================================ */
+
+.sl-cards { display: none; }
+@media (max-width: 1023px) {
+  .sl-cards { display: block; padding: 10px 12px 2px; }
+  .sl-table { display: none; }
+}
+
+.slcard { border: 1px solid var(--line); border-left: 4px solid var(--line);
+  border-radius: 13px; padding: 12px 13px; margin-bottom: 10px; background: var(--card); }
+.slcard.sl-paid { border-left-color: var(--ok); }
+.slcard.sl-due  { border-left-color: var(--warn); }
+.slcard.sl-late { border-left-color: var(--bad); }
+.slcard.sl-canc { border-left-color: var(--muted); opacity: .62; }
+
+.sl-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.sl-who { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; font-size: 15.5px; }
+.sl-who a { color: var(--text); }
+.sl-no { text-align: right; flex-shrink: 0; font-size: 12px; color: var(--muted); font-weight: 600; }
+.sl-no span { display: block; font-weight: 400; margin-top: 2px; }
+.sl-amt { font-size: 23px; font-weight: 800; letter-spacing: -.5px; margin-top: 4px; }
+
+.sl-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.sl-meta { font-size: 12.5px; color: var(--muted); line-height: 1.55; min-width: 0; }
+.sl-meta strong { color: var(--text); }
+.sl-acts { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+/* Icon buttons big enough for a thumb, quiet enough not to shout. */
+.ricon { display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 11px;
+  background: var(--card); color: var(--muted); font-size: 17px; cursor: pointer;
+  text-decoration: none; padding: 0; }
+.ricon:hover { border-color: var(--primary); color: var(--primary); }
+
+/* The ⋮ menu. <details> does the opening and closing, so there is no state to
+   keep and nothing to go wrong when the page is re-rendered; one small script
+   in the page closes the others when one opens. */
+.rowmenu { position: relative; }
+.rowmenu > summary { list-style: none; }
+.rowmenu > summary::-webkit-details-marker { display: none; }
+.rowmenu-box { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+  min-width: 190px; background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; box-shadow: 0 10px 30px rgba(15,23,42,.18); overflow: hidden; }
+.rowmenu-box a { display: block; padding: 12px 15px; font-size: 14px; color: var(--text);
+  text-decoration: none; border-bottom: 1px solid var(--line); min-height: 44px; }
+.rowmenu-box a:last-child { border-bottom: 0; }
+.rowmenu-box a:hover { background: var(--bg); color: var(--primary); }
+/* near the bottom of the list the menu would open off the screen */
+.slcard:nth-last-child(-n+2) .rowmenu-box { top: auto; bottom: calc(100% + 4px); }

@@ -148,7 +148,8 @@ if ($action === 'new') {
       <input type="hidden" id="location_id" value="<?= $u['location_id'] ?>">
       <div class="card">
         <div class="form-row cols-4">
-          <div><label>Original invoice no (optional)</label><input type="text" name="invoice_ref" placeholder="INV-26-00012"></div>
+          <!-- arriving from a bill's ⋮ menu, this is already filled in -->
+          <div><label>Original invoice no (optional)</label><input type="text" name="invoice_ref" value="<?= e(get('invoice_ref', '')) ?>" placeholder="INV-26-00012"></div>
           <div><label>Customer name</label><input type="text" name="customer_name"></div>
           <div><label>Mobile</label><input type="tel" name="customer_mobile"></div>
           <div><label>Date</label><input type="date" name="return_date" value="<?= today() ?>"></div>

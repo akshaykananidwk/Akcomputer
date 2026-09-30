@@ -628,3 +628,61 @@ t_ok('...and deleting says what it will recalculate',
 t_ok('who may see the whole shop\'s money is still decided on the server',
      strpos($cbSrc, "\$ownW = \$seeAll ? '' : ' AND created_by = ' . (int)\$u['id'];") !== false);
 t_ok('every form still carries a CSRF token', substr_count($cbSrc, 'csrf_field()') >= 6);
+
+t_group('on a phone a bill is drawn as a bill');
+
+// The generic label/value stack is right for a list of figures. A BILL has a
+// shape people read in a fixed order - who it is for, is it paid, how much,
+// what is left, when was it due - and nine labelled rows per bill reads like
+// a form to fill in rather than a bill to check.
+t_ok('a phone gets cards and a desktop gets the table',
+     strpos($slsSrc, '<div class="sl-cards">') !== false
+     && strpos($slsSrc, '<table class="rowlist sl-table">') !== false);
+$css3 = file_get_contents(dirname(__DIR__) . '/assets/style.css');
+t_ok('...and only one of them is ever in the page',
+     strpos($css3, '.sl-cards { display: none; }') !== false
+     && strpos($css3, '.sl-cards { display: block;') !== false
+     && strpos($css3, '.sl-table { display: none; }') !== false);
+
+// The state of a bill has to be readable without reading anything: the whole
+// point of the card is that the owner knows at a glance.
+t_ok('the edge of the card says paid, due, late or cancelled',
+     strpos($css3, '.slcard.sl-paid { border-left-color: var(--ok); }') !== false
+     && strpos($css3, '.slcard.sl-late { border-left-color: var(--bad); }') !== false);
+t_ok('a bill past its due date says OVERDUE, not merely "due"',
+     strpos($slsSrc, "\$sLate = !\$s['is_cancelled'] && \$sDue > 0.009 && \$s['due_date'] && \$s['due_date'] < \$today;") !== false
+     && strpos($slsSrc, 'OVERDUE</span>') !== false);
+t_ok('and what is left on it is on the card', strpos($slsSrc, 'Balance: <strong') !== false);
+
+// Every item in the ⋮ menu must go somewhere that works, and must only be
+// offered when it applies.
+foreach (['sale_view.php?id=' => 'opening the bill',
+          'action=new&copy=' => 'duplicating it',
+          'sales_return.php?action=new&invoice_ref=' => 'returning it',
+          "parties.php?action=ledger&id=" => 'its payment history',
+          'sale_pdf.php?id=' => 'sharing the PDF',
+          'action=edit&id=' => 'editing it'] as $needle => $what)
+    t_ok($what . ' is in the menu', strpos($slsSrc, $needle) !== false);
+t_ok('a walk-in bill takes its payment on the bill, not on the ledger',
+     strpos($slsSrc, "\$s['party_id']\n                    ? 'payments.php?action=new&dir=in&party=' . (int)\$s['party_id']\n                    : 'sale_view.php?id=' . (int)\$s['id']") !== false);
+t_ok('...and Receive payment is only offered when something is owed',
+     strpos($slsSrc, "if (\$sDue > 0.009 && can('payments.add'))") !== false);
+t_ok('a cancelled bill cannot be duplicated, returned or edited from the menu',
+     substr_count($slsSrc, "!\$s['is_cancelled']") >= 3);
+t_ok('the Return link really does arrive filled in',
+     strpos(file_get_contents(dirname(__DIR__) . '/sales_return.php'),
+            'name="invoice_ref" value="<?= e(get(\'invoice_ref\', \'\')) ?>"') !== false);
+
+// Sending on WhatsApp from the list reuses the bill screen's own handler
+// rather than a second copy of it.
+t_ok('sharing on WhatsApp posts to the one handler that already exists',
+     strpos($slsSrc, 'action="sale_view.php?id=<?= $s[\'id\'] ?>"') !== false
+     && strpos($slsSrc, 'name="do" value="whatsapp"') !== false);
+t_ok('...with a CSRF token, like every other post', strpos($slsSrc, '<?= csrf_field() ?><input type="hidden" name="do" value="whatsapp">') !== false);
+t_ok('...and only when there is a number to send it to', strpos($slsSrc, "if (\$s['customer_mobile']):") !== false);
+
+// Six menus open on top of each other is what <details> does on its own.
+t_ok('only one row menu is open at a time',
+     strpos($slsSrc, "document.querySelectorAll('.rowmenu[open]').forEach") !== false);
+t_ok('a menu near the bottom of the list opens upwards',
+     strpos($css3, '.slcard:nth-last-child(-n+2) .rowmenu-box') !== false);
