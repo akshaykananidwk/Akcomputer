@@ -346,6 +346,27 @@ function payment_reverse($paymentId) {
 
 /** A party's still-unpaid bills, oldest first — the canonical ordering every
  *  settlement and every cap uses. $dir 'in' = sales, 'out' = purchases. */
+/**
+ * What it is fair to ASK this party for.
+ *
+ * A bill keeps its own figure: a ₹5,000 invoice is a ₹5,000 invoice, and it
+ * must not be written down because the shop happens to have bought ₹3,000 of
+ * something from the same party. That rule is right and is not touched here.
+ *
+ * But whether to CHASE somebody, and for how much, is a different question,
+ * and reading the sale side alone got it badly wrong: a party whose two sides
+ * cancelled out - ₹16,504 owed to the shop, ₹16,504 owed BY the shop, net
+ * nought - sat in the collection queue, was sent reminders, and would have
+ * had the phone ring at them asking for ₹16,504 the shop was in fact holding
+ * for them. There is no defending that to a customer.
+ *
+ * So: never more than they owe on the sale side, and never more than they owe
+ * NET. Whichever is smaller, and never less than nothing.
+ */
+function money_chase_due($receivableSide, $netBalance) {
+    return round(min((float)$receivableSide, max(0.0, (float)$netBalance)), 2);
+}
+
 function money_due_bills($party_id, $dir, $cols = '*') {
     $tbl = $dir === 'in' ? 'sales' : 'purchases';
     return all("SELECT $cols FROM $tbl WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0

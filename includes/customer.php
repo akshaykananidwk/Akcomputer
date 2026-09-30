@@ -114,9 +114,11 @@ function cust_360($partyId) {
 /** What this customer really owes, capped by the ledger, plus how late the
  *  oldest unpaid bill is. Shared by the 360 page and the collection queue. */
 function cust_outstanding($partyId, $bal = null) {
-    // the SALE side, not max(0, netted balance): a customer the shop also buys
-    // from had their own unpaid bills quietly written down by what WE owe THEM
-    $cap = party_balance_side($partyId, 'in');
+    // What it is fair to ask them for: the sale side, but never more than the
+    // net. The sale side ALONE (which this used to be) showed a party whose
+    // two sides cancelled out as owing the shop thousands.
+    $cap = money_chase_due(party_balance_side($partyId, 'in'),
+                           $bal === null ? party_balance($partyId) : $bal);
     $bills = money_due_bills($partyId, 'in', 'id, invoice_no, sale_date, due_date, ROUND(total - paid, 2) d');
     $adj = money_trim_dues(array_column($bills, 'd'), $cap);
     $t = today();
@@ -509,7 +511,7 @@ function coll_queue($limit = 200, $includeSnoozed = false) {
                            " . party_balance_side_expr('p', 'in') . " recv_due
                     FROM parties p
                     WHERE p.type <> 'supplier'
-                    HAVING recv_due > 0.009
+                    HAVING recv_due > 0.009 AND bal > 0.009
                     ORDER BY recv_due DESC LIMIT " . $scan);
     if (!$parties) return [];
     $ids = array_map(fn($x) => (int)$x['id'], $parties);
@@ -544,8 +546,13 @@ function coll_queue($limit = 200, $includeSnoozed = false) {
         $bills = $billsBy[$id] ?? [];
         if (!$bills) continue;
 
-        // the ledger cap, exactly as everywhere else
-        $adj = money_trim_dues(array_column($bills, 'd'), (float)$p['recv_due']);
+        // The cap is what it is fair to ASK them for - never more than they
+        // owe on the sale side, and never more than they owe NET. Reading the
+        // sale side alone put a party whose two sides cancelled out into this
+        // queue for the full amount, and rang them for money the shop was
+        // holding on their behalf. money_chase_due() is that one rule.
+        $adj = money_trim_dues(array_column($bills, 'd'),
+                               money_chase_due($p['recv_due'], $p['bal']));
         $total = 0.0; $overdue = 0.0; $oldest = null; $n = 0; $lastRem = null;
         foreach ($bills as $i => $b) {
             $d = $adj[$i];

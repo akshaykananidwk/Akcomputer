@@ -273,7 +273,12 @@ if ($action === 'ledger' && $id) {
           <?php
           // Reminder is offered only when there is really something to ask
           // for - a party who owes nothing must never get one by accident
-          $remDue = can('payments.view') ? party_balance_side($p['id'], 'in') : 0.0;
+          // What it is fair to ask them for, not the sale side alone: a party
+          // whose two sides cancel out was being offered a "Reminder ₹16,504"
+          // button on the very screen that said the shop is holding ₹16,504
+          // of theirs. money_chase_due() is the one rule for that.
+          $remDue = can('payments.view')
+              ? money_chase_due(party_balance_side($p['id'], 'in'), party_balance($p['id'])) : 0.0;
           if ($p['mobile'] && $remDue > 0.009): ?>
           <form method="post" style="display:inline" onsubmit="return confirm('₹<?= money($remDue) ?> payment reminder <?= e($p['mobile']) ?> Send it to')">
             <?= csrf_field() ?><input type="hidden" name="do" value="collection_reminder"><input type="hidden" name="id" value="<?= $p['id'] ?>">
@@ -333,12 +338,28 @@ if ($action === 'ledger' && $id) {
         <span class="muted" style="font-size:13px;font-weight:400"><?= $closingBal >= 0 ? '(to receive)' : '(to pay)' ?></span>
       </div>
     </div>
+    <?php
+    // A LEDGER is a record of money moving. A line worth nothing moved no
+    // money, and a hundred-per-cent discounted bill makes exactly such a
+    // line - correct, and completely uninteresting. Fifty of them in a row
+    // buried the entries that mattered.
+    //
+    // They are hidden, not deleted: the bill is still a real document and is
+    // still in the Purchases and Sales lists, and one click brings them back
+    // here. The running balance is untouched either way, because adding
+    // nothing to it changes nothing.
+    $zeroN = 0;
+    foreach ($entries as $en) if (abs((float)$en['dr']) < 0.005 && abs((float)$en['cr']) < 0.005) $zeroN++;
+    $showZero = get('z') === '1';
+    ?>
     <div class="card list-card">
       <div class="list-row" style="cursor:default">
         <div class="list-row-main"><strong>Opening Balance</strong></div>
         <div class="list-row-val"><span class="muted">₹<?= money($openingBal) ?></span></div>
       </div>
-      <?php foreach ($entries as $en): $bal += $en['dr'] - $en['cr']; ?>
+      <?php foreach ($entries as $en): $bal += $en['dr'] - $en['cr'];
+            $isZero = abs((float)$en['dr']) < 0.005 && abs((float)$en['cr']) < 0.005;
+            if ($isZero && !$showZero) continue; ?>
       <a class="list-row" href="<?= e($en['link']) ?>">
         <div class="list-row-main"><strong><?= e($en['desc']) ?></strong><div class="muted list-row-sub"><?= dmy($en['date']) ?><?= $en['sub'] ? ' · ' . e($en['sub']) : '' ?></div></div>
         <div class="list-row-val">
@@ -348,6 +369,20 @@ if ($action === 'ledger' && $id) {
         </div>
       </a>
       <?php endforeach; ?>
+      <?php if ($zeroN): ?>
+      <div class="list-row" style="cursor:default">
+        <div class="list-row-main">
+          <span class="muted" style="font-size:12.5px">
+            <?= $showZero ? 'Showing ' . $zeroN . ' zero-value entry(s) — fully discounted or free, no money moved.'
+                          : $zeroN . ' zero-value entry(s) hidden — fully discounted or free, no money moved.' ?>
+          </span>
+        </div>
+        <div class="list-row-val">
+          <a class="btn btn-sm btn-outline" href="parties.php?action=ledger&id=<?= $id ?><?= $showZero ? '' : '&z=1' ?>">
+            <?= $showZero ? 'Hide them' : 'Show them' ?></a>
+        </div>
+      </div>
+      <?php endif; ?>
     </div>
     <?php if ($timeline): ?>
     <div class="card">

@@ -703,3 +703,68 @@ t_ok('and the buttons are thumb-sized there', strpos($css, '.rowlist td.act .btn
 t_ok('the pieces are named for reuse on the other accounting screens',
      strpos($css, 'MONEY PANELS') !== false && strpos($css, '.kpi-row') !== false
      && strpos($css, '.pane > .pane-head') !== false && strpos($css, '.seg a.on') !== false);
+
+t_group('a party whose two sides cancel out is not chased for either');
+
+// The shop's own party record: ₹16,504 owed to it on sales and ₹16,504 owed
+// BY it on purchases — net nought. It sat in the collection queue for the
+// full ₹16,504, was offered a "Reminder ₹16,504" button on the very screen
+// that said the shop is HOLDING ₹16,504 of theirs, and a reminder call would
+// have rung them asking for it. There is no defending that to a customer.
+//
+// The bill keeps its own figure — a ₹5,000 invoice is a ₹5,000 invoice, and
+// the test above this one still holds. What changed is what may be ASKED for.
+t_eq('nothing is asked of a party whose sides cancel out', money_chase_due(16504, 0), 0.0);
+t_eq('nor of one the shop owes money to', money_chase_due(16504, -5000), 0.0);
+t_eq('a plain customer is asked for the whole of it', money_chase_due(5000, 5000), 5000.0);
+t_eq('a party on both sides is asked only for the difference', money_chase_due(5000, 2000), 2000.0);
+t_eq('and never for more than they bought', money_chase_due(2000, 5000), 2000.0);
+
+list($zp, $zs, $zb) = ts_both_party(16504, 16504);
+q("UPDATE sales SET due_date = DATE_SUB(CURDATE(), INTERVAL 20 DAY), sale_date = DATE_SUB(CURDATE(), INTERVAL 40 DAY) WHERE id = ?", [$zs]);
+q("UPDATE parties SET mobile = '9876500123' WHERE id = ?", [$zp]);
+t_eq('the net balance really is nought', party_balance($zp), 0.0);
+t_eq('while the sale side really is the full amount', party_balance_side($zp, 'in'), 16504.0);
+
+$inQ = false;
+foreach (coll_queue(500, true) as $c) if ((int)$c['id'] === $zp) $inQ = true;
+t_ok('they are NOT in the collection queue', !$inQ);
+t_eq('and nothing is outstanding to chase', cust_outstanding($zp)['total'], 0.0);
+
+require_once __DIR__ . '/../includes/voice.php';
+$zctx = voice_party_context($zp);
+t_eq('a reminder call would ask for nothing', (float)$zctx['due'], 0.0);
+t_eq('so no call button is drawn for them', voice_call_button($zp), '');
+$zg = voice_can_call($zp, $zctx);
+t_ok('and the call is refused outright', !$zg['ok']);
+
+// A party who genuinely owes the difference is still chased, for that.
+list($dp, $ds, $db) = ts_both_party(9000, 4000);
+q("UPDATE sales SET due_date = DATE_SUB(CURDATE(), INTERVAL 20 DAY), sale_date = DATE_SUB(CURDATE(), INTERVAL 40 DAY) WHERE id = ?", [$ds]);
+$dRow = null;
+foreach (coll_queue(500, true) as $c) if ((int)$c['id'] === $dp) $dRow = $c;
+t_ok('a party who nets a debt is still chased', (bool)$dRow);
+t_eq('for the difference, not the whole invoice', $dRow ? $dRow['outstanding'] : -1, 5000.0);
+
+// The one rule, in one place.
+foreach ([['includes/customer.php', 2], ['includes/voice.php', 1], ['parties.php', 1]] as [$f, $n]) {
+    $src = file_get_contents(dirname(__DIR__) . '/' . $f);
+    t_ok($f . ' asks money_chase_due() rather than working it out',
+         substr_count($src, 'money_chase_due(') >= $n);
+}
+t_ok('and the rule is written once',
+     substr_count(file_get_contents(dirname(__DIR__) . '/includes/money.php'), 'function money_chase_due') === 1);
+
+t_group('a ledger is a record of money MOVING');
+
+// A hundred-per-cent discounted bill is a real document and a zero ledger
+// line. Fifty of them in a row buried the entries that mattered.
+$par = file_get_contents(dirname(__DIR__) . '/parties.php');
+t_ok('zero-value entries are left out of the ledger by default',
+     strpos($par, "if (\$isZero && !\$showZero) continue;") !== false);
+t_ok('the page says how many it left out, rather than just losing them',
+     strpos($par, 'zero-value entry(s) hidden') !== false);
+t_ok('and one click brings them back', strpos($par, "get('z') === '1'") !== false
+     && strpos($par, 'Show them') !== false);
+t_ok('the running balance adds them either way — adding nothing changes nothing',
+     strpos($par, "\$bal += \$en['dr'] - \$en['cr'];\n            \$isZero") !== false);

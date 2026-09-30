@@ -602,8 +602,13 @@ function voice_contexts(array $ids) {
                     ON m.mx = v.id") as $r) $last[(int)$r['party_id']] = $r;
 
     $out = [];
+    // Both sides are selected because the amount a call may ask for is the
+    // SMALLER of the two - see money_chase_due(). Reading the sale side alone
+    // rang a party whose two sides cancelled out and asked them for money the
+    // shop was holding on their behalf.
     foreach (all('SELECT p.id, p.name, p.mobile, p.collection_opt_out, p.voice_dnd, p.voice_name_clip,
-                         ' . party_balance_side_expr('p', 'in') . " recv_due
+                         ' . party_balance_side_expr('p', 'in') . ' recv_due,
+                         ' . party_balance_expr('p') . " bal
                   FROM parties p WHERE p.id IN ($in)") as $p) {
         $id = (int)$p['id'];
         $e = $ev[$id] ?? [];
@@ -612,7 +617,7 @@ function voice_contexts(array $ids) {
             'opt_out' => (int)$p['collection_opt_out'] === 1,
             'dnd' => (int)$p['voice_dnd'] === 1,
             'name_clip' => (string)$p['voice_name_clip'],
-            'due' => round((float)$p['recv_due'], 2),
+            'due' => money_chase_due($p['recv_due'], $p['bal']),
             'promise_open' => $e['promise_open'] ?? null,
             'snoozed_until' => (!empty($e['snooze_until']) && $e['snooze_until'] >= $t) ? $e['snooze_until'] : null,
             'last_contact' => $e['last_contact'] ?? null,
