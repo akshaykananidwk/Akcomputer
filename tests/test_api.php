@@ -425,7 +425,18 @@ t_ok('a late "sent" receipt cannot un-read a message',
 // The id has to be kept at send time or there is nothing to match to.
 $meta = file_get_contents(__DIR__ . '/../includes/wa_meta.php');
 t_ok('the id is kept when a plain message is sent',
-     substr_count($meta, "_wa_last_msg_id'] = (string)(\$data['messages'][0]['id']") === 1);
+     strpos($meta, "_wa_last_msg_id'] = (string)(\$data['messages'][0]['id']") !== false);
+// The menu and the bills list go out as INTERACTIVE messages, so those are
+// exactly the ones a customer says they never received - and their id was
+// not being kept at all, which made them the ones that could not be checked.
+t_ok('and when a menu or a list goes out',
+     substr_count($meta, "_wa_last_msg_id'] = (string)(\$data['messages'][0]['id']") >= 2);
+foreach (['includes/wa_bot.php', 'includes/wa_portal.php'] as $f) {
+    $src = file_get_contents(__DIR__ . '/../' . $f);
+    $n = substr_count($src, "wa_chat_log(\$mobile, 'out'");
+    t_eq($f . ' logs every interactive send with its id',
+         substr_count($src, "\$GLOBALS['_wa_last_msg_id']"), $n);
+}
 t_ok('and when a template is sent outside the 24-hour window',
      strpos($meta, "_wa_last_msg_id'] = (string)(\$d2['messages'][0]['id']") !== false);
 t_ok('it is cleared first, so one send cannot inherit the previous id',
@@ -532,3 +543,51 @@ t_ok('and a skipped group is recorded, so it can be seen to be working',
      strpos($hook, "log_activity('wa_group_skip'") !== false);
 t_ok('the rule is written once', substr_count(file_get_contents(__DIR__ . '/../includes/whatsapp.php'),
                                               'function wa_is_group') === 1);
+
+require_once __DIR__ . '/../includes/wa_bot.php';   // wa_is_trigger(), wa_portal_want()
+
+t_group('WhatsApp — a customer writing hello in their own language is answered');
+
+// The trigger list HAD નમસ્તે, હાય, મેનુ and the rest in it. Not one of them
+// could ever match, because the tidy-up in front of it stripped everything
+// that was not a letter or a number - and in every Indic script the vowel
+// signs are combining MARKS, not letters. નમસ્તે arrived as નમસત, હાય as હય,
+// મેનુ as મન. So "hi" worked and "હાય" got silence, which is the wrong way
+// round for a shop in Dwarka.
+foreach (['હાય', 'નમસ્તે', 'નમસ્કાર', 'હેલો', 'મેનુ', 'મેન્યુ',
+          'नमस्ते', 'नमस्कार', 'मेनू', 'मेन्यू', 'જય શ્રી કૃષ્ણ'] as $w) {
+    t_ok('"' . $w . '" is answered', wa_is_trigger($w));
+}
+t_ok('and English still is too', wa_is_trigger('hi') && wa_is_trigger('Hello') && wa_is_trigger('MENU'));
+t_ok('punctuation and emoji are still tidied away',
+     wa_is_trigger('Hi!') && wa_is_trigger('hello 🙏') && wa_is_trigger('નમસ્તે.'));
+t_ok('but a real sentence is not mistaken for a greeting',
+     !wa_is_trigger('હાય ભાવ શું છે') && !wa_is_trigger('hello do you have a printer'));
+t_ok('every word in the list can actually be reached',
+     count(array_filter(wa_kw_list(), fn($k) => !wa_is_trigger($k))) === 0,
+     implode(', ', array_filter(wa_kw_list(), fn($k) => !wa_is_trigger($k))));
+
+t_group('WhatsApp — what the shop tells the customer to type, works');
+
+// The statement message ends "Type 'bill' for bill PDFs · Type 'pay' to pay".
+// An instruction the shop gives and the bot does not honour is worse than no
+// instruction at all.
+$says = [
+    'bill' => 'portal:bills', 'Bill' => 'portal:bills', 'BILL' => 'portal:bills',
+    'bills' => 'portal:bills', 'બિલ' => 'portal:bills', 'invoice' => 'portal:bills',
+    'pay' => 'portal:pay', 'Pay' => 'portal:pay', 'payment' => 'portal:pay', 'પેમેન્ટ' => 'portal:pay',
+    'statement' => 'portal:stmt', 'હિસાબ' => 'portal:stmt', 'બાકી' => 'portal:stmt',
+    'account' => 'portal:menu', 'ખાતું' => 'portal:menu',
+];
+foreach ($says as $typed => $want)
+    t_eq('typing "' . $typed . '" reaches ' . $want, wa_portal_want(mb_strtolower(trim($typed))), $want);
+t_ok('a product name is NOT swallowed by those keywords',
+     wa_portal_want('printer') === null && wa_portal_want('mouse') === null);
+
+$inbox = file_get_contents(__DIR__ . '/../wa_inbox.php');
+t_ok('the Inbox says what the bot made of each message',
+     strpos($inbox, 'function wa_bot_decision') !== false);
+t_ok('including when it sent nothing at all',
+     strpos($inbox, 'The bot sent no reply to this') !== false);
+t_ok('and when it tried and the send failed',
+     strpos($inbox, 'the send failed') !== false);

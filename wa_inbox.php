@@ -47,6 +47,27 @@ function wa_status_mark(array $x) {
          . $m[$s][0] . '</span>';
 }
 
+/**
+ * What the bot did about one incoming message.
+ *
+ * "The customer typed Bill and nothing came back" can only ever be guessed
+ * at from the chat alone. The bot writes down every decision it makes; this
+ * puts that line under the message it belongs to, so the answer is on the
+ * screen instead of in a table nobody reads.
+ */
+function wa_bot_decision(array $log, array $msg) {
+    $want = trim((string)$msg['body']);
+    foreach ($log as $l) {
+        if (trim((string)$l['in_text']) !== $want) continue;
+        if (abs(strtotime($l['created_at']) - strtotime($msg['created_at'])) > 120) continue;
+        $r = trim((string)($l['reply'] ?? ''));
+        if ($r === '') return '🤖 The bot sent no reply to this';
+        if (strpos($r, 'failed') !== false) return '🤖 The bot tried to answer and the send failed — ' . $r;
+        return '🤖 Answered: ' . mb_substr($r, 0, 90);
+    }
+    return '';
+}
+
 $page_title = 'WhatsApp Inbox';
 include __DIR__ . '/includes/header.php';
 
@@ -70,6 +91,7 @@ function wa_inbox_party($mobile) {
 [data-theme="dark"] .wa-out { background: #005c4b; color: #e8edf5; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wa-out { background: #005c4b; color: #e8edf5; } }
 .wa-meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.wa-bot { font-size: 11px; margin-top: 5px; color: var(--muted); font-style: italic; }
 .wa-fail { font-size: 12px; margin-top: 6px; padding: 6px 8px; border-radius: 8px;
            background: rgba(220,38,38,.10); color: #b91c1c; }
 .wa-replybar { position: sticky; bottom: calc(var(--bottomnav-h) + 8px); display: flex; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
@@ -111,6 +133,15 @@ function wa_inbox_party($mobile) {
     try {
         q("UPDATE wa_chats SET is_read = 1 WHERE mobile = ? AND direction = 'in'", [$m]);
         $msgs = all('SELECT * FROM wa_chats WHERE mobile = ? ORDER BY id DESC LIMIT 200', [$m]);
+        // What the bot made of each incoming message. Without this, "it did
+        // not answer" is a mystery the owner can only guess at - and the one
+        // table that knows was only ever read by nobody.
+        $botSaid = [];
+        try {
+            foreach (all('SELECT in_text, reply, created_at FROM wa_bot_log
+                          WHERE mobile = ? ORDER BY id DESC LIMIT 200', [$m]) as $bl)
+                $botSaid[] = $bl;
+        } catch (Exception $e) { /* older install - never break the Inbox over it */ }
     } catch (Exception $e) { $msgs = []; }
     $msgs = array_reverse($msgs);
     $pt = wa_inbox_party($m); ?>
@@ -129,6 +160,9 @@ function wa_inbox_party($mobile) {
       <?php if ($x['media_url']): ?><div><a href="<?= e($x['media_url']) ?>" target="_blank" rel="noopener">📎 Attachment</a></div><?php endif; ?>
       <div class="wa-meta"><?= dmyt($x['created_at']) ?><?= $x['direction'] === 'out' && $x['via'] ? ' · via ' . e($x['via']) : '' ?>
         <?php if ($x['direction'] === 'out'): ?><?= wa_status_mark($x) ?><?php endif; ?></div>
+      <?php if ($x['direction'] === 'in'): $bd = wa_bot_decision($botSaid, $x); ?>
+        <?php if ($bd !== ''): ?><div class="wa-bot"><?= e($bd) ?></div><?php endif; ?>
+      <?php endif; ?>
       <?php if ($x['direction'] === 'out' && ($x['status'] ?? '') === 'failed'): ?>
         <div class="wa-fail">❌ <strong>It did not reach them.</strong>
           <?= e($x['fail_reason'] ?: 'The provider gave no reason.') ?></div>

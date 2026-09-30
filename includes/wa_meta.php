@@ -193,12 +193,19 @@ function meta_wa_send($mobile, $message, $media_url = '') {
  *  the 24h customer window, which is always open here because the customer
  *  just messaged us. Returns [ok(bool), err(string)]. */
 function meta_wa_send_interactive($mobile, array $interactive) {
+    $GLOBALS['_wa_last_msg_id'] = '';
     $number = wa_normalize_number($mobile);
     if (!meta_wa_configured() || strlen($number) < 12) return [false, 'Meta Cloud API not configured'];
-    [$ok, , $err] = meta_wa_call('POST', setting('meta_wa_phone_id') . '/messages', [
+    [$ok, $data, $err] = meta_wa_call('POST', setting('meta_wa_phone_id') . '/messages', [
         'messaging_product' => 'whatsapp', 'to' => $number, 'type' => 'interactive', 'interactive' => $interactive,
     ]);
-    if ($ok) api_usage_log('whatsapp', 'meta:freeform', 0, 1); // interactive = inside 24h window = free
+    if ($ok) {
+        api_usage_log('whatsapp', 'meta:freeform', 0, 1);   // inside 24h window = free
+        // The menu and the bills list go out THIS way, not as plain text, so
+        // without keeping the id here the very messages a customer says they
+        // never received are the ones whose fate could not be looked up.
+        $GLOBALS['_wa_last_msg_id'] = (string)($data['messages'][0]['id'] ?? '');
+    }
     return [$ok, $err];
 }
 

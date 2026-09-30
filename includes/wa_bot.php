@@ -132,7 +132,7 @@ function wa_catalog_deliver($mobile, array $interactive, $text, array $map = [])
     require_once __DIR__ . '/wa_meta.php';
     if (meta_wa_configured()) {
         [$ok, ] = meta_wa_send_interactive($mobile, $interactive);
-        if ($ok) { wa_chat_log($mobile, 'out', $text, 'meta'); return 'interactive'; }
+        if ($ok) { wa_chat_log($mobile, 'out', $text, 'meta', '', (string)($GLOBALS['_wa_last_msg_id'] ?? '')); return 'interactive'; }
     }
     if ($map) wa_bot_set_state($mobile, 'catalog_pick', $map);
     return send_whatsapp($mobile, $text) ? 'text-menu' : 'send-failed';
@@ -260,7 +260,7 @@ function wa_lang_picker($mobile) {
         $btns = [];
         foreach (array_slice($langs, 0, 3) as $L) $btns[] = ['type' => 'reply', 'reply' => ['id' => 'lang:' . $L, 'title' => wa_lang_name($L)]];
         [$ok, ] = meta_wa_send_interactive($mobile, ['type' => 'button', 'body' => ['text' => $prompt], 'action' => ['buttons' => $btns]]);
-        if ($ok) { wa_chat_log($mobile, 'out', $prompt . "\n[" . implode('] [', array_map('wa_lang_name', $langs)) . ']', 'meta'); return 'lang-buttons'; }
+        if ($ok) { wa_chat_log($mobile, 'out', $prompt . "\n[" . implode('] [', array_map('wa_lang_name', $langs)) . ']', 'meta', '', (string)($GLOBALS['_wa_last_msg_id'] ?? '')); return 'lang-buttons'; }
     }
     $txt = $prompt; $map = []; $n = 1;
     foreach ($langs as $L) { $txt .= "\n*$n)* " . wa_lang_name($L); $map[(string)$n] = 'lang:' . $L; $n++; }
@@ -286,7 +286,7 @@ function wa_bot_send_home($mobile) {
             ]],
         ]) : [false, ''];
         if ($bok) {
-            wa_chat_log($mobile, 'out', $hello . "\n\n[" . wa_t('btn_catalog') . '] [' . wa_t('btn_account') . '] [' . wa_t('btn_stmt') . ']', 'meta');
+            wa_chat_log($mobile, 'out', $hello . "\n\n[" . wa_t('btn_catalog') . '] [' . wa_t('btn_account') . '] [' . wa_t('btn_stmt') . ']', 'meta', '', (string)($GLOBALS['_wa_last_msg_id'] ?? ''));
             return 'home-buttons';
         }
     }

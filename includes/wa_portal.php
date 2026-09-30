@@ -199,7 +199,7 @@ function wa_portal_route($mobile, $id) {
                 'type' => 'button', 'body' => ['text' => $body],
                 'action' => ['buttons' => [['type' => 'reply', 'reply' => ['id' => 'portal:paybill:' . $s['id'], 'title' => wa_cat_cut(wa_t('btn_paybill'), 20)]]]],
             ]) : [false, ''];
-            if ($ok) { wa_chat_log($mobile, 'out', $body . "\n[" . wa_t('btn_paybill') . ']', 'meta'); return 'bill'; }
+            if ($ok) { wa_chat_log($mobile, 'out', $body . "\n[" . wa_t('btn_paybill') . ']', 'meta', '', (string)($GLOBALS['_wa_last_msg_id'] ?? '')); return 'bill'; }
             $body .= "\n\n" . wa_t('pay_hint');
         }
         send_whatsapp($mobile, $body);
@@ -347,7 +347,7 @@ function wa_portal_route($mobile, $id) {
                     ['type' => 'reply', 'reply' => ['id' => 'portal:qrej:' . $qt['id'], 'title' => wa_cat_cut(wa_t('btn_qrej'), 20)]],
                 ]],
             ]) : [false, ''];
-            if ($ok) wa_chat_log($mobile, 'out', $body . "\n[" . wa_t('btn_qacc') . '] [' . wa_t('btn_qrej') . ']', 'meta');
+            if ($ok) wa_chat_log($mobile, 'out', $body . "\n[" . wa_t('btn_qacc') . '] [' . wa_t('btn_qrej') . ']', 'meta', '', (string)($GLOBALS['_wa_last_msg_id'] ?? ''));
             else send_whatsapp($mobile, $body . "\n\n" . wa_t('q_text_hint', ['no' => $qt['estimate_no']]));
         }
         return 'quotes';

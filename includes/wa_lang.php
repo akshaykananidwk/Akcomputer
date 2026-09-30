@@ -43,7 +43,15 @@ function wa_kw_list() {
     return array_values(array_filter(array_map(fn($w) => mb_strtolower(trim($w)), explode(',', $kw))));
 }
 function wa_is_trigger($text) {
-    $t = mb_strtolower(trim(preg_replace('/[^\p{L}\p{N} ]+/u', '', (string)$text)));
+    // \p{M} - the marks - matter as much as the letters here.
+    //
+    // In Gujarati, Hindi and every other Indic script the vowel signs are
+    // separate combining marks, NOT letters. Stripping everything that is
+    // not \p{L} or \p{N} therefore did not tidy up punctuation, it took
+    // the words apart: નમસ્તે became નમસત, હાય became હય, મેનુ became મન.
+    // Not one of them matched the list any more, so a customer writing
+    // hello in their own language got silence, while "hi" worked fine.
+    $t = mb_strtolower(trim(preg_replace('/[^\p{L}\p{M}\p{N} ]+/u', '', (string)$text)));
     return $t !== '' && in_array($t, wa_kw_list(), true);
 }
 
