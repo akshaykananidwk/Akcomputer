@@ -549,3 +549,82 @@ t_ok('a nine-column table becomes cards before it reaches a tablet',
      && strpos($css2, '.rowlist.rl-wide thead { display: none; }') !== false);
 t_ok('44px is said once for the whole app, not per screen',
      strpos($css2, 'TOUCH TARGETS — one rule for the whole app') !== false);
+
+t_group('the wallets on screen add up to the cash in the drawer');
+
+// Every wallet added together IS the shop's cash in hand - the two formulas
+// are the same arithmetic, one of them split by whose hand the money is in.
+// So when they disagree, something is in the drawer total that belongs to
+// nobody, and a list of wallets printed above a total it does not add up to
+// is the thing that makes an owner stop believing the screen.
+//
+// On this shop's own data they were ₹5,200 apart: cash expenses recorded
+// against a staff account that was later removed.
+$cbLoc = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+$sumWallets = function () {
+    $t = 0.0;
+    foreach (all('SELECT id FROM users') as $x) $t += staff_cash($x['id']);
+    return money_r($t);
+};
+// The gap is measured, not assumed to start at nought: this shop's live data
+// already carries one, which is how it was found in the first place.
+$gapBefore = money_r(total_cash_in_hand() - $sumWallets());
+$drawerBefore = money_r(total_cash_in_hand());
+
+// an orphan: a cash expense whose staff account no longer exists
+$ghost = (int)val('SELECT MAX(id) + 5000 FROM users');
+q("INSERT INTO expenses (exp_date, category, amount, mode, location_id, created_by)
+   VALUES (CURDATE(), 'TEST ORPHAN', 5200, 'cash', ?, ?)", [$cbLoc, $ghost]);
+t_eq('the drawer knows the money went out', money_r(total_cash_in_hand()), money_r($drawerBefore - 5200));
+t_eq('...but no wallet does', money_r(total_cash_in_hand() - $sumWallets()), money_r($gapBefore - 5200));
+t_eq('so the whole of it lands in the gap the screen has to show',
+     money_r((total_cash_in_hand() - $sumWallets()) - $gapBefore), -5200.0);
+
+$cbSrc = file_get_contents(dirname(__DIR__) . '/cash_bank.php');
+t_ok('the screen works that gap out rather than letting the column lie',
+     strpos($cbSrc, '$unassigned = $seeAll ? money_r($cashInHand - $walletSum) : 0.0;') !== false);
+t_ok('...and shows it as a row of its own, named',
+     strpos($cbSrc, "Not in anybody's wallet") !== false
+     && strpos($cbSrc, 'abs($unassigned) > 0.009') !== false);
+t_ok('a staff member who has left still shows while their wallet is not empty',
+     strpos($cbSrc, "if (!\$s['is_active'] && abs(\$c) < 0.009) continue;") !== false
+     && strpos($cbSrc, 'badge-bad">left<') !== false);
+t_ok('...but cash still cannot be handed to them',
+     strpos($cbSrc, "\$staffAll = all('SELECT id, name, mobile FROM users WHERE is_active = 1 ORDER BY name');") !== false);
+
+t_group('Cash & Bank: every way money moves is still on the screen');
+
+// A balance is what is there NOW. The date box asks "what came in on Monday",
+// which is a different question, so it moves the day's summary and nothing
+// else - a balance asked as-of a past date is a report this page does not do.
+t_ok('the day summary takes a date', strpos($cbSrc, "\$sumDate = get('d', \$today);") !== false);
+t_ok('...and refuses anything that is not one',
+     strpos($cbSrc, "preg_match('/^\\d{4}-\\d{2}-\\d{2}\$/', \$sumDate)") !== false);
+t_ok('...while cash in hand and the bank stay current',
+     strpos($cbSrc, '$cashInHand = $seeAll ? total_cash_in_hand() : staff_cash($u[\'id\']);') !== false);
+
+foreach ([
+    "cbShowTransfer('cash_to_bank')" => 'cash to bank',
+    "cbShowTransfer('bank_to_cash')" => 'bank to cash',
+    "cbShowTransfer('bank_to_bank')" => 'bank to bank',
+    "cbShow('cbStaff')"              => 'the OTP staff handover',
+    "cbShow('cbAdjust')"             => 'adjusting cash or bank',
+    'name="do" value="staff_confirm"' => 'confirming a handover with its OTP',
+    'name="do" value="staff_cancel"'  => 'cancelling one',
+    'name="do" value="mt_delete"'     => 'deleting an entry',
+    'name="do" value="mt_update"'     => 'editing an entry',
+    'action=cash_ledger'              => 'the cash ledger',
+    'reports.php?r=cashbook'          => 'the full cashbook',
+    'reports.php?r=bank_ledger'       => 'the bank passbook',
+    'bank_accounts.php'               => 'managing bank accounts',
+] as $needle => $what)
+    t_ok($what . ' is still there', strpos($cbSrc, $needle) !== false);
+
+t_ok('each wallet opens that person\'s own ledger',
+     strpos($cbSrc, "action=cash_ledger&staff=<?= (int)\$w['id'] ?>") !== false);
+t_ok('edit and delete are an admin\'s only', strpos($cbSrc, '$isAdminMt = is_full_admin();') !== false);
+t_ok('...and deleting says what it will recalculate',
+     strpos($cbSrc, 'is recalculated from the remaining rows') !== false);
+t_ok('who may see the whole shop\'s money is still decided on the server',
+     strpos($cbSrc, "\$ownW = \$seeAll ? '' : ' AND created_by = ' . (int)\$u['id'];") !== false);
+t_ok('every form still carries a CSRF token', substr_count($cbSrc, 'csrf_field()') >= 6);

@@ -1237,6 +1237,16 @@ body:has(.bf) .fab-center { display: none; }
   .seg a { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 15px; }
   .filterbar button, .filterbar .btn { min-height: 44px; }
   .rowlist td.act .btn { min-height: 44px; padding: 8px 14px; }
+  /* Fields too, inside the redesigned blocks. Scoped rather than global so a
+     screen that has not been through this yet keeps the layout it was built
+     and tested with. */
+  .pane input, .pane select, .bf-card input, .bf-card select,
+  .cat-card input, .filterbar input, .filterbar select,
+  .modal-box input, .modal-box select {
+    min-height: 44px;
+  }
+  .pane input[type="checkbox"], .pane input[type="radio"],
+  .modal-box input[type="checkbox"], .modal-box input[type="radio"] { min-height: 0; }
 }
 
 /* A table with nine columns needs more room than one with five, so it turns
@@ -1258,3 +1268,31 @@ body:has(.bf) .fab-center { display: none; }
   .rowlist.rl-wide td.act { justify-content: flex-end; padding-top: 10px; }
   .rowlist.rl-wide td.act::before { content: ''; }
 }
+
+/* ---- Quick actions: the four or five things a screen exists to DO --------
+   A row of buttons is fine on a desktop and useless on a phone, where they
+   wrap into a ragged pile and each one is a 28px sliver. These are proper
+   tiles: an icon, a name, a line saying what happens - big enough to hit
+   without looking, on Cash & Bank and on any screen that needs the same.
+   ------------------------------------------------------------------------ */
+.qa-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+@media (min-width: 640px) { .qa-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1100px) { .qa-grid { grid-template-columns: repeat(4, 1fr); } }
+.qa { display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  min-height: 74px; padding: 12px 13px; border: 1px solid var(--border); border-radius: 13px;
+  background: var(--card); color: var(--text); text-align: left; cursor: pointer; width: 100%;
+  font: inherit; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.qa:hover { border-color: var(--primary); box-shadow: 0 5px 16px rgba(15,23,42,.10); transform: translateY(-1px); }
+.qa .qa-i { font-size: 18px; line-height: 1.1; }
+.qa .qa-n { font-weight: 700; font-size: 13.5px; }
+.qa .qa-s { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+.qa.qa-ok:hover { border-color: var(--ok); }
+.qa.qa-warn:hover { border-color: var(--warn); }
+
+/* The one figure a block exists to produce, said loudly at the end of it. */
+.big-net { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border-radius: 12px; padding: 13px 15px; margin-top: 12px; font-weight: 800;
+  background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+.big-net.neg { background: color-mix(in srgb, var(--bad) 11%, transparent); color: var(--bad); }
+.big-net .bn-l { font-size: 13.5px; font-weight: 700; }
+.big-net .bn-v { font-size: 22px; letter-spacing: -.4px; }
