@@ -42,6 +42,22 @@ function wa_kw_list() {
     if (trim($kw) === '') $kw = 'hi,hii,hiii,hello,helo,hey,menu,start,home,namaste,namaskar,jsk,jay shree krishna,jay shri krishna,નમસ્તે,નમસ્કાર,જય શ્રી કૃષ્ણ,હેલો,હાય,મેનુ,મેન્યુ,नमस्ते,नमस्कार,मेनू,मेन्यू';
     return array_values(array_filter(array_map(fn($w) => mb_strtolower(trim($w)), explode(',', $kw))));
 }
+/**
+ * The greetings a shop will regret leaving out of a custom list.
+ *
+ * Typing a list into the box replaces the built-in one, and it is very easy
+ * to write out seven words and not notice that "hi" - far and away the most
+ * common thing a customer types - is not among them. Nothing then says so:
+ * the customer gets the "type menu" nudge instead of the menu, once every
+ * ten minutes, which looks like the bot half-working.
+ */
+function wa_kw_missing_common() {
+    if (trim((string)setting('wa_bot_keywords', '')) === '') return [];   // the full list is in use
+    $have = wa_kw_list();
+    $common = ['hi', 'hello', 'menu', 'start', 'namaste', 'નમસ્તે', 'હાય', 'મેનુ', 'नमस्ते', 'मेनू'];
+    return array_values(array_filter($common, fn($w) => !in_array($w, $have, true)));
+}
+
 function wa_is_trigger($text) {
     // \p{M} - the marks - matter as much as the letters here.
     //

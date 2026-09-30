@@ -711,3 +711,30 @@ t_ok('and warns when the list has been cut down to almost nothing',
      strpos($set, 'replaces</strong> the list') !== false);
 t_ok('the two-numbers trap is spelled out where both numbers are shown',
      strpos($set, 'This shop has two WhatsApp numbers') !== false);
+
+t_group('WhatsApp — a custom keyword list says what it left out');
+
+// The owner replaced the list with seven words of their own and "hi" was not
+// among them - far and away the most common thing a customer types. Nothing
+// said so: those customers got the "type menu" nudge instead of the menu,
+// once every ten minutes, which reads as the bot half-working.
+$wasK = setting('wa_bot_keywords');
+set_setting('wa_bot_keywords', '');
+t_eq('with the built-in list, nothing is missing', wa_kw_missing_common(), []);
+set_setting('wa_bot_keywords', 'Hey, Hello, Menu, નમસ્તે, હાય, મેનુ, જય શ્રી કૃષ્ણ');
+$gone = wa_kw_missing_common();
+t_ok('a custom list that drops "hi" says so', in_array('hi', $gone, true), implode(', ', $gone));
+t_ok('and names the Hindi ones it dropped too', in_array('नमस्ते', $gone, true));
+t_ok('while the words it DOES have are not complained about',
+     !in_array('hello', $gone, true) && !in_array('menu', $gone, true)
+     && !in_array('નમસ્તે', $gone, true));
+t_ok('and those words really do open the menu',
+     wa_is_trigger('Hey') && wa_is_trigger('મેનુ') && wa_is_trigger('નમસ્તે'));
+t_ok('while the missing one really does not', !wa_is_trigger('hi'));
+set_setting('wa_bot_keywords', 'hi,hello,menu,start,namaste,નમસ્તે,હાય,મેનુ,नमस्ते,मेनू');
+t_eq('a custom list that covers them all is left alone', wa_kw_missing_common(), []);
+set_setting('wa_bot_keywords', $wasK);
+
+$set = file_get_contents(__DIR__ . '/../settings.php');
+t_ok('the screen names them', strpos($set, 'These common greetings are NOT in your list') !== false);
+t_ok('and says what to do about it', strpos($set, 'Empty the box') !== false);

@@ -785,7 +785,16 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
           greeting is ignored in silence. Empty the box to get all of them back.<br>
         <?php endif; ?>
         Working now: <?= e(implode(', ', $kwNow)) ?>
-      </div></div>
+      </div>
+      <?php $kwGone = wa_kw_missing_common(); ?>
+      <?php if ($kwGone): ?>
+      <div class="flash flash-error" style="font-size:12px;margin-top:6px">
+        <strong>These common greetings are NOT in your list:</strong> <?= e(implode(', ', $kwGone)) ?>.<br>
+        A customer typing one of them gets the “type menu” nudge instead of the menu — which looks like the
+        bot half-working. <strong>Empty the box</strong> to use the built-in list, which already contains
+        everything you have typed plus these.
+      </div>
+      <?php endif; ?></div>
     <div class="form-row cols-2 mt">
       <div><label>Languages offered to customers</label>
         <?php $langsOn = wa_langs_enabled(); foreach (['en' => 'English', 'gu' => 'Gujarati', 'hi' => 'हिंदी (Hindi)'] as $lc => $ln): ?>
