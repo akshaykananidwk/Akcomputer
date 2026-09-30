@@ -939,12 +939,25 @@ function voice_provider_call($toE164, $token) {
         'ring_method' => 'POST',
         'hangup_url' => voice_public_url('voice_webhook.php?t=' . $token),
         'hangup_method' => 'POST',
-        // A reminder read to an answering machine is wasted money and an
-        // annoyed customer, so the machine is detected and the call dropped.
-        'machine_detection' => 'hangup',
         'time_limit' => 90,      // the script is ~20 seconds; nothing here needs 4 hours
         'hangup_on_ring' => 30,  // stop ringing after 30s rather than chase
     ];
+
+    // Machine detection is OFF unless the shop asks for it, and that is not a
+    // small detail - it decides whether the customer hears anything at all.
+    //
+    // With it on, the provider answers the call and LISTENS before it will
+    // ask us what to say: it has to hear enough to decide human or answering
+    // machine. Somebody who says "હલો" gives it that in a moment and the
+    // greeting follows. Somebody who just puts the phone to their ear gives
+    // it nothing, so it keeps listening until its own window runs out - and
+    // for those several seconds the customer hears silence, which is exactly
+    // when people hang up.
+    //
+    // That trade is the wrong way round. It was bought to avoid reading a
+    // reminder to an answering machine; the price was every quiet customer
+    // hearing nothing and hanging up on a call that had not started.
+    if ((int)setting('voice_machine_detect', 0) === 1) $body['machine_detection'] = 'hangup';
     $ch = curl_init('https://api.vobiz.ai/api/v1/Account/' . rawurlencode($authId) . '/Call/');
     curl_setopt_array($ch, [
         CURLOPT_POST => true,

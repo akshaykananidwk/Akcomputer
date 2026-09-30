@@ -1526,6 +1526,51 @@ t_ok('the back rule is written once', substr_count($coll, 'function coll_back_to
 set_setting('voice_enabled', $wasOn); set_setting('vobiz_auth_id', $wasId);
 set_setting('vobiz_auth_token', $wasTok); set_setting('vobiz_caller_id', $wasCid);
 
+t_group('Voice — the call speaks when the phone is answered, not when the customer does');
+
+// "I say hello and only THEN does it start talking." That was machine
+// detection, on for every call. With it on the provider answers and listens
+// before it will ask us what to say - it has to hear enough to decide human
+// or answering machine. A customer who says "હલો" gives it that at once; a
+// customer who simply lifts the phone gives it nothing, so it waits out its
+// own window while they hear silence, which is when people hang up.
+$vsrcM = file_get_contents(__DIR__ . '/../includes/voice.php');
+t_ok('machine detection is not sent on every call by default',
+     strpos($vsrcM, "'machine_detection' => 'hangup',") === false);
+t_ok('it is asked for only when the shop switches it on',
+     strpos($vsrcM, "setting('voice_machine_detect', 0) === 1") !== false
+     && strpos($vsrcM, "\$body['machine_detection']") !== false);
+$wasMD = setting('voice_machine_detect');
+set_setting('voice_machine_detect', '0');
+t_eq('and it is off to begin with', (int)setting('voice_machine_detect', 0), 0);
+
+$setupM = file_get_contents(__DIR__ . '/../voice_setup.php');
+t_ok('the switch is on the setup screen', strpos($setupM, 'voice_machine_detect') !== false);
+t_ok('saying plainly what it costs',
+     stripos($setupM, 'first few seconds of EVERY call') !== false);
+t_ok('and the form declares it, or saving step 5 would silently clear it',
+     strpos($setupM, "'voice_ivr', 'voice_machine_detect'") !== false);
+
+// Nothing else may sit in front of the greeting either. The whole-call
+// recording goes in first, but only because it does not stop the call.
+$callM = ['id' => 1, 'party_id' => 1, 'amount' => 100, 'lang' => 'gu',
+          'token' => str_repeat('g', 40), 'audio_file' => '', 'script' => 'hello',
+          'question_asked' => 0, 'talk_turns' => 0];
+$wasRecM = setting('voice_record_all');
+set_setting('voice_record_all', '1');
+$xM = voice_answer_xml($callM);
+t_ok('the recording does not hold the call up', strpos($xM, 'redirect="false"') !== false);
+t_ok('and the greeting follows it straight away',
+     strpos($xM, '<Speak') !== false || strpos($xM, '<Play') !== false, $xM);
+set_setting('voice_record_all', '0');
+$xM2 = voice_answer_xml($callM);
+t_ok('with recording off, the greeting is the very first thing in the call',
+     strpos(trim(substr($xM2, strpos($xM2, '<Response>') + 10)), '<Sp') === 0
+     || strpos(trim(substr($xM2, strpos($xM2, '<Response>') + 10)), '<Pl') === 0,
+     substr($xM2, 0, 160));
+set_setting('voice_record_all', $wasRecM);
+set_setting('voice_machine_detect', $wasMD);
+
 t_group('Voice — the whole call on tape, and a list you can search');
 
 $wasRec = setting('voice_record_all');

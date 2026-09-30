@@ -140,7 +140,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // it" - otherwise every save of the hours would wipe the key.
         if (voice_setup_owns('vobiz_auth_token') && post('vobiz_auth_token') !== '')
             set_setting('vobiz_auth_token', post('vobiz_auth_token'));
-        foreach (['voice_enabled', 'voice_test_mode', 'voice_ivr', 'voice_tts'] as $k)
+        foreach (['voice_enabled', 'voice_test_mode', 'voice_ivr', 'voice_tts',
+                  'voice_machine_detect'] as $k)
             if (voice_setup_owns($k)) set_setting($k, post($k) ? '1' : '0');
         set_setting('vobiz_balance_cache', '');            // re-check against the new keys
         log_activity('voice_settings', 'reminder call settings saved');
@@ -699,7 +700,8 @@ include __DIR__ . '/includes/header.php';
       <form method="post">
         <?= csrf_field() ?><input type="hidden" name="do" value="save">
         <?php foreach (['voice_hour_from', 'voice_hour_to', 'voice_cooldown_hours', 'voice_max_per_day',
-                        'voice_balance_min', 'voice_ivr', 'voice_test_mode', 'voice_enabled'] as $k): ?>
+                        'voice_balance_min', 'voice_ivr', 'voice_machine_detect',
+                        'voice_test_mode', 'voice_enabled'] as $k): ?>
           <input type="hidden" name="own[]" value="<?= $k ?>"><?php endforeach; ?>
         <div class="grid-2">
           <label>Call only from
@@ -717,6 +719,13 @@ include __DIR__ . '/includes/header.php';
           <label style="display:flex;align-items:center;gap:8px">
             <input type="checkbox" name="voice_ivr" value="1" <?= voice_ivr_on() ? 'checked' : '' ?>>
             Ask “will you pay today?” and record the answer</label>
+          <label style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" name="voice_machine_detect" value="1" <?= (int)setting('voice_machine_detect', 0) === 1 ? 'checked' : '' ?>>
+            Hang up on an answering machine
+            <span class="muted" style="font-size:11px">— costs you the first few seconds of EVERY call:
+              the network listens before it lets us speak, so a customer who does not say “હલો” hears
+              silence until it makes up its mind. Leave it off unless wasted calls to voicemail are a real
+              problem for you.</span></label>
           <label style="display:flex;align-items:center;gap:8px">
             <input type="checkbox" name="voice_test_mode" value="1" <?= voice_test_mode() ? 'checked' : '' ?>>
             Test mode — write down what would be said, dial nobody</label>
