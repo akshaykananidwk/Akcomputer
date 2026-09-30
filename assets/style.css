@@ -1434,3 +1434,129 @@ body:has(.bf) .fab-center { display: none; }
 .rowmenu-box a:hover { background: var(--bg); color: var(--primary); }
 /* near the bottom of the list the menu would open off the screen */
 .slcard:nth-last-child(-n+2) .rowmenu-box { top: auto; bottom: calc(100% + 4px); }
+
+/* ============================================================
+   HOME SCREEN — the six things
+   ------------------------------------------------------------
+   What the owner asked for, in his words and then in a drawing:
+   how much is to be collected, how much is to be paid, and the
+   four lists he opens all day. Everything the dashboard works
+   out is still there, folded behind one line at the bottom -
+   one tap away instead of in the way.
+
+   Each card is a solid round icon, the words, and an arrow
+   saying it opens something, over a soft wash of its own colour.
+   Every colour is a token or a mix of one, so the dark theme
+   follows from the same rules rather than a second set.
+   ============================================================ */
+
+/* side by side even on the narrowest phone, as the drawing has them - the
+   two figures are a pair and are read as a pair */
+.hm-money { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+@media (max-width: 560px) {
+  .hm-card { gap: 9px; padding: 12px 11px; }
+  .hm-card .hm-ico { width: 40px; height: 40px; }
+  .hm-card .hm-ico svg { width: 19px; height: 19px; }
+  .hm-card .hm-l { font-size: 11.5px; }
+  .hm-card .hm-s { font-size: 10.5px; }
+  .hm-card .hm-go { display: none; }   /* no room, and the card is the link */
+}
+/* On a 320px phone two cards side by side leave about 55px beside the icon,
+   and no readable size fits "₹1,95,140.00" in that. The icon goes above the
+   words instead, which gives the figure the whole card. Money is never
+   clipped; the layout gives way first. */
+@media (max-width: 359px) {
+  .hm-card { flex-direction: column; align-items: flex-start; gap: 7px; }
+}
+
+.hm-card, .hm-tile {
+  position: relative; overflow: hidden; border-radius: 18px; text-decoration: none;
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  transition: box-shadow .16s, transform .16s;
+}
+.hm-card:hover, .hm-tile:hover { box-shadow: 0 10px 26px rgba(15,23,42,.13); transform: translateY(-2px); }
+/* the soft wave along the bottom of each card */
+.hm-card::after, .hm-tile::after {
+  content: ''; position: absolute; left: -14%; right: -14%; bottom: -54%; height: 96%;
+  border-radius: 50%; background: var(--hm-wash); pointer-events: none;
+}
+.hm-card > *, .hm-tile > * { position: relative; z-index: 1; }
+
+.hm-ico { width: 54px; height: 54px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--hm-solid); color: #fff; box-shadow: 0 4px 12px var(--hm-glow); }
+.hm-go { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--hm-soft); color: var(--hm-solid); }
+
+/* ---- To Receive / To Pay: icon, words, arrow, in a row ---- */
+.hm-card { display: flex; align-items: center; gap: 13px; padding: 15px 16px; }
+.hm-card .hm-txt { flex: 1; min-width: 0; }
+.hm-card .hm-l { display: block; font-size: 13.5px; font-weight: 700; color: var(--muted); }
+/* A FIGURE MUST NEVER BE CUT OFF.
+   Two cards side by side on a 360px phone leaves about 140px for the number,
+   and "₹1,95,140.00" at a fixed 24px does not fit - the card clipped it to
+   "₹16,266." which is not a smaller figure, it is a wrong one. The size
+   follows the screen instead, and the digits are tabular so the two cards
+   line up. */
+.hm-card .hm-v { display: block; font-weight: 800; letter-spacing: -.6px; margin-top: 2px;
+  color: var(--hm-solid); font-variant-numeric: tabular-nums;
+  font-size: clamp(12px, 3.7vw, 24px); white-space: nowrap; }
+@media (min-width: 900px) { .hm-card .hm-v { font-size: 24px; } }
+.hm-card .hm-s { display: block; font-size: 11.5px; font-weight: 600; color: var(--muted); margin-top: 2px; }
+
+/* ---- the four lists: icon above, name and arrow below ---- */
+.hm-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+@media (min-width: 900px) { .hm-tiles { grid-template-columns: repeat(4, 1fr); } }
+.hm-tile { display: flex; flex-direction: column; justify-content: space-between;
+  gap: 18px; min-height: 152px; padding: 16px; }
+.hm-tile .hm-ico { width: 58px; height: 58px; }
+.hm-tile .hm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hm-tile .hm-n { font-size: 16px; font-weight: 800; letter-spacing: -.3px; min-width: 0; }
+
+/* ---- one colour per card, mixed from the theme's own tokens ---- */
+.hm-get    { --hm-solid: var(--ok);      --hm-soft: color-mix(in srgb, var(--ok) 18%, transparent);
+             --hm-wash: color-mix(in srgb, var(--ok) 9%, transparent);
+             --hm-glow: color-mix(in srgb, var(--ok) 34%, transparent);
+             background: color-mix(in srgb, var(--ok) 11%, var(--card));
+             border-color: color-mix(in srgb, var(--ok) 26%, transparent); }
+.hm-give   { --hm-solid: var(--bad);     --hm-soft: color-mix(in srgb, var(--bad) 16%, transparent);
+             --hm-wash: color-mix(in srgb, var(--bad) 8%, transparent);
+             --hm-glow: color-mix(in srgb, var(--bad) 32%, transparent);
+             background: color-mix(in srgb, var(--bad) 9%, var(--card));
+             border-color: color-mix(in srgb, var(--bad) 24%, transparent); }
+.t-blue    { --hm-solid: var(--primary); --hm-soft: color-mix(in srgb, var(--primary) 16%, transparent);
+             --hm-wash: color-mix(in srgb, var(--primary) 9%, transparent);
+             --hm-glow: color-mix(in srgb, var(--primary) 32%, transparent);
+             background: color-mix(in srgb, var(--primary) 8%, var(--card));
+             border-color: color-mix(in srgb, var(--primary) 22%, transparent); }
+.t-orange  { --hm-solid: #ea7a0c;        --hm-soft: rgba(234,122,12,.17);
+             --hm-wash: rgba(234,122,12,.10); --hm-glow: rgba(234,122,12,.34);
+             background: color-mix(in srgb, #ea7a0c 9%, var(--card));
+             border-color: rgba(234,122,12,.26); }
+.t-green   { --hm-solid: var(--ok);      --hm-soft: color-mix(in srgb, var(--ok) 18%, transparent);
+             --hm-wash: color-mix(in srgb, var(--ok) 9%, transparent);
+             --hm-glow: color-mix(in srgb, var(--ok) 34%, transparent);
+             background: color-mix(in srgb, var(--ok) 10%, var(--card));
+             border-color: color-mix(in srgb, var(--ok) 25%, transparent); }
+.t-purple  { --hm-solid: #9333ea;        --hm-soft: rgba(147,51,234,.17);
+             --hm-wash: rgba(147,51,234,.10); --hm-glow: rgba(147,51,234,.34);
+             background: color-mix(in srgb, #9333ea 9%, var(--card));
+             border-color: rgba(147,51,234,.26); }
+
+/* Everything the home screen does not show, behind one line. */
+.hm-more { background: var(--card); }
+.hm-more > summary { font-size: 14px; }
+@media (max-width: 1023px) { .hm-more > summary { min-height: 52px; display: flex; align-items: center; } }
+
+/* ---- The bottom bar names the same six ----------------------
+   Six at 360px is 60px each, which is tight but is what the
+   drawing asks for and what the thumb reaches all day. The
+   labels shrink rather than wrap. */
+.bottomnav a { padding: 0 2px; }
+.bottomnav a span { display: flex; }
+@media (max-width: 420px) {
+  .bottomnav a { font-size: 9.5px; letter-spacing: -.2px; }
+}
+.bottomnav a.nav-get.active, .bottomnav a.nav-get:hover { color: var(--ok); }
+.bottomnav a.nav-give.active, .bottomnav a.nav-give:hover { color: var(--bad); }

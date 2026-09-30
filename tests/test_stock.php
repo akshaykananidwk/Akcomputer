@@ -996,3 +996,55 @@ t_ok('a copy is a NEW bill, so it carries no id to save over',
      strpos($slsK, '<?php if ($isEdit): ?><input type="hidden" name="id"') !== false);
 t_ok('...and starts from today with nothing paid',
      strpos($slsK, "\$src['sale_date'] = today();") !== false && strpos($slsK, "\$src['paid'] = 0;") !== false);
+
+t_group('the item search offers what is actually on the shelf first');
+
+// Fifteen suggestions is all a person sees. An out-of-stock item that happens
+// to sort earlier alphabetically pushed a stocked one off the end of that
+// list, and at a counter with a customer waiting the thing that can be sold
+// today is the thing to show.
+$isLoc = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+$isTag = 'ZZSEARCH' . bin2hex(random_bytes(3));
+// A sorts first alphabetically and has nothing; B sorts later and is in stock.
+q("INSERT INTO items (name, unit, tax_rate, purchase_price, selling_price, b2b_price, item_type, is_active)
+   VALUES (?, 'PCS', 0, 10, 20, 20, 'product', 1)", ["A empty $isTag"]);
+$isEmpty = insert_id();
+q("INSERT INTO items (name, unit, tax_rate, purchase_price, selling_price, b2b_price, item_type, is_active)
+   VALUES (?, 'PCS', 0, 10, 20, 20, 'product', 1)", ["B stocked $isTag"]);
+$isStocked = insert_id();
+q('INSERT INTO stock (item_id, location_id, qty) VALUES (?, ?, 7)', [$isStocked, $isLoc]);
+
+// the search's own ORDER BY, run the way ajax.php runs it
+$isRows = all("SELECT i.id, i.name,
+                 COALESCE((SELECT qty FROM stock s WHERE s.item_id = i.id AND s.location_id = ?), 0) AS stock
+               FROM items i
+               WHERE i.is_active = 1 AND i.name LIKE ?
+               ORDER BY (i.item_type = 'service' OR COALESCE((SELECT qty FROM stock s2 WHERE s2.item_id = i.id AND s2.location_id = ?), 0) > 0) DESC,
+                        (i.name LIKE ?) DESC, i.name",
+              [$isLoc, '%' . $isTag . '%', $isLoc, 'A%']);
+t_eq('both items match the search', count($isRows), 2);
+t_eq('the one on the shelf comes first, though it sorts second',
+     (int)($isRows[0]['id'] ?? 0), $isStocked);
+t_eq('...and the empty one is below it', (int)($isRows[1]['id'] ?? 0), $isEmpty);
+
+// A service has no stock row and is always sellable, so it must not be
+// dropped to the bottom with the empty shelves.
+q("INSERT INTO items (name, unit, tax_rate, purchase_price, selling_price, b2b_price, item_type, is_active)
+   VALUES (?, 'PCS', 0, 0, 500, 500, 'service', 1)", ["C service $isTag"]);
+$isSvc = insert_id();
+$isRows2 = all("SELECT i.id FROM items i
+                WHERE i.is_active = 1 AND i.name LIKE ?
+                ORDER BY (i.item_type = 'service' OR COALESCE((SELECT qty FROM stock s2 WHERE s2.item_id = i.id AND s2.location_id = ?), 0) > 0) DESC,
+                         (i.name LIKE ?) DESC, i.name",
+               ['%' . $isTag . '%', $isLoc, 'A%']);
+$isTop2 = array_slice(array_map(fn($r) => (int)$r['id'], $isRows2), 0, 2);
+t_ok('a service ranks with the sellable ones, not with the empty shelves',
+     in_array($isSvc, $isTop2, true) && in_array($isStocked, $isTop2, true),
+     implode(',', $isTop2));
+
+$ajx = file_get_contents(dirname(__DIR__) . '/ajax.php');
+t_ok('and that is the order the search screen really uses',
+     strpos($ajx, "ORDER BY (i.item_type = 'service' OR COALESCE((SELECT qty FROM stock s2 WHERE s2.item_id = i.id AND s2.location_id = ?), 0) > 0) DESC") !== false);
+// One misplaced ? and the whole suggestion list is wrong without erroring.
+t_ok('its placeholders are bound in the order MySQL meets them',
+     strpos($ajx, "\$params[] = \$loc;\n    \$params[] = \$first;") !== false);

@@ -247,16 +247,100 @@ include __DIR__ . '/includes/header.php';
 ?>
 
 <?php
-// WHAT IS THE SHOP DOING TODAY - and nothing above it.
+// ─────────────────────────────────────────────────────────────────────────
+// THE HOME SCREEN IS SIX THINGS.
 //
-// The page used to open with four big tiles (Sale List, Purchase List, Stock
-// Items, Parties) and a pile of chips. On a phone that was the entire first
-// screen: an owner had to scroll past four navigation buttons to find out
-// whether anything had been sold. Navigation is what the sidebar is for. The
-// tiles are still here, further down, under "More".
+// The owner asked for this in so many words: how much is to be collected,
+// how much is to be paid, and the four lists he opens all day. Everything
+// else the dashboard works out - the day's figures, what to do today, the
+// alerts, every widget - is still here and still calculated, folded behind
+// one line at the bottom. Nothing was deleted and nothing was switched off;
+// it is one tap away instead of in the way.
+//
+// The two urgent flashes below (a handover waiting for an OTP, approvals,
+// unread WhatsApp) stay on top, because they only appear when there IS
+// something and they need answering rather than reading.
 $dashBranch = '';
 if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dashBranch = $l['name'];
 ?>
+<?php if ($myHandovers): ?>
+<div class="flash flash-info">🤝 You have <?= $myHandovers ?> stock handover(s) pending. <a href="my_stock.php">Accept with OTP →</a></div>
+<?php endif; ?>
+<?php if (is_full_admin()):
+    try { $pendEditReq = (int)val("SELECT COUNT(*) FROM edit_requests WHERE status = 'pending'"); } catch (Exception $e) { $pendEditReq = 0; }
+    if ($pendEditReq): ?>
+<div class="flash flash-info">✏️ <?= $pendEditReq ?> bill-edit approvals are waiting. <a href="approvals.php">Review &amp; approve →</a></div>
+<?php endif;
+    try { $waUnread = (int)val("SELECT COUNT(*) FROM wa_chats WHERE direction = 'in' AND is_read = 0"); } catch (Exception $e) { $waUnread = 0; }
+    if ($waUnread): ?>
+<div class="flash flash-info">💬 <?= $waUnread ?> new WhatsApp message<?= $waUnread === 1 ? '' : 's' ?>. <a href="wa_inbox.php">Open the inbox →</a></div>
+<?php endif; endif; ?>
+
+<?php if ($seeMoney && $sBals): ?>
+<div class="hm-money">
+  <a class="hm-card hm-get" href="<?= $partiesLink ? 'parties.php?bal=get' : 'reports.php?r=aging' ?>">
+    <span class="hm-ico"><?= icon('arrow-down', 24) ?></span>
+    <span class="hm-txt">
+      <span class="hm-l">To Receive</span>
+      <span class="hm-v">₹<?= money($sBals['receivable']) ?></span>
+      <span class="hm-s"><?= (int)$sBals['receivable_parties'] ?> <?= (int)$sBals['receivable_parties'] === 1 ? 'party' : 'parties' ?></span>
+    </span>
+    <span class="hm-go"><?= icon('chevron-right', 16) ?></span>
+  </a>
+  <a class="hm-card hm-give" href="<?= $partiesLink ? 'parties.php?bal=give' : 'reports.php?r=payables' ?>">
+    <span class="hm-ico"><?= icon('arrow-up', 24) ?></span>
+    <span class="hm-txt">
+      <span class="hm-l">To Pay</span>
+      <span class="hm-v">₹<?= money($sBals['payable']) ?></span>
+      <span class="hm-s"><?= (int)$sBals['payable_parties'] ?> <?= (int)$sBals['payable_parties'] === 1 ? 'party' : 'parties' ?></span>
+    </span>
+    <span class="hm-go"><?= icon('chevron-right', 16) ?></span>
+  </a>
+</div>
+<?php endif; ?>
+
+<div class="hm-tiles">
+  <?php if (can('sales.view')): ?>
+  <a class="hm-tile t-blue" href="sales.php">
+    <span class="hm-ico"><?= icon('receipt', 28) ?></span>
+    <span class="hm-row"><span class="hm-n">Sale list</span><span class="hm-go"><?= icon('chevron-right', 16) ?></span></span>
+  </a>
+  <?php endif; ?>
+  <?php if (can('purchases.view')): ?>
+  <a class="hm-tile t-orange" href="purchases.php">
+    <span class="hm-ico"><?= icon('box', 28) ?></span>
+    <span class="hm-row"><span class="hm-n">Purchase list</span><span class="hm-go"><?= icon('chevron-right', 16) ?></span></span>
+  </a>
+  <?php endif; ?>
+  <?php if (can('items.view')): ?>
+  <a class="hm-tile t-green" href="items.php">
+    <span class="hm-ico"><?= icon('archive', 28) ?></span>
+    <span class="hm-row"><span class="hm-n">Stock items</span><span class="hm-go"><?= icon('chevron-right', 16) ?></span></span>
+  </a>
+  <?php endif; ?>
+  <?php if (can('parties.view')): ?>
+  <a class="hm-tile t-purple" href="parties.php">
+    <span class="hm-ico"><?= icon('users', 28) ?></span>
+    <span class="hm-row"><span class="hm-n">Parties</span><span class="hm-go"><?= icon('chevron-right', 16) ?></span></span>
+  </a>
+  <?php endif; ?>
+  <?php if (!can('sales.view') && can('tasks.view')): ?>
+  <a class="hm-tile t-blue" href="tasks.php">
+    <span class="hm-ico"><?= icon('tool', 28) ?></span>
+    <span class="hm-row"><span class="hm-n">My tasks</span><span class="hm-go"><?= icon('chevron-right', 16) ?></span></span>
+  </a>
+  <?php endif; ?>
+  <?php if (!can('purchases.view')): ?>
+  <a class="hm-tile t-orange" href="my_stock.php">
+    <span class="hm-ico"><?= icon('archive', 28) ?></span>
+    <span class="hm-row"><span class="hm-n">My stock</span><span class="hm-go"><?= icon('chevron-right', 16) ?></span></span>
+  </a>
+  <?php endif; ?>
+</div>
+
+<details class="more-opts no-print hm-more">
+  <summary>📊 Everything else — today's figures, what to do, reports</summary>
+
 <div class="pg-head">
   <div class="pg-main">
     <div class="pg-crumb"><?= e($app_name ?? 'AK Computer') ?><?= $dashBranch ? ' · ' . e($dashBranch) : ($locsAllDash ? ' · all branches' : '') ?></div>
@@ -316,47 +400,17 @@ if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dash
   <?php if ($canMoney): ?>
   <a class="qa qa-warn" href="collection.php"><span class="qa-i">📮</span><span class="qa-n">Collections</span><span class="qa-s">Who to ask today</span></a>
   <?php endif; ?>
+  <?php if (can('payments.add')): ?>
+  <a class="qa" href="payments.php?action=new&dir=out"><span class="qa-i">💸</span><span class="qa-n">Pay out</span><span class="qa-s">Money going out</span></a>
+  <?php endif; ?>
+  <?php if (can('expenses.add')): ?>
+  <a class="qa" href="expenses.php"><span class="qa-i">🧾</span><span class="qa-n">Expense</span><span class="qa-s">Shop spending</span></a>
+  <?php endif; ?>
+  <?php if (can('repairs.view')): ?>
+  <a class="qa" href="repairs.php"><span class="qa-i">🛠️</span><span class="qa-n">Repairs<?= $repairsReady ? ' (' . $repairsReady . ')' : '' ?></span><span class="qa-s">Jobs in hand</span></a>
+  <?php endif; ?>
+  <a class="qa" href="reports.php"><span class="qa-i">📊</span><span class="qa-n">Reports</span><span class="qa-s">Every figure</span></a>
 </div>
-
-<details class="more-opts no-print" style="margin-bottom:12px">
-  <summary>More — lists, reports and the rest</summary>
-  <div class="range-bar" style="padding-bottom:10px">
-    <?php if (can('sales.view')): ?><a class="rchip" href="sales.php">🧾 Sale list</a><?php endif; ?>
-    <?php if (can('purchases.view')): ?><a class="rchip" href="purchases.php">📦 Purchase list</a><?php endif; ?>
-    <?php if (can('items.view')): ?><a class="rchip" href="items.php">🗃️ Stock items</a><?php endif; ?>
-    <?php if (can('parties.view')): ?><a class="rchip" href="parties.php">👥 Parties</a><?php endif; ?>
-    <?php if (can('payments.add')): ?><a class="rchip" href="payments.php?action=new&dir=out">💸 Pay out</a><?php endif; ?>
-    <?php if (can('expenses.add')): ?><a class="rchip" href="expenses.php">🧾 Expense</a><?php endif; ?>
-    <?php if (can('sales.add')): ?><a class="rchip" href="estimates.php?action=new">📄 Estimate</a><?php endif; ?>
-    <?php if (can('sales.add')): ?><a class="rchip" href="challans.php?action=new">🚚 Challan</a><?php endif; ?>
-    <?php if (can('sales.add')): ?><a class="rchip" href="sales_return.php?action=new">↩️ Sale return</a><?php endif; ?>
-    <?php if (can('parties.add')): ?><a class="rchip" href="parties.php?action=new">👤 New party</a><?php endif; ?>
-    <?php if (can('items.add')): ?><a class="rchip" href="items.php?action=new">🏷️ New item</a><?php endif; ?>
-    <?php if (can('repairs.view')): ?><a class="rchip" href="repairs.php">🛠️ Repairs<?= $repairsReady ? ' (' . $repairsReady . ')' : '' ?></a><?php endif; ?>
-    <?php if (can('tasks.view')): ?><a class="rchip" href="tasks.php">📋 Tasks</a><?php endif; ?>
-    <a class="rchip" href="my_stock.php">🤝 My stock</a>
-    <?php if (can('leads.view')): ?><a class="rchip" href="leads.php">🎯 Leads</a><?php endif; ?>
-    <?php if (can('tickets.view')): ?><a class="rchip" href="tickets.php">🎫 Tickets</a><?php endif; ?>
-    <?php if (can('weborders.view')): ?><a class="rchip" href="web_orders.php">🌐 Orders<?= $newOrders ? ' (' . $newOrders . ')' : '' ?></a><?php endif; ?>
-    <?php if ($seeStock): ?><a class="rchip" href="reports.php?r=low">📉 Low stock</a><?php endif; ?>
-    <a class="rchip" href="reports.php">📊 Reports</a>
-    <?php if (is_full_admin()): ?><a class="rchip" href="reports.php?r=health">🩺 Data check</a><?php endif; ?>
-  </div>
-</details>
-
-<?php if ($myHandovers): ?>
-<div class="flash flash-info">🤝 You have <?= $myHandovers ?> stock handover(s) pending. <a href="my_stock.php">Accept with OTP →</a></div>
-<?php endif; ?>
-
-<?php if (is_full_admin()):
-    try { $pendEditReq = (int)val("SELECT COUNT(*) FROM edit_requests WHERE status = 'pending'"); } catch (Exception $e) { $pendEditReq = 0; }
-    if ($pendEditReq): ?>
-<div class="flash flash-info">✏️ <?= $pendEditReq ?> bill-edit approvals are waiting. <a href="approvals.php">Review &amp; approve →</a></div>
-<?php endif;
-    try { $waUnread = (int)val("SELECT COUNT(*) FROM wa_chats WHERE direction = 'in' AND is_read = 0"); } catch (Exception $e) { $waUnread = 0; }
-    if ($waUnread): ?>
-<div class="flash flash-info">💬 <?= $waUnread ?> new WhatsApp message<?= $waUnread === 1 ? '' : 's' ?>. <a href="wa_inbox.php">Open the inbox →</a></div>
-<?php endif; endif; ?>
 
 <?php if ($sActions): ?>
 <div class="pane">
@@ -732,4 +786,5 @@ if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dash
 </div>
 <?php endif; endforeach; ?>
 </div>
+</details>
 <?php include __DIR__ . '/includes/footer.php'; ?>

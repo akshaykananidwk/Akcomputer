@@ -23,12 +23,24 @@ if ($a === 'item_search' && can('items.view')) {
     $where = $conds ? implode(' AND ', $conds) : '0';
     // items whose name STARTS with the first typed word rank on top
     $first = ($words[0] ?? '') . '%';
+    // the placeholders below, in the order MySQL meets them: the stock
+    // sub-select in ORDER BY, then the starts-with test
+    $params[] = $loc;
     $params[] = $first;
+    // ...BUT WHAT IS ON THE SHELF COMES FIRST.
+    //
+    // Fifteen suggestions is all a person sees, and an out-of-stock item that
+    // happens to sort earlier alphabetically pushed a stocked one off the end
+    // of that list. At a counter, with a customer waiting, the thing that can
+    // actually be sold today is the thing to show. A service has no stock and
+    // is always sellable, so it ranks with the stocked ones rather than below
+    // everything.
     $items = all("SELECT i.id, i.name, i.unit, i.tax_rate, i.purchase_price, i.selling_price, i.b2b_price, i.serial_tracked, i.barcode, i.item_type,
                   IF(i.item_type = 'service', NULL, COALESCE((SELECT qty FROM stock s WHERE s.item_id = i.id AND s.location_id = ?), 0)) AS stock
                   FROM items i
                   WHERE i.is_active = 1 AND ($where)
-                  ORDER BY (i.name LIKE ?) DESC, i.name LIMIT 15", $params);
+                  ORDER BY (i.item_type = 'service' OR COALESCE((SELECT qty FROM stock s2 WHERE s2.item_id = i.id AND s2.location_id = ?), 0) > 0) DESC,
+                           (i.name LIKE ?) DESC, i.name LIMIT 15", $params);
     // The purchase (cost) price is a guarded number: staff without the
     // items.cost permission never receive it in SALE screens (no profit
     // leaks in the billing UI or the browser's network tab). EXCEPT on the

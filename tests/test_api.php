@@ -969,11 +969,13 @@ $idx = file_get_contents(__DIR__ . '/../index.php');
 // Items, Parties - and a pile of chips. On a phone that was the whole first
 // screen: an owner had to scroll past four navigation buttons to find out
 // whether anything had been sold. Navigation is what the sidebar is for.
-t_ok('the day\'s summary is in the page head, above everything',
-     preg_match('/<div class="pg-head">.*?\$sSummary.*?<\/div>\s*<\/div>/s', $idx) === 1);
-t_ok('the navigation tiles are behind "More", not in front of the figures',
-     strpos($idx, 'More — lists, reports and the rest') !== false
-     && strpos($idx, '<div class="tile-grid">') === false);
+// The owner then went further: the home screen is SIX things and the rest is
+// folded. So the day's summary moved into the fold with everything else, and
+// the four old navigation tiles became the home screen itself - rebuilt as
+// .hm-tile, with the cramped .tile-grid gone.
+t_ok('the day\'s summary is still shown, inside the fold',
+     strpos($idx, '<?php if ($sSummary): ?><div class="pg-sub">') !== false);
+t_ok('the old cramped tile grid is gone', strpos($idx, '<div class="tile-grid">') === false);
 t_ok('the three things pressed all day are tiles of their own',
      substr_count($idx, 'class="qa ') >= 3
      && strpos($idx, 'sales.php?action=new"><span class="qa-i">🧾') !== false);
@@ -1016,3 +1018,66 @@ t_ok('the alerts read as English',
 // is exactly when the page is being read.
 t_ok('the error log cannot push the page sideways',
      strpos($cssSrc, '.logtbl { width: 100%; min-width: 0; table-layout: fixed;') !== false);
+
+t_group('the home screen is six things');
+
+$idxH = file_get_contents(__DIR__ . '/../index.php');
+// The owner asked for this in so many words: how much is to be collected,
+// how much is to be paid, and the four lists he opens all day.
+t_ok('to receive and to pay, from the ledger',
+     strpos($idxH, 'class="hm-card hm-get"') !== false
+     && strpos($idxH, "money(\$sBals['receivable'])") !== false
+     && strpos($idxH, "money(\$sBals['payable'])") !== false);
+t_ok('...and only to somebody allowed to see money',
+     strpos($idxH, '<?php if ($seeMoney && $sBals): ?>') !== false);
+foreach (['sales.php' => 'the sale list', 'purchases.php' => 'the purchase list',
+          'items.php' => 'stock items', 'parties.php' => 'parties'] as $href => $what)
+    t_ok($what . ' is one of the four tiles',
+         preg_match('/class="hm-tile [^"]*" href="' . preg_quote($href, '/') . '"/', $idxH) === 1);
+t_ok('each tile still asks whether this staff member may open it',
+     substr_count($idxH, "<?php if (can('sales.view')): ?>\n  <a class=\"hm-tile") === 1
+     && strpos($idxH, "<?php if (can('parties.view')): ?>\n  <a class=\"hm-tile") !== false);
+
+// NOTHING WAS DELETED. Everything the dashboard works out is still worked
+// out and still on the page - one tap away instead of in the way.
+t_ok('everything else is folded, not removed',
+     strpos($idxH, '<details class="more-opts no-print hm-more">') !== false
+     && strpos($idxH, '<?php endif; endforeach; ?>' . "\n" . '</div>' . "\n" . '</details>') !== false);
+foreach (['$topOrder as $_w' => 'every widget', '$sActions' => 'what to do today',
+          '$sAlerts' => 'worth watching', 'dashboard_customize.php' => 'the customise screen',
+          'class="dash-filter no-print"' => 'the date and branch filter'] as $needle => $what)
+    t_ok($what . ' is still on the page', strpos($idxH, $needle) !== false);
+// A handover waiting for an OTP needs answering, not reading, so it stays on
+// top - and it only draws when there IS one.
+t_ok('an OTP handover still shows above the fold',
+     strpos($idxH, 'stock handover(s) pending') !== false
+     && strpos($idxH, '<?php if ($myHandovers): ?>') !== false);
+
+// Both themes, one set of rules.
+$cssH = file_get_contents(__DIR__ . '/../assets/style.css');
+t_ok('the home cards are drawn from tokens, so the dark theme follows',
+     strpos($cssH, '--hm-solid: var(--ok);') !== false
+     && strpos($cssH, '--hm-solid: var(--bad);') !== false
+     && strpos($cssH, 'background: color-mix(in srgb, var(--ok) 11%, var(--card));') !== false);
+t_ok('and the tiles too', strpos($cssH, 'HOME SCREEN — the six things') !== false);
+
+// A FIGURE MUST NEVER BE CUT OFF. Two cards side by side on a 360px phone
+// leave about 100px for the number, and "₹1,95,140.00" at a fixed 24px does
+// not fit - the card clipped it to "₹16,266." which is not a smaller figure,
+// it is a wrong one.
+t_ok('the figure sizes itself to the screen instead of being clipped',
+     strpos($cssH, 'font-size: clamp(12px, 3.7vw, 24px); white-space: nowrap; }') !== false);
+t_ok('...and on the narrowest phone the layout gives way, not the number',
+     strpos($cssH, '@media (max-width: 359px) {' . "\n" . '  .hm-card { flex-direction: column;') !== false);
+
+// The bar along the bottom names the same six as the screen above it.
+$ftr = file_get_contents(__DIR__ . '/../includes/footer.php');
+foreach (['To Receive', 'To Pay', 'Sale list', 'Purchase', 'Stock Items', 'Parties'] as $lbl)
+    t_ok('"' . $lbl . '" is in the bottom bar', strpos($ftr, '</span>' . $lbl . '</a>') !== false);
+t_ok('the money entries in it need the money permission',
+     strpos($ftr, "<?php if (can('payments.view')): ?>\n    <a href=\"parties.php?bal=get\"") !== false);
+t_ok('and a staff member without it still gets a full bar',
+     strpos($ftr, "<a href=\"index.php\" class=\"<?= \$_navCur2 === 'index.php'") !== false
+     && strpos($ftr, 'handover.php') !== false);
+t_ok('the round + is gone from the middle, as the drawing has it',
+     strpos($ftr, 'fab-center') === false);
