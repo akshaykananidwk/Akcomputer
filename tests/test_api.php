@@ -661,8 +661,9 @@ t_group('WhatsApp — answer on the number they wrote to');
 // indistinguishable from no answer at all.
 $wapp = file_get_contents(__DIR__ . '/../includes/whatsapp.php');
 t_ok('there is a way to say which way a reply must go', strpos($wapp, 'function wa_reply_via') !== false);
-t_ok('and send_whatsapp honours it over the setting',
-     strpos($wapp, "\$answer !== '') \$order = [\$answer,") !== false);
+t_ok('and the order for one send is worked out in one place',
+     strpos($wapp, 'function wa_providers') !== false
+     && strpos($wapp, '$order = wa_providers();') !== false);
 t_ok('the other provider stays as the fallback it always was',
      strpos($wapp, "\$answer === 'meta' ? 'thirdparty' : 'meta'") !== false);
 
@@ -738,3 +739,67 @@ set_setting('wa_bot_keywords', $wasK);
 $set = file_get_contents(__DIR__ . '/../settings.php');
 t_ok('the screen names them', strpos($set, 'These common greetings are NOT in your list') !== false);
 t_ok('and says what to do about it', strpos($set, 'Empty the box') !== false);
+
+t_group('WhatsApp — one page, one choice at the top of it');
+
+// Two providers were always live together and which one a message left by
+// came from a priority buried under a page of other boxes. It is the first
+// thing on the page now, and a provider the shop did not pick is never used
+// however completely its keys happen to be filled in.
+$wasMode = setting('wa_provider_mode'); $wasOrd = setting('wa_provider_order');
+$GLOBALS['_wa_reply_via'] = '';
+
+set_setting('wa_provider_mode', 'thirdparty');
+t_eq('picking my own gateway means only that is tried', wa_providers(), ['thirdparty']);
+t_ok('and Meta is not used at all', !in_array('meta', wa_providers(), true));
+wa_reply_via('meta');
+t_eq('not even to answer a message that came in on Meta', wa_providers(), ['thirdparty']);
+$GLOBALS['_wa_reply_via'] = '';
+
+set_setting('wa_provider_mode', 'meta');
+t_eq('picking Meta means only Meta is tried', wa_providers(), ['meta']);
+t_ok('wa_uses() answers for one provider at a time',
+     wa_uses('meta') && !wa_uses('thirdparty'));
+
+set_setting('wa_provider_mode', 'both');
+set_setting('wa_provider_order', 'thirdparty_first');
+t_eq('picking both follows the stated order for what the shop starts',
+     wa_providers(), ['thirdparty', 'meta']);
+set_setting('wa_provider_order', 'meta_first');
+t_eq('and the other way round when that is chosen', wa_providers(), ['meta', 'thirdparty']);
+wa_reply_via('thirdparty');
+t_eq('but a reply still goes back the way it came', wa_providers(), ['thirdparty', 'meta']);
+$GLOBALS['_wa_reply_via'] = '';
+t_ok('and both count as in use', wa_uses('meta') && wa_uses('thirdparty'));
+
+// An upgrade must change nothing for a shop that never touches the setting.
+set_setting('wa_provider_mode', '');
+t_ok('with no choice stored it falls back to whatever is configured',
+     in_array(wa_provider_mode(), ['thirdparty', 'meta', 'both'], true));
+set_setting('wa_provider_mode', $wasMode); set_setting('wa_provider_order', $wasOrd);
+
+$set = file_get_contents(__DIR__ . '/../settings.php');
+t_ok('the choice is a dropdown', strpos($set, 'name="wa_provider_mode"') !== false);
+t_ok('it comes before either provider\'s setup',
+     strpos($set, 'name="wa_provider_mode"') < strpos($set, 'name="wa_api_url"')
+     && strpos($set, 'name="wa_provider_mode"') < strpos($set, 'name="meta_wa_token"'));
+t_ok('each setup only draws when that one is picked',
+     strpos($set, "if (wa_uses('thirdparty')): ?>") !== false
+     && strpos($set, "if (wa_uses('meta')): ?>") !== false);
+t_ok('the which-comes-first question only appears when both are picked',
+     strpos($set, "if (\$waMode === 'both'): ?>") !== false);
+t_ok('the choice has a save of its own, not one buried in a provider\'s box',
+     strpos($set, "post('do') === 'save_wa_mode'") !== false);
+t_ok('and only the three real answers are accepted',
+     strpos($set, "in_array(post('wa_provider_mode'), ['thirdparty', 'meta', 'both'], true)") !== false);
+
+t_ok('the address customers reach is written once, not twice',
+     substr_count($set, "base_url('wa_webhook.php?key=") === 1);
+t_ok('there is a place that says how to check it works', strpos($set, 'Is it working?') !== false);
+t_ok('with the usual causes written down rather than asked about',
+     strpos($set, 'the usual causes') !== false);
+foreach (['131047', 'replaces</strong>', 'catalog_management', 'logged out'] as $why)
+    t_ok('troubleshooting covers ' . $why, strpos($set, $why) !== false);
+t_ok('the reference tables are folded away, not deleted',
+     substr_count($set, '<details') >= 3 && strpos($set, 'Message Templates') !== false
+     && strpos($set, 'What this is costing you') !== false);

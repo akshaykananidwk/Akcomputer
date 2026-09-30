@@ -95,10 +95,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_wabot') {
 }
 
 // ---- official Meta (Facebook) Cloud API: save + connect & auto-sync templates ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_wa_mode') {
+    require_perm('settings.edit');
+    // Which WhatsApp this shop uses. Its own save, and its own form at the
+    // top of the page, because it decides what the rest of the page even
+    // shows - it has no business being a field inside one provider's box.
+    if (in_array(post('wa_provider_mode'), ['thirdparty', 'meta', 'both'], true))
+        set_setting('wa_provider_mode', post('wa_provider_mode'));
+    if (post('wa_provider_order') !== null)
+        set_setting('wa_provider_order', post('wa_provider_order') === 'meta_first' ? 'meta_first' : 'thirdparty_first');
+    log_activity('settings_save', 'whatsapp provider: ' . setting('wa_provider_mode'));
+    flash('Saved. The setup for that one is below.');
+    redirect('settings.php?cat=whatsapp');
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_meta_wa') {
     require_perm('settings.edit');
     foreach (['meta_wa_token', 'meta_wa_phone_id', 'meta_wa_waba_id', 'meta_catalog_id'] as $k) set_setting($k, trim(post($k)));
-    set_setting('wa_provider_order', post('wa_provider_order') === 'meta_first' ? 'meta_first' : 'thirdparty_first');
     log_activity('settings_save', 'meta whatsapp');
     flash('Meta WhatsApp settings saved.');
     redirect('settings.php?cat=whatsapp');
@@ -575,8 +587,68 @@ exit;
 <?php endif; ?>
 
 <?php if ($cat === 'whatsapp'): ?>
+<?php
+require_once __DIR__ . '/includes/whatsapp.php';
+require_once __DIR__ . '/includes/wa_meta.php';
+$waMode  = wa_provider_mode();
+$gwOk    = wa_thirdparty_configured();
+$metaOk  = meta_wa_configured();
+$waLabel = ['thirdparty' => '📨 My own gateway', 'meta' => '☁️ Official Meta', 'both' => '🔀 Both'];
+?>
+
 <div class="card">
-  <h2>💬 WhatsApp API</h2>
+  <h2>💬 WhatsApp</h2>
+  <p class="muted" style="font-size:13px">
+    Pick which WhatsApp this shop sends on. Only that one's setup opens below — nothing else is shown, and
+    nothing else is used, however completely its boxes happen to be filled in.
+  </p>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?><input type="hidden" name="do" value="save_wa_mode">
+    <div style="min-width:280px"><label>Which WhatsApp do you use?</label>
+      <select name="wa_provider_mode" onchange="this.form.submit()">
+        <option value="thirdparty" <?= $waMode === 'thirdparty' ? 'selected' : '' ?>>📨 My own gateway (bulk.akdwk.in)</option>
+        <option value="meta" <?= $waMode === 'meta' ? 'selected' : '' ?>>☁️ Official Meta WhatsApp Cloud API</option>
+        <option value="both" <?= $waMode === 'both' ? 'selected' : '' ?>>🔀 Both — one backs the other up</option>
+      </select></div>
+    <?php if ($waMode === 'both'): ?>
+    <div style="min-width:280px"><label>Which one first?</label>
+      <select name="wa_provider_order" onchange="this.form.submit()">
+        <option value="thirdparty_first" <?= setting('wa_provider_order', 'thirdparty_first') !== 'meta_first' ? 'selected' : '' ?>>📨 My gateway first → Meta as backup</option>
+        <option value="meta_first" <?= setting('wa_provider_order') === 'meta_first' ? 'selected' : '' ?>>☁️ Meta first → my gateway as backup</option>
+      </select></div>
+    <?php endif; ?>
+    <button class="btn btn-sm" type="submit">Save</button>
+  </form>
+
+  <div class="grid-stats mt">
+    <div class="stat"><div class="stat-label">In use</div>
+      <div class="stat-value" style="font-size:16px"><?= e($waLabel[$waMode] ?? $waMode) ?></div></div>
+    <?php if (wa_uses('thirdparty')): ?>
+    <div class="stat <?= $gwOk ? 's-ok' : 's-bad' ?>"><div class="stat-label">My gateway</div>
+      <div class="stat-value" style="font-size:16px"><?= $gwOk ? 'Connected' : 'Not set up' ?></div></div>
+    <?php endif; ?>
+    <?php if (wa_uses('meta')): ?>
+    <div class="stat <?= $metaOk ? 's-ok' : 's-bad' ?>"><div class="stat-label">Official Meta</div>
+      <div class="stat-value" style="font-size:16px"><?= $metaOk ? 'Connected' : 'Not set up' ?></div></div>
+    <?php endif; ?>
+    <div class="stat"><div class="stat-label">Bot</div>
+      <div class="stat-value" style="font-size:16px"><?= setting('wa_bot_enabled', '0') === '1' ? 'On' : 'Off' ?></div></div>
+  </div>
+
+  <?php if ($waMode === 'both'): ?>
+  <div class="flash flash-info" style="font-size:13px">
+    <strong>Both means two numbers.</strong> A reply always goes back on the number the customer wrote to, so the
+    two cannot get crossed. Anything the shop starts itself — a bill, a reminder, a campaign — goes out on the
+    one chosen as first above. If you only really use one, pick it: fewer moving parts, fewer surprises.
+  </div>
+  <?php endif; ?>
+</div>
+
+<?php if (wa_uses('thirdparty')): ?>
+<div class="card">
+  <h3>📨 My own gateway</h3>
+  <p class="muted" style="font-size:13px">Your own WhatsApp session on your own server. No Meta approval, no
+    template rules, no per-message charge from Meta — but it is your recharge and your session to keep alive.</p>
   <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save_whatsapp">
@@ -595,18 +667,16 @@ exit;
     <button class="btn" type="submit">Save</button>
   </form>
 </div>
+<?php endif; ?>
 
+<?php if (wa_uses('meta')): ?>
 <div class="card">
-  <h2>☁️ Official Meta (Facebook) WhatsApp Cloud API</h2>
-  <p class="muted" style="font-size:13px">Two APIs run together — choose the priority below: if the first fails the second is used automatically as a backup.</p>
+  <h3>☁️ Official Meta WhatsApp Cloud API</h3>
+  <p class="muted" style="font-size:13px">Meta's own API. Replies inside 24 hours of the customer writing are
+    free; anything the shop starts after that has to go as an approved template.</p>
   <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save_meta_wa">
-    <div class="field"><label>Which API to use first? (priority)</label>
-      <select name="wa_provider_order">
-        <option value="thirdparty_first" <?= setting('wa_provider_order', 'thirdparty_first') !== 'meta_first' ? 'selected' : '' ?>>1️⃣ Third-party first → Meta as backup</option>
-        <option value="meta_first" <?= setting('wa_provider_order') === 'meta_first' ? 'selected' : '' ?>>1️⃣ Meta (official) first → third-party as backup</option>
-      </select></div>
     <div class="field"><label>Permanent Access Token</label>
       <input type="text" name="meta_wa_token" value="<?= e(setting('meta_wa_token')) ?>" placeholder="EAAG... (Meta Business > System User token)" autocomplete="off"></div>
     <div class="form-row cols-2">
@@ -653,18 +723,78 @@ exit;
   <p class="muted" style="font-size:12px">Last sync: <?= e(setting('meta_wa_tpl_synced_at', '-')) ?> · the status also refreshes itself every 6 hours (Pending → Approved shows up here).</p>
   <?php endif; ?>
 </div>
+<?php endif; ?>
 
 <div class="card">
-  <h3>Test WhatsApp API</h3>
+  <h3>🩺 Is it working?</h3>
+  <?php if (setting('wa_webhook_key', '') === '') set_setting('wa_webhook_key', bin2hex(random_bytes(16)));
+        $whUrl2 = base_url('wa_webhook.php?key=' . setting('wa_webhook_key')); ?>
+
+  <h4>1 · Can we send?</h4>
   <form method="post" class="filterbar">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="wa_test">
-    <div><input type="tel" name="test_mobile" placeholder="10-digit mobile" required></div>
-    <button class="btn btn-wa btn-sm" type="submit">Send test</button>
+    <?= csrf_field() ?><input type="hidden" name="do" value="wa_test">
+    <div><input type="tel" name="test_mobile" placeholder="your own 10-digit mobile" required></div>
+    <button class="btn btn-wa btn-sm" type="submit">Send a test message</button>
   </form>
+
+  <h4>2 · Can customers reach us?</h4>
+  <p class="muted" style="font-size:13px">
+    Every incoming message comes to this one address. Paste it into
+    <?php if (wa_uses('thirdparty')): ?>your gateway's <strong>Webhook / incoming message URL</strong> box<?php endif; ?>
+    <?php if ($waMode === 'both'): ?> and <?php endif; ?>
+    <?php if (wa_uses('meta')): ?>Meta → WhatsApp → Configuration → <strong>Callback URL</strong>
+      (Verify token: the same <code>key=</code> value)<?php endif; ?>.
+  </p>
+  <p><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block"><?= e($whUrl2) ?></code></p>
+
+  <h4>3 · Did the customer actually get it?</h4>
+  <p class="muted" style="font-size:13px">
+    <a href="wa_inbox.php"><strong>WhatsApp Inbox</strong></a> shows every message with what became of it:
+    <strong>✓</strong> the provider took it · <strong>✓✓</strong> it is on their phone ·
+    <strong>✓✓ read</strong> they opened it · <strong>❌</strong> it never arrived, with the reason.
+    Under an incoming message it also says what the bot made of it.
+    “Sent” in the table further down only means it <em>left</em>; ✓✓ is the one that means it <em>arrived</em>.
+  </p>
+
+  <details>
+    <summary style="cursor:pointer;font-weight:700">🔧 When something is wrong — the usual causes</summary>
+    <div class="table-wrap mt"><table class="table-sm">
+      <thead><tr><th>What you see</th><th>What it nearly always is</th></tr></thead>
+      <tbody>
+        <tr><td>The bot answers nothing at all</td>
+            <td>The bot switch is off, or the webhook address above is not in the provider's box, or the
+                customer's words are not in the trigger list (that list is printed further down, so you can
+                see exactly which words work).</td></tr>
+        <tr><td>Some greetings work, others are ignored</td>
+            <td>The trigger keyword box has been typed into. Whatever is in it <strong>replaces</strong> the
+                built-in list — it does not add to it. Empty the box to get all of them back.</td></tr>
+        <tr><td>The table says “sent” and the customer has nothing</td>
+            <td>Two numbers. Replies go back on the number the customer wrote to, but if you advertise one
+                number and test on the other, the answer lands in a chat you are not looking at.
+                Check the Inbox for ✓✓ rather than the table for a tick.</td></tr>
+        <tr><td>❌ with “Re-engagement message” or error 131047</td>
+            <td>More than 24 hours since the customer last wrote. Meta only allows an approved template after
+                that — see the template list above; one that is not Approved cannot carry the message.</td></tr>
+        <tr><td>A message posted in a GROUP got a private reply</td>
+            <td>Fixed — group and broadcast messages are never answered. If you still see one, send me the
+                exact message and the number it came from.</td></tr>
+        <tr><td>❌ Product Catalog on the sync report</td>
+            <td>The Meta System User has no rights on that catalogue. Business Settings → Users → System User →
+                Add Assets → Catalogue, with <code>catalog_management</code>. Nothing else on this page depends
+                on it — messages keep working.</td></tr>
+        <tr><td>A template shows Draft / Rejected / Invalid parameter</td>
+            <td>That one template is unusable until Meta approves it. Messages fall back to the generic
+                approved template, so nothing stops — but fix it in Meta when you get a chance.</td></tr>
+        <tr><td>Nothing comes in from the gateway</td>
+            <td>Your own session has logged out. Re-scan the QR in the gateway, then send yourself a test
+                above.</td></tr>
+      </tbody>
+    </table></div>
+  </details>
 </div>
 <div class="card">
-  <h3>💰 Estimated monthly cost — AI + Meta WhatsApp API</h3>
+  <details><summary style="cursor:pointer;font-weight:700;font-size:1.05em">💰 What this is costing you</summary>
+  <div class="mt"></div>
   <?php
   require_once __DIR__ . '/includes/wa_bot.php';
   try { list($aiUsed2, $aiCap2) = wa_bot_ai_usage(); } catch (Exception $e) { $aiUsed2 = 0; $aiCap2 = 1500; }
@@ -685,11 +815,10 @@ exit;
     </tbody>
   </table></div>
   <p class="muted" style="font-size:12.5px">📌 How Meta charges: every reply within 24 hours of the customer messaging you (catalogue, bot, text) <strong>Free</strong>; only template messages sent outside the 24 hours (OTP/bill/reminder) cost about <strong>Rs 0.12-0.13 per message</strong> each. The figure above assumes every message is paid <em>Maximum</em> is an estimate — the real bill comes out lower (the exact figure is at business.facebook.com → Billing). At current usage Gemini AI stays inside the free tier = Rs 0.</p>
+  </details>
 </div>
 <div class="card">
   <h3>🤖 WhatsApp Product Bot (auto-reply)</h3>
-  <?php if (setting('wa_webhook_key', '') === '') set_setting('wa_webhook_key', bin2hex(random_bytes(16)));
-        $whUrl = base_url('wa_webhook.php?key=' . setting('wa_webhook_key')); ?>
   <p class="muted">A customer messages "CP Plus camera che?" (or sends a product photo) → the bot searches YOUR items database and replies with the price + product link automatically. Text answers cost ₹0 (pure database search); a photo uses one free-tier Gemini call to recognise the product. If nothing matches, the bot stays silent so it never talks over your own chat.</p>
   <form method="post" class="mt">
     <?= csrf_field() ?>
@@ -737,8 +866,8 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
     the answer will look like it never came.
   </div>
 <?php endif; ?>
-  <p class="muted mt">Paste this URL in your WhatsApp gateway's (bulk.akdwk.in) <strong>Webhook / incoming message URL</strong> box:</p>
-  <p><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block"><?= e($whUrl) ?></code></p>
+  <p class="muted mt" style="font-size:12px">The address customers' messages arrive at is in
+    <strong>🩺 Is it working?</strong> near the top of this page — written once, so there is one to get right.</p>
   <?php $botLog = [];
         try { $botLog = all('SELECT * FROM wa_bot_log ORDER BY id DESC LIMIT 10'); } catch (Exception $e) {} ?>
   <?php if ($botLog): ?>
@@ -874,15 +1003,17 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
   </table>
   <?php endif; ?>
 </div>
+<?php if (wa_uses('meta')): ?>
 <div class="card">
   <h3>🛍️ WhatsApp / Facebook Catalog Feed</h3>
   <?php if (setting('catalog_feed_key', '') === '') set_setting('catalog_feed_key', bin2hex(random_bytes(10))); ?>
   <p class="muted">A Meta-format CSV feed of every item switched on for the website. <strong>Meta Commerce Manager → Data Sources → Scheduled Feed</strong> put this URL in and the WhatsApp Business / Facebook / Instagram catalogue stays in step with the shop stock and prices automatically (change a price → the catalogue changes).</p>
   <input type="text" readonly value="<?= e(base_url('catalog_feed.php?key=' . setting('catalog_feed_key'))) ?>" onclick="this.select()" style="width:100%">
 </div>
+<?php endif; ?>
 <div class="card">
-  <h3>💬 Message Templates</h3>
-  <p class="muted mb">Write each message however you like. Keep the variables as-is — they get replaced with the real value when sending. Leave blank to use the default.</p>
+  <details><summary style="cursor:pointer;font-weight:700;font-size:1.05em">💬 Message Templates — the wording of every automatic message</summary>
+  <p class="muted mb mt">Write each message however you like. Keep the variables as-is — they get replaced with the real value when sending. Leave blank to use the default.</p>
   <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="templates">
@@ -894,6 +1025,7 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
     <?php endforeach; ?>
     <button class="btn" type="submit">Save Templates</button>
   </form>
+  </details>
 </div>
 <?php endif; ?>
 

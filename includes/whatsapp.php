@@ -118,6 +118,51 @@ function wa_reply_via($p) {
     $GLOBALS['_wa_reply_via'] = in_array($p, ['meta', 'thirdparty'], true) ? $p : '';
 }
 
+/**
+ * Which WhatsApp this shop uses: 'thirdparty', 'meta' or 'both'.
+ *
+ * Before this existed both were always live and the only say the owner had
+ * was a priority buried under a page of other boxes - so a shop with two
+ * numbers answered customers from whichever one that setting happened to
+ * name. Now it is a choice, made at the top of the page.
+ *
+ * Falls back to whatever is actually configured, so a shop that upgrades
+ * without touching the setting carries on exactly as before.
+ */
+function wa_provider_mode() {
+    $m = setting('wa_provider_mode', '');
+    if (in_array($m, ['thirdparty', 'meta', 'both'], true)) return $m;
+    require_once __DIR__ . '/wa_meta.php';
+    if (meta_wa_configured() && wa_thirdparty_configured()) return 'both';
+    return meta_wa_configured() ? 'meta' : 'thirdparty';
+}
+
+/**
+ * The providers to try, in order, for THIS send.
+ *
+ * Three things decide it, in this order of authority:
+ *   1. The shop's choice. A provider it did not pick is never used, however
+ *      completely its keys happen to be filled in.
+ *   2. Which number a customer just wrote to, when this is a reply to them.
+ *      Answering from the other number is indistinguishable, from their
+ *      side, from not answering at all.
+ *   3. The shop's stated priority, for everything it starts itself.
+ */
+/** Does this shop use that provider at all? */
+function wa_uses($p) { $m = wa_provider_mode(); return $m === $p || $m === 'both'; }
+
+function wa_providers() {
+    $mode = wa_provider_mode();
+    if ($mode !== 'both') return [$mode];
+
+    $answer = (string)($GLOBALS['_wa_reply_via'] ?? '');
+    if ($answer === 'meta' || $answer === 'thirdparty')
+        return [$answer, $answer === 'meta' ? 'thirdparty' : 'meta'];
+
+    return setting('wa_provider_order', 'thirdparty_first') === 'meta_first'
+        ? ['meta', 'thirdparty'] : ['thirdparty', 'meta'];
+}
+
 function wa_mark_send($ok, $err = '') {
     $GLOBALS['_wa_send_ok'] = (bool)$ok;
     $GLOBALS['_wa_send_err'] = (string)$err;
@@ -192,12 +237,7 @@ function wa_send_thirdparty($mobile, $message, $media_url = '') {
  */
 function send_whatsapp($mobile, $message, $media_url = '') {
     require_once __DIR__ . '/wa_meta.php';
-    $order = setting('wa_provider_order', 'thirdparty_first') === 'meta_first'
-        ? ['meta', 'thirdparty'] : ['thirdparty', 'meta'];
-    // Replying to a message that just came in? Answer the number it came to,
-    // and keep the other as the fallback it always was.
-    $answer = (string)($GLOBALS['_wa_reply_via'] ?? '');
-    if ($answer !== '') $order = [$answer, $answer === 'meta' ? 'thirdparty' : 'meta'];
+    $order = wa_providers();
     $errs = [];
     $sent = false;
     foreach ($order as $p) {
