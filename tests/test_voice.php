@@ -1374,6 +1374,64 @@ t_ok('the spoken menu folder does NOT deny anything — the provider must read i
 t_ok('and uploads does not block mp3 across the board',
      strpos((string)@file_get_contents(__DIR__ . '/../uploads/.htaccess'), 'mp3') === false);
 
+t_group('Voice — one call button, on every screen that chases money');
+
+// The owner asked for it on the invoice and on the party ledger. Four screens
+// now show it, and all four lead to the SAME confirm screen - the one place
+// that applies the rules, shows the figure and plays the recording. Nothing
+// dials from a list screen.
+$wasOn = setting('voice_enabled'); $wasId = setting('vobiz_auth_id');
+$wasTok = setting('vobiz_auth_token'); $wasCid = setting('vobiz_caller_id');
+set_setting('voice_enabled', '1');
+set_setting('vobiz_auth_id', 'TESTID'); set_setting('vobiz_auth_token', 'tok');
+set_setting('vobiz_caller_id', '919876543210');
+
+$pidB = t_party('TEST_BTN_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500099' WHERE id = ?", [$pidB]);
+t_sale($pidB, 3850, 0, date('Y-m-d', strtotime('-20 days')), date('Y-m-d', strtotime('-5 days')));
+
+$btn = voice_call_button($pidB, 'sale_view.php?id=1');
+t_ok('the button is drawn for a customer who owes money', $btn !== '');
+t_ok('it says what will be asked for', strpos($btn, '3,850') !== false, strip_tags($btn));
+t_ok('and it leads to the confirm screen, not to a dial',
+     strpos($btn, 'collection.php?call=' . $pidB) !== false && stripos($btn, '<form') === false);
+t_ok('it carries the screen to come back to', strpos($btn, 'back=sale_view.php') !== false);
+
+// Where it has no business being.
+$pidN = t_party('TEST_BTN_NIL_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500098' WHERE id = ?", [$pidN]);
+t_eq('somebody who owes nothing gets no button', voice_call_button($pidN), '');
+$pidM = t_party('TEST_BTN_NOMOB_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '' WHERE id = ?", [$pidM]);
+t_sale($pidM, 500, 0, date('Y-m-d', strtotime('-20 days')), date('Y-m-d', strtotime('-5 days')));
+t_eq('nor does somebody with no mobile number', voice_call_button($pidM), '');
+t_eq('a walk-in sale has no customer to call', voice_call_button(0), '');
+set_setting('voice_enabled', '0');
+t_eq('and nothing is offered while calling is switched off', voice_call_button($pidB), '');
+set_setting('voice_enabled', '1');
+
+// The invoice screen is also served to the CUSTOMER through a ?token= link.
+// A button that rings the shop's own reminder must never appear there.
+$sv = file_get_contents(__DIR__ . '/../sale_view.php');
+t_ok('the invoice screen draws the shared button', strpos($sv, 'voice_call_button(') !== false);
+t_ok('and it loads the module itself rather than hoping somebody else did',
+     strpos($sv, "require_once __DIR__ . '/includes/voice.php'") !== false);
+t_ok('the button is behind a permission, so a customer opening the public link sees none',
+     strpos(file_get_contents(__DIR__ . '/../includes/voice.php'), "can('payments.add')") !== false);
+$pt = file_get_contents(__DIR__ . '/../parties.php');
+t_ok('the party ledger draws the same one', strpos($pt, 'voice_call_button(') !== false);
+t_ok('one button, written once', substr_count(file_get_contents(__DIR__ . '/../includes/voice.php'),
+                                              'function voice_call_button') === 1);
+
+// Coming back to where you started, and nowhere else.
+$coll = file_get_contents(__DIR__ . '/../collection.php');
+t_ok('the confirm screen honours the screen it was opened from',
+     strpos($coll, 'coll_back_to(') !== false && strpos($coll, "get('back')") !== false);
+t_ok('the back rule is written once', substr_count($coll, 'function coll_back_to') === 1);
+
+set_setting('voice_enabled', $wasOn); set_setting('vobiz_auth_id', $wasId);
+set_setting('vobiz_auth_token', $wasTok); set_setting('vobiz_caller_id', $wasCid);
+
 t_group('Voice — the shop decides what the phone says');
 
 // 1. The shop's own greeting comes first, on the way out as well as in.

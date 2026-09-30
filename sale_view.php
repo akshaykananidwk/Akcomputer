@@ -1,6 +1,7 @@
 <?php
 // Invoice view / print / WhatsApp send. Public access via ?token= (customer link).
 require_once __DIR__ . '/includes/init.php';
+require_once __DIR__ . '/includes/voice.php';   // voice_call_button()
 
 $id = (int)get('id');
 $token = get('token');
@@ -187,6 +188,12 @@ function copyPay() {
     <input type="tel" name="mobile" value="<?= e($sale['customer_mobile']) ?>" placeholder="WhatsApp no." style="width:150px">
     <button class="btn btn-wa" type="submit">📲 Send WhatsApp</button>
   </form>
+  <?php /* A walk-in sale has no customer record, so there is no ledger to read
+           out and no do-not-call flag to respect - the button draws nothing.
+           The figure on it is what this customer owes ALTOGETHER, which is
+           what the call says; it is shown again on the confirm screen before
+           anybody is dialled. */ ?>
+  <?= voice_call_button($sale['party_id'] ?? 0, 'sale_view.php?id=' . $id, false) ?>
   <?php if (setting('google_review_link') && $sale['customer_mobile']): ?>
   <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="review">
     <button class="btn btn-outline" type="submit">⭐ Review Invite</button></form>

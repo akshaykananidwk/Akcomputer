@@ -623,6 +623,34 @@ function voice_contexts(array $ids) {
     return $out;
 }
 
+/**
+ * The "ring this customer" button, drawn the same everywhere it appears.
+ *
+ * It is on the collection queue, the aging report, the invoice and the party
+ * ledger - four screens, and the owner should not have to learn four
+ * different buttons. Every one of them leads to the SAME confirm screen,
+ * which is where the rules are applied, the amount is shown and the
+ * recording can be heard before anybody is dialled. Nothing here dials.
+ *
+ * Returns '' when the button has no business being there: calling switched
+ * off, no permission, a walk-in with no customer record, no mobile number,
+ * or nothing owed. A button that is always refused is worse than no button.
+ *
+ * $back is the screen to return to - see coll_back_to(), which only honours
+ * a page of ours.
+ */
+function voice_call_button($partyId, $back = '', $small = true) {
+    $partyId = (int)$partyId;
+    if ($partyId <= 0 || !voice_enabled() || !can('payments.add')) return '';
+    $ctx = voice_party_context($partyId);
+    if (!$ctx || !voice_mobile_ok($ctx['mobile']) || $ctx['due'] <= 0.009) return '';
+
+    $href = 'collection.php?call=' . $partyId . ($back !== '' ? '&back=' . rawurlencode($back) : '');
+    return '<a class="btn ' . ($small ? 'btn-sm ' : '') . 'btn-success" href="' . htmlspecialchars($href, ENT_QUOTES)
+         . '" title="An automatic reminder call — you see and hear it before it goes">📞 Call Rs '
+         . money($ctx['due']) . '</a>';
+}
+
 /** The last call to this party, whatever became of it. */
 function voice_last_call($partyId) {
     return row('SELECT * FROM voice_calls WHERE party_id = ? ORDER BY id DESC LIMIT 1', [(int)$partyId]);

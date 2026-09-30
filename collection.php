@@ -15,16 +15,25 @@ require_once __DIR__ . '/includes/voice.php';
 require_perm('payments.view');
 $u = current_user();
 
+/**
+ * Where "back" should go.
+ *
+ * The invoice screen, the party ledger and the aging report all send a
+ * customer here to be called, and each of them has to get its own screen
+ * back afterwards. Only a bare page name of OURS is honoured, never whatever
+ * arrived in the field, so the button cannot be pointed off-site.
+ */
+function coll_back_to($default) {
+    $from = (string)(post('back') ?: get('back'));
+    if ($from === '') return $default;
+    if (!preg_match('~^[a-z0-9_]+\.php(\?[A-Za-z0-9_=&-]*)?$~', $from)) return $default;
+    return is_file(__DIR__ . '/' . explode('?', $from)[0]) ? $from : $default;
+}
+
 // ---------- actions ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pid = (int)post('id');
-    $back = 'collection.php' . (get('show') === 'all' ? '?show=all' : '');
-    // The aging report sends its picked customers here too, so "back" has to be
-    // able to mean that report. Only a bare page name of ours is accepted, never
-    // whatever arrived in the field, so the button cannot be pointed off-site.
-    $from = (string)post('back');
-    if ($from !== '' && preg_match('~^[a-z0-9_]+\.php(\?[A-Za-z0-9_=&-]*)?$~', $from)
-        && is_file(__DIR__ . '/' . explode('?', $from)[0])) $back = $from;
+    $back = coll_back_to('collection.php' . (get('show') === 'all' ? '?show=all' : ''));
 
     if (post('do') === 'snooze') {
         $days = max(1, (int)post('days'));
@@ -279,6 +288,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // screen lands here instead of on a live call.
 if (($callPid = (int)get('call')) > 0) {
     require_perm('payments.add');
+    $callBack = coll_back_to('collection.php');
     $vc = voice_party_context($callPid);
     if (!$vc) { flash('No such customer.', 'error'); redirect('collection.php'); }
     $gate = voice_can_call($callPid, $vc);
@@ -307,7 +317,7 @@ if (($callPid = (int)get('call')) > 0) {
 
       <?php if (!$gate['ok']): ?>
         <div class="flash flash-error">This call cannot go out: <?= e($gate['why']) ?></div>
-        <a class="btn btn-outline" href="collection.php">← Back</a>
+        <a class="btn btn-outline" href="<?= e($callBack) ?>">← Back</a>
       <?php else: ?>
       <h3>What they will hear</h3>
       <p class="muted" style="font-size:12px">
@@ -344,8 +354,9 @@ if (($callPid = (int)get('call')) > 0) {
                     retry finds the call it already made instead of ringing
                     the customer a second time */ ?>
           <input type="hidden" name="client_uuid" value="<?= e(bin2hex(random_bytes(16))) ?>">
+          <input type="hidden" name="back" value="<?= e($callBack) ?>">
           <button class="btn btn-success" type="submit">✅ Yes, call now</button>
-          <a class="btn btn-outline" href="collection.php">Leave it</a>
+          <a class="btn btn-outline" href="<?= e($callBack) ?>">Leave it</a>
         </form>
       <?php endif; ?>
     </div>

@@ -1,6 +1,7 @@
 <?php
 // Parties (customers / suppliers) with credit days & ledger balance
 require_once __DIR__ . '/includes/init.php';
+require_once __DIR__ . '/includes/voice.php';   // voice_call_button()
 require_perm('parties.view');
 
 $action = get('action', 'list');
@@ -279,6 +280,11 @@ if ($action === 'ledger' && $id) {
             <button class="btn btn-sm btn-wa" type="submit">🔔 Reminder Rs <?= money($remDue) ?></button>
           </form>
           <?php endif; ?>
+          <?php /* Ringing them is the other half of chasing money, and this is
+                    the screen the owner is on when they decide to chase. The
+                    button leads to the one confirm screen that applies the
+                    rules and plays the recording - nothing is dialled here. */ ?>
+          <?= voice_call_button($p['id'], 'parties.php?action=ledger&id=' . $p['id']) ?>
           <a class="btn btn-sm btn-outline" href="customer.php?id=<?= $p['id'] ?>">👤 Customer 360</a>
           <?php if (can('parties.edit')): ?><a class="btn btn-sm btn-outline" href="parties.php?action=edit&id=<?= $p['id'] ?>">✏️ Edit</a><?php endif; ?>
           <?php if (can('parties.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Delete this party? If it has transactions, it will just be made inactive.')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
