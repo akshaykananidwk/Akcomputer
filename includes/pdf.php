@@ -681,8 +681,13 @@ function invoice_pdf_design1($sale, $items) {
         $ty = $y + 14;
         $pdf->text($cNum, $ty, 9.5, ($n + 1) . '', '', $C['navy']);
         foreach ($nameLines as $i => $nl) $pdf->text($cItem, $ty + $i * 12, 9.5, $nl, '', [0.15, 0.2, 0.28]);
+        // Every optional field is read with ?? here. This is a RENDERER: a
+        // caller that did not select one column should get a blank on the
+        // bill, not a PHP warning per invoice. Three of these were missed -
+        // unit, c_phone and loc_city - and quietly filled the error log,
+        // which is the log nobody reads when something real goes wrong.
         if ($hasGst) $pdf->text_right($cHsnR, $ty, 9, (string)($it['hsn'] ?? ''), '', $C['gray']);
-        $pdf->text_center($cQtyC, $ty, 9.5, trim((float)$it['qty'] . ' ' . $it['unit']), '', [0.15, 0.2, 0.28]);
+        $pdf->text_center($cQtyC, $ty, 9.5, trim((float)$it['qty'] . ' ' . ($it['unit'] ?? '')), '', [0.15, 0.2, 0.28]);
         $pdf->text_right($cRateR, $ty, 9.5, money($it['price']), '', [0.15, 0.2, 0.28]);
         if ($hasGst) $pdf->text_right($cGstR, $ty, 9, (float)$it['tax_rate'] . '%', '', $C['gray']);
         $pdf->text_right($cAmtR, $ty, 9.5, money($it['total']), '', [0.15, 0.2, 0.28]);
@@ -885,7 +890,7 @@ function invoice_pdf_design1($sale, $items) {
     $stcx = ($L + $R) / 2; $stcy = $sy - 2;
     $pdf->circle_stroke($stcx, $stcy, 24, $C['navy'], 1.1);
     $pdf->circle_stroke($stcx, $stcy, 20, $C['navy'], 0.6);
-    $stampCity = strtoupper(trim(explode('-', $sale['loc_city'])[0]));
+    $stampCity = strtoupper(trim(explode('-', (string)($sale['loc_city'] ?? ''))[0]));
     $pdf->text_center($stcx, $stcy - 6, 5.2, 'AK COMPUTER', 'B', $C['navy']);
     $pdf->text_center($stcx, $stcy + 2, 5.2, 'THANK YOU', '', $C['navy']);
     $pdf->text_center($stcx, $stcy + 11, 5.2, $stampCity, 'B', $C['navy']);
@@ -1057,8 +1062,13 @@ function invoice_pdf_design2($sale, $items) {
         $pdf->rrect($cNum - 2, $ty - 10, 18, 14, 3, $sqc);
         $pdf->text_center($cNum + 7, $ty, 8.5, sprintf('%02d', $n + 1), 'B', [1, 1, 1]);
         foreach ($nameLines as $i => $nl) $pdf->text($cItem, $ty + $i * 12, 9.5, $nl, '', [0.15, 0.15, 0.22]);
+        // Every optional field is read with ?? here. This is a RENDERER: a
+        // caller that did not select one column should get a blank on the
+        // bill, not a PHP warning per invoice. Three of these were missed -
+        // unit, c_phone and loc_city - and quietly filled the error log,
+        // which is the log nobody reads when something real goes wrong.
         if ($hasGst) $pdf->text_right($cHsnR, $ty, 9, (string)($it['hsn'] ?? ''), '', $C['gray']);
-        $pdf->text_center($cQtyC, $ty, 9.5, trim((float)$it['qty'] . ' ' . $it['unit']), '', [0.15, 0.15, 0.22]);
+        $pdf->text_center($cQtyC, $ty, 9.5, trim((float)$it['qty'] . ' ' . ($it['unit'] ?? '')), '', [0.15, 0.15, 0.22]);
         $pdf->text_right($cRateR, $ty, 9.5, money($it['price']), '', [0.15, 0.15, 0.22]);
         if ($hasGst) $pdf->text_right($cGstR, $ty, 9, (float)$it['tax_rate'] . '%', '', $C['gray']);
         $pdf->text_right($cAmtR, $ty, 9.5, money($it['total']), '', [0.15, 0.15, 0.22]);
@@ -1202,7 +1212,7 @@ function invoice_pdf_design2($sale, $items) {
         $pdf->text_center($sx, $fbTop + 31.5, 6.6, $lbl, 'B', $C['purple']);
     }
     $pdf->text(150, $fbTop + 15, 8.3, 'For Support', 'B', [1, 1, 1]);
-    $pdf->text(150, $fbTop + 30, 10, $sale['c_phone'] ?: '', 'B', [1, 1, 1]);
+    $pdf->text(150, $fbTop + 30, 10, (string)($sale['c_phone'] ?? ''), 'B', [1, 1, 1]);
     // We Deal In (right)
     $pdf->text(330, $fbTop + 13, 7.6, 'We Deal In :', 'B', [1, 1, 1]);
     $cats = ['Computers', 'Laptops', 'Accessories', 'CCTV', 'Networking', 'AMC'];
@@ -1216,7 +1226,7 @@ function invoice_pdf_design2($sale, $items) {
     $topFs = min(4.6, $innerW * 4.6 / max(1, pdf_text_width('AK COMPUTER', 4.6, true)));
     $pdf->text_center($stcx, $stcy - 5.5, $topFs, 'AK COMPUTER', 'B', $C['purple']);
     $pdf->text_center($stcx, $stcy + 1.5, 4.4, 'THANK YOU', '', $C['purple']);
-    $pdf->text_center($stcx, $stcy + 8.5, 4.4, strtoupper(trim(explode('-', $sale['loc_city'])[0])), 'B', $C['purple']);
+    $pdf->text_center($stcx, $stcy + 8.5, 4.4, strtoupper(trim(explode('-', (string)($sale['loc_city'] ?? ''))[0])), 'B', $C['purple']);
 
     // signature lines
     $sy = $fbTop + 42 + 24;
