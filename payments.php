@@ -930,8 +930,11 @@ $duePurchases = money_cap_bill_dues($duePurchases, 'out');
 $bal     = dash_balances();
 $advList = parties_with_advance(20);
 $advTot  = array_sum(array_map(fn($x) => (float)$x['adv'], $advList));
-$advAll  = (float)val('SELECT COALESCE(SUM(adv),0) FROM (SELECT ' . party_balance_side_expr('p', 'out')
-                      . ' adv FROM parties p WHERE p.is_active = 1 HAVING adv > 0.009) x');
+// Same rule as party_advance(), written once in SQL: the purchase side capped
+// by what the shop owes NET, so a party whose two sides cancel adds nothing.
+$advAll  = (float)val('SELECT COALESCE(SUM(LEAST(adv, -bal)),0) FROM (SELECT '
+                      . party_balance_side_expr('p', 'out') . ' adv, ' . party_balance_expr('p') . ' bal
+                       FROM parties p WHERE p.is_active = 1 HAVING adv > 0.009 AND bal < -0.009) x');
 
 // Overdue and due-this-week are counted off the bills already loaded and
 // already capped above - a date comparison, not a second money rule.

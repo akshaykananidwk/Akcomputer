@@ -1859,15 +1859,21 @@ function credit_limit_state($partyId, $adding = 0) {
  *  falls on. The day a bill is raised, the oldest-first settlement rule puts
  *  it against that bill on its own. */
 function party_advance($partyId) {
-    // they are owed by us on the sales side = we are holding their money
-    return money_r(party_balance_side((int)$partyId, 'out'));
+    // they are owed by us on the purchase side = we are holding their money,
+    // but only as far as the NET agrees - see money_advance_held()
+    return money_advance_held(party_balance_side((int)$partyId, 'out'), party_balance((int)$partyId));
 }
 
 /** Every party currently holding an advance with the shop. */
 function parties_with_advance($limit = 100) {
-    $rows = all('SELECT p.id, p.name, p.mobile, ' . party_balance_side_expr('p', 'out') . ' adv
+    // Both sides in the HAVING, for the same reason the collection queue needs
+    // both: a party whose sides cancel out is holding nothing with the shop.
+    $rows = all('SELECT p.id, p.name, p.mobile, ' . party_balance_side_expr('p', 'out') . ' adv,
+                        ' . party_balance_expr('p') . ' bal
                  FROM parties p WHERE p.is_active = 1
-                 HAVING adv > 0.009 ORDER BY adv DESC LIMIT ' . (int)$limit);
+                 HAVING adv > 0.009 AND bal < -0.009 ORDER BY adv DESC LIMIT ' . (int)$limit);
+    foreach ($rows as &$r) $r['adv'] = money_advance_held($r['adv'], $r['bal']);
+    unset($r);
     return $rows;
 }
 

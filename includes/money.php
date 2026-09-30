@@ -344,8 +344,6 @@ function payment_reverse($paymentId) {
     return true;
 }
 
-/** A party's still-unpaid bills, oldest first — the canonical ordering every
- *  settlement and every cap uses. $dir 'in' = sales, 'out' = purchases. */
 /**
  * What it is fair to ASK this party for.
  *
@@ -367,6 +365,27 @@ function money_chase_due($receivableSide, $netBalance) {
     return round(min((float)$receivableSide, max(0.0, (float)$netBalance)), 2);
 }
 
+/**
+ * How much of this party's money the shop is really SITTING ON.
+ *
+ * The same question as money_chase_due(), asked from the other side of the
+ * counter, and it was wrong in exactly the same way. The ledger of the party
+ * whose two sides cancelled out said "₹0.00 (to receive)" at the top and, one
+ * line above it, "this party has ₹16,504.00 held with us (advance) - it is
+ * used against the next bill". Both figures came out of the same ledger and
+ * they contradicted each other on screen. The shop is not holding ₹16,504 for
+ * anybody: it owes them ₹16,504 and they owe it ₹16,504, and an advance that
+ * is promised against the next bill had better be money that actually exists.
+ *
+ * So: never more than the purchase side shows, and never more than the shop
+ * owes NET. A positive net is receivable, so what the shop owes is -net.
+ */
+function money_advance_held($payableSide, $netBalance) {
+    return money_chase_due($payableSide, -(float)$netBalance);
+}
+
+/** A party's still-unpaid bills, oldest first — the canonical ordering every
+ *  settlement and every cap uses. $dir 'in' = sales, 'out' = purchases. */
 function money_due_bills($party_id, $dir, $cols = '*') {
     $tbl = $dir === 'in' ? 'sales' : 'purchases';
     return all("SELECT $cols FROM $tbl WHERE party_id = ? AND status <> 'paid' AND is_cancelled = 0

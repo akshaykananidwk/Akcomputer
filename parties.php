@@ -308,7 +308,7 @@ if ($action === 'ledger' && $id) {
       $intr = can('sales.view') ? interest_due_for_party($id) : ['amount' => 0.0, 'rate' => 0, 'bills' => []];
       ?>
       <?php if ($advHeld > 0.009): ?>
-        <p class="flash flash-info" style="margin:6px 0">💰 This party has <strong>₹<?= money($advHeld) ?></strong> is held with us (advance) — it is used against the next bill.</p>
+        <p class="flash flash-info" style="margin:6px 0">💰 <strong>₹<?= money($advHeld) ?></strong> of this party's money is held with us (advance) — it goes against their next bill.</p>
       <?php endif; ?>
       <?php if ($clim && $clim['set']): ?>
         <p class="<?= $clim['over'] ? 'flash flash-error' : 'muted' ?>" style="margin:6px 0">

@@ -830,3 +830,30 @@ q("UPDATE sales SET due_date = DATE_SUB(CURDATE(), INTERVAL 20 DAY), sale_date =
 $yRow = null; foreach (coll_queue(500, true) as $c) if ((int)$c['id'] === $yp) $yRow = $c;
 t_eq('a real net debt is still chased, for the difference', $yRow ? $yRow['outstanding'] : -1, 5000.0);
 t_eq('and the credit exposure is that difference too', (float)credit_limit_state($yp, 0)['owed'], 5000.0);
+
+// ---- and the same question from the other side of the counter ----
+//
+// The very same ledger that now correctly says "₹0.00 (to receive)" was, one
+// line higher, promising "this party has ₹16,504.00 held with us (advance) -
+// it is used against the next bill". The shop is holding nothing of theirs.
+// An advance is a promise about money that exists.
+t_eq('nor is the shop holding any of their money', party_advance($xp), 0.0);
+t_eq('the purchase side on its own still shows the gross', party_balance_side($xp, 'out'), 16504.0);
+$advIds = array_map(fn($x) => (int)$x['id'], parties_with_advance(500));
+t_ok('and they are not listed as holding an advance', !in_array($xp, $advIds, true));
+$advSrc = file_get_contents(dirname(__DIR__) . '/parties.php');
+t_ok('the ledger banner reads as a sentence',
+     strpos($advSrc, "of this party's money is held with us (advance)") !== false);
+// The Payments total is the same rule written in SQL; it must not count them.
+$payTot = (float)val('SELECT COALESCE(SUM(LEAST(adv, -bal)),0) FROM (SELECT '
+                     . party_balance_side_expr('p', 'out') . ' adv, ' . party_balance_expr('p') . ' bal
+                      FROM parties p WHERE p.is_active = 1 AND p.id = ' . (int)$xp
+                     . ' HAVING adv > 0.009 AND bal < -0.009) x');
+t_eq('the Payments advance total leaves them out too', $payTot, 0.0);
+t_ok('and the page really uses that rule, not the bare side',
+     strpos($paySrc, 'SUM(LEAST(adv, -bal))') !== false);
+
+// A party who really did pay ahead is still shown as holding it, in full.
+$zp = t_party('ADVANCE_STILL_REAL');
+t_payment($zp, 4000, 'in');
+t_eq('a real advance is still a real advance', party_advance($zp), 4000.0);
