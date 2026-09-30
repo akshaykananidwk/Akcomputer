@@ -36,7 +36,43 @@ if (!is_array($p)) $p = $_POST;
 // receipts (statuses-only events) are ACKed and ignored.
 if (isset($p['object'], $p['entry'][0]['changes'][0]['value']) && is_array($p['entry'][0]['changes'][0]['value'])) {
     $v = $p['entry'][0]['changes'][0]['value'];
-    if (empty($v['messages'][0])) die(json_encode(['ok' => true, 'status' => 'status-event']));
+
+    // A delivery receipt is not noise - it is the only honest answer to
+    // "why did my customer never get that message?".
+    //
+    // These used to be acknowledged and thrown away, so a message Meta
+    // ACCEPTED and then failed to deliver looked on screen exactly like one
+    // the customer had read, and the shop was left guessing at gateways.
+    // Meta names the fate of every message here, with its own reason when it
+    // failed, matched to the id kept when it was sent.
+    if (empty($v['messages'][0])) {
+        $n = 0;
+        foreach ($v['statuses'] ?? [] as $st) {
+            $id = (string)($st['id'] ?? '');
+            $state = strtolower((string)($st['status'] ?? ''));
+            if ($id === '' || $state === '') continue;
+            $why = '';
+            if ($state === 'failed') {
+                $e = $st['errors'][0] ?? [];
+                $why = trim((string)($e['title'] ?? '') . ' — ' . (string)($e['error_data']['details'] ?? $e['message'] ?? ''), " —\t\n");
+                if ($why === '') $why = 'Meta gave no reason';
+                if (!empty($e['code'])) $why = '[' . (int)$e['code'] . '] ' . $why;
+            }
+            try {
+                // Never walk a status backwards: a 'sent' receipt arriving
+                // after 'read' must not un-read the message.
+                q("UPDATE wa_chats SET status = ?, status_at = NOW(), fail_reason = ?
+                   WHERE msg_id = ? AND FIELD(status, 'sent', 'delivered', 'read') <= FIELD(?, 'sent', 'delivered', 'read')",
+                  [$state, mb_substr($why, 0, 255), $id, $state]);
+                if ($state === 'failed')
+                    q('UPDATE wa_chats SET status = ?, status_at = NOW(), fail_reason = ? WHERE msg_id = ?',
+                      [$state, mb_substr($why, 0, 255), $id]);
+                $n++;
+            } catch (Exception $e) { /* pre-v82 column - never fail a webhook over history */ }
+            if ($state === 'failed') log_activity('wa_send_failed', mb_substr($id . ': ' . $why, 0, 400));
+        }
+        die(json_encode(['ok' => true, 'status' => 'status-event', 'noted' => $n]));
+    }
     $p = $v;
 }
 // some gateways nest the message: {data:{...}} / {message:{...}} / {messages:[{...}]}
@@ -120,13 +156,43 @@ if ($mobile === '' || ($text === '' && !$jpeg && !$isAudio)) die(json_encode(['o
 wa_chat_log($mobile, 'in', $waTapTitle !== '' ? '👆 ' . $waTapTitle : ($text !== '' ? $text : ($jpeg ? '📷 [photo]' : '🎙 [voice message]')), 'whatsapp', preg_match('#^https?://#i', $mediaUrl) ? $mediaUrl : '');
 $isStaffSender = (bool)row("SELECT id FROM users WHERE is_active = 1 AND mobile <> ''
                             AND ? LIKE CONCAT('%', RIGHT(REPLACE(REPLACE(mobile, '+', ''), ' ', ''), 10))", [$mobile]);
-// menu taps are the bot's own conversation - no Telegram ping per tap
-if (!$isStaffSender && $waTapTitle === '') {
+
+/**
+ * Ping the admins on Telegram - or, by default, don't.
+ *
+ * This used to fire on EVERY incoming message, before the bot had even had
+ * its turn. So "media / media / Bill" arrived on Telegram one after another,
+ * all of them already answered by the bot with nothing for a person to do.
+ * Alerts nobody needs are what teach a person to stop reading the alerts
+ * that matter.
+ *
+ * It is called AFTER the bot now, and told what the bot made of the message:
+ *   all         - every customer message, as before
+ *   unanswered  - only what the bot could not answer (the default)
+ *   off         - nothing
+ *
+ * Menu taps are never sent: they are the bot's own conversation with itself.
+ */
+$notify = function ($botStatus) use ($mobile, $text, $isStaffSender, $waTapTitle) {
+    $mode = setting('wa_tg_notify', 'unanswered');
+    if ($mode === 'off' || $isStaffSender || $waTapTitle !== '') return;
+    // Anything the bot actually answered needs no person. These are the
+    // outcomes where it did NOT - named rather than guessed at with a
+    // pattern, because a status this list forgets would go quietly unseen,
+    // which is the one failure that matters here.
+    $noReply = ['unknown', 'bad-number', 'send-failed', 'bot-off', 'rate-limited',
+                'empty', 'gone', 'quote-gone', 'bill-denied', 'pay-denied', 'repair-denied'];
+    $ignored = ['own-echo', 'silent'];                       // deliberately not answered
+    if (in_array($botStatus, $ignored, true)) return;
+    $answered = $botStatus !== '' && !in_array($botStatus, $noReply, true);
+    if ($mode === 'unanswered' && $answered) return;
     try {
-        tg_notify_admins("💬 New WhatsApp message\nFrom: +$mobile\n" . mb_substr($text !== '' ? $text : '📷 media', 0, 300)
+        tg_notify_admins("💬 New WhatsApp message\nFrom: +$mobile\n"
+            . mb_substr($text !== '' ? $text : '📷 media', 0, 300)
+            . ($answered ? "\n\n🤖 The bot answered this one." : "\n\n⚠️ Nobody has answered this.")
             . "\n\nTo reply: " . base_url('wa_inbox.php?m=' . $mobile));
     } catch (Exception $e) { /* telegram optional */ }
-}
+};
 
 // "STOP" has to actually stop it. Every campaign message carries that line,
 // and a way out that does nothing is worse than no way out at all - so this
@@ -139,10 +205,12 @@ if ($text !== '' && cam_is_stop_word($text)) {
         log_activity('campaign_optout', 'STOP from ' . $mobile);
         send_whatsapp($mobile, 'Advertising messages to your number have been turned off. 🙏'
             . "\nNecessary bill and payment notices continue.");
+        $notify('marketing-opt-out');
         die(json_encode(['ok' => true, 'status' => 'marketing-opt-out']));
     }
 }
 
-if (!$botEnabled) die(json_encode(['ok' => true, 'status' => 'logged-bot-off']));
+if (!$botEnabled) { $notify('bot-off'); die(json_encode(['ok' => true, 'status' => 'logged-bot-off'])); }
 $status = wa_bot_handle($mobile, $text, $jpeg);
+$notify((string)$status);
 echo json_encode(['ok' => true, 'status' => $status]);

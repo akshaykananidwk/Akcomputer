@@ -103,6 +103,7 @@ function meta_wa_template_catalog() {
  *  akc_update template with the flattened message (+ media link as text). */
 function meta_wa_send($mobile, $message, $media_url = '') {
     $GLOBALS['_wa_last_error'] = '';
+    $GLOBALS['_wa_last_msg_id'] = '';   // this send's own id, never the last one's
     $number = wa_normalize_number($mobile);
     if (!meta_wa_configured() || strlen($number) < 12) {
         $GLOBALS['_wa_last_error'] = 'Meta Cloud API not configured (token / phone number id) or bad mobile.';
@@ -124,7 +125,15 @@ function meta_wa_send($mobile, $message, $media_url = '') {
                     'type' => 'text', 'text' => ['preview_url' => true, 'body' => mb_substr($message, 0, 4096)]];
     }
     [$ok, $data, $err] = meta_wa_call('POST', "$phoneId/messages", $payload);
-    if ($ok) { api_usage_log('whatsapp', 'meta:freeform', 0, 1); return true; } // service window = free
+    if ($ok) {
+        api_usage_log('whatsapp', 'meta:freeform', 0, 1);   // service window = free
+        // Meta's own id for this message. Accepting a message is not the
+        // same as delivering it, and the receipt that says which comes back
+        // later carrying this id - without keeping it there is nothing to
+        // match the receipt to, and "sent" is the last the shop ever hears.
+        $GLOBALS['_wa_last_msg_id'] = (string)($data['messages'][0]['id'] ?? '');
+        return true;
+    }
 
     // 131047 / 131026: outside the 24h window -> an approved template is the
     // only way in. wa_context() tells us WHAT is being sent (otp / bill /
@@ -167,7 +176,11 @@ function meta_wa_send($mobile, $message, $media_url = '') {
         [$ok2, $d2, $err2] = meta_wa_call('POST', "$phoneId/messages", [
             'messaging_product' => 'whatsapp', 'to' => $number, 'type' => 'template', 'template' => $tpl,
         ]);
-        if ($ok2) { api_usage_log('whatsapp', 'meta:tpl:' . $tpl['name'], 0, 1); return true; }
+        if ($ok2) {
+            api_usage_log('whatsapp', 'meta:tpl:' . $tpl['name'], 0, 1);
+            $GLOBALS['_wa_last_msg_id'] = (string)($d2['messages'][0]['id'] ?? '');
+            return true;
+        }
         $GLOBALS['_wa_last_error'] = 'Meta template send failed: ' . $err2;
         return false;
     }

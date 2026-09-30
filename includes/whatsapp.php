@@ -126,7 +126,8 @@ function send_whatsapp($mobile, $message, $media_url = '') {
     $ctxKind = is_array($GLOBALS['_wa_ctx'] ?? null) ? ($GLOBALS['_wa_ctx']['kind'] ?? '') : '';
     $GLOBALS['_wa_ctx'] = []; // the context only ever applies to one send
     if ($sent) {
-        wa_chat_log($mobile, 'out', $ctxKind === 'otp' ? '🔐 [OTP message]' : $message, $p, $media_url);
+        wa_chat_log($mobile, 'out', $ctxKind === 'otp' ? '🔐 [OTP message]' : $message, $p, $media_url,
+                    (string)($GLOBALS['_wa_last_msg_id'] ?? ''));
         return true;
     }
     $GLOBALS['_wa_last_error'] = $errs ? implode(' | ', $errs) : 'No WhatsApp provider is configured (Settings > WhatsApp).';
@@ -136,12 +137,19 @@ function send_whatsapp($mobile, $message, $media_url = '') {
 /** Chat-history log (WhatsApp Inbox). Tolerant of the table not existing
  *  yet (pre-migrate v46). OTP bodies are masked - codes don't belong in a
  *  page other eyes might see. Incoming rows start unread. */
-function wa_chat_log($mobile, $dir, $body, $via = '', $media = '') {
+function wa_chat_log($mobile, $dir, $body, $via = '', $media = '', $msgId = '') {
     try {
         $n = wa_normalize_number($mobile);
         if (strlen($n) < 12) return;
-        q('INSERT INTO wa_chats (mobile, direction, body, media_url, via, is_read) VALUES (?,?,?,?,?,?)',
-          [$n, $dir === 'in' ? 'in' : 'out', mb_substr((string)$body, 0, 4000), $media ?: null, mb_substr($via, 0, 12), $dir === 'in' ? 0 : 1]);
+        // $msgId is the provider's own id for this message. The receipt that
+        // says whether it was delivered, read or FAILED comes back later
+        // carrying that id; without it there is nothing to match, and
+        // "sent" is the last thing the shop ever hears about it.
+        q('INSERT INTO wa_chats (mobile, direction, body, media_url, via, is_read, msg_id, status)
+           VALUES (?,?,?,?,?,?,?,?)',
+          [$n, $dir === 'in' ? 'in' : 'out', mb_substr((string)$body, 0, 4000), $media ?: null,
+           mb_substr($via, 0, 12), $dir === 'in' ? 0 : 1, mb_substr((string)$msgId, 0, 80),
+           $dir === 'in' ? '' : 'sent']);
     } catch (Exception $e) { /* table ships in v46 - never break a send over history */ }
 }
 

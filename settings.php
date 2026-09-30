@@ -59,6 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_whatsapp') {
     // a bulk reminder goes out. Left at 0 it simply shows "not set".
     if (post('wa_cost_per_msg') !== null) set_setting('wa_cost_per_msg', (string)max(0, round((float)post('wa_cost_per_msg'), 4)));
     set_setting('wa_bot_enabled', post('wa_bot_enabled') ? '1' : '0');
+    if (in_array(post('wa_tg_notify'), ['all', 'unanswered', 'off'], true))
+        set_setting('wa_tg_notify', post('wa_tg_notify'));
     set_setting('wa_catalog_enabled', post('wa_catalog_enabled') ? '1' : '0');
     if (post('wa_bot_ai_monthly_cap') !== '') set_setting('wa_bot_ai_monthly_cap', (string)max(0, (int)post('wa_bot_ai_monthly_cap')));
     log_activity('settings_save');
@@ -700,6 +702,16 @@ exit;
     <label class="check-inline" style="display:block;margin-top:6px"><input type="checkbox" name="wa_catalog_enabled" value="1" <?= setting('wa_catalog_enabled', '1') === '1' ? 'checked' : '' ?>> 📚 WhatsApp Catalog menu — "catalog" types it (or taps the welcome button), the whole catalogue opens inside WhatsApp: category list → product + price → 🛒 order button (orders arrive in Web Orders on the website)</label>
     <p class="muted" style="font-size:12.5px;margin:4px 0 0 24px">With the official Meta API connected, real button and list menus go out; otherwise the same menu goes as numbered text (the customer "1" replies by typing a number).</p>
     <div class="form-row cols-2 mt">
+      <div><label>📣 Tell me on Telegram about a customer message
+          <span class="muted" style="font-weight:normal">— an alert for something already answered is what
+          teaches you to stop reading the alerts that matter</span></label>
+        <select name="wa_tg_notify">
+          <?php foreach (['unanswered' => 'Only the ones the bot could not answer (recommended)',
+                          'all' => 'Every customer message',
+                          'off' => 'Nothing — I watch the WhatsApp Inbox'] as $k => $v): ?>
+            <option value="<?= $k ?>" <?= setting('wa_tg_notify', 'unanswered') === $k ? 'selected' : '' ?>><?= e($v) ?></option>
+          <?php endforeach; ?>
+        </select></div>
       <div><label>AI calls / month limit <span class="muted" style="font-weight:normal">(cost brake — most replies use 0 AI; 1500 stays inside Gemini's FREE tier = ₹0)</span></label>
         <input type="number" min="0" name="wa_bot_ai_monthly_cap" value="<?= (int)setting('wa_bot_ai_monthly_cap', '1500') ?>"></div>
       <?php require_once __DIR__ . '/includes/wa_bot.php'; try { list($aiUsed, $aiCap) = wa_bot_ai_usage(); } catch (Exception $e) { $aiUsed = 0; $aiCap = 1500; } ?>

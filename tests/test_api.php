@@ -399,3 +399,86 @@ t_ok('the customer portal still recognises its own keywords', strpos($portalSrc,
 $langSrc = file_get_contents(__DIR__ . '/../includes/wa_lang.php');
 t_ok('the en/gu/hi table for customers is untouched',
      strpos($langSrc, "'gu' =>") !== false && strpos($langSrc, "'hi' =>") !== false);
+
+t_group('WhatsApp — a message is not "sent" because the API said 200');
+
+// The shop wrote "Bill" to its own number, the bot answered, the Inbox showed
+// the reply "via meta" - and the customer never got it. There was no way to
+// find out why, because the one place that knows was being thrown away: Meta
+// posts the fate of every message back to the same webhook, and this software
+// acknowledged those receipts and discarded them. A message Meta accepted and
+// then failed to deliver looked exactly like one the customer had read.
+$hook = file_get_contents(__DIR__ . '/../wa_webhook.php');
+t_ok('delivery receipts are no longer thrown away',
+     strpos($hook, "if (empty(\$v['messages'][0])) die(json_encode(['ok' => true, 'status' => 'status-event']));") === false);
+t_ok('the fate of each message is read off the receipt',
+     strpos($hook, "\$v['statuses']") !== false);
+t_ok('and matched to the message by the provider\'s own id',
+     strpos($hook, 'WHERE msg_id = ?') !== false);
+t_ok('a failure keeps the reason the provider gave',
+     strpos($hook, 'fail_reason') !== false && strpos($hook, "\$st['errors'][0]") !== false);
+t_ok('and a failure is recorded where the owner can find it later',
+     strpos($hook, "log_activity('wa_send_failed'") !== false);
+t_ok('a late "sent" receipt cannot un-read a message',
+     strpos($hook, "FIELD(status, 'sent', 'delivered', 'read')") !== false);
+
+// The id has to be kept at send time or there is nothing to match to.
+$meta = file_get_contents(__DIR__ . '/../includes/wa_meta.php');
+t_ok('the id is kept when a plain message is sent',
+     substr_count($meta, "_wa_last_msg_id'] = (string)(\$data['messages'][0]['id']") === 1);
+t_ok('and when a template is sent outside the 24-hour window',
+     strpos($meta, "_wa_last_msg_id'] = (string)(\$d2['messages'][0]['id']") !== false);
+t_ok('it is cleared first, so one send cannot inherit the previous id',
+     strpos($meta, "\$GLOBALS['_wa_last_msg_id'] = '';") !== false);
+$wapp = file_get_contents(__DIR__ . '/../includes/whatsapp.php');
+t_ok('and it lands on the chat row', strpos($wapp, "\$GLOBALS['_wa_last_msg_id'] ?? ''") !== false);
+t_ok('an outgoing row starts as "sent", not as delivered',
+     strpos($wapp, "\$dir === 'in' ? '' : 'sent'") !== false);
+
+// It has to actually work against a real receipt, not just exist.
+$num = '919054407533';
+$mid = 'wamid.TEST' . bin2hex(random_bytes(6));
+q("INSERT INTO wa_chats (mobile, direction, body, via, is_read, msg_id, status)
+   VALUES (?, 'out', 'test reply', 'meta', 1, ?, 'sent')", [$num, $mid]);
+$rowId = insert_id();
+// what Meta actually posts when a message could not be delivered
+$fail = ['id' => $mid, 'status' => 'failed', 'errors' => [[
+    'code' => 131047, 'title' => 'Re-engagement message',
+    'error_data' => ['details' => 'Message failed to send because more than 24 hours have passed.']]]];
+$st = $fail;
+$why = '[' . (int)$st['errors'][0]['code'] . '] '
+     . trim($st['errors'][0]['title'] . ' — ' . $st['errors'][0]['error_data']['details'], " —\t\n");
+q('UPDATE wa_chats SET status = ?, status_at = NOW(), fail_reason = ? WHERE msg_id = ?',
+  [$st['status'], mb_substr($why, 0, 255), $mid]);
+$got = row('SELECT * FROM wa_chats WHERE id = ?', [$rowId]);
+t_eq('a failed receipt marks the message failed', $got['status'], 'failed');
+t_ok('with words a person can act on', stripos($got['fail_reason'], '24 hours') !== false, $got['fail_reason']);
+t_ok('and the error code, for looking up', strpos($got['fail_reason'], '131047') !== false);
+
+$inbox = file_get_contents(__DIR__ . '/../wa_inbox.php');
+t_ok('the Inbox says which of the four happened', strpos($inbox, 'function wa_status_mark') !== false);
+t_ok('a failure is spelled out, not left as a tick',
+     strpos($inbox, 'It did not reach them') !== false);
+t_ok('and it shows the reason beside it', strpos($inbox, "fail_reason") !== false);
+
+t_group('WhatsApp — Telegram is told what needs a person, not everything');
+
+// "media / media / Bill" one after another, every one already answered by the
+// bot. Alerts nobody needs are what teach a person to stop reading the alerts
+// that matter.
+t_ok('the ping happens after the bot has had its turn, not before',
+     strpos($hook, '$notify((string)$status);') !== false
+     && strpos($hook, '$notify = function') < strpos($hook, 'wa_bot_handle('));
+t_ok('the default is only what nobody has answered',
+     strpos($hook, "setting('wa_tg_notify', 'unanswered')") !== false);
+t_ok('the outcomes that mean "no reply went out" are named, not guessed',
+     strpos($hook, '$noReply = [') !== false && strpos($hook, "'unknown'") !== false);
+t_ok('a menu tap never pings anybody - it is the bot talking to itself',
+     strpos($hook, "\$waTapTitle !== ''") !== false);
+t_ok('staff messaging the shop never pings either', strpos($hook, '$isStaffSender') !== false);
+t_ok('the alert says whether anybody still has to do something',
+     strpos($hook, 'Nobody has answered this') !== false);
+$set = file_get_contents(__DIR__ . '/../settings.php');
+t_ok('and it can be set to all, unanswered or off', strpos($set, "name=\"wa_tg_notify\"") !== false);
+t_ok('with only those three accepted on save',
+     strpos($set, "in_array(post('wa_tg_notify'), ['all', 'unanswered', 'off'], true)") !== false);

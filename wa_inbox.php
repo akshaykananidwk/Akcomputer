@@ -26,6 +26,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reply') {
     redirect('wa_inbox.php?m=' . $to);
 }
 
+/**
+ * What became of one outgoing message.
+ *
+ * "Sent" only ever meant the provider accepted it. The receipt saying
+ * whether it was delivered, read, or failed arrives later - and until this
+ * was kept, a message that failed looked exactly like one that was read.
+ */
+function wa_status_mark(array $x) {
+    $s = (string)($x['status'] ?? '');
+    $when = !empty($x['status_at']) ? ' ' . dmyt($x['status_at']) : '';
+    $m = [
+        'sent'      => ['✓', 'The provider took it — not yet on their phone'],
+        'delivered' => ['✓✓', 'On their phone'],
+        'read'      => ['✓✓ read', 'They opened it'],
+        'failed'    => ['❌ did not arrive', 'It never reached them'],
+    ];
+    if (!isset($m[$s])) return '';
+    return ' · <span title="' . htmlspecialchars($m[$s][1] . $when, ENT_QUOTES) . '">'
+         . $m[$s][0] . '</span>';
+}
+
 $page_title = 'WhatsApp Inbox';
 include __DIR__ . '/includes/header.php';
 
@@ -49,6 +70,8 @@ function wa_inbox_party($mobile) {
 [data-theme="dark"] .wa-out { background: #005c4b; color: #e8edf5; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .wa-out { background: #005c4b; color: #e8edf5; } }
 .wa-meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.wa-fail { font-size: 12px; margin-top: 6px; padding: 6px 8px; border-radius: 8px;
+           background: rgba(220,38,38,.10); color: #b91c1c; }
 .wa-replybar { position: sticky; bottom: calc(var(--bottomnav-h) + 8px); display: flex; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
 .wa-replybar textarea { flex: 1; border: 0; resize: none; background: transparent; color: var(--text); font-size: 15px; min-height: 42px; }
 .wa-replybar textarea:focus { outline: none; box-shadow: none; }
@@ -104,7 +127,12 @@ function wa_inbox_party($mobile) {
     <div class="wa-b <?= $x['direction'] === 'in' ? 'wa-in' : 'wa-out' ?>">
       <?= e($x['body']) ?>
       <?php if ($x['media_url']): ?><div><a href="<?= e($x['media_url']) ?>" target="_blank" rel="noopener">📎 Attachment</a></div><?php endif; ?>
-      <div class="wa-meta"><?= dmyt($x['created_at']) ?><?= $x['direction'] === 'out' && $x['via'] ? ' · via ' . e($x['via']) : '' ?></div>
+      <div class="wa-meta"><?= dmyt($x['created_at']) ?><?= $x['direction'] === 'out' && $x['via'] ? ' · via ' . e($x['via']) : '' ?>
+        <?php if ($x['direction'] === 'out'): ?><?= wa_status_mark($x) ?><?php endif; ?></div>
+      <?php if ($x['direction'] === 'out' && ($x['status'] ?? '') === 'failed'): ?>
+        <div class="wa-fail">❌ <strong>It did not reach them.</strong>
+          <?= e($x['fail_reason'] ?: 'The provider gave no reason.') ?></div>
+      <?php endif; ?>
     </div>
     <?php endforeach; ?>
   </div>
