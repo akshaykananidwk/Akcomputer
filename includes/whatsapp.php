@@ -41,6 +41,57 @@ function wa_interpret_response($resp, $httpCode) {
 function whatsapp_last_error() { return $GLOBALS['_wa_last_error'] ?? ''; }
 
 /** Is the third-party gateway (bulk.akdwk.in style) configured? */
+/**
+ * Is this incoming message from a GROUP (or a status/broadcast)?
+ *
+ * The shop's number sits in a good many WhatsApp groups. Somebody posts a
+ * link in one of them, and the bot answered - privately, to that person, who
+ * had not written to the shop at all. That is the software talking to
+ * strangers in the shop's name.
+ *
+ * The old guard looked for "@g.us" in ONE field, whichever of half a dozen
+ * names happened to be filled in first. Gateways differ: some put the group
+ * in "from" and the person in "participant", others put the PERSON in "from"
+ * and the group in "chatId" or "remoteJid". With the second shape the guard
+ * saw a perfectly ordinary mobile number and let it through.
+ *
+ * So: every field that could hold a chat id is looked at, not the first one
+ * that answers. And "participant"/"author" being filled in AT ALL is taken
+ * as proof on its own - no gateway sets those for a one-to-one chat, because
+ * in a one-to-one chat the sender and the chat are the same thing.
+ *
+ * This fails CLOSED on purpose. Missing a group message costs the shop
+ * nothing; answering one costs it an unsolicited message to a stranger.
+ */
+function wa_is_group(array $p) {
+    // Anything that names a chat, from any gateway we have seen.
+    // Only fields that NAME A CHAT. 'conversation' is deliberately not here:
+    // in several gateways that is the message TEXT, and a customer writing
+    // "mail me at raj@gmail.com - thanks" would have been silently dropped
+    // as a group by a rule looking for an @ and a dash.
+    foreach (['from', 'sender', 'remoteJid', 'remote_jid', 'chatId', 'chat_id', 'to',
+              'jid', 'groupId', 'group_id', 'recipient'] as $k) {
+        $v = $p[$k] ?? '';
+        if (!is_string($v) || $v === '') continue;
+        if (stripos($v, '@g.us') !== false) return true;
+        if (stripos($v, '@broadcast') !== false) return true;          // status / broadcast list
+        // Legacy group jids are digits-digits@server, nothing looser.
+        if (preg_match('/^\d{5,}-\d{5,}@/', $v)) return true;
+    }
+    // A named participant means there is a chat with more than two people in
+    // it - which is the definition of the thing we must not reply to.
+    foreach (['participant', 'author', 'participantJid', 'group_participant'] as $k) {
+        if (trim((string)($p[$k] ?? '')) !== '') return true;
+    }
+    // Some gateways simply say so.
+    foreach (['isGroup', 'is_group', 'isGroupMsg'] as $k) {
+        $v = $p[$k] ?? null;
+        if ($v === true || $v === 1 || $v === '1' || $v === 'true') return true;
+    }
+    if (stripos((string)($p['chatType'] ?? $p['chat_type'] ?? ''), 'group') !== false) return true;
+    return false;
+}
+
 function wa_thirdparty_configured() {
     return setting('wa_api_url', 'https://bulk.akdwk.in/api.php') !== '' && setting('wa_session_id') !== '' && setting('wa_api_key') !== '';
 }

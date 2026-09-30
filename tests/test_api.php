@@ -482,3 +482,53 @@ $set = file_get_contents(__DIR__ . '/../settings.php');
 t_ok('and it can be set to all, unanswered or off', strpos($set, "name=\"wa_tg_notify\"") !== false);
 t_ok('with only those three accepted on save',
      strpos($set, "in_array(post('wa_tg_notify'), ['all', 'unanswered', 'off'], true)") !== false);
+
+t_group('WhatsApp — a group message is never answered');
+
+// The shop's number sits in a good many groups. Somebody posted a link in
+// one, and the bot replied PRIVATELY to them - an unasked-for message to a
+// stranger, sent in the shop's name.
+//
+// The old guard looked for "@g.us" in ONE field, whichever of half a dozen
+// names happened to be filled first. Gateways differ: some put the group in
+// "from" and the person in "participant", others put the PERSON in "from"
+// and the group in "chatId". With that second shape the guard saw an
+// ordinary mobile number and waved it through. That is the shape below.
+t_ok('a group in "from" is a group',
+     wa_is_group(['from' => '120363021234567890@g.us', 'participant' => '919825191744@s.whatsapp.net']));
+t_ok('and so is a group in "chatId" with the PERSON in "from" — the one that leaked',
+     wa_is_group(['from' => '919825191744@s.whatsapp.net', 'chatId' => '120363021234567890@g.us']));
+t_ok('a named participant is proof by itself — a one-to-one chat has none',
+     wa_is_group(['from' => '919825191744', 'participant' => '919825191744@s.whatsapp.net']));
+t_ok('an author is the same thing under another name',
+     wa_is_group(['from' => '919825191744', 'author' => '919825191744@s.whatsapp.net']));
+t_ok('a gateway that simply says so is believed',
+     wa_is_group(['from' => '919825191744', 'isGroup' => true]));
+t_ok('and one that says so in words', wa_is_group(['from' => '919825191744', 'chat_type' => 'GroupChat']));
+t_ok('a legacy group jid is a group',
+     wa_is_group(['from' => '918888888888-1620000000@s.whatsapp.net']));
+t_ok('a status or broadcast is not answered either',
+     wa_is_group(['from' => 'status@broadcast']));
+
+// And it must not swallow real customers.
+t_ok('an ordinary customer still gets through',
+     !wa_is_group(['from' => '919054407533@s.whatsapp.net', 'body' => 'Bill']));
+t_ok('including one on the official Meta shape',
+     !wa_is_group(['from' => '919054407533', 'type' => 'text', 'text' => ['body' => 'Bill']]));
+// 'conversation' is the message TEXT in several gateways, so a rule that
+// looked for an @ and a dash anywhere would have dropped this customer.
+t_ok('a customer writing an email address with a dash is not a group',
+     !wa_is_group(['from' => '919054407533@s.whatsapp.net',
+                   'conversation' => 'mail me at raj@gmail.com - thanks']));
+t_ok('nor is a phone number with dashes in the body',
+     !wa_is_group(['from' => '919054407533@s.whatsapp.net', 'body' => 'call 98765-43210']));
+
+$hook = file_get_contents(__DIR__ . '/../wa_webhook.php');
+t_ok('the webhook asks that one question instead of checking a field itself',
+     strpos($hook, 'wa_is_group($p)') !== false);
+t_ok('the check happens before anything is logged or answered',
+     strpos($hook, 'wa_is_group($p)') < strpos($hook, 'wa_chat_log($mobile'));
+t_ok('and a skipped group is recorded, so it can be seen to be working',
+     strpos($hook, "log_activity('wa_group_skip'") !== false);
+t_ok('the rule is written once', substr_count(file_get_contents(__DIR__ . '/../includes/whatsapp.php'),
+                                              'function wa_is_group') === 1);

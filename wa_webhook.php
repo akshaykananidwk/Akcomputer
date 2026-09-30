@@ -84,8 +84,16 @@ if (isset($p['messages'][0]) && is_array($p['messages'][0])) $p = array_merge($p
 // never react to our own outgoing messages or group chats
 $fromMe = $p['fromMe'] ?? $p['from_me'] ?? $p['self'] ?? false;
 if ($fromMe === true || $fromMe === 'true' || $fromMe === 1 || $fromMe === '1') die(json_encode(['ok' => true, 'status' => 'own-message']));
+// A group message is never answered. The shop's number is in a lot of
+// groups, and the bot was replying PRIVATELY to whoever posted in one of
+// them - an unasked-for message to a stranger, in the shop's name. The whole
+// rule lives in wa_is_group() so there is one place to get it right.
+if (wa_is_group($p)) {
+    log_activity('wa_group_skip', mb_substr('group message ignored: '
+        . (string)($p['from'] ?? $p['chatId'] ?? $p['remoteJid'] ?? '?'), 0, 200));
+    die(json_encode(['ok' => true, 'status' => 'group-skip']));
+}
 $jid = (string)($p['from'] ?? $p['sender'] ?? $p['remoteJid'] ?? $p['chatId'] ?? $p['number'] ?? $p['phone'] ?? $p['mobile'] ?? $p['waId'] ?? '');
-if (strpos($jid, '@g.us') !== false || strpos($jid, '-') !== false && strpos($jid, '@') !== false) die(json_encode(['ok' => true, 'status' => 'group-skip']));
 $mobile = preg_replace('/\D/', '', explode('@', $jid)[0]);
 
 $text = $p['text'] ?? $p['body'] ?? $p['message'] ?? $p['msg'] ?? $p['caption'] ?? $p['content'] ?? '';
