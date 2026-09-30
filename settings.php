@@ -721,6 +721,22 @@ exit;
     <p class="muted" style="font-size:12.5px">💡 Staff/owner numbers (from Staff Users) get the SHOP ASSISTANT: WhatsApp 'sale', 'cash', 'baki', 'stock &lt;item&gt;', 'order', 'visitors' to the shop number — instant answers from the database, zero AI. Type 'help' for the list.</p>
     <button class="btn btn-sm" type="submit">Save</button>
   </form>
+<?php
+// Two WhatsApp numbers is an ordinary setup and an ordinary way to lose
+// every reply: the customer writes to one and the answer goes out from the
+// other, which from their side looks exactly like no answer at all. Replies
+// go back the way they came now, but the owner should still SEE there are two.
+$metaNum = preg_replace('/\D/', '', (string)setting('meta_wa_display_number', ''));
+$gwNum   = preg_replace('/\D/', '', (string)setting('wa_shop_number', ''));
+if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum, -10)): ?>
+  <div class="flash flash-info" style="font-size:13px">
+    <strong>This shop has two WhatsApp numbers.</strong>
+    Official Meta: <strong>+<?= e($metaNum) ?></strong> · Gateway: <strong><?= e($gwNum) ?></strong><br>
+    A reply always goes out from the number the customer wrote to, so the two cannot get crossed any more.
+    But a customer only ever sees the number they messaged — if you advertise one and test on the other,
+    the answer will look like it never came.
+  </div>
+<?php endif; ?>
   <p class="muted mt">Paste this URL in your WhatsApp gateway's (bulk.akdwk.in) <strong>Webhook / incoming message URL</strong> box:</p>
   <p><code style="word-break:break-all;background:var(--bg);padding:8px;border-radius:8px;display:block"><?= e($whUrl) ?></code></p>
   <?php $botLog = [];
@@ -757,7 +773,19 @@ exit;
     <input type="hidden" name="do" value="save_wabot">
     <div><label>Trigger keywords <span class="muted" style="font-weight:normal">(comma separated — any of these always opens the main menu)</span></label>
       <input type="text" name="wa_bot_keywords" value="<?= e(setting('wa_bot_keywords', '')) ?>" placeholder="<?= e(implode(',', array_slice(wa_kw_list(), 0, 12))) ?>,...">
-      <p class="muted" style="font-size:12px">Leave it blank for the default list: hi, hello, menu, start, home, namaste...</p></div>
+      <p class="muted" style="font-size:12px">Leave it blank for the default list: hi, hello, menu, start, home, namaste...</p>
+      <?php /* Typing one word here REPLACES the list, it does not add to it -
+               which is how a shop comes to answer "Hi" while ignoring "Hey",
+               "મેનુ" and "નમસ્તે", without anything on screen saying so. */ ?>
+      <?php $kwNow = wa_kw_list(); ?>
+      <div class="<?= count($kwNow) < 5 ? 'flash flash-error' : 'muted' ?>" style="font-size:12px;margin-top:6px">
+        <?php if (count($kwNow) < 5): ?>
+          <strong>Only <?= count($kwNow) ?> word(s) open the menu right now.</strong>
+          What you type here <strong>replaces</strong> the list — it does not add to it — so every other
+          greeting is ignored in silence. Empty the box to get all of them back.<br>
+        <?php endif; ?>
+        Working now: <?= e(implode(', ', $kwNow)) ?>
+      </div></div>
     <div class="form-row cols-2 mt">
       <div><label>Languages offered to customers</label>
         <?php $langsOn = wa_langs_enabled(); foreach (['en' => 'English', 'gu' => 'Gujarati', 'hi' => 'हिंदी (Hindi)'] as $lc => $ln): ?>

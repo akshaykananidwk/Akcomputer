@@ -650,3 +650,64 @@ t_ok('a failure hidden inside the status still counts as unanswered',
      strpos($hook, "stripos(\$botStatus, 'failed') !== false") !== false);
 t_ok('and the alert says so in as many words',
      strpos($hook, 'FAILED to send') !== false);
+
+t_group('WhatsApp — answer on the number they wrote to');
+
+// The shop has two WhatsApp numbers: the official Meta one and the
+// gateway's. The reply went out by a fixed preference in Settings that had
+// nothing to do with which number the message arrived on - so a customer who
+// wrote to the Meta number was answered from the gateway's number: a
+// different chat, on a different number, which from their side is
+// indistinguishable from no answer at all.
+$wapp = file_get_contents(__DIR__ . '/../includes/whatsapp.php');
+t_ok('there is a way to say which way a reply must go', strpos($wapp, 'function wa_reply_via') !== false);
+t_ok('and send_whatsapp honours it over the setting',
+     strpos($wapp, "\$answer !== '') \$order = [\$answer,") !== false);
+t_ok('the other provider stays as the fallback it always was',
+     strpos($wapp, "\$answer === 'meta' ? 'thirdparty' : 'meta'") !== false);
+
+$hook = file_get_contents(__DIR__ . '/../wa_webhook.php');
+t_ok('the webhook works out which number it came to',
+     strpos($hook, "\$inVia = 'meta'") !== false);
+t_ok('and says so before the bot answers anything',
+     strpos($hook, 'wa_reply_via($inVia') < strpos($hook, 'wa_bot_handle('));
+t_ok('the incoming row remembers it too, so the Inbox shows both sides',
+     strpos($hook, "\$inVia ?: 'whatsapp'") !== false);
+
+// It must actually change the order, and only for a reply.
+wa_reply_via('');
+$fixed = setting('wa_provider_order', 'thirdparty_first');
+t_ok('with nothing set, the shop\'s own order stands',
+     (string)($GLOBALS['_wa_reply_via'] ?? '') === '');
+wa_reply_via('meta');
+t_eq('answering a Meta message puts Meta first', $GLOBALS['_wa_reply_via'], 'meta');
+wa_reply_via('thirdparty');
+t_eq('and a gateway message puts the gateway first', $GLOBALS['_wa_reply_via'], 'thirdparty');
+wa_reply_via('nonsense');
+t_eq('anything else is ignored rather than trusted', $GLOBALS['_wa_reply_via'], '');
+
+// A bill, a reminder or a campaign is not a reply to anything, so it must
+// keep following the setting.
+t_ok('a message the shop starts has no conversation to answer',
+     strpos($wapp, 'has no') !== false || strpos($wapp, 'of its own accord') !== false);
+
+t_group('WhatsApp — the trigger list says what it is actually doing');
+
+// The keyword box REPLACES the list rather than adding to it, so a shop that
+// typed "Hi" into it was silently ignoring "Hey", "મેનુ" and "નમસ્તે" - and
+// nothing on the screen said so.
+$was = setting('wa_bot_keywords');
+set_setting('wa_bot_keywords', 'Hi');
+t_eq('one word in the box means one word works', count(wa_kw_list()), 1);
+t_ok('so another perfectly ordinary greeting is ignored', !wa_is_trigger('Hey'));
+t_ok('and so is every Gujarati one', !wa_is_trigger('નમસ્તે'));
+set_setting('wa_bot_keywords', '');
+t_ok('emptying the box brings all of them back', count(wa_kw_list()) > 20
+     && wa_is_trigger('Hey') && wa_is_trigger('નમસ્તે'));
+set_setting('wa_bot_keywords', $was);
+$set = file_get_contents(__DIR__ . '/../settings.php');
+t_ok('the screen shows which words are working right now', strpos($set, 'Working now:') !== false);
+t_ok('and warns when the list has been cut down to almost nothing',
+     strpos($set, 'replaces</strong> the list') !== false);
+t_ok('the two-numbers trap is spelled out where both numbers are shown',
+     strpos($set, 'This shop has two WhatsApp numbers') !== false);

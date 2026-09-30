@@ -100,6 +100,24 @@ function wa_is_group(array $p) {
  * guessing. It used to record a tick for every reply it COMPOSED, while
  * throwing away the boolean that said whether the send worked.
  */
+/**
+ * Answer on the number they wrote to.
+ *
+ * A shop can have two WhatsApp numbers - the official Meta one and the
+ * gateway's - and the reply used to go out by a fixed preference that had
+ * nothing to do with which one the message arrived on. A customer who wrote
+ * to the Meta number got the answer from the gateway's number: a different
+ * chat, on a different number, which from their side is indistinguishable
+ * from no answer at all. That was weeks of "the bot doesn't reply".
+ *
+ * Set by the incoming webhook for the length of that request only. Anything
+ * the shop sends of its own accord - a bill, a reminder, a campaign - has no
+ * conversation to answer and keeps following the order in Settings.
+ */
+function wa_reply_via($p) {
+    $GLOBALS['_wa_reply_via'] = in_array($p, ['meta', 'thirdparty'], true) ? $p : '';
+}
+
 function wa_mark_send($ok, $err = '') {
     $GLOBALS['_wa_send_ok'] = (bool)$ok;
     $GLOBALS['_wa_send_err'] = (string)$err;
@@ -176,6 +194,10 @@ function send_whatsapp($mobile, $message, $media_url = '') {
     require_once __DIR__ . '/wa_meta.php';
     $order = setting('wa_provider_order', 'thirdparty_first') === 'meta_first'
         ? ['meta', 'thirdparty'] : ['thirdparty', 'meta'];
+    // Replying to a message that just came in? Answer the number it came to,
+    // and keep the other as the fallback it always was.
+    $answer = (string)($GLOBALS['_wa_reply_via'] ?? '');
+    if ($answer !== '') $order = [$answer, $answer === 'meta' ? 'thirdparty' : 'meta'];
     $errs = [];
     $sent = false;
     foreach ($order as $p) {

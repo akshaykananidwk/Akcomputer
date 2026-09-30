@@ -34,6 +34,17 @@ if (!is_array($p)) $p = $_POST;
 // Official Meta Cloud API payload: unwrap entry[0].changes[0].value so the
 // generic parsing below sees the same shape the gateways send. Delivery/read
 // receipts (statuses-only events) are ACKed and ignored.
+// WHICH of the shop's numbers did this arrive on?
+//
+// The shop has two WhatsApp numbers - the official Meta one and the
+// gateway's - and the reply used to go out by a fixed preference that had
+// nothing to do with which one the customer wrote to. So a customer who
+// messaged the Meta number got the answer from the gateway's number: a
+// different chat, on a different number, which to them looks exactly like
+// no answer at all. Answer on the number they wrote to.
+$inVia = '';
+if (isset($p['object'], $p['entry'][0]['changes'][0]['value'])) $inVia = 'meta';
+
 if (isset($p['object'], $p['entry'][0]['changes'][0]['value']) && is_array($p['entry'][0]['changes'][0]['value'])) {
     $v = $p['entry'][0]['changes'][0]['value'];
 
@@ -159,9 +170,12 @@ if ($text === '' && !$jpeg && $isAudio && $mobile !== '') {
 
 if ($mobile === '' || ($text === '' && !$jpeg && !$isAudio)) die(json_encode(['ok' => true, 'status' => 'nothing-to-do']));
 
+// Everything this request sends now goes back the way it came.
+wa_reply_via($inVia ?: 'thirdparty');
+
 // record into the Inbox + ping the admins on Telegram (customers only -
 // staff already chat with the shop assistant all day)
-wa_chat_log($mobile, 'in', $waTapTitle !== '' ? '👆 ' . $waTapTitle : ($text !== '' ? $text : ($jpeg ? '📷 [photo]' : '🎙 [voice message]')), 'whatsapp', preg_match('#^https?://#i', $mediaUrl) ? $mediaUrl : '');
+wa_chat_log($mobile, 'in', $waTapTitle !== '' ? '👆 ' . $waTapTitle : ($text !== '' ? $text : ($jpeg ? '📷 [photo]' : '🎙 [voice message]')), $inVia ?: 'whatsapp', preg_match('#^https?://#i', $mediaUrl) ? $mediaUrl : '');
 $isStaffSender = (bool)row("SELECT id FROM users WHERE is_active = 1 AND mobile <> ''
                             AND ? LIKE CONCAT('%', RIGHT(REPLACE(REPLACE(mobile, '+', ''), ' ', ''), 10))", [$mobile]);
 

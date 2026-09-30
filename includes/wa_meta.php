@@ -271,6 +271,10 @@ function meta_wa_full_sync() {
         set_setting('meta_sync_at', date('Y-m-d H:i:s'));
         return $R; // without a token everything after this simply fails
     }
+    // Kept, so the Settings screen can point out when the shop's two
+    // WhatsApp numbers are different ones - which is how a customer comes to
+    // write to one and be answered from the other.
+    if (!empty($ph['display_phone_number'])) set_setting('meta_wa_display_number', (string)$ph['display_phone_number']);
     $rowf('📱 Phone Number', 'ok', ($ph['display_phone_number'] ?? '') . ' · ' . ($ph['verified_name'] ?? '') . ' · Quality: ' . ($ph['quality_rating'] ?? '?'));
 
     // ---- 2. webhook: the app must be subscribed to the WABA (auto-fix) ----
