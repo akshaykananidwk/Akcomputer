@@ -608,13 +608,13 @@ t_ok('voice_can_call() defers to the message rules instead of copying them',
 // then dies - the top of the screen looks fine, so it is easy to miss. This
 // caught exactly that when the hand-recorded clip system was replaced.
 $defined = [];
-foreach (['voice.php', 'voice_in.php'] as $mod) {
+foreach (['voice.php', 'voice_in.php', 'voice_talk.php'] as $mod) {
     preg_match_all('/^function (voice_\w+)\s*\(/m', file_get_contents(__DIR__ . '/../includes/' . $mod), $m);
     foreach ($m[1] as $fn) $defined[$fn] = true;
 }
 $called = [];
 foreach (array_merge(glob(__DIR__ . '/../*.php'), glob(__DIR__ . '/../includes/*.php')) as $f) {
-    if (in_array(basename($f), ['voice.php', 'voice_in.php'], true)) continue;
+    if (in_array(basename($f), ['voice.php', 'voice_in.php', 'voice_talk.php'], true)) continue;
     $body = file_get_contents($f);
     // A page may also define a helper of its own - a screen-only one that has
     // no business in the shared module. Those exist too.
@@ -1345,8 +1345,13 @@ foreach (['voice_calls.php', 'voice_setup.php'] as $f) {
 $rec = file_get_contents(__DIR__ . '/../voice_rec.php');
 t_ok('the recording page is behind a permission, not public',
      strpos($rec, "require_perm('payments.view')") !== false);
-t_ok('the fetch carries the account headers the browser cannot',
-     strpos($rec, 'X-Auth-ID: ') !== false && strpos($rec, 'X-Auth-Token: ') !== false);
+t_ok('the player asks through the one function that knows how',
+     strpos($rec, 'voice_fetch_recording(') !== false);
+$vf = file_get_contents(__DIR__ . '/../includes/voice.php');
+t_ok('and that fetch carries the account headers the browser cannot',
+     strpos($vf, 'X-Auth-ID: ') !== false && strpos($vf, 'X-Auth-Token: ') !== false);
+t_ok('the fetch is written once, for the player and for the listening call',
+     substr_count($vf, 'function voice_fetch_recording') === 1);
 t_ok('a call with no recording is a plain 404, not an error page',
      strpos($rec, 'http_response_code(404)') !== false);
 t_ok('a provider failure says so, and says it may not be ready yet',
@@ -1520,6 +1525,154 @@ t_ok('the back rule is written once', substr_count($coll, 'function coll_back_to
 
 set_setting('voice_enabled', $wasOn); set_setting('vobiz_auth_id', $wasId);
 set_setting('vobiz_auth_token', $wasTok); set_setting('vobiz_caller_id', $wasCid);
+
+t_group('Voice — the call talks, and the AI only listens');
+
+// The owner asked for a conversation: greet by name, ask how they are, ask
+// politely when the payment will come, and understand the spoken answer. The
+// division of labour is the whole design and these tests are about its edges.
+require_once __DIR__ . '/../includes/voice_talk.php';
+$wasTalk = setting('voice_talk'); $wasMaxD = setting('voice_talk_max_days');
+$wasTurns = setting('voice_talk_turns');
+set_setting('voice_talk_max_days', '30'); set_setting('voice_talk_turns', '2');
+$TODAY = strtotime('today 11:00');
+
+// ---- ordinary code decides, not the model ----
+$soon = date('Y-m-d', strtotime('+2 days', $TODAY));
+$d = voice_talk_decide(['intent' => 'promise', 'date' => $soon, 'said' => 'પરમ દિવસે'], 1, $TODAY);
+t_eq('a date they actually said becomes a promise', $d['response'], 'promise');
+t_eq('and it is the date they said', $d['date'], $soon);
+t_eq('the call repeats the day back to them', $d['day'], 'day2');
+
+$far = date('Y-m-d', strtotime('+400 days', $TODAY));
+$dFar = voice_talk_decide(['intent' => 'promise', 'date' => $far, 'said' => 'x'], 1, $TODAY);
+t_eq('a date nobody would mean is NOT written down', $dFar['response'], '');
+t_ok('the call asks again instead', $dFar['again']);
+$dPast = voice_talk_decide(['intent' => 'promise', 'date' => date('Y-m-d', strtotime('-5 days', $TODAY)),
+                            'said' => 'x'], 1, $TODAY);
+t_eq('a date in the past is taken as today, not as a promise to time-travel',
+     $dPast['date'], date('Y-m-d', $TODAY));
+// strtotime() reads "next tuesday" quite happily, so a range check alone let
+// the literal words through into a DATE column. The shape is checked in the
+// decider too, not only where the model's answer first arrives.
+foreach (['next tuesday', '2026-13-45', '2026-02-30', 'tomorrow'] as $junk) {
+    $dJunk = voice_talk_decide(['intent' => 'promise', 'date' => $junk, 'said' => 'x'], 1, $TODAY);
+    t_eq('"' . $junk . '" is not a date and is not written down', $dJunk['response'], '');
+}
+$dNoDate = voice_talk_decide(['intent' => 'promise', 'date' => '', 'said' => 'હા હા આપી દઈશ'], 1, $TODAY);
+t_eq('"yes I will pay" with no date is not a promise either', $dNoDate['response'], '');
+
+t_eq('already paid is heard as that', voice_talk_decide(['intent' => 'paid', 'date' => '', 'said' => ''], 1, $TODAY)['response'], 'paid');
+t_eq('no money is heard as no', voice_talk_decide(['intent' => 'no_money', 'date' => '', 'said' => ''], 1, $TODAY)['response'], 'no');
+t_eq('a wrong number is heard as that', voice_talk_decide(['intent' => 'wrong_person', 'date' => '', 'said' => ''], 1, $TODAY)['response'], 'wrong');
+
+// It asks again, but not forever.
+$u1 = voice_talk_decide(['intent' => 'unclear', 'date' => '', 'said' => ''], 1, $TODAY);
+t_ok('an unclear answer is asked again', $u1['again']);
+$u2 = voice_talk_decide(['intent' => 'unclear', 'date' => '', 'said' => ''], 2, $TODAY);
+t_ok('but not a third time', !$u2['again']);
+t_eq('it ends politely instead', $u2['reply'], 'talk_giveup');
+
+// ---- the promise reaches the ledger the ordinary way ----
+$pidT = t_party('TEST_TALK_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500033' WHERE id = ?", [$pidT]);
+t_sale($pidT, 4200, 0, date('Y-m-d', strtotime('-30 days')), date('Y-m-d', strtotime('-10 days')));
+$callT = ['id' => 0, 'party_id' => $pidT, 'amount' => 4200, 'lang' => 'gu', 'talk_turns' => 0];
+q("INSERT INTO voice_calls (party_id, mobile, amount, lang, token, status, direction)
+   VALUES (?, '9876500033', 4200, 'gu', ?, 'answered', 'out')", [$pidT, bin2hex(random_bytes(20))]);
+$callT['id'] = insert_id();
+$dOk = voice_talk_decide(['intent' => 'promise', 'date' => $soon, 'said' => 'પરમ દિવસે આપી દઈશ'], 1, $TODAY);
+voice_talk_apply($callT, ['intent' => 'promise', 'said' => 'પરમ દિવસે આપી દઈશ'], $dOk);
+$ev = row("SELECT * FROM collection_events WHERE party_id = ? AND event_type = 'promise' ORDER BY id DESC LIMIT 1", [$pidT]);
+t_ok('the promise is written into the ledger history', (bool)$ev);
+t_eq('with the date they said', substr((string)$ev['due_date'], 0, 10), $soon);
+t_ok('and their own words beside it', strpos((string)$ev['note'], 'આપી દઈશ') !== false, (string)$ev['note']);
+t_ok('it goes in the ordinary way, so the collection screen sees it',
+     strpos(file_get_contents(__DIR__ . '/../includes/voice_talk.php'), "coll_log(\$pid, 'promise'") !== false);
+$rowT = row('SELECT * FROM voice_calls WHERE id = ?', [$callT['id']]);
+t_eq('the call row keeps what was heard', $rowT['heard'], 'પરમ દિવસે આપી દઈશ');
+t_eq('and the date it became', substr((string)$rowT['promise_date'], 0, 10), $soon);
+// The very promise it just made must now stop the next call going out.
+$gT = voice_can_call($pidT, null, $NOON);
+t_eq('and that promise now protects them from being rung again', $gT['ok'], false);
+t_ok('for the reason they gave on the phone', stripos($gT['why'], 'promised') !== false, $gT['why']);
+
+// The re-ask must count UP. The call row was loaded before this turn was
+// written to it, so its own count is one behind; asking again with the same
+// turn number judged the next answer as if it were the first, and an unclear
+// customer would have been asked again for as long as they stayed on the line.
+$callLoop = ['id' => 0, 'party_id' => 0, 'amount' => 1, 'lang' => 'en',
+             'token' => str_repeat('a', 40), 'talk_turns' => 0];
+$again1 = voice_talk_reply_xml($callLoop, voice_talk_decide(['intent' => 'unclear', 'date' => '', 'said' => ''], 1, $TODAY), 1);
+t_ok('asking again moves to the next turn', strpos($again1, 'turn=2') !== false, $again1);
+t_ok('and not back to the first', strpos($again1, 'turn=1') === false);
+$again2 = voice_talk_reply_xml($callLoop, voice_talk_decide(['intent' => 'unclear', 'date' => '', 'said' => ''], 2, $TODAY), 2);
+t_ok('so the conversation ends instead of looping', strpos($again2, '<Record') === false, $again2);
+
+// ---- the model is told as little as possible ----
+$src = file_get_contents(__DIR__ . '/../includes/voice_talk.php');
+$prompt = substr($src, strpos($src, '$prompt = "This is a short phone recording'),
+                 strpos($src, 'list($text, $err) = gemini_generate') - strpos($src, '$prompt = "This is a short phone recording'));
+foreach (['name', 'mobile', 'amount', 'balance', 'outstanding'] as $leak)
+    t_ok('the recording goes out without the customer\'s ' . $leak,
+         stripos($prompt, '$' . $leak) === false && stripos($prompt, '{' . $leak . '}') === false);
+t_ok('it is given today\'s date, which is all it needs to work out "કાલે"',
+     strpos($prompt, '$today') !== false);
+
+// ---- the model never speaks ----
+t_ok('every line is one of the shop\'s own, looked up by key',
+     strpos($src, 'function voice_talk_say($key, $lang)') !== false);
+t_ok('nothing the model returns is ever spoken',
+     strpos($src, "voice_xml_speak(\$ai") === false && strpos($src, "voice_xml_speak(\$j") === false);
+t_ok('and what it returns is narrowed to three fields before going further',
+     strpos($src, "in_array(\$intent, ['promise', 'paid', 'no_money', 'wrong_person', 'refuse', 'unclear']") !== false);
+t_ok('a date that is not a date is thrown away at the door',
+     strpos($src, "preg_match('/^\\d{4}-\\d{2}-\\d{2}\$/', \$date)") !== false);
+
+// ---- nobody waits in silence ----
+t_ok('the sentences are made before the phone rings, never during',
+     strpos($src, 'voice_say_live(') !== false && strpos($src, 'voice_say_now(') === false);
+t_ok('a conversation does not start unless every sentence is ready',
+     strpos($src, 'function voice_talk_ready') !== false);
+set_setting('voice_talk', '1');
+t_ok('and "ready" means ready in the language the call speaks',
+     voice_talk_ready('gu') === false || voice_talk_voice_status('gu')['ready']);
+$ep = file_get_contents(__DIR__ . '/../voice_talk.php');
+t_ok('every failure on the line ends in a sentence, not silence',
+     substr_count($ep, '$giveUp(') >= 3);
+t_ok('the listening runs on a short leash', strpos($ep, 'voice_talk_listen($audio, $mime, $call[\'lang\'], 7)') !== false);
+t_ok('and the fetch on a shorter one', strpos($ep, 'voice_fetch_recording($recUrl, 5)') !== false);
+
+// ---- the endpoint is as guarded as the others ----
+t_ok('the endpoint needs the per-call token', strpos($ep, "voice_call_by_token(get('t'))") !== false);
+t_ok('an expired token gets silence, not an explanation',
+     strpos($ep, 'voice_token_fresh($call)') !== false);
+t_ok('and an incoming call cannot be pushed through it',
+     strpos($ep, "(\$call['direction'] ?? 'out') !== 'out'") !== false);
+t_ok('the phone network is exempt from the CSRF check, like the others',
+     strpos(file_get_contents(__DIR__ . '/../includes/helpers.php'), "'voice_talk.php'") !== false);
+
+// ---- a bill cannot run away ----
+$wasCap = setting('voice_talk_month_cap'); $wasCnt = setting('voice_talk_count');
+set_setting('voice_talk_month', date('Y-m'));
+set_setting('voice_talk_month_cap', '2'); set_setting('voice_talk_count', '2');
+list($none, $capErr) = voice_talk_listen('x', 'audio/mpeg', 'gu');
+t_eq('past the monthly listening limit nothing is sent', $none, null);
+t_ok('and it says why', stripos((string)$capErr, 'limit') !== false, (string)$capErr);
+set_setting('voice_talk_month_cap', $wasCap); set_setting('voice_talk_count', $wasCnt);
+
+// ---- the wording is the shop's, here as everywhere ----
+t_ok('the conversation sentences can be edited like any other',
+     isset(voice_in_defaults('gu')['talk_ask']));
+voice_lines_save('gu', ['talk_ask' => 'સાહેબ, પેમેન્ટ ક્યારે મળશે?']);
+t_eq('and an edit is what the call asks', voice_talk_line('talk_ask', 'gu'), 'સાહેબ, પેમેન્ટ ક્યારે મળશે?');
+voice_lines_save('gu', []);
+t_ok('the editing screen lists them', strpos(file_get_contents(__DIR__ . '/../voice_words.php'), 'talk_ask') !== false);
+t_ok('the day is a fixed clip, not a date read out — a date would be a new recording every day',
+     count(voice_talk_day_words('gu')) <= 8 && strpos(implode(' ', voice_talk_day_words('gu')), '{') === false);
+
+set_setting('voice_talk', $wasTalk); set_setting('voice_talk_max_days', $wasMaxD);
+set_setting('voice_talk_turns', $wasTurns);
 
 t_group('Voice — the shop decides what the phone says');
 

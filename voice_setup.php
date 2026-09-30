@@ -70,6 +70,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('voice_setup.php#hear');
     }
 
+    if (post('do') === 'make_talk_voice') {
+        $r = voice_talk_pregenerate(setting('voice_lang', 'gu'));
+        flash($r['ok'] ? '🗣 The conversation can now be spoken — ' . (int)$r['made'] . ' new line(s) made.'
+                       : (int)$r['failed'] . ' line(s) could not be made: ' . $r['error'],
+              $r['ok'] ? 'success' : 'error');
+        redirect('voice_setup.php');
+    }
+
+    if (post('do') === 'save_talk') {
+        foreach (['voice_talk_turns', 'voice_talk_max_days', 'voice_talk_secs', 'voice_talk_month_cap'] as $k)
+            set_setting($k, (string)max(1, (int)post($k)));
+        set_setting('voice_talk', post('voice_talk') ? '1' : '0');
+        log_activity('voice_talk_settings', 'conversation settings saved');
+        flash('Saved.');
+        redirect('voice_setup.php');
+    }
+
     if (post('do') === 'make_greetings') {
         $r = voice_in_greet_make();
         flash($r['failed'] ? $r['made'] . ' made, then stopped: ' . $r['error']
@@ -706,6 +723,79 @@ include __DIR__ . '/includes/header.php';
   </details>
 </div>
 
+<?php $talkLang = setting('voice_lang', 'gu'); $talkV = voice_talk_voice_status($talkLang);
+      $talkUse = voice_talk_usage(); ?>
+<div class="card">
+  <h3>💬 Talk to them, instead of reading at them</h3>
+  <p class="muted" style="font-size:13px">
+    With this on, the reminder call greets the customer by name, asks how they are, and then asks
+    <em>“<?= e(voice_talk_line('talk_ask', $talkLang)) ?>”</em> — and <strong>listens to the answer</strong>.
+    “કાલે”, “આવતા સોમવારે”, “પૈસા ભરી દીધા છે” are all understood, and a date becomes a promise in the
+    collection screen exactly as if you had typed it. Change any of the wording on
+    <a href="voice_words.php">What the Phone Says</a>.
+  </p>
+  <div class="flash flash-info" style="font-size:13px">
+    <strong>What the AI does, and what it does not.</strong><br>
+    It only <strong>listens</strong>. Every word the customer hears is one of your own sentences, in your own
+    voice — the AI never makes up a line, never says an amount, and never offers anything.
+    The date it thinks it heard is checked by ordinary rules before anything is written down: a real date, not
+    in the past, and no further out than <?= (int)voice_talk_max_days() ?> days. It is told the recording and
+    today's date — not the name, not the number, not what they owe.
+    If it fails or is slow, the call falls back to the old “press 1 for yes” question.
+  </div>
+
+  <?php if (!voice_tts_enabled()): ?>
+    <div class="flash flash-error">This needs the Gemini key — see step 2 above.</div>
+  <?php elseif (!voice_ivr_on()): ?>
+    <div class="flash flash-error">Switch on “Ask &ldquo;will you pay today?&rdquo;” in step 5 first — the
+      conversation replaces that question, and without it the call has nothing to ask.</div>
+  <?php elseif (!$talkV['ready']): ?>
+    <div class="flash flash-error">
+      <?= (int)$talkV['total'] - (int)$talkV['done'] ?> of <?= (int)$talkV['total'] ?> sentences have no voice
+      made yet. <strong>Until every one is made the conversation does not start at all</strong> — a call that
+      opens a conversation and then cannot say “I did not catch that” is worse than one that never opened it.
+    </div>
+  <?php else: ?>
+    <div class="flash flash-info">✅ All <?= (int)$talkV['total'] ?> sentences are ready in
+      <?= e($langs[$talkLang] ?? $talkLang) ?>. Listened <?= (int)$talkUse['used'] ?> of
+      <?= (int)$talkUse['cap'] ?> times this month.</div>
+  <?php endif; ?>
+
+  <?php if (can('settings.edit')): ?>
+  <?php if (voice_tts_enabled() && !$talkV['ready']): ?>
+  <form method="post" class="mb">
+    <?= csrf_field() ?><input type="hidden" name="do" value="make_talk_voice">
+    <button class="btn btn-success" type="submit">🔊 Make the conversation speak
+      <?= e($langs[$talkLang] ?? $talkLang) ?></button>
+    <span class="muted" style="font-size:12px"> Do this again whenever you change the wording.</span>
+  </form>
+  <?php endif; ?>
+  <form method="post">
+    <?= csrf_field() ?><input type="hidden" name="do" value="save_talk">
+    <div class="grid-2">
+      <label>How many times to ask again if the answer is unclear
+        <input name="voice_talk_turns" type="number" min="1" max="4" value="<?= voice_talk_turns() ?>"></label>
+      <label>How long they may speak (seconds)
+        <input name="voice_talk_secs" type="number" min="3" max="20" value="<?= voice_talk_secs() ?>"></label>
+      <label>A promised date further out than this is not accepted (days)
+        <input name="voice_talk_max_days" type="number" min="1" max="365" value="<?= voice_talk_max_days() ?>">
+        <span class="muted" style="font-size:11px">Past this the call simply asks again instead of writing down
+          a date nobody meant.</span></label>
+      <label>Most answers listened to in a month
+        <input name="voice_talk_month_cap" type="number" min="1" value="<?= (int)$talkUse['cap'] ?>">
+        <span class="muted" style="font-size:11px">Past this the call goes back to the keypad question rather
+          than run up a bill.</span></label>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" name="voice_talk" value="1" <?= (int)setting('voice_talk', 0) === 1 ? 'checked' : '' ?>>
+        Talk to the customer instead of reading at them</label>
+    </div>
+    <button class="btn btn-success mt" type="submit">Save</button>
+    <span class="muted" style="font-size:12px"> Ring your own phone (step 4) and have the conversation
+      yourself before a customer does.</span>
+  </form>
+  <?php endif; ?>
+</div>
+
 <?php /* ================= reference, opened when wanted ================= */ ?>
 <div class="card">
   <h3>🕘 Last 20 calls</h3>
@@ -734,6 +824,16 @@ include __DIR__ . '/includes/header.php';
             <?php endif; ?>
           <?php else: ?>
             💰 ₹<?= money($r['amount']) ?>
+            <?php if (!empty($r['heard'])): ?>
+              <br><span class="muted" style="font-size:11px">🗣 “<?= e($r['heard']) ?>”</span>
+            <?php endif; ?>
+            <?php if (!empty($r['promise_date'])): ?>
+              <br><span class="badge badge-ok" style="font-size:10px">📅 said <?= e(dmy($r['promise_date'])) ?></span>
+            <?php elseif ($r['heard_intent'] === 'paid'): ?>
+              <br><span class="badge badge-warn" style="font-size:10px">says already paid</span>
+            <?php elseif ($r['heard_intent'] === 'wrong_person'): ?>
+              <br><span class="badge badge-bad" style="font-size:10px">wrong number</span>
+            <?php endif; ?>
             <?php if ($r['response'] === 'yes'): ?><br><span class="badge badge-ok" style="font-size:10px">✅ Yes — today</span>
             <?php elseif ($r['response'] === 'no'): ?><br><span class="badge badge-bad" style="font-size:10px">❌ No</span>
             <?php elseif ($r['response'] === 'none'): ?><br><span class="muted" style="font-size:11px">no key pressed</span><?php endif; ?>

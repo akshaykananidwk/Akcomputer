@@ -1117,6 +1117,19 @@ function voice_answer_xml($call) {
         ? voice_xml_play(voice_public_url('uploads/voice/tts/' . $call['audio_file']))
         : voice_xml_speak($call['script'] ?: voice_script($party['name'] ?? '', (float)$call['amount'], 'en'));
 
+    // A conversation, when the shop has switched it on: ask how they are,
+    // ask when the payment will come, and listen to the answer. Everything
+    // it can say was made before the phone rang. If the wording is not ready
+    // - a language switched, the voice never made - it is NOT started, and
+    // the keypad question below runs instead: half a conversation in the
+    // wrong language is worse than a plain question.
+    if (voice_talk_ready($call['lang']) && (int)$call['question_asked'] === 1) {
+        $xml .= voice_talk_say('talk_how', $call['lang']);
+        $xml .= voice_talk_ask_xml($call, 1);
+        $xml .= "</Response>\n";
+        return $xml;
+    }
+
     if (voice_ivr_on() && (int)$call['question_asked'] === 1) {
         // cached-only: this runs with the customer already on the line
         $plan = voice_audio_plan($party['name'] ?? '', (float)$call['amount'], $call['lang'], $promise, true);
@@ -1134,6 +1147,44 @@ function voice_answer_xml($call) {
     }
     $xml .= "</Response>\n";
     return $xml;
+}
+
+/**
+ * Fetch a recording from the provider.
+ *
+ * It sits behind the account's own credentials - a browser cannot reach it,
+ * which is the whole reason voice_rec.php exists - so the one way of asking
+ * for it lives here, used both by the player and by the call that has to
+ * listen to the customer's answer while they are still on the line. That is
+ * why the timeout is an argument: sixty seconds is fine for a download the
+ * owner asked for, and would be a dead phone line for the other.
+ *
+ * Returns [bytes|null, mime, error].
+ */
+function voice_fetch_recording($url, $timeout = 60) {
+    $url = trim((string)$url);
+    if ($url === '') return [null, '', 'no recording'];
+    if (!function_exists('curl_init')) return [null, '', 'The server does not have curl.'];
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => max(2, (int)$timeout),
+        // Harmless if the recording turns out to sit on plain storage that
+        // ignores them; required if it does not.
+        CURLOPT_HTTPHEADER => ['X-Auth-ID: ' . setting('vobiz_auth_id', ''),
+                               'X-Auth-Token: ' . setting('vobiz_auth_token', '')],
+    ]);
+    $audio = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $mime = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+    if ($audio === false || $code < 200 || $code >= 300 || strlen((string)$audio) < 512)
+        return [null, '', 'HTTP ' . $code . ($cerr ? ' ' . $cerr : '')];
+    $mime = strtok($mime, ';') ?: '';
+    if (strpos($mime, 'audio') !== 0) $mime = 'audio/mpeg';
+    return [$audio, $mime, ''];
 }
 
 function voice_xml_play($url) { return '  <Play>' . htmlspecialchars($url, ENT_XML1) . "</Play>\n"; }
@@ -1205,3 +1256,13 @@ function voice_balance_check() {
     set_setting('vobiz_balance_alert_on', today());
     return 'low balance — owner told';
 }
+
+// Loaded LAST, on purpose.
+//
+// The talking call is an extension of this module: it uses voice_say_live(),
+// voice_xml_play() and the rest, while voice_answer_xml() above asks it
+// whether a conversation is ready to start. Required at the top, its own
+// require_once of this file would come back before a single function here
+// was defined. At the bottom, everything above exists first and the cycle
+// resolves cleanly.
+require_once __DIR__ . '/voice_talk.php';

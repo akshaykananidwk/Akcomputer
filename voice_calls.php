@@ -126,7 +126,16 @@ if ($waiting && !$show): ?>
         </td>
         <td>
           <?= e(voice_status_label($r['status'])) ?>
-          <?php if ($r['response'] === 'yes'): ?><br><span class="badge badge-ok" style="font-size:10px">✅ said yes</span>
+          <?php if (!empty($r['heard'])): ?>
+            <br><span class="muted" style="font-size:11px">🗣 “<?= e($r['heard']) ?>”</span>
+          <?php endif; ?>
+          <?php if (!empty($r['promise_date'])): ?>
+            <br><span class="badge badge-ok" style="font-size:10px">📅 said <?= e(dmy($r['promise_date'])) ?></span>
+          <?php elseif (($r['heard_intent'] ?? '') === 'paid'): ?>
+            <br><span class="badge badge-warn" style="font-size:10px">says already paid</span>
+          <?php elseif (($r['heard_intent'] ?? '') === 'wrong_person'): ?>
+            <br><span class="badge badge-bad" style="font-size:10px">wrong number</span>
+          <?php elseif ($r['response'] === 'yes'): ?><br><span class="badge badge-ok" style="font-size:10px">✅ said yes</span>
           <?php elseif ($r['response'] === 'no'): ?><br><span class="badge badge-bad" style="font-size:10px">❌ said no</span><?php endif; ?>
           <?php if ((int)$r['duration']): ?><br><span class="muted" style="font-size:11px"><?= (int)$r['duration'] ?>s</span><?php endif; ?>
           <?php if ($r['error']): ?><br><span class="muted" style="font-size:11px"><?= e($r['error']) ?></span><?php endif; ?>

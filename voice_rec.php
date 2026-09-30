@@ -37,27 +37,14 @@ if (!is_file($dir . '/.htaccess')) file_put_contents($dir . '/.htaccess', "Requi
 $local = $dir . '/call_' . (int)$call['id'] . '_' . substr(hash('sha256', $call['token']), 0, 12) . '.mp3';
 
 if (!is_file($local) || filesize($local) < 512) {
-    if (!function_exists('curl_init')) { http_response_code(500); die('The server does not have curl.'); }
-    $ch = curl_init($call['recording_url']);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT => 60,
-        // The same headers every other Vobiz request carries. Harmless if the
-        // recording turns out to sit on plain storage that ignores them.
-        CURLOPT_HTTPHEADER => ['X-Auth-ID: ' . setting('vobiz_auth_id', ''),
-                               'X-Auth-Token: ' . setting('vobiz_auth_token', '')],
-    ]);
-    $audio = curl_exec($ch);
-    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $cerr = curl_error($ch);
-    curl_close($ch);
-
-    if ($audio === false || $code < 200 || $code >= 300 || strlen((string)$audio) < 512) {
-        log_activity('voice_rec_fail', 'call ' . (int)$call['id'] . ' http ' . $code . ' ' . $cerr);
+    // One way of asking the provider for a recording - voice_fetch_recording()
+    // in includes/voice.php - shared with the call that has to listen to the
+    // customer's answer while they are still on the line.
+    list($audio, $mime, $rerr) = voice_fetch_recording($call['recording_url'], 60);
+    if ($audio === null) {
+        log_activity('voice_rec_fail', 'call ' . (int)$call['id'] . ' ' . $rerr);
         http_response_code(502);
-        die('The recording could not be fetched from the provider (HTTP ' . $code . ').'
-          . ($cerr ? ' ' . e($cerr) : '')
+        die('The recording could not be fetched from the provider (' . e($rerr) . ').'
           . ' It may not be ready yet — try again in a minute.');
     }
     file_put_contents($local, $audio);

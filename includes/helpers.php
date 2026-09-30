@@ -101,7 +101,7 @@ function csrf_check() {
         // check against - both are genuinely different trust boundaries
         // from the rest of this cookie-session-based app.
         $exempt = ['api.php', 'razorpay_webhook.php', 'wa_webhook.php', 'telegram_webhook.php',
-                   'voice_answer.php', 'voice_webhook.php', 'voice_gather.php', 'voice_in.php'];
+                   'voice_answer.php', 'voice_webhook.php', 'voice_gather.php', 'voice_in.php', 'voice_talk.php'];
         if (in_array(basename($_SERVER['SCRIPT_NAME'] ?? ''), $exempt, true)) return;
         if (!hash_equals(csrf_token(), (string)post('csrf'))) {
             http_response_code(400);

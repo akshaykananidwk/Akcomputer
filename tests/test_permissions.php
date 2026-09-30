@@ -93,7 +93,8 @@ foreach (glob(dirname(__DIR__) . '/*.php') as $f) {
         // so no session exists to gate on. Both are guarded instead by the
         // per-call ?t= token - 160 random bits, one call, six hours - which
         // the voice suite tests directly.
-        'voice_answer.php', 'voice_webhook.php', 'voice_gather.php', 'voice_in.php'], true)) continue;
+        'voice_answer.php', 'voice_webhook.php', 'voice_gather.php', 'voice_in.php',
+        'voice_talk.php'], true)) continue;
     $src = file_get_contents($f);
     if (!preg_match('/require_perm\(|require_login\(/', $src)) $ungated[] = $base;
 }

@@ -509,7 +509,11 @@ function voice_in_words($lang, array $v = []) {
     // The shop's own greeting is spoken on the way out as well as on the way
     // in, so it is defined once, in the shared module, rather than in this
     // file's table where only incoming calls could reach it.
-    $s = ['hello' => voice_greeting_default($lang)] + $s;
+    // Every line the phone can say lives behind ONE list, or the wording
+    // screen would refuse to save the sentences it is showing: the greeting
+    // belongs to both directions, and the conversation's sentences belong to
+    // the talking reminder call, but the owner edits them all in one place.
+    $s = ['hello' => voice_greeting_default($lang)] + voice_talk_defaults($lang) + $s;
 
     // What this shop says instead. An empty box means "keep the wording the
     // software ships with", so an upgrade that improves a sentence still

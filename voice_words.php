@@ -22,6 +22,7 @@
 // by the same button that made it the first time, on the Call Setup screen.
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/voice_in.php';
+require_once __DIR__ . '/includes/voice_talk.php';
 require_perm('settings.edit');
 
 $langs = voice_langs();
@@ -34,6 +35,9 @@ if (!isset($langs[$lang])) $lang = 'gu';
 function vw_groups() {
     return [
         'The very first thing said' => ['hello'],
+        'Asking for payment, in conversation' => ['talk_how', 'talk_ask', 'talk_again', 'talk_got',
+                                                  'talk_thanks', 'talk_paid', 'talk_nomoney',
+                                                  'talk_wrong', 'talk_giveup'],
         'Greeting' => ['welcome', 'welcome_name', 'closed'],
         'Their account' => ['balance', 'balance_nil', 'balance_adv', 'balance_wa', 'not_known'],
         'When they want to leave something' => ['ask_order', 'ask_problem', 'ask_stock', 'noted'],
@@ -45,6 +49,15 @@ function vw_groups() {
 function vw_label($k) {
     $l = [
         'hello' => 'Said before anything else, on calls in AND out',
+        'talk_how' => 'After their name, before asking for anything',
+        'talk_ask' => 'The question itself — then the call listens',
+        'talk_again' => 'Their answer could not be made out',
+        'talk_got' => 'They gave a date — the day itself is said straight after this',
+        'talk_thanks' => 'After the date is noted',
+        'talk_paid' => 'They say it is already paid',
+        'talk_nomoney' => 'They cannot pay yet, or they dispute it',
+        'talk_wrong' => 'Wrong number, they say',
+        'talk_giveup' => 'Nothing could be made out after asking twice',
         'welcome' => 'A caller we do not recognise',
         'welcome_name' => 'A caller we do recognise — {name} is their name from their party record',
         'closed' => 'Added when the shop is shut',
