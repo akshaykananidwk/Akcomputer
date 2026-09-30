@@ -2,6 +2,7 @@
 // Invoice view / print / WhatsApp send. Public access via ?token= (customer link).
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/voice.php';   // voice_call_button()
+require_once __DIR__ . '/includes/voice_bridge.php';   // voice_bridge_button()
 
 $id = (int)get('id');
 $token = get('token');
@@ -194,6 +195,7 @@ function copyPay() {
            what the call says; it is shown again on the confirm screen before
            anybody is dialled. */ ?>
   <?= voice_call_button($sale['party_id'] ?? 0, 'sale_view.php?id=' . $id, false) ?>
+  <?= voice_bridge_button($sale['party_id'] ?? 0, 'sale_view.php?id=' . $id, false) ?>
   <?php if (setting('google_review_link') && $sale['customer_mobile']): ?>
   <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="review">
     <button class="btn btn-outline" type="submit">⭐ Review Invite</button></form>

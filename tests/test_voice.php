@@ -608,13 +608,13 @@ t_ok('voice_can_call() defers to the message rules instead of copying them',
 // then dies - the top of the screen looks fine, so it is easy to miss. This
 // caught exactly that when the hand-recorded clip system was replaced.
 $defined = [];
-foreach (['voice.php', 'voice_in.php', 'voice_talk.php'] as $mod) {
+foreach (['voice.php', 'voice_in.php', 'voice_talk.php', 'voice_bridge.php'] as $mod) {
     preg_match_all('/^function (voice_\w+)\s*\(/m', file_get_contents(__DIR__ . '/../includes/' . $mod), $m);
     foreach ($m[1] as $fn) $defined[$fn] = true;
 }
 $called = [];
 foreach (array_merge(glob(__DIR__ . '/../*.php'), glob(__DIR__ . '/../includes/*.php')) as $f) {
-    if (in_array(basename($f), ['voice.php', 'voice_in.php', 'voice_talk.php'], true)) continue;
+    if (in_array(basename($f), ['voice.php', 'voice_in.php', 'voice_talk.php', 'voice_bridge.php'], true)) continue;
     $body = file_get_contents($f);
     // A page may also define a helper of its own - a screen-only one that has
     // no business in the shared module. Those exist too.
@@ -2057,3 +2057,95 @@ t_ok('and it does not fight the WhatsApp button over one field',
 t_ok('the waiting count is shown where the chasing is done', strpos($cs, 'voice_queue_count()') !== false);
 t_ok('a cron dials them', strpos(file_get_contents(__DIR__ . '/../includes/cron_jobs.php'), 'cron_job_voice_dial') !== false);
 set_setting('voice_bulk_per_run', '5');
+
+t_group('a connect call rings the shopkeeper first and never shows their number');
+
+// Ringing a customer from a personal handset costs something nobody notices
+// until later: the customer keeps that number. They ring it at eleven at
+// night, they ring it after that person has left the shop, and not one word
+// of any of it is in the shop's records.
+require_once dirname(__DIR__) . '/includes/voice_bridge.php';
+
+$vbSrc = file_get_contents(dirname(__DIR__) . '/includes/voice_bridge.php');
+t_ok('the leg that is dialled first is the staff member\'s own mobile',
+     strpos($vbSrc, "\$mine  = voice_e164(\$u['mobile']);") !== false
+     && strpos($vbSrc, 'voice_provider_call($mine, $token)') !== false);
+t_ok('...and the number the customer sees is the shop\'s caller ID',
+     strpos($vbSrc, "\$from  = preg_replace('/\\D/', '', setting('vobiz_caller_id', ''));") !== false
+     && strpos($vbSrc, '<Dial callerId="\' . htmlspecialchars($from') !== false);
+t_ok('the staff number appears nowhere in what is dialled out',
+     strpos($vbSrc, 'callerId="\' . htmlspecialchars($mine') === false);
+
+// Build a real row and read the XML the network would be served.
+$vbU = row('SELECT * FROM users WHERE is_active = 1 ORDER BY id LIMIT 1');
+$vbP = t_party('BRIDGE TEST');
+q("UPDATE parties SET mobile = '9876512345', voice_dnd = 0 WHERE id = ?", [$vbP]);
+q("UPDATE users SET mobile = '9811122233' WHERE id = ?", [$vbU['id']]);
+$vbU = row('SELECT * FROM users WHERE id = ?', [$vbU['id']]);
+set_setting('voice_bridge', '1');
+set_setting('vobiz_auth_id', 'T'); set_setting('vobiz_auth_token', 'T'); set_setting('vobiz_caller_id', '918000000000');
+
+$g = voice_bridge_can($vbP, null, $vbU);
+t_ok('with both numbers in place the call is allowed', $g['ok'], $g['why']);
+
+// The customer's own wish is not a throttle, it is an answer.
+q('UPDATE parties SET voice_dnd = 1 WHERE id = ?', [$vbP]);
+$g2 = voice_bridge_can($vbP, null, $vbU);
+t_ok('a do-not-call customer is refused', !$g2['ok']);
+t_ok('...and it is not an overridable "soft" refusal', empty($g2['soft']));
+q('UPDATE parties SET voice_dnd = 0 WHERE id = ?', [$vbP]);
+
+// The message has to say where the missing thing is fixed. "No mobile
+// number" on its own sends somebody looking at the customer's record.
+q("UPDATE users SET mobile = '' WHERE id = ?", [$vbU['id']]);
+$g3 = voice_bridge_can($vbP, null, row('SELECT * FROM users WHERE id = ?', [$vbU['id']]));
+t_ok('no number on the staff account is refused', !$g3['ok']);
+t_ok('...and the refusal names My Account, not the customer',
+     strpos($g3['why'], 'My Account') !== false, $g3['why']);
+q("UPDATE users SET mobile = '9811122233' WHERE id = ?", [$vbU['id']]);
+
+// The XML itself.
+$vbTok = bin2hex(random_bytes(20));
+q("INSERT INTO voice_calls (party_id, mobile, amount, lang, provider, token, status, test_mode,
+                            direction, intent, from_number, to_number, question_asked, started_at)
+   VALUES (?, '919876512345', 0, 'en', 'vobiz', ?, 'ringing', 1, 'out', 'bridge', '919811122233', '919876512345', 0, NOW())",
+  [$vbP, $vbTok]);
+$vbCall = row('SELECT * FROM voice_calls WHERE token = ?', [$vbTok]);
+set_setting('voice_bridge_record', '1');
+$xml = voice_answer_xml($vbCall);
+t_ok('the answer URL serves the connect XML, not a reminder script',
+     strpos($xml, '<Dial') !== false && strpos($xml, '<Gather') === false);
+t_ok('the customer is the number that gets dialled', strpos($xml, '<Number>919876512345</Number>') !== false);
+t_ok('the caller ID is the shop line', strpos($xml, 'callerId="918000000000"') !== false);
+t_ok('the staff mobile is not sent as the caller ID', strpos($xml, '919811122233') === false);
+// recordSession BEFORE the Dial is what puts OUR side of the conversation in
+// the recording; after it, only whatever came later would be caught.
+t_ok('the whole call is recorded, our own voice included',
+     strpos($xml, 'recordSession="true"') !== false
+     && strpos($xml, 'recordSession') < strpos($xml, '<Dial'));
+t_ok('and the line says so, so the staff member can tell the customer',
+     stripos($xml, 'recorded') !== false);
+
+set_setting('voice_bridge_record', '0');
+t_ok('a shop that switches recording off gets no Record element',
+     strpos(voice_answer_xml($vbCall), '<Record') === false);
+set_setting('voice_bridge_record', '1');
+
+// The line is editable like every other thing the phone says.
+foreach (['gu', 'hi', 'en'] as $L)
+    t_ok("the connect line is editable in $L", isset(voice_in_defaults($L)['bridge_intro']));
+t_ok('the connect line carries the customer name slot',
+     in_array('name', voice_line_slots(voice_in_defaults('gu')['bridge_intro']), true));
+
+// The door in.
+$vbEp = file_get_contents(dirname(__DIR__) . '/voice_bridge.php');
+t_ok('a call is never placed by a GET', strpos($vbEp, "\$_SERVER['REQUEST_METHOD'] !== 'POST'") !== false);
+t_ok('...and never without a CSRF token', strpos($vbEp, 'csrf_check();') !== false);
+t_ok('...and never without permission', strpos($vbEp, "require_perm('parties.view')") !== false);
+t_ok('the page it returns to can only be one of ours',
+     strpos($vbEp, "preg_match('#^[a-z]+://#i', \$back)") !== false);
+t_ok('the button is on the ledger and on the bill',
+     strpos(file_get_contents(dirname(__DIR__) . '/parties.php'), 'voice_bridge_button(') !== false
+     && strpos(file_get_contents(dirname(__DIR__) . '/sale_view.php'), 'voice_bridge_button(') !== false);
+t_ok('and the calls list names it in words', strpos($vinSrc ?? file_get_contents(dirname(__DIR__) . '/includes/voice_in.php'),
+     "'bridge' => '🔗 Connected call'") !== false);

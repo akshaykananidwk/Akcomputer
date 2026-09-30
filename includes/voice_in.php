@@ -447,6 +447,7 @@ function voice_in_words($lang, array $v = []) {
             'order_status' => 'તમારો છેલ્લો ઓર્ડર {status} છે.',
             'order_none'   => 'તમારો કોઈ ચાલુ ઓર્ડર નથી.',
             'connecting'   => 'જોડી રહ્યા છીએ, થોડી રાહ જુઓ.',
+            'bridge_intro' => '{name} ને જોડી રહ્યા છીએ. આ કોલ રેકોર્ડ થાય છે.',
             'no_answer'    => 'અત્યારે કોઈ ફોન ઉપાડતું નથી. બીપ પછી સંદેશ મૂકો.',
             'closed_msg'   => 'દુકાન બંધ છે. બીપ પછી સંદેશ મૂકો, અમે સવારે સંપર્ક કરીશું.',
         ],
@@ -474,6 +475,7 @@ function voice_in_words($lang, array $v = []) {
             'order_status' => 'आपका पिछला ऑर्डर {status} है.',
             'order_none'   => 'आपका कोई चालू ऑर्डर नहीं है.',
             'connecting'   => 'जोड़ रहे हैं, थोड़ा इंतज़ार करें.',
+            'bridge_intro' => '{name} से जोड़ रहे हैं. यह कॉल रिकॉर्ड हो रही है.',
             'no_answer'    => 'अभी कोई फ़ोन नहीं उठा रहा. बीप के बाद संदेश छोड़ें.',
             'closed_msg'   => 'दुकान बंद है. बीप के बाद संदेश छोड़ें, हम सुबह संपर्क करेंगे.',
         ],
@@ -501,6 +503,7 @@ function voice_in_words($lang, array $v = []) {
             'order_status' => 'Your last order is {status}.',
             'order_none'   => 'You have no order in progress.',
             'connecting'   => 'Connecting you, please hold.',
+            'bridge_intro' => 'Connecting you to {name}. This call is being recorded.',
             'no_answer'    => 'Nobody is picking up right now. Please leave a message after the beep.',
             'closed_msg'   => 'The shop is closed. Leave a message after the beep and we will call in the morning.',
         ],
@@ -1099,7 +1102,9 @@ function voice_call_handled($callId, $note = '') {
 function voice_intent_label($i) {
     return ['balance' => '💰 Balance', 'order' => '🛒 Order', 'complaint' => '🔧 Complaint',
             'stock' => '🏷 Price / stock', 'delivery' => '🚚 Delivery', 'agent' => '🙋 Wanted a person',
-            'message' => '💬 Message'][$i] ?? ($i ? ucfirst($i) : '—');
+            'message' => '💬 Message',
+            // one of ours, going out: staff joined to a customer
+            'bridge' => '🔗 Connected call'][$i] ?? ($i ? ucfirst($i) : '—');
 }
 
 // ---------- the phone asks, WhatsApp answers ----------

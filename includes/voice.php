@@ -1124,6 +1124,12 @@ function voice_status_label($status) {
  *  paid") is added later it is one more element here and one more column on
  *  the row - which is why this function, and not the caller, owns the XML. */
 function voice_answer_xml($call) {
+    // A connect call is not a script being read: it is a person who has just
+    // picked up, waiting to be joined to a customer. Nothing below applies.
+    if (($call['intent'] ?? '') === 'bridge') {
+        require_once __DIR__ . '/voice_bridge.php';
+        return voice_bridge_xml($call);
+    }
     $party = row('SELECT name FROM parties WHERE id = ?', [(int)$call['party_id']]);
     $promise = voice_call_promise_date($call);
 
@@ -1223,8 +1229,11 @@ function voice_fetch_recording($url, $timeout = 60) {
  * plays out exactly as before and no full recording appears - the customer's
  * own answer is still recorded either way.
  */
-function voice_record_session_xml($call) {
-    if ((int)setting('voice_record_all', 0) !== 1) return '';
+function voice_record_session_xml($call, $force = false) {
+    // $force is for the connect call, where recording is the point rather
+    // than an option the shop switched on for reminders. One rule, extended
+    // where it is genuinely different, rather than a second copy of it.
+    if (!$force && (int)setting('voice_record_all', 0) !== 1) return '';
     if (empty($call['token'])) return '';
     $cb = voice_public_url('voice_webhook.php?t=' . $call['token'] . '&rec=1');
     return '  <Record callbackUrl="' . htmlspecialchars($cb, ENT_XML1) . '" callbackMethod="POST"'
