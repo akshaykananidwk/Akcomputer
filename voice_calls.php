@@ -24,18 +24,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect('voice_calls.php' . (get('dir') ? '?dir=' . urlencode(get('dir')) : ''));
 }
 
-$dir = in_array(get('dir'), ['in', 'out'], true) ? get('dir') : '';
+// ---------- the filters ----------
+//
+// One bar, and the answers are the ones a shopkeeper actually asks: which
+// way, did they pick up, what did they say, between which dates, and who.
+// Every one of them is a plain WHERE - nothing here is clever, and nothing
+// here takes anything from the query string into SQL except as a parameter.
+$dir  = in_array(get('dir'), ['in', 'out'], true) ? get('dir') : '';
 $show = get('show') === 'pending';
+$pick = (string)get('pick');            // picked up / did not
+$ans  = (string)get('ans');             // what came of it
+$from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)get('from')) ? get('from') : '';
+$to   = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)get('to')) ? get('to') : '';
+$q    = trim((string)get('q'));
+
 $where = ['1=1'];
 $args = [];
-if ($dir) { $where[] = 'v.direction = ?'; $args[] = $dir; }
-if ($show) $where[] = 'v.needs_action = 1';
+if ($dir)  { $where[] = 'v.direction = ?'; $args[] = $dir; }
+if ($show)   $where[] = 'v.needs_action = 1';
+
+// "Picked up" is the answered flag, which is stamped the moment the network
+// asks for the call's XML - the most reliable signal in the whole flow, and
+// far better than reading a hangup cause.
+if ($pick === 'yes') $where[] = 'v.answered = 1';
+if ($pick === 'no')  $where[] = "v.answered = 0 AND v.status IN ('no_answer','busy','failed','ringing')";
+
+$answers = [
+    'promise' => ['📅 Gave a date',      "v.promise_date IS NOT NULL"],
+    'yes'     => ['✅ Said yes',          "v.response = 'yes'"],
+    'no'      => ['❌ Said no / no money', "v.response = 'no'"],
+    'paid'    => ['💰 Says already paid', "v.heard_intent = 'paid'"],
+    'wrong'   => ['🚫 Wrong number',      "v.heard_intent = 'wrong_person'"],
+    'none'    => ['🤷 Answered, said nothing useful', "v.answered = 1 AND (v.response = '' OR v.response = 'none' OR v.response IS NULL)"],
+];
+if (isset($answers[$ans])) $where[] = $answers[$ans][1];
+
+if ($from) { $where[] = 'DATE(v.created_at) >= ?'; $args[] = $from; }
+if ($to)   { $where[] = 'DATE(v.created_at) <= ?'; $args[] = $to; }
+if ($q !== '') {
+    // A name, or any part of a number however it was typed.
+    $where[] = '(p.name LIKE ? OR v.mobile LIKE ? OR v.from_number LIKE ? OR v.heard LIKE ?)';
+    $like = '%' . $q . '%';
+    array_push($args, $like, $like, $like, $like);
+}
+$wsql = implode(' AND ', $where);
 
 $rows = all('SELECT v.*, p.name, u.name uname FROM voice_calls v
              LEFT JOIN parties p ON p.id = v.party_id
              LEFT JOIN users u ON u.id = v.handled_by
-             WHERE ' . implode(' AND ', $where) . '
-             ORDER BY v.id DESC LIMIT 200', $args);
+             WHERE ' . $wsql . '
+             ORDER BY v.id DESC LIMIT 300', $args);
+
+// What the filter itself found, so the numbers on screen answer the question
+// that was asked rather than always describing today.
+$found = row('SELECT COUNT(*) n, SUM(v.answered = 1) ans, SUM(v.promise_date IS NOT NULL) prom,
+                     SUM(v.duration) secs
+              FROM voice_calls v LEFT JOIN parties p ON p.id = v.party_id
+              WHERE ' . $wsql, $args);
+$filtered = $dir || $show || $pick || $ans || $from || $to || $q !== '';
+$qs = function (array $over = []) use ($dir, $show, $pick, $ans, $from, $to, $q) {
+    $a = array_filter(['dir' => $dir, 'show' => $show ? 'pending' : '', 'pick' => $pick,
+                       'ans' => $ans, 'from' => $from, 'to' => $to, 'q' => $q] + [], 'strlen');
+    foreach ($over as $k => $v) { if ($v === '' || $v === null) unset($a[$k]); else $a[$k] = $v; }
+    return 'voice_calls.php' . ($a ? '?' . http_build_query($a) : '');
+};
 $pending = voice_in_pending_count();
 
 $today = row("SELECT
@@ -58,12 +110,59 @@ include __DIR__ . '/includes/header.php';
     <div class="stat s-ok"><div class="stat-label">Said yes to paying</div><div class="stat-value"><?= (int)($today['said_yes'] ?? 0) ?></div></div>
   </div>
   <p class="no-print">
-    <a class="btn btn-sm <?= $dir === '' && !$show ? '' : 'btn-outline' ?>" href="voice_calls.php">All</a>
-    <a class="btn btn-sm <?= $dir === 'in' ? '' : 'btn-outline' ?>" href="voice_calls.php?dir=in">Incoming</a>
-    <a class="btn btn-sm <?= $dir === 'out' ? '' : 'btn-outline' ?>" href="voice_calls.php?dir=out">Outgoing</a>
-    <a class="btn btn-sm <?= $show ? 'btn-danger' : 'btn-outline' ?>" href="voice_calls.php?show=pending">Needs an answer</a>
+    <a class="btn btn-sm <?= $dir === '' && !$show ? '' : 'btn-outline' ?>" href="<?= e($qs(['dir' => '', 'show' => ''])) ?>">All</a>
+    <a class="btn btn-sm <?= $dir === 'in' ? '' : 'btn-outline' ?>" href="<?= e($qs(['dir' => 'in'])) ?>">📥 Incoming</a>
+    <a class="btn btn-sm <?= $dir === 'out' ? '' : 'btn-outline' ?>" href="<?= e($qs(['dir' => 'out'])) ?>">📤 Outgoing</a>
+    <a class="btn btn-sm <?= $show ? 'btn-danger' : 'btn-outline' ?>" href="<?= e($qs(['show' => 'pending'])) ?>">Needs an answer</a>
     <a class="btn btn-sm btn-outline" href="voice_setup.php">⚙️ Setup</a>
   </p>
+</div>
+
+<div class="card no-print">
+  <h3>🔎 Find a call</h3>
+  <form method="get" class="filterbar">
+    <?php if ($show): ?><input type="hidden" name="show" value="pending"><?php endif; ?>
+    <div><label>Which way</label>
+      <select name="dir">
+        <option value="">Both</option>
+        <option value="out" <?= $dir === 'out' ? 'selected' : '' ?>>📤 We rang them</option>
+        <option value="in" <?= $dir === 'in' ? 'selected' : '' ?>>📥 They rang us</option>
+      </select></div>
+    <div><label>Did they pick up</label>
+      <select name="pick">
+        <option value="">Either</option>
+        <option value="yes" <?= $pick === 'yes' ? 'selected' : '' ?>>☎️ Picked up</option>
+        <option value="no" <?= $pick === 'no' ? 'selected' : '' ?>>📵 Did not pick up</option>
+      </select></div>
+    <div><label>What came of it</label>
+      <select name="ans">
+        <option value="">Anything</option>
+        <?php foreach ($answers as $ak => $av): ?>
+          <option value="<?= e($ak) ?>" <?= $ans === $ak ? 'selected' : '' ?>><?= e($av[0]) ?></option>
+        <?php endforeach; ?>
+      </select></div>
+    <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>
+    <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>
+    <div><label>Name, number, or what they said</label>
+      <input name="q" value="<?= e($q) ?>" placeholder="રમેશ / 98765 / કાલે"></div>
+    <button class="btn btn-sm" type="submit">Find</button>
+    <?php if ($filtered): ?><a class="btn btn-sm btn-outline" href="voice_calls.php">Clear</a><?php endif; ?>
+  </form>
+
+  <?php if ($filtered): ?>
+  <div class="grid-stats mt">
+    <div class="stat"><div class="stat-label">Calls found</div><div class="stat-value"><?= (int)($found['n'] ?? 0) ?></div></div>
+    <div class="stat s-ok"><div class="stat-label">Picked up</div>
+      <div class="stat-value"><?= (int)($found['ans'] ?? 0) ?>
+        <span style="font-size:13px;opacity:.6"><?= (int)($found['n'] ?? 0) ? '· ' . round(100 * (int)$found['ans'] / (int)$found['n']) . '%' : '' ?></span></div></div>
+    <div class="stat s-ok"><div class="stat-label">Gave a date</div><div class="stat-value"><?= (int)($found['prom'] ?? 0) ?></div></div>
+    <div class="stat"><div class="stat-label">Time on the phone</div>
+      <div class="stat-value" style="font-size:18px"><?= (int)round((int)($found['secs'] ?? 0) / 60) ?> min</div></div>
+  </div>
+  <?php if ((int)($found['n'] ?? 0) > count($rows)): ?>
+    <p class="muted" style="font-size:12px">Showing the most recent <?= count($rows) ?> of <?= (int)$found['n'] ?> — narrow the dates to see the rest.</p>
+  <?php endif; ?>
+  <?php endif; ?>
 </div>
 
 <?php
@@ -141,7 +240,17 @@ if ($waiting && !$show): ?>
           <?php if ($r['error']): ?><br><span class="muted" style="font-size:11px"><?= e($r['error']) ?></span><?php endif; ?>
         </td>
         <td style="white-space:nowrap">
-          <?php if ($r['recording_url']): ?><a class="btn btn-sm btn-outline" href="voice_rec.php?id=<?= (int)$r['id'] ?>" target="_blank">▶</a><?php endif; ?>
+          <?php if (!empty($r['full_rec_url'])): ?>
+            <a class="btn btn-sm btn-outline" href="voice_rec.php?id=<?= (int)$r['id'] ?>&full=1" target="_blank"
+               title="The whole call, both sides, from the greeting">▶ all<?php if ((int)$r['full_rec_secs']): ?>
+               <span class="muted" style="font-size:10px"><?= (int)$r['full_rec_secs'] ?>s</span><?php endif; ?></a>
+          <?php endif; ?>
+          <?php if ($r['recording_url']): ?><a class="btn btn-sm btn-outline" href="voice_rec.php?id=<?= (int)$r['id'] ?>" target="_blank"
+               title="What the customer said">▶</a><?php endif; ?>
+          <?php /* Ring them again. The same confirm screen as everywhere else,
+                    which is what re-checks the rules, shows the amount and
+                    plays the recording - nothing is dialled from this list. */ ?>
+          <?= voice_call_button((int)$r['party_id'], 'voice_calls.php', true) ?>
           <?php if ((int)$r['needs_action'] === 1 && can('payments.add')): ?>
           <form method="post" style="display:inline">
             <?= csrf_field() ?><input type="hidden" name="do" value="handled"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">

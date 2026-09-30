@@ -26,7 +26,13 @@ require_once __DIR__ . '/includes/voice.php';
 require_perm('payments.view');
 
 $call = row('SELECT * FROM voice_calls WHERE id = ?', [(int)get('id')]);
-if (!$call || !$call['recording_url']) { http_response_code(404); die('No recording for this call.'); }
+// ?full=1 is the whole call, both sides, from the greeting onwards; without
+// it, the customer's own answer. Two files, one page, because everything
+// that makes this page safe - the permission, the headers, the hidden copy -
+// applies to both in exactly the same way.
+$full = get('full') === '1';
+$src = $call ? (string)($full ? $call['full_rec_url'] : $call['recording_url']) : '';
+if (!$call || $src === '') { http_response_code(404); die('No recording for this call.'); }
 
 $dir = __DIR__ . '/uploads/voice/rec';
 if (!is_dir($dir)) mkdir($dir, 0755, true);
@@ -34,13 +40,14 @@ if (!is_dir($dir)) mkdir($dir, 0755, true);
 // page above, after a permission check.
 if (!is_file($dir . '/.htaccess')) file_put_contents($dir . '/.htaccess', "Require all denied\n");
 
-$local = $dir . '/call_' . (int)$call['id'] . '_' . substr(hash('sha256', $call['token']), 0, 12) . '.mp3';
+$local = $dir . '/call_' . (int)$call['id'] . ($full ? '_full' : '')
+       . '_' . substr(hash('sha256', $call['token']), 0, 12) . '.mp3';
 
 if (!is_file($local) || filesize($local) < 512) {
     // One way of asking the provider for a recording - voice_fetch_recording()
     // in includes/voice.php - shared with the call that has to listen to the
     // customer's answer while they are still on the line.
-    list($audio, $mime, $rerr) = voice_fetch_recording($call['recording_url'], 60);
+    list($audio, $mime, $rerr) = voice_fetch_recording($src, 60);
     if ($audio === null) {
         log_activity('voice_rec_fail', 'call ' . (int)$call['id'] . ' ' . $rerr);
         http_response_code(502);
@@ -53,6 +60,6 @@ if (!is_file($local) || filesize($local) < 512) {
 
 header('Content-Type: audio/mpeg');
 header('Content-Length: ' . filesize($local));
-header('Content-Disposition: inline; filename="call_' . (int)$call['id'] . '.mp3"');
+header('Content-Disposition: inline; filename="call_' . (int)$call['id'] . ($full ? '_full' : '') . '.mp3"');
 header('Cache-Control: private, max-age=3600');
 readfile($local);

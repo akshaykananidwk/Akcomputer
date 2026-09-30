@@ -78,6 +78,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('voice_setup.php');
     }
 
+    if (post('do') === 'save_record') {
+        set_setting('voice_record_all', post('voice_record_all') ? '1' : '0');
+        set_setting('voice_record_max', (string)max(30, min(3600, (int)post('voice_record_max'))));
+        log_activity('voice_record_settings', post('voice_record_all') ? 'whole-call recording on' : 'off');
+        flash('Saved.');
+        redirect('voice_setup.php');
+    }
+
     if (post('do') === 'save_talk') {
         foreach (['voice_talk_turns', 'voice_talk_max_days', 'voice_talk_secs', 'voice_talk_month_cap'] as $k)
             set_setting($k, (string)max(1, (int)post($k)));
@@ -795,6 +803,37 @@ include __DIR__ . '/includes/header.php';
   </form>
   <?php endif; ?>
 </div>
+
+<?php if (can('settings.edit')): ?>
+<div class="card">
+  <h3>🎙 Keep the whole call on tape</h3>
+  <p class="muted" style="font-size:13px">
+    What is kept today is the customer's <em>answer</em> only — what your own voice said before it is not on
+    tape at all. Half a conversation is no use if a customer ever says the phone told them something else.
+    With this on, the recording starts before the greeting and keeps both sides.
+  </p>
+  <div class="flash flash-info" style="font-size:13px">
+    Recording a phone call is <strong>your decision, not the software's</strong>, which is why this is off until
+    you switch it on — and why a shop that records should be willing to say so if a customer asks.
+    If your provider does not support recording a whole session, nothing breaks: the call plays out exactly as
+    before, no “▶ all” appears on the Calls screen, and the customer's own answer is still recorded.
+  </div>
+  <form method="post">
+    <?= csrf_field() ?><input type="hidden" name="do" value="save_record">
+    <div class="grid-2">
+      <label>Stop taping after (seconds)
+        <input name="voice_record_max" type="number" min="30" max="3600" value="<?= (int)setting('voice_record_max', 600) ?>">
+        <span class="muted" style="font-size:11px">A call nobody hung up is not taped forever.</span></label>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" name="voice_record_all" value="1" <?= (int)setting('voice_record_all', 0) === 1 ? 'checked' : '' ?>>
+        Record the whole call, both sides</label>
+    </div>
+    <button class="btn btn-success mt" type="submit">Save</button>
+    <span class="muted" style="font-size:12px"> Recordings play on
+      <a href="voice_calls.php">Calls</a> — “▶ all” is the whole call, “▶” is their answer.</span>
+  </form>
+</div>
+<?php endif; ?>
 
 <?php /* ================= reference, opened when wanted ================= */ ?>
 <div class="card">

@@ -1113,6 +1113,7 @@ function voice_answer_xml($call) {
     // row. Re-planning here would be a second generation - and a wait - at
     // the worst possible moment, with the customer already on the line.
     $xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n";
+    $xml .= voice_record_session_xml($call);
     $xml .= $call['audio_file']
         ? voice_xml_play(voice_public_url('uploads/voice/tts/' . $call['audio_file']))
         : voice_xml_speak($call['script'] ?: voice_script($party['name'] ?? '', (float)$call['amount'], 'en'));
@@ -1185,6 +1186,32 @@ function voice_fetch_recording($url, $timeout = 60) {
     $mime = strtok($mime, ';') ?: '';
     if (strpos($mime, 'audio') !== 0) $mime = 'audio/mpeg';
     return [$audio, $mime, ''];
+}
+
+/**
+ * Record the whole call, both sides, from here on.
+ *
+ * The recording kept before this was the customer's ANSWER only - what the
+ * shop's own voice said was never on tape. Half a conversation is no use to
+ * a shop whose customer says "your phone told me something else".
+ *
+ * redirect="false" is what makes it a recording rather than a step: the call
+ * carries straight on to the next verb and the finished file is posted to
+ * the callback when the call ends. Placed first in the document so the tape
+ * starts before the greeting.
+ *
+ * Off unless the shop switches it on. Recording a phone call is the shop's
+ * decision, not this software's. If the provider ignores the verb the call
+ * plays out exactly as before and no full recording appears - the customer's
+ * own answer is still recorded either way.
+ */
+function voice_record_session_xml($call) {
+    if ((int)setting('voice_record_all', 0) !== 1) return '';
+    if (empty($call['token'])) return '';
+    $cb = voice_public_url('voice_webhook.php?t=' . $call['token'] . '&rec=1');
+    return '  <Record callbackUrl="' . htmlspecialchars($cb, ENT_XML1) . '" callbackMethod="POST"'
+         . ' recordSession="true" redirect="false" maxLength="'
+         . max(30, (int)setting('voice_record_max', 600)) . '" fileFormat="mp3"/>' . "\n";
 }
 
 function voice_xml_play($url) { return '  <Play>' . htmlspecialchars($url, ENT_XML1) . "</Play>\n"; }

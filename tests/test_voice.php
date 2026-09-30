@@ -1526,6 +1526,102 @@ t_ok('the back rule is written once', substr_count($coll, 'function coll_back_to
 set_setting('voice_enabled', $wasOn); set_setting('vobiz_auth_id', $wasId);
 set_setting('vobiz_auth_token', $wasTok); set_setting('vobiz_caller_id', $wasCid);
 
+t_group('Voice — the whole call on tape, and a list you can search');
+
+$wasRec = setting('voice_record_all');
+
+// ---- the whole call, not half of it ----
+set_setting('voice_record_all', '0');
+$callR = ['id' => 1, 'party_id' => 1, 'amount' => 100, 'lang' => 'gu',
+          'token' => str_repeat('b', 40), 'audio_file' => '', 'script' => 'x',
+          'question_asked' => 0, 'talk_turns' => 0];
+t_eq('nothing is taped until the shop says so', voice_record_session_xml($callR), '');
+set_setting('voice_record_all', '1');
+$recXml = voice_record_session_xml($callR);
+t_ok('switched on, the tape starts', strpos($recXml, '<Record') !== false, $recXml);
+t_ok('it records the session, not just their answer', strpos($recXml, 'recordSession="true"') !== false);
+t_ok('and does not stop the call to do it', strpos($recXml, 'redirect="false"') !== false);
+t_ok('a call nobody hung up is not taped forever', strpos($recXml, 'maxLength=') !== false);
+$ansXml = voice_answer_xml($callR);
+t_ok('the tape starts BEFORE the greeting, or half the call is missing',
+     strpos($ansXml, '<Record') < strpos($ansXml, '<Speak') || strpos($ansXml, '<Speak') === false,
+     substr($ansXml, 0, 200));
+t_ok('the finished file is posted back to us', strpos($recXml, 'voice_webhook.php') !== false
+     && strpos($recXml, 'rec=1') !== false);
+$wh = file_get_contents(__DIR__ . '/../voice_webhook.php');
+t_ok('and the webhook keeps it', strpos($wh, 'full_rec_url = ?') !== false);
+t_ok('a recording callback does not re-open a call that already ended',
+     strpos($wh, "if (get('rec'))") < strpos($wh, 'voice_status_apply('));
+
+// Both recordings go through the same permission, the same headers, the
+// same hidden copy - one page, because the guard must not differ.
+$rec = file_get_contents(__DIR__ . '/../voice_rec.php');
+t_ok('the whole-call recording is served by the same guarded page',
+     strpos($rec, "get('full') === '1'") !== false);
+t_ok('and it is still behind the permission', strpos($rec, "require_perm('payments.view')") !== false);
+t_ok('the two files do not overwrite each other',
+     strpos($rec, "(\$full ? '_full' : '')") !== false);
+t_ok('a call with no recording of that kind is a plain 404',
+     strpos($rec, "\$src === ''") !== false);
+set_setting('voice_record_all', $wasRec);
+
+// ---- ring them again, from the list ----
+$vc = file_get_contents(__DIR__ . '/../voice_calls.php');
+t_ok('a row offers to ring them again', strpos($vc, 'voice_call_button(') !== false);
+t_ok('through the one confirm screen, not straight off the list',
+     strpos($vc, 'collection.php') === false || strpos($vc, '<form method="post" style="display:inline">') !== false);
+t_ok('and it comes back to this screen', strpos($vc, "voice_call_button((int)\$r['party_id'], 'voice_calls.php'") !== false);
+t_ok('both recordings are offered separately', strpos($vc, 'full=1') !== false
+     && strpos($vc, '▶ all') !== false);
+
+// ---- the filters ----
+t_ok('which way', strpos($vc, "name=\"dir\"") !== false);
+t_ok('did they pick up', strpos($vc, "name=\"pick\"") !== false);
+t_ok('what came of it', strpos($vc, "name=\"ans\"") !== false);
+t_ok('between which dates', strpos($vc, "name=\"from\"") !== false && strpos($vc, "name=\"to\"") !== false);
+t_ok('and who, by name or number or what they said', strpos($vc, "name=\"q\"") !== false);
+t_ok('a date from the query string only reaches SQL if it IS a date',
+     strpos($vc, "preg_match('/^\\d{4}-\\d{2}-\\d{2}\$/', (string)get('from'))") !== false);
+// Nothing typed into the query string is concatenated into the SQL: every
+// value goes in as a parameter, and the only place a query-string value is
+// used directly is after it has been proved to be a date.
+// Not one WHERE fragment is BUILT out of a value: every one is a fixed
+// string, and what the user typed arrives as a parameter beside it. (The
+// answer filter reads a fragment out of the fixed $answers list above, which
+// is not the same thing as pasting one together.)
+t_ok('and every other filter goes in as a parameter, never as text',
+     strpos($vc, '$args[] = $dir') !== false
+     && preg_match('/\$where\[\] = [^;\n]*\.\s*\$/', $vc) === 0);
+t_ok('the answer filters are a fixed list, not something typed',
+     strpos($vc, '$answers = [') !== false && strpos($vc, 'isset($answers[$ans])') !== false);
+t_ok('the counts describe what was found, not always today',
+     strpos($vc, 'Calls found') !== false);
+t_ok('and a filter that finds more than one page says so',
+     strpos($vc, 'narrow the dates') !== false);
+t_ok('every filter keeps the others when a tab is clicked', strpos($vc, '$qs(') !== false);
+
+// The filters have to actually match rows. Picked up is the answered flag,
+// which is stamped when the network asks for the call's XML - the most
+// reliable signal there is.
+$pidF = t_party('TEST_FILT_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500022' WHERE id = ?", [$pidF]);
+$tok = bin2hex(random_bytes(20));
+q("INSERT INTO voice_calls (party_id, mobile, amount, lang, token, status, direction, answered, promise_date, heard)
+   VALUES (?, '9876500022', 500, 'gu', ?, 'answered', 'out', 1, ?, 'કાલે આપી દઈશ')",
+  [$pidF, $tok, date('Y-m-d', strtotime('+1 day'))]);
+$idF = insert_id();
+q("INSERT INTO voice_calls (party_id, mobile, amount, lang, token, status, direction, answered)
+   VALUES (?, '9876500022', 500, 'gu', ?, 'no_answer', 'out', 0)", [$pidF, bin2hex(random_bytes(20))]);
+t_eq('picked up finds the one that was picked up',
+     (int)val("SELECT COUNT(*) FROM voice_calls WHERE party_id = ? AND answered = 1", [$pidF]), 1);
+t_eq('did not pick up finds the other',
+     (int)val("SELECT COUNT(*) FROM voice_calls WHERE party_id = ?
+               AND answered = 0 AND status IN ('no_answer','busy','failed','ringing')", [$pidF]), 1);
+t_eq('gave a date finds the promise',
+     (int)val('SELECT COUNT(*) FROM voice_calls WHERE party_id = ? AND promise_date IS NOT NULL', [$pidF]), 1);
+t_eq('and searching their own words finds the call',
+     (int)val("SELECT COUNT(*) FROM voice_calls WHERE party_id = ? AND heard LIKE '%કાલે%'", [$pidF]), 1);
+
 t_group('Voice — the call talks, and the AI only listens');
 
 // The owner asked for a conversation: greet by name, ask how they are, ask

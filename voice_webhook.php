@@ -38,6 +38,19 @@ if (!$p) {
     if (is_array($j)) $p = $j;
 }
 
+// The finished recording of the whole call, posted when it ends. It is not a
+// status at all, so it is taken and nothing else about the row is touched -
+// a recording callback arriving after the hangup must not re-open a call
+// that is already closed.
+if (get('rec')) {
+    $url = trim((string)($p['RecordUrl'] ?? $p['RecordFile'] ?? ''));
+    if ($url !== '') {
+        q('UPDATE voice_calls SET full_rec_url = ?, full_rec_secs = ? WHERE id = ?',
+          [mb_substr($url, 0, 255), (int)($p['RecordingDuration'] ?? 0), (int)$call['id']]);
+    }
+    exit('ok rec');
+}
+
 // A late callback for a call that already ended must not walk the status
 // backwards - a stray "ringing" arriving after "answered" would make a call
 // that was picked up look like one that was not.
