@@ -477,36 +477,170 @@ $customFields = all('SELECT * FROM item_custom_fields ORDER BY sort_order, id');
 $page_title = 'Settings';
 include __DIR__ . '/includes/header.php';
 
-// Categories shown as a tappable list (like Vyapar's Settings screen) -
-// each opens its own section instead of one long confusing page.
+// Categories shown as cards - each opens its own screen instead of one long
+// confusing page. The array is the single source: the grid, the search and
+// the shortcuts are all built from it, so a fifteenth category is one row
+// here and nothing anywhere else.
+//
+//   key => [icon, name, what it does, what lives inside it]
+//
+// The fourth column is what the search actually looks through. A person
+// hunting for "GST" does not know it lives under General, and should not
+// have to: they type the setting and the category that holds it comes up,
+// with the matching setting named on the card.
 $categories = [
-    'general'   => ['⚙️', 'General', 'App name, GST %, login security'],
-    'transaction' => ['🧾', 'Transaction', 'Cash sale default, round off, profit, purchase price, time'],
-    'whatsapp'  => ['💬', 'WhatsApp', 'API connection, templates, test send'],
-    'store'     => ['🛍️', 'Online Store Design', 'Banners, Deal of the Day, FAQ, testimonials'],
-    'invoice'   => ['🎨', 'Invoice / Bill', 'Design, Google review, online payment'],
-    'reminders' => ['⏰', 'Reminders', 'Auto overdue payment reminders'],
-    'party'     => ['👥', 'Party', 'Credit term options'],
-    'accounting' => ['📒', 'Accounting', 'Period lock, Chart of Accounts, Journal Entries'],
-    'service'   => ['🔧', 'Service Checklist', 'Repair job checklist items'],
-    'inventory' => ['📦', 'Inventory', 'Costing method, dead-stock threshold, audit/transfers'],
-    'ai'        => ['🤖', 'AI', 'On/off per feature, monthly budget and what it has cost'],
-    'security'  => ['🛡️', 'Security', 'Password policy, auto-logout, IP restriction, login attempts'],
-    'backup'    => ['🔄', 'Backup & Updates', 'Backup download, GitHub update'],
-    'about'     => ['📱', 'About', 'Install as app'],
+    'general'   => ['⚙️', 'General', 'App name, GST %, login security',
+        'app name|business name|GST %|default tax rate|login security|logo'],
+    'transaction' => ['🧾', 'Transaction', 'Cash sale default, round off, profit, purchase price, time',
+        'cash sale default|round off|show profit while billing|purchase price on the bill|time on the bill'],
+    'whatsapp'  => ['💬', 'WhatsApp', 'API connection, templates, test send',
+        'WhatsApp API|gateway|Meta Cloud API|access token|phone number id|webhook|message templates|test send|auto reply keywords'],
+    'store'     => ['🛍️', 'Online Store Design', 'Banners, Deal of the Day, FAQ, testimonials',
+        'online store|shop banners|deal of the day|FAQ|testimonials|home page'],
+    'invoice'   => ['🎨', 'Invoice / Bill', 'Design, Google review, online payment',
+        'invoice design|bill layout|terms and conditions|Google review link|online payment|UPI QR'],
+    'reminders' => ['⏰', 'Reminders', 'Auto overdue payment reminders',
+        'overdue reminders|automatic payment reminder|reminder time of day|how often to remind|cron URL'],
+    'party'     => ['👥', 'Party', 'Credit term options',
+        'credit terms|credit days|payment terms list'],
+    'accounting' => ['📒', 'Accounting', 'Period lock, Chart of Accounts, Journal Entries',
+        'period lock|close the books|chart of accounts|journal entries|ledger accounts|financial year'],
+    'service'   => ['🔧', 'Service Checklist', 'Repair job checklist items',
+        'repair job checklist|service checklist items'],
+    'inventory' => ['📦', 'Inventory', 'Costing method, dead-stock threshold, audit/transfers',
+        'costing method|FIFO|weighted average|dead stock threshold|stock audit|stock transfers|godown'],
+    'ai'        => ['🤖', 'AI', 'On/off per feature, monthly budget and what it has cost',
+        'AI on or off|monthly AI budget|AI cost this month|which AI features|Gemini'],
+    'security'  => ['🛡️', 'Security', 'Password policy, auto-logout, IP restriction, login attempts',
+        'password policy|minimum password length|auto logout|idle timeout|IP restriction|failed login attempts'],
+    'backup'    => ['🔄', 'Backup & Updates', 'Backup download, GitHub update',
+        'take a backup|backup passphrase|restore|download database|GitHub update|app version|error log'],
+    'about'     => ['📱', 'About', 'Install as app',
+        'app version|install as an app|PWA|about this software'],
 ];
 
+// The six an owner comes back to. Not a guess - these are the ones that
+// break the shop when they are wrong: nobody gets their bill, nobody gets
+// reminded, the books are open, the backup is stale.
+$catQuick = ['whatsapp', 'invoice', 'backup', 'security', 'ai', 'accounting'];
+
 if ($cat === '' || !isset($categories[$cat])) {
+    // ---- The state of each category, where there IS a state ----
+    //
+    // A badge is only drawn where this page can actually ANSWER the question
+    // it asks. Everything below is a settings read or one glob - nothing that
+    // grows with the size of the shop's data, because this screen must open
+    // instantly however many bills are in the database.
+    require_once __DIR__ . '/includes/wa_meta.php';
+    $waOn    = meta_wa_configured() || wa_thirdparty_configured();
+    $waMode  = $waOn ? wa_provider_mode() : '';
+    $bkNewest = 0;
+    foreach (glob(__DIR__ . '/uploads/backups/backup_*') ?: [] as $f)
+        if (($m = filemtime($f)) > $bkNewest) $bkNewest = $m;
+    $bkDays  = $bkNewest ? floor((time() - $bkNewest) / 86400) : -1;
+    $aiOn    = ai_limits();
+    $lockTo  = setting('period_lock_date', '');
+    $logoutM = (int)setting('auto_logout_minutes', 0);
+    $tick    = setting('cron_last_tick', '');
+    $tickAgo = $tick ? (time() - strtotime($tick)) : -1;
+
+    $catState = [
+        'whatsapp' => $waOn
+            ? ['ok', $waMode === 'both' ? 'Both numbers live' : ($waMode === 'meta' ? 'Meta connected' : 'Connected')]
+            : ['bad', 'Not connected'],
+        'backup' => $bkDays < 0 ? ['bad', 'Never backed up']
+            : ($bkDays > 2 ? ['warn', 'Last backup ' . (int)$bkDays . ' days ago']
+            : ['ok', $bkDays < 1 ? 'Backed up today' : 'Backed up yesterday']),
+        'ai' => $aiOn['enabled']
+            ? ['ok', 'On' . ($aiOn['budget_rs'] > 0 ? ' · ₹' . money($aiOn['budget_rs']) . ' budget' : '')]
+            : ['warn', 'Switched off'],
+        'accounting' => $lockTo ? ['ok', 'Books locked to ' . dmy($lockTo)] : ['warn', 'No period lock'],
+        'security'   => $logoutM > 0 ? ['ok', 'Auto-logout ' . $logoutM . ' min'] : ['warn', 'No auto-logout'],
+        'reminders'  => $tickAgo < 0 ? ['bad', 'Cron has never run']
+            : ($tickAgo > 900 ? ['warn', 'Cron quiet for ' . (int)round($tickAgo / 60) . ' min'] : ['ok', 'Cron running']),
+    ];
 ?>
-<div class="settings-cat-list">
-  <?php foreach ($categories as $key => $c): ?>
-  <a class="settings-cat-row" href="settings.php?cat=<?= $key ?>">
-    <span class="sc-ico"><?= $c[0] ?></span>
-    <span class="sc-label"><?= e($c[1]) ?><span class="sc-sub"><?= e($c[2]) ?></span></span>
-    <span class="sc-chev">›</span>
+
+<div class="pg-head">
+  <div class="pg-main">
+    <h1>⚙️ Settings</h1>
+    <div class="pg-sub">Manage your billing, business, security and system preferences.</div>
+  </div>
+</div>
+
+<div class="setfind">
+  <label for="setFind" class="sr-only">Search settings</label>
+  <input type="search" id="setFind" placeholder="Search settings — try GST, WhatsApp, backup, password…" autocomplete="off">
+</div>
+<p class="setfind-none" id="setFindNone">Nothing here matches that. Try a shorter word — <em>gst</em>, <em>stock</em>, <em>bill</em>, <em>password</em>.</p>
+
+<div class="cat-quick" id="catQuick">
+  <span class="q-lbl">Most used</span>
+  <?php foreach ($catQuick as $k): ?>
+  <a href="settings.php?cat=<?= $k ?>"><?= $categories[$k][0] ?> <?= e($categories[$k][1]) ?></a>
+  <?php endforeach; ?>
+</div>
+
+<div class="cat-grid" id="catGrid">
+  <?php foreach ($categories as $key => $c):
+    $st = $catState[$key] ?? null; ?>
+  <a class="cat-card" href="settings.php?cat=<?= $key ?>"
+     data-name="<?= e(strtolower($c[1] . ' ' . $c[2])) ?>" data-keys="<?= e($c[3]) ?>">
+    <div class="cat-top">
+      <span class="cat-ico"><?= $c[0] ?></span>
+      <span class="cat-txt">
+        <span class="cat-n"><?= e($c[1]) ?></span>
+        <span class="cat-d"><?= e($c[2]) ?></span>
+      </span>
+    </div>
+    <?php if ($st): ?><span class="cat-badge b-<?= $st[0] ?>"><?= e($st[1]) ?></span><?php endif; ?>
+    <span class="cat-hit"></span>
+    <span class="cat-go">Open Settings →</span>
   </a>
   <?php endforeach; ?>
 </div>
+
+<script>
+// Fourteen cards is not a database question, so the search never leaves the
+// browser: no request, no debounce to get wrong, nothing to wait for. It
+// matches on the category name, its description AND the list of settings
+// inside it - and when a setting is what matched, it says which one, because
+// "General" on its own does not tell somebody looking for GST that they have
+// found it.
+(function () {
+  var box = document.getElementById('setFind');
+  if (!box) return;
+  var cards = [].slice.call(document.querySelectorAll('#catGrid .cat-card'));
+  var quick = document.getElementById('catQuick');
+  var none = document.getElementById('setFindNone');
+  function run() {
+    var q = box.value.trim().toLowerCase();
+    var shown = 0;
+    cards.forEach(function (c) {
+      var hit = c.querySelector('.cat-hit');
+      hit.textContent = '';
+      if (!q) { c.style.display = ''; shown++; return; }
+      var keys = (c.dataset.keys || '').split('|').filter(function (k) { return k.toLowerCase().indexOf(q) !== -1; });
+      var match = keys.length || (c.dataset.name || '').indexOf(q) !== -1;
+      c.style.display = match ? '' : 'none';
+      if (match) {
+        shown++;
+        keys.slice(0, 4).forEach(function (k) {
+          var s = document.createElement('span');
+          s.textContent = k;
+          hit.appendChild(s);
+        });
+      }
+    });
+    quick.style.display = q ? 'none' : '';
+    none.style.display = shown ? 'none' : 'block';
+  }
+  box.addEventListener('input', run);
+  // "?q=backup" from a link or a bookmark lands already filtered
+  var pre = new URLSearchParams(location.search).get('q');
+  if (pre) { box.value = pre; run(); }
+})();
+</script>
 <?php
 include __DIR__ . '/includes/footer.php';
 exit;

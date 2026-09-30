@@ -877,3 +877,64 @@ t_eq('the direction defaults to money coming in', $row['direction'], 'in');
 t_eq('and it starts on hand', $row['status'], 'in_hand');
 t_eq('with today as its date', substr((string)$row['cheque_date'], 0, 10), today());
 q('DELETE FROM cheques WHERE id = ?', [$cid]);
+
+t_group('Settings opens by finding, not by scrolling');
+
+$set = file_get_contents(__DIR__ . '/../settings.php');
+
+// Every category the landing page offers must have a screen behind it. A
+// redesign that renames a key leaves a card that opens nothing, and the
+// person who finds that is the owner, on a Sunday.
+preg_match('/\$categories = \[(.*?)\n\];/s', $set, $cm);
+t_ok('the category table is still one list', !empty($cm[1]));
+preg_match_all("/^    '([a-z]+)'\s*=>\s*\['/m", $cm[1] ?? '', $km);
+$keys = $km[1] ?? [];
+t_eq('all fourteen categories are still there', count($keys), 14);
+foreach (['general','transaction','whatsapp','store','invoice','reminders','party',
+          'accounting','service','inventory','ai','security','backup','about'] as $k) {
+    t_ok("'$k' is still offered", in_array($k, $keys, true));
+    t_ok("...and '$k' still has a screen behind it", strpos($set, "\$cat === '$k'") !== false);
+}
+
+// The search is the whole point of the redesign: a person hunting for GST
+// does not know it lives under General and should not have to.
+t_ok('every category carries the settings inside it, for the search to read',
+     substr_count($cm[1] ?? '', '|') >= 40);
+t_ok('the card puts that list where the browser can search it',
+     strpos($set, 'data-keys="<?= e($c[3]) ?>"') !== false);
+t_ok('...and says WHICH setting matched, not just which box it is in',
+     strpos($set, "class=\"cat-hit\"") !== false && strpos($set, 'hit.appendChild(s)') !== false);
+// Fourteen cards is not a database question. No request means nothing to
+// wait for and no debounce to get wrong.
+t_ok('searching never leaves the browser',
+     strpos($set, "box.addEventListener('input', run)") !== false
+     && strpos(substr($set, strpos($set, 'function run()')), 'fetch(') === false);
+t_ok('a ?q= link lands already filtered', strpos($set, "URLSearchParams(location.search).get('q')") !== false);
+t_ok('and it says so when nothing matches', strpos($set, 'setFindNone') !== false);
+
+// A badge is only drawn where the page can actually ANSWER the question it
+// asks. Each of these is a real reading, not a decoration.
+foreach ([
+    'whatsapp'   => 'meta_wa_configured() || wa_thirdparty_configured()',
+    'backup'     => "glob(__DIR__ . '/uploads/backups/backup_*')",
+    'ai'         => 'ai_limits();',
+    'accounting' => "setting('period_lock_date', '')",
+    'security'   => "setting('auto_logout_minutes', 0)",
+    'reminders'  => "setting('cron_last_tick', '')",
+] as $what => $src)
+    t_ok("the $what badge reads a real fact", strpos($set, $src) !== false);
+t_ok('...and the ones with no fact to show get no badge',
+     strpos($set, "\$st = \$catState[\$key] ?? null;") !== false
+     && strpos($set, 'if ($st): ?><span class="cat-badge') !== false);
+
+// This screen is opened constantly and must not care how big the shop gets.
+t_ok('nothing on the landing page counts bills, parties or stock',
+     preg_match('/\$catState = \[.*?\];/s', $set, $csm)
+     && strpos($csm[0], 'FROM sales') === false && strpos($csm[0], 'FROM parties') === false
+     && strpos($csm[0], 'all(') === false);
+
+$css = file_get_contents(__DIR__ . '/../assets/style.css');
+t_ok('the cards are a reusable layer, not one page\'s styling',
+     strpos($css, 'Settings landing: find it, see its state, open it') !== false);
+t_ok('and a thumb can hit the shortcuts on a phone',
+     strpos($css, '@media (max-width: 1023px) { .cat-quick a { min-height: 44px;') !== false);

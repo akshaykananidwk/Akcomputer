@@ -1143,3 +1143,69 @@ body:has(.bf) .fab-center { display: none; }
   .bf-mini { flex: 1; min-width: 104px; }
   .bf-items .bf-head-row .btn { flex: 1; }
 }
+
+/* ---- Settings landing: find it, see its state, open it -----------------
+   An extension of the SETTINGS PANELS layer above, for the screen that is
+   a way IN to fourteen other screens rather than a screen in its own right.
+   Built so a fifteenth category costs one row in the PHP array and nothing
+   here: the grid, the search and the badges all come from the same data.
+
+     .setfind        the search box and what it says it found
+     .cat-quick      the handful worth a shortcut, as chips
+     .cat-grid       the categories
+     .cat-card       one of them: icon, name, what it does, how it stands
+     .cat-badge      its state, and only where there IS a state
+   ----------------------------------------------------------------------- */
+
+/* A label that only a screen reader reads: the box has a placeholder, but a
+   placeholder disappears the moment somebody types into it. */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+
+.setfind { position: relative; margin-bottom: 14px; }
+.setfind input { width: 100%; min-height: 46px; padding-left: 40px; font-size: 15px; }
+.setfind::before { content: '🔍'; position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+  font-size: 15px; pointer-events: none; opacity: .65; }
+.setfind-none { display: none; color: var(--muted); font-size: 13.5px; padding: 18px 4px; }
+
+.cat-quick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.cat-quick .q-lbl { font-size: 12.5px; font-weight: 700; color: var(--muted); align-self: center;
+  text-transform: uppercase; letter-spacing: .3px; margin-right: 2px; }
+.cat-quick a { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 14px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--card);
+  color: var(--text); font-size: 13.5px; font-weight: 600; }
+.cat-quick a:hover { border-color: var(--primary); color: var(--primary); }
+@media (max-width: 1023px) { .cat-quick a { min-height: 44px; padding: 10px 16px; } }
+
+.cat-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 640px) { .cat-grid { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1100px) { .cat-grid { grid-template-columns: repeat(3, 1fr); } }
+
+.cat-card { display: flex; flex-direction: column; gap: 6px; background: var(--card);
+  border: 1px solid var(--border); border-radius: 14px; padding: 15px; color: var(--text);
+  box-shadow: 0 1px 2px rgba(15,23,42,.04); transition: box-shadow .15s, transform .15s, border-color .15s; }
+.cat-card:hover { border-color: var(--primary); box-shadow: 0 6px 20px rgba(15,23,42,.10); transform: translateY(-2px); }
+.cat-card .cat-top { display: flex; align-items: flex-start; gap: 11px; }
+.cat-card .cat-ico { width: 40px; height: 40px; flex-shrink: 0; border-radius: 11px; font-size: 20px;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.cat-card .cat-txt { min-width: 0; }
+.cat-card .cat-n { display: block; font-size: 15.5px; font-weight: 700; line-height: 1.25; }
+.cat-card .cat-d { display: block; font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+.cat-card .cat-go { margin-top: auto; padding-top: 8px; font-size: 13px; font-weight: 700; color: var(--primary); }
+
+/* A badge is drawn only where the page can actually answer the question it
+   asks. A green tick that means nothing teaches people to ignore the ones
+   that do. */
+.cat-badge { align-self: flex-start; font-size: 11.5px; font-weight: 700; border-radius: 999px;
+  padding: 3px 9px; white-space: nowrap; }
+.cat-badge.b-ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.cat-badge.b-warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.cat-badge.b-bad { background: color-mix(in srgb, var(--bad) 13%, transparent); color: var(--bad); }
+
+/* What the search matched inside a category, so the answer is the SETTING
+   and not merely the box it lives in. */
+.cat-hit { display: flex; flex-wrap: wrap; gap: 5px; }
+.cat-hit:empty { display: none; }
+.cat-hit span { font-size: 11.5px; font-weight: 600; border-radius: 6px; padding: 2px 7px;
+  background: color-mix(in srgb, var(--primary) 11%, transparent); color: var(--primary); }
