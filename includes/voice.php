@@ -700,8 +700,9 @@ function voice_can_call($partyId, $ctx = null, $now = null) {
     $last = array_key_exists('last_call', $c) ? $c['last_call'] : voice_last_call($partyId);
     if ($last && strtotime($last['created_at']) > time() - voice_cooldown_hours() * 3600) {
         $mins = (int)ceil((strtotime($last['created_at']) + voice_cooldown_hours() * 3600 - time()) / 60);
-        return ['ok' => false, 'why' => 'Called ' . voice_ago($last['created_at']) . ' — the next call can go in '
-                                        . ($mins >= 60 ? (int)round($mins / 60) . ' hour(s)' : $mins . ' minutes')];
+        return ['ok' => false, 'soft' => true,
+                'why' => 'Called ' . voice_ago($last['created_at']) . ' — the next call can go in '
+                       . ($mins >= 60 ? (int)round($mins / 60) . ' hour(s)' : $mins . ' minutes')];
     }
 
     return ['ok' => true, 'why' => ''];
@@ -783,7 +784,23 @@ function voice_call_send($partyId, array $opts = []) {
 
     $ctx = voice_party_context($partyId);
     $gate = voice_can_call($partyId, $ctx, $now);
-    if (!$gate['ok']) return ['ok' => false, 'error' => $gate['why'], 'call_id' => 0, 'status' => 'refused'];
+
+    // A person may go over this shop's OWN throttle - the days between
+    // reminders, the monthly limit, the hours between calls - and take
+    // responsibility for it. They may never go over the customer's wishes:
+    // a do-not-call flag, an opt-out, a promise, a hold. Those come back
+    // without 'soft' and no override reaches them.
+    //
+    // The check is here, inside the function that actually dials, rather
+    // than on the screen that offers the button. A screen can be skipped.
+    $over = !empty($opts['override']) && !empty($gate['soft']) && can('payments.add');
+    if (!$gate['ok'] && !$over) return ['ok' => false, 'error' => $gate['why'], 'call_id' => 0, 'status' => 'refused'];
+    if ($over) {
+        log_activity('voice_override', 'Called ' . ($ctx['name'] ?? '#' . $partyId)
+                                     . ' despite: ' . $gate['why']);
+        coll_log($partyId, 'call', ['channel' => 'phone', 'status' => 'done',
+                                    'note' => 'Called anyway — ' . $gate['why']]);
+    }
 
     $amount = isset($opts['amount']) ? round((float)$opts['amount'], 2) : $ctx['due'];
     if ($amount <= 0.009) return ['ok' => false, 'error' => 'Nothing is outstanding', 'call_id' => 0, 'status' => 'refused'];

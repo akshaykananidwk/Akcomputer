@@ -1374,6 +1374,95 @@ t_ok('the spoken menu folder does NOT deny anything — the provider must read i
 t_ok('and uploads does not block mp3 across the board',
      strpos((string)@file_get_contents(__DIR__ . '/../uploads/.htaccess'), 'mp3') === false);
 
+t_group('Voice — the shop\'s own limit may be passed, the customer\'s wishes may not');
+
+// The owner pressed Call and was stopped by "already this month 6 times
+// contacted" - a limit about MESSAGES, with no way past it, no mention of
+// where it is set, and no way to change it anywhere in the software. The
+// limit is right; the dead end was not.
+$wasOn2 = setting('voice_enabled'); $wasId2 = setting('vobiz_auth_id');
+$wasTok2 = setting('vobiz_auth_token'); $wasCid2 = setting('vobiz_caller_id');
+$wasMax = setting('collection_max_reminders'); $wasCool = setting('collection_cooldown_days');
+set_setting('voice_enabled', '1'); set_setting('vobiz_auth_id', 'TESTID');
+set_setting('vobiz_auth_token', 'tok'); set_setting('vobiz_caller_id', '919876543210');
+set_setting('voice_test_mode', '1');
+set_setting('collection_max_reminders', '2'); set_setting('collection_cooldown_days', '0');
+
+$pidO = t_party('TEST_OVER_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500077' WHERE id = ?", [$pidO]);
+t_sale($pidO, 3006.80, 0, date('Y-m-d', strtotime('-40 days')), date('Y-m-d', strtotime('-20 days')));
+// two reminders already sent - the month's limit is used up
+foreach ([9, 8] as $ago)
+    q("INSERT INTO collection_events (party_id, event_type, channel, status, created_at)
+       VALUES (?, 'reminder', 'whatsapp', 'done', DATE_SUB(NOW(), INTERVAL ? DAY))", [$pidO, $ago]);
+
+$g = voice_can_call($pidO, null, $NOON);
+t_eq('the monthly limit does stop the call', $g['ok'], false);
+t_ok('and it is marked as this shop\'s own limit, not the customer\'s wish', !empty($g['soft']), $g['why']);
+t_ok('the reason says how many, over what period, and whose limit it is',
+     stripos($g['why'], '30 days') !== false && stripos($g['why'], 'limit') !== false, $g['why']);
+t_ok('and it says the two channels are counted together',
+     stripos($g['why'], 'messages and calls') !== false, $g['why']);
+
+// A person may go past it, and the call is written down as having done so.
+$res = voice_call_send($pidO, ['override' => true, 'now' => $NOON]);
+t_ok('a person may go ahead anyway', $res['ok'], (string)$res['error']);
+$noted = val("SELECT note FROM collection_events WHERE party_id = ? AND event_type = 'call'
+              ORDER BY id DESC LIMIT 1", [$pidO]);
+t_ok('and the customer\'s history says it went out over the limit',
+     stripos((string)$noted, 'anyway') !== false, (string)$noted);
+t_ok('the activity log records who did it',
+     (int)val("SELECT COUNT(*) FROM activity_log WHERE action = 'voice_override'") > 0);
+
+// The refusals that are NOT the shop's own throttle must never be passable.
+$pidD = t_party('TEST_OVER_DND_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500066', voice_dnd = 1 WHERE id = ?", [$pidD]);
+t_sale($pidD, 900, 0, date('Y-m-d', strtotime('-40 days')), date('Y-m-d', strtotime('-20 days')));
+$gD = voice_can_call($pidD, null, $NOON);
+t_eq('a do-not-call customer is refused', $gD['ok'], false);
+t_ok('and that refusal is NOT soft', empty($gD['soft']), $gD['why']);
+$resD = voice_call_send($pidD, ['override' => true, 'now' => $NOON]);
+t_eq('so an override does not reach them', $resD['ok'], false);
+t_eq('the call is refused outright', $resD['status'], 'refused');
+
+$pidP = t_party('TEST_OVER_PROM_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500055' WHERE id = ?", [$pidP]);
+t_sale($pidP, 900, 0, date('Y-m-d', strtotime('-40 days')), date('Y-m-d', strtotime('-20 days')));
+coll_log($pidP, 'promise', ['amount' => 900, 'due_date' => date('Y-m-d', strtotime('+4 days'))]);
+$gP = voice_can_call($pidP, null, $NOON);
+t_ok('a customer who promised a date is not soft-refused either', empty($gP['soft']), $gP['why']);
+t_ok('and the reason says why chasing them early is a bad idea',
+     stripos($gP['why'], 'promised') !== false, $gP['why']);
+t_eq('no override reaches them', voice_call_send($pidP, ['override' => true, 'now' => $NOON])['ok'], false);
+
+// An opt-out is the customer's own word and outranks everything.
+$pidX = t_party('TEST_OVER_OPT_' . bin2hex(random_bytes(3)));
+q("UPDATE parties SET mobile = '9876500044', collection_opt_out = 1 WHERE id = ?", [$pidX]);
+t_sale($pidX, 900, 0, date('Y-m-d', strtotime('-40 days')), date('Y-m-d', strtotime('-20 days')));
+t_ok('an opted-out customer is refused hard', empty(voice_can_call($pidX, null, $NOON)['soft']));
+t_eq('and stays refused with an override',
+     voice_call_send($pidX, ['override' => true, 'now' => $NOON])['ok'], false);
+
+// The guard is where the dialling happens, not on the screen that offers it.
+$vsrc2 = file_get_contents(__DIR__ . '/../includes/voice.php');
+t_ok('the override is checked inside the function that dials',
+     strpos($vsrc2, "!empty(\$opts['override']) && !empty(\$gate['soft'])") !== false);
+t_ok('and it needs the permission to change money matters',
+     strpos($vsrc2, "!empty(\$gate['soft']) && can('payments.add')") !== false);
+
+// The limit can now actually be changed, which it could not before.
+$set = file_get_contents(__DIR__ . '/../settings.php');
+t_ok('the monthly limit has somewhere to be changed', strpos($set, 'collection_max_reminders') !== false);
+t_ok('so does the wait between reminders', strpos($set, 'collection_cooldown_days') !== false);
+$coll2 = file_get_contents(__DIR__ . '/../collection.php');
+t_ok('the refusal screen points at that setting', strpos($coll2, 'settings.php?cat=reminders') !== false);
+t_ok('and offers to go ahead rather than ending in a dead end',
+     strpos($coll2, 'Call anyway') !== false && strpos($coll2, 'name="override"') !== false);
+
+set_setting('collection_max_reminders', $wasMax); set_setting('collection_cooldown_days', $wasCool);
+set_setting('voice_enabled', $wasOn2); set_setting('vobiz_auth_id', $wasId2);
+set_setting('vobiz_auth_token', $wasTok2); set_setting('vobiz_caller_id', $wasCid2);
+
 t_group('Voice — one call button, on every screen that chases money');
 
 // The owner asked for it on the invoice and on the party ledger. Four screens

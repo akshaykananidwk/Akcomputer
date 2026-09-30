@@ -643,19 +643,35 @@ function coll_reliability_map(array $ids) {
 function coll_can_remind(array $c) {
     $r = cust_rules();
     $t = today();
-    if (!empty($c['opt_out']))    return ['ok' => false, 'why' => 'This customer has asked not to be messaged'];
+
+    // HARD refusals - somebody's decision, not a throttle. The customer asked
+    // not to be chased, or there is nothing to chase them on. These are never
+    // overridable, by anybody, from anywhere.
+    if (!empty($c['opt_out']))    return ['ok' => false, 'why' => 'This customer has asked not to be contacted'];
     if (empty($c['mobile']))      return ['ok' => false, 'why' => 'No mobile number'];
     if (!empty($c['snoozed_until']) && $c['snoozed_until'] >= $t)
-        return ['ok' => false, 'why' => dmy($c['snoozed_until']) . ' is held until'];
+        return ['ok' => false, 'why' => 'Held until ' . dmy($c['snoozed_until']) . ' — somebody put this customer on hold'];
     if (!empty($c['promise_open']) && $c['promise_open']['due_date'] >= $t)
-        return ['ok' => false, 'why' => dmy($c['promise_open']['due_date']) . ' promised — wait until then'];
+        return ['ok' => false, 'why' => 'They promised to pay by ' . dmy($c['promise_open']['due_date'])
+                                      . ' — chasing them before their own date is how a shop loses a good customer'];
+
+    // SOFT refusals - this shop's own throttle, so that reminders stay rare
+    // enough to be taken seriously. 'soft' says a person who takes
+    // responsibility may go ahead anyway; the guard is advice, not a law.
     if (!empty($c['last_contact'])) {
         $since = (int)floor((time() - strtotime($c['last_contact'])) / 86400);
-        if ($since < $r['reminder_cooldown'])
-            return ['ok' => false, 'why' => $since . ' were contacted only days ago (at least ' . $r['reminder_cooldown'] . ' days, wait)'];
+        if ($since < $r['reminder_cooldown']) {
+            $wait = $r['reminder_cooldown'] - $since;
+            return ['ok' => false, 'soft' => true,
+                    'why' => 'Contacted ' . ($since === 0 ? 'today' : $since . ' day(s) ago')
+                           . ' — this shop waits ' . $r['reminder_cooldown'] . ' days between reminders ('
+                           . $wait . ' more to go)'];
+        }
     }
     if (($c['contacts_30d'] ?? 0) >= $r['max_reminders'])
-        return ['ok' => false, 'why' => 'already this month ' . $c['contacts_30d'] . ' times contacted'];
+        return ['ok' => false, 'soft' => true,
+                'why' => 'Contacted ' . (int)$c['contacts_30d'] . ' time(s) in the last 30 days — this shop\'s limit is '
+                       . $r['max_reminders'] . ' a month (messages and calls together)'];
     return ['ok' => true, 'why' => ''];
 }
 

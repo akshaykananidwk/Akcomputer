@@ -54,7 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // ringing a customer is not a read-only act.
     if (post('do') === 'voice_call') {
         require_perm('payments.add');
-        $res = voice_call_send($pid, ['client_uuid' => trim(post('client_uuid'))]);
+        $res = voice_call_send($pid, ['client_uuid' => trim(post('client_uuid')),
+                                      'override' => (bool)post('override')]);
         $who = (string)val('SELECT name FROM parties WHERE id = ?', [$pid]);
         if (!empty($res['duplicate'])) flash('That call was already placed — not calling ' . $who . ' twice.');
         elseif ($res['ok'] && $res['status'] === 'test')
@@ -315,10 +316,27 @@ if (($callPid = (int)get('call')) > 0) {
           <div class="stat-value" style="font-size:16px"><?= $last ? e(voice_status_label($last['status'])) . '<br><span class="muted" style="font-size:12px">' . e(voice_ago($last['created_at'])) . '</span>' : '<span class="muted">never</span>' ?></div></div>
       </div>
 
-      <?php if (!$gate['ok']): ?>
+      <?php
+      // Two kinds of no. The customer's own wishes - do-not-call, a promise,
+      // a hold - are the end of it. This shop's own throttle is advice, and
+      // a person who takes responsibility may go past it; the call is then
+      // written into the customer's history saying so.
+      $soft = !$gate['ok'] && !empty($gate['soft']);
+      ?>
+      <?php if (!$gate['ok'] && !$soft): ?>
         <div class="flash flash-error">This call cannot go out: <?= e($gate['why']) ?></div>
         <a class="btn btn-outline" href="<?= e($callBack) ?>">← Back</a>
       <?php else: ?>
+      <?php if ($soft): ?>
+        <div class="flash flash-error">
+          <strong>This call would normally wait.</strong><br><?= e($gate['why']) ?>
+          <br><span class="muted" style="font-size:12px">
+            That limit is this shop's own, so that reminders stay rare enough to be taken seriously — it counts
+            WhatsApp reminders and calls together. Change it in
+            <a href="settings.php?cat=reminders">Settings → Reminders</a>, or call anyway below and it is
+            written into this customer's history.</span>
+        </div>
+      <?php endif; ?>
       <h3>What they will hear</h3>
       <p class="muted" style="font-size:12px">
         <?php if ($plan['fell_back']): ?>
@@ -355,7 +373,9 @@ if (($callPid = (int)get('call')) > 0) {
                     the customer a second time */ ?>
           <input type="hidden" name="client_uuid" value="<?= e(bin2hex(random_bytes(16))) ?>">
           <input type="hidden" name="back" value="<?= e($callBack) ?>">
-          <button class="btn btn-success" type="submit">✅ Yes, call now</button>
+          <?php if ($soft): ?><input type="hidden" name="override" value="1"><?php endif; ?>
+          <button class="btn <?= $soft ? 'btn-danger' : 'btn-success' ?>" type="submit">
+            <?= $soft ? '📞 Call anyway' : '✅ Yes, call now' ?></button>
           <a class="btn btn-outline" href="<?= e($callBack) ?>">Leave it</a>
         </form>
       <?php endif; ?>

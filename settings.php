@@ -201,6 +201,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_inventory') {
     redirect('settings.php?cat=inventory');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'chase_limits') {
+    require_perm('settings.edit');
+    // How often one customer may be chased. Kept low on purpose: a reminder
+    // that arrives every other day stops being read. Both counts cover
+    // WhatsApp reminders and reminder calls together - to the customer it is
+    // the same shop asking the same thing, whichever way it arrives.
+    set_setting('collection_cooldown_days', (string)max(0, min(60, (int)post('cooldown'))));
+    set_setting('collection_max_reminders', (string)max(1, min(60, (int)post('max_month'))));
+    flash('Saved. This applies to reminders and reminder calls alike.');
+    redirect('settings.php?cat=reminders');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_transaction') {
     require_perm('settings.edit');
     set_setting('cash_sale_default', post('cash_sale_default') ? '1' : '0');
@@ -955,6 +967,29 @@ exit;
     <button class="btn btn-sm" type="submit">Save</button>
     <a class="btn btn-sm btn-outline" href="<?= e($cronUrl) ?>" target="_blank">▶ Test Run Now</a>
   </form>
+</div>
+
+<div class="card">
+  <h3>🔁 How often one customer may be chased</h3>
+  <p class="muted mb">
+    A reminder that arrives every other day stops being read. These two limits keep them rare enough to be
+    taken seriously — and they count <strong>WhatsApp reminders and reminder calls together</strong>, because to
+    the customer it is the same shop asking the same thing either way. When a limit stops a call, the screen
+    says so and offers to go ahead anyway; that call is then written into the customer's history.
+  </p>
+  <form method="post" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="chase_limits">
+    <div><label>Days to wait between reminders to the same customer</label>
+      <input type="number" name="cooldown" min="0" max="60" value="<?= (int)setting('collection_cooldown_days', 3) ?>"></div>
+    <div><label>Most times one customer may be chased in 30 days</label>
+      <input type="number" name="max_month" min="1" max="60" value="<?= (int)setting('collection_max_reminders', 4) ?>"></div>
+    <button class="btn btn-sm" type="submit">Save</button>
+  </form>
+  <p class="muted" style="font-size:12px">
+    A customer who has asked not to be contacted, one who has promised a date, and one somebody put on hold are
+    never chased whatever these are set to — those are their decision, not a limit.
+  </p>
 </div>
 
 <div class="card">
