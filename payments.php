@@ -442,11 +442,17 @@ if ($action === 'new') {
     // supplier we owe 3,000 who also owes us 5,000 was simply absent from
     // Payment-Out's pending list.
     $sideExpr = party_balance_side_expr('p', $dir);
-    $pendingFirst = "($sideExpr > 0.009) DESC, $sideExpr DESC";
-    $parties = all("SELECT p.id, p.name, p.mobile, $balExpr AS balance, $sideExpr AS side_due FROM parties p
+    // ...but "pending" is what can actually be COLLECTED, which is the side
+    // capped by the net - the one rule the whole software now asks. A party
+    // with 16,504 of sale bills and 16,504 of purchase bills is not somebody
+    // to collect from; the two cancel and a Contra settles them.
+    $collectExpr = money_chase_expr($sideExpr, $balExpr, $dir);
+    $pendingFirst = "($collectExpr > 0.009) DESC, $collectExpr DESC";
+    $parties = all("SELECT p.id, p.name, p.mobile, $balExpr AS balance, $sideExpr AS side_due,
+                           $collectExpr AS collectible FROM parties p
                     WHERE (p.is_active = 1 OR ABS($balExpr) > 0.009)
                     ORDER BY $pendingFirst, p.name");
-    $pendingCount = count(array_filter($parties, fn($p) => $p['side_due'] > 0.009));
+    $pendingCount = count(array_filter($parties, fn($p) => $p['collectible'] > 0.009));
     $wDue = $dir === 'in' ? walkin_due() : 0;
     $pms = active_payment_methods();
     $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
@@ -470,23 +476,28 @@ if ($action === 'new') {
               <option value="">-- select party --</option>
               <?php if ($pendingCount): ?><optgroup label="<?= $dir === 'in' ? 'Receivable' : 'Payable' ?>"><?php endif; ?>
               <?php $inGroup = true; foreach ($parties as $p):
-                $pending = $p['side_due'] > 0.009;
+                $pending = $p['collectible'] > 0.009;
                 if ($inGroup && $pendingCount && !$pending) { echo '</optgroup><optgroup label="All other parties">'; $inGroup = false; }
-                // This side's own figure, not the netted one: on Payment-Out a
-                // party who also owes US money must still show what WE owe THEM.
+                // THE COLLECTABLE FIGURE COMES FIRST, AND NOTHING ELSE DOES.
                 //
-                // But when BOTH sides are live, saying "₹16,504 receivable" and
-                // then "Party Balance: ₹0.00" two lines below reads as a
-                // contradiction - and it was the thing that made the owner
-                // distrust the figures. So the net is said out loud, in the
-                // same label, along with the fact that a contra settles it
-                // without any cash changing hands.
-                $lbl = $pending ? ' (₹' . money($p['side_due']) . ($dir === 'in' ? ' receivable' : ' payable') . ')' : '';
-                if ($pending && abs($p['balance']) < $p['side_due'] - 0.009) {
-                    $netTxt = abs((float)$p['balance']) < 0.009
-                        ? 'net ₹0 — settles by Contra'
-                        : 'net ₹' . money(abs($p['balance'])) . ($p['balance'] > 0 ? ' receivable' : ' payable');
-                    $lbl .= ' ↔ ' . ($dir === 'in' ? 'also payable' : 'also receivable') . ' · ' . $netTxt;
+                // This line used to open with the gross side - "AK COMPUTER
+                // (₹16,504.00 receivable)" - and put the truth after it. On a
+                // phone a <select> option cannot wrap, so the truth was the
+                // half that got cut off: the owner read "₹16,504 receivable"
+                // and, two lines below, "Party Balance: ₹0.00". A figure that
+                // is only honest when the whole line fits is not honest.
+                //
+                // So the label now says what can actually be collected, which
+                // is the same money_chase_due() rule every other screen asks,
+                // and a party whose two sides cancel says so in five words
+                // that fit on any phone.
+                $lbl = '';
+                if ($pending) {
+                    $lbl = ' — ₹' . money($p['collectible']) . ($dir === 'in' ? ' to collect' : ' to pay');
+                } elseif ($p['side_due'] > 0.009) {
+                    $lbl = abs((float)$p['balance']) < 0.009
+                        ? ' — net ₹0, settles by Contra'
+                        : ' — net ₹' . money(abs($p['balance'])) . ($p['balance'] > 0 ? ' receivable' : ' payable');
                 } ?>
               <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) . $lbl ?></option>
               <?php endforeach; ?>
@@ -559,9 +570,19 @@ if ($action === 'new') {
         .then(function (r) { return r.json(); })
         .then(function (d) {
           var b = d.balance;
-          document.getElementById('balInfo').innerHTML = 'Party Balance: <strong style="color:' +
+          var line = 'Party Balance: <strong style="color:' +
             (b > 0 ? 'var(--ok)' : (b < 0 ? 'var(--bad)' : 'inherit')) + '">₹' +
             Math.abs(b).toFixed(2) + (b > 0 ? ' receivable' : (b < 0 ? ' payable' : '')) + '</strong>';
+          // The bills listed below can add up to more than is really owed,
+          // because the other side of the ledger cancels part of them. Say so
+          // here rather than leaving the two figures to argue on screen.
+          var inr = function (n) { return n.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}); };
+          if (d.side - d.collect > 0.009)
+            line += '<br><span style="color:var(--warn)">₹' + inr(d.side) +
+                    ' of bills on this side, but only <strong>₹' + inr(d.collect) +
+                    '</strong> is really ' + (DIR === 'in' ? 'collectable' : 'payable') +
+                    ' — the rest cancels against the other side (settle it with a Contra).</span>';
+          document.getElementById('balInfo').innerHTML = line;
           if (!d.bills.length) { box.innerHTML = '<span class="muted">No due bills - the payment will just be recorded in the ledger.</span>'; return; }
           var h = '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>Bill</th><th>Date</th><th class="num">Due ₹</th><th style="width:130px">Link ₹</th></tr></thead><tbody>';
           d.bills.forEach(function (bl) {
@@ -930,11 +951,12 @@ $duePurchases = money_cap_bill_dues($duePurchases, 'out');
 $bal     = dash_balances();
 $advList = parties_with_advance(20);
 $advTot  = array_sum(array_map(fn($x) => (float)$x['adv'], $advList));
-// Same rule as party_advance(), written once in SQL: the purchase side capped
-// by what the shop owes NET, so a party whose two sides cancel adds nothing.
-$advAll  = (float)val('SELECT COALESCE(SUM(LEAST(adv, -bal)),0) FROM (SELECT '
-                      . party_balance_side_expr('p', 'out') . ' adv, ' . party_balance_expr('p') . ' bal
-                       FROM parties p WHERE p.is_active = 1 HAVING adv > 0.009 AND bal < -0.009) x');
+// Same rule as party_advance(), through the one shared SQL expression: the
+// purchase side capped by what the shop owes NET, so a party whose two sides
+// cancel adds nothing to the total.
+$advAll  = (float)val('SELECT COALESCE(SUM(held),0) FROM (SELECT '
+                      . money_chase_expr(party_balance_side_expr('p', 'out'), party_balance_expr('p'), 'out')
+                      . ' held FROM parties p WHERE p.is_active = 1 HAVING held > 0.009) x');
 
 // Overdue and due-this-week are counted off the bills already loaded and
 // already capped above - a date comparison, not a second money rule.

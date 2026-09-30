@@ -1866,15 +1866,13 @@ function party_advance($partyId) {
 
 /** Every party currently holding an advance with the shop. */
 function parties_with_advance($limit = 100) {
-    // Both sides in the HAVING, for the same reason the collection queue needs
-    // both: a party whose sides cancel out is holding nothing with the shop.
-    $rows = all('SELECT p.id, p.name, p.mobile, ' . party_balance_side_expr('p', 'out') . ' adv,
-                        ' . party_balance_expr('p') . ' bal
-                 FROM parties p WHERE p.is_active = 1
-                 HAVING adv > 0.009 AND bal < -0.009 ORDER BY adv DESC LIMIT ' . (int)$limit);
-    foreach ($rows as &$r) $r['adv'] = money_advance_held($r['adv'], $r['bal']);
-    unset($r);
-    return $rows;
+    // Through the one shared SQL expression, for the same reason the collection
+    // queue needs both sides: a party whose sides cancel out is holding nothing
+    // with the shop.
+    return all('SELECT p.id, p.name, p.mobile, '
+               . money_chase_expr(party_balance_side_expr('p', 'out'), party_balance_expr('p'), 'out') . ' adv
+               FROM parties p WHERE p.is_active = 1
+               HAVING adv > 0.009 ORDER BY adv DESC LIMIT ' . (int)$limit);
 }
 
 // ---------- Instalments ----------

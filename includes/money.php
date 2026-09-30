@@ -384,6 +384,23 @@ function money_advance_held($payableSide, $netBalance) {
     return money_chase_due($payableSide, -(float)$netBalance);
 }
 
+/**
+ * The same two rules as a SQL expression.
+ *
+ * For the screens that have to rank or total hundreds of parties inside the
+ * query - the Payment-In party picker, the advance total - rather than pull
+ * every party into PHP to ask one question about each. It is written here,
+ * beside the two functions it mirrors, so the arithmetic cannot drift: if the
+ * rule ever changes, all three change together or none of them do.
+ *
+ * $dir 'in'  = what may be collected from them (money_chase_due)
+ * $dir 'out' = what of theirs the shop is holding (money_advance_held)
+ */
+function money_chase_expr($sideExpr, $balExpr, $dir) {
+    $owedToThem = $dir === 'in' ? "($balExpr)" : "-($balExpr)";
+    return "LEAST($sideExpr, GREATEST(0, $owedToThem))";
+}
+
 /** A party's still-unpaid bills, oldest first — the canonical ordering every
  *  settlement and every cap uses. $dir 'in' = sales, 'out' = purchases. */
 function money_due_bills($party_id, $dir, $cols = '*') {

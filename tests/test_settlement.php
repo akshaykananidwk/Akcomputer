@@ -815,14 +815,30 @@ t_ok('the phone and a reminder call agree',
 $billDue = sale_true_due(row('SELECT * FROM sales WHERE id = ?', [$xs]));
 t_eq('the invoice itself is still the full amount', $billDue, 16504.0);
 
-// And the Payment-In list says the net out loud instead of leaving the owner
-// to spot that "₹16,504 receivable" and "Party Balance: ₹0.00" are the same
-// party two lines apart.
+// And the Payment-In picker leads with what can be COLLECTED. It used to open
+// with the gross - "AK COMPUTER (₹16,504.00 receivable)" - and put the truth
+// after it; on a phone a <select> option cannot wrap, so the truth was exactly
+// the half that got cut off, leaving "₹16,504 receivable" above "Party
+// Balance: ₹0.00" with no way to tell which to believe.
 $paySrc = file_get_contents(dirname(__DIR__) . '/payments.php');
-t_ok('the party picker says the net when both sides are live',
-     strpos($paySrc, 'net ₹0 — settles by Contra') !== false);
-t_ok('and names the contra as the way to settle it',
-     strpos($paySrc, "'net ₹' . money(abs(\$p['balance']))") !== false);
+t_ok('the party picker ranks by what can be collected, not the bare side',
+     strpos($paySrc, '$collectExpr = money_chase_expr($sideExpr, $balExpr, $dir);') !== false
+     && strpos($paySrc, "\$pendingFirst = \"(\$collectExpr > 0.009) DESC, \$collectExpr DESC\";") !== false);
+t_ok('...and groups by it, so a settled party is not under "Receivable"',
+     strpos($paySrc, "fn(\$p) => \$p['collectible'] > 0.009") !== false
+     && strpos($paySrc, "\$pending = \$p['collectible'] > 0.009;") !== false);
+t_ok('the collectable figure is the first thing in the label',
+     strpos($paySrc, "\$lbl = ' — ₹' . money(\$p['collectible'])") !== false);
+t_ok('and a party whose sides cancel says so in words that fit a phone',
+     strpos($paySrc, "' — net ₹0, settles by Contra'") !== false);
+// The bill list below can still add up to more than is owed. The hint must
+// explain that rather than letting the two figures argue on screen.
+t_ok('the hint under the picker explains the gap',
+     strpos($paySrc, 'd.side - d.collect > 0.009') !== false
+     && strpos($paySrc, 'the rest cancels against the other side') !== false);
+$ajxSrc = file_get_contents(dirname(__DIR__) . '/ajax.php');
+t_ok('...and the figure it explains comes from the shared rule',
+     strpos($ajxSrc, "\$collect = \$dir === 'in' ? money_chase_due(\$side, \$balance) : money_advance_held(\$side, \$balance);") !== false);
 
 // A party who genuinely nets a debt is still chased, for the difference.
 list($yp, $ys, $yb) = ts_both_party(9000, 4000);
@@ -844,14 +860,27 @@ t_ok('and they are not listed as holding an advance', !in_array($xp, $advIds, tr
 $advSrc = file_get_contents(dirname(__DIR__) . '/parties.php');
 t_ok('the ledger banner reads as a sentence',
      strpos($advSrc, "of this party's money is held with us (advance)") !== false);
-// The Payments total is the same rule written in SQL; it must not count them.
-$payTot = (float)val('SELECT COALESCE(SUM(LEAST(adv, -bal)),0) FROM (SELECT '
-                     . party_balance_side_expr('p', 'out') . ' adv, ' . party_balance_expr('p') . ' bal
-                      FROM parties p WHERE p.is_active = 1 AND p.id = ' . (int)$xp
-                     . ' HAVING adv > 0.009 AND bal < -0.009) x');
+// The Payments total is the same rule as one SQL expression, written beside
+// the two PHP ones so the arithmetic cannot drift apart. It must agree with
+// party_advance() to the rupee, for this party and for every other.
+$payTot = (float)val('SELECT COALESCE(SUM(held),0) FROM (SELECT '
+                     . money_chase_expr(party_balance_side_expr('p', 'out'), party_balance_expr('p'), 'out')
+                     . ' held FROM parties p WHERE p.is_active = 1 AND p.id = ' . (int)$xp
+                     . ' HAVING held > 0.009) x');
 t_eq('the Payments advance total leaves them out too', $payTot, 0.0);
-t_ok('and the page really uses that rule, not the bare side',
-     strpos($paySrc, 'SUM(LEAST(adv, -bal))') !== false);
+t_ok('and the page really uses that one expression, not a second copy of it',
+     strpos($paySrc, "money_chase_expr(party_balance_side_expr('p', 'out'), party_balance_expr('p'), 'out')") !== false);
+// SQL and PHP must give the same answer, or there are two rules again.
+foreach ([[9000, 4000, 'in'], [4000, 9000, 'out'], [5000, 0, 'in'], [0, 5000, 'out']] as $case) {
+    list($sa, $pu, $d) = $case;
+    list($cp) = ts_both_party($sa, $pu);
+    $sqlAns = (float)val('SELECT ' . money_chase_expr(party_balance_side_expr('p', $d), party_balance_expr('p'), $d)
+                         . ' FROM parties p WHERE p.id = ' . (int)$cp);
+    $phpAns = $d === 'in' ? money_chase_due(party_balance_side($cp, 'in'), party_balance($cp))
+                          : money_advance_held(party_balance_side($cp, 'out'), party_balance($cp));
+    t_ok("SQL and PHP agree on sale $sa / purchase $pu, side $d",
+         abs($sqlAns - $phpAns) < 0.01, "sql $sqlAns vs php $phpAns");
+}
 
 // A party who really did pay ahead is still shown as holding it, in full.
 $zp = t_party('ADVANCE_STILL_REAL');

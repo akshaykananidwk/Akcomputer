@@ -124,6 +124,20 @@ t_eq('the same figure the reminder would send',
      $mine['amount'], sale_true_due(row('SELECT * FROM sales WHERE id = ?', [$o2])));
 t_ok('collection total is never more than total receivable', $col['total'] <= dash_balances()['receivable'] + 0.01);
 
+// ...and the reason it cannot be. The card used to cap each party on the sale
+// side alone, so a party with ₹4,000 of sale bills and ₹9,000 of purchase
+// bills - net ₹5,000 owed BY the shop - was on the Dashboard as ₹4,000 left
+// to collect, sitting next to a Receivable total that did not include them.
+list($dcp) = ts_both_party(4000, 9000);   // defined in test_settlement.php, which runs first
+$col2 = dash_collection();
+$row2 = null;
+foreach ($col2['customers'] as $c) if ((int)$c['id'] === (int)$dcp) $row2 = $c;
+t_ok('a party the shop owes money to is not on the collection card', $row2 === null,
+     $row2 ? 'listed for ' . $row2['amount'] : '');
+t_eq('their invoice is still their invoice', party_balance_side($dcp, 'in'), 4000.0);
+t_ok('and the total still never exceeds receivable',
+     dash_collection()['total'] <= dash_balances()['receivable'] + 0.01);
+
 t_group('overdue vs due-later is split by date');
 $p3 = t_party();
 t_sale($p3, 500, 0, date('Y-m-d', strtotime('-30 days')), date('Y-m-d', strtotime('-5 days')));  // overdue

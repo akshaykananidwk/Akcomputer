@@ -183,7 +183,16 @@ if ($a === 'party_bills' && can('payments.view')) {
         $bills = all("SELECT id, IF(bill_no = '', CONCAT('#', id), bill_no) no, purchase_date d, total - paid due FROM purchases
                       WHERE party_id = ? AND status <> 'paid' ORDER BY purchase_date, id", [$party_id]);
     }
-    echo json_encode(['balance' => round($balance, 2), 'bills' => array_merge(
+    // What can actually be collected on this side - the same rule the party
+    // picker, the collection queue and the reminder call all ask. When it is
+    // less than the bills below add up to, the screen has to say why, or the
+    // owner is left reconciling "₹16,504 of bills" against "Balance ₹0.00" in
+    // his head and trusting neither.
+    $side = party_balance_side($party_id, $dir);
+    $collect = $dir === 'in' ? money_chase_due($side, $balance) : money_advance_held($side, $balance);
+    echo json_encode(['balance' => round($balance, 2),
+                      'side' => round($side, 2), 'collect' => round($collect, 2),
+                      'bills' => array_merge(
         // the party's unsettled OPENING balance (pre-software ledger) rides
         // on top as its own linkable line - id 'op' instead of a bill id
         ($opDue = opening_due($party_id, $dir)) > 0.009

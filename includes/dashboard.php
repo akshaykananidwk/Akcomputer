@@ -229,9 +229,10 @@ function dash_kpis($from, $to, $ownerId = null, $locId = 0) {
 function dash_balances() {
     // The CARD totals are the net position per party, matching the Parties list
     // you land on when you tap them. Each party's two sides are carried on the
-    // row as well, because the collection queue and the segments cap bills on
-    // the SALE side alone - netting there was what wrote a customer's own bill
-    // down by what the shop happened to owe them.
+    // row as well, because a BILL keeps its own figure - netting there would
+    // write a customer's own invoice down by what the shop happened to owe
+    // them. What may be ASKED for is a different question again, and every
+    // screen that asks it puts both figures through money_chase_due().
     //
     // The two sides subtract to party_balance_expr() exactly (see money.php),
     // so `bal` is derived here rather than selected: running that seven-
@@ -294,7 +295,14 @@ function dash_collection(array $bals = null) {
             'oldest_days' => 0, 'oldest_party' => '', 'customers' => [], 'overdue_customers' => 0];
 
     foreach ($byParty as $pid => $list) {
-        $cap = isset($ledger[$pid]) ? (float)$ledger[$pid]['recv_due'] : 0.0;   // this party's SALE side
+        // What may be ASKED for: the sale side capped by the net, the one rule
+        // money_chase_due() holds for the whole software. The sale side alone
+        // put a party into the Dashboard's collection card for ₹4,000 while
+        // the ledger said the shop owed them ₹5,000 - so the card could claim
+        // more money to collect than the Receivable total beside it.
+        $cap = isset($ledger[$pid])
+             ? money_chase_due($ledger[$pid]['recv_due'], $ledger[$pid]['bal'])
+             : 0.0;
         $adj = money_trim_dues(array_column($list, 'due'), $cap);
         $owed = 0.0; $od = 0.0; $dToday = 0.0; $dWeek = 0.0; $oldest = null;
         foreach ($list as $i => $b) {
