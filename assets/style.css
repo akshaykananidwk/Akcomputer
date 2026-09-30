@@ -903,3 +903,79 @@ a.kpi:hover { box-shadow: 0 4px 14px rgba(15,23,42,.12); transform: translateY(-
 /* Two panes side by side on a desktop, stacked on a phone. */
 .row-2 { display: grid; grid-template-columns: 1fr; gap: 0 14px; }
 @media (min-width: 900px) { .row-2 { grid-template-columns: 1fr 1fr; } }
+
+/* ============================================================
+   SETTINGS PANELS — the admin-screen layer
+   ------------------------------------------------------------
+   Same idea as MONEY PANELS above and deliberately generic, so
+   Users, Roles, Locations, Companies, Cron Manager and the rest
+   of Settings can be brought onto it one at a time.
+
+     .pg-head              breadcrumb + title + a strip of facts
+     .fact / .fact-row     the small figures in that strip
+     .sect                 a card with a coloured round icon
+     .sect.s-blue|orange|green|purple|red
+     .f-grid               a form that is one column on a phone
+     .logtbl               an error/activity log that stays readable
+   ============================================================ */
+
+.pg-head { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.pg-head .pg-main { flex: 1; min-width: 220px; }
+.pg-head .pg-crumb { font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+.pg-head .pg-crumb a { color: var(--muted); text-decoration: none; }
+.pg-head h1 { font-size: 25px; font-weight: 800; letter-spacing: -.4px; margin: 0 0 3px; }
+.pg-head .pg-sub { font-size: 13px; color: var(--muted); }
+
+.fact-row { display: flex; gap: 0; flex-wrap: wrap; background: var(--card); border-radius: var(--radius);
+            box-shadow: 0 1px 3px rgba(15,23,42,.06); overflow: hidden; }
+.fact { padding: 11px 16px; min-width: 118px; border-right: 1px solid var(--line); }
+.fact:last-child { border-right: 0; }
+.fact .fact-l { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.fact .fact-v { font-size: 14px; font-weight: 700; margin-top: 3px; white-space: nowrap; }
+.fact.f-ok .fact-v { color: var(--ok); } .fact.f-bad .fact-v { color: var(--bad); }
+.fact.f-warn .fact-v { color: var(--warn); }
+
+.sect { background: var(--card); border-radius: var(--radius); box-shadow: 0 1px 3px rgba(15,23,42,.06);
+        padding: 16px; margin-bottom: 14px; border-top: 3px solid var(--line); }
+.sect > .sect-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.sect .sect-ico { flex: 0 0 38px; width: 38px; height: 38px; border-radius: 11px; display: grid;
+                  place-items: center; font-size: 18px; background: var(--bg); }
+.sect .sect-t { flex: 1; min-width: 0; }
+.sect .sect-t h3 { margin: 0 0 2px; font-size: 16px; }
+.sect .sect-t p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.sect.s-blue   { border-top-color: #2563eb; } .sect.s-blue   .sect-ico { background: #dbeafe; }
+.sect.s-orange { border-top-color: var(--warn); } .sect.s-orange .sect-ico { background: #fef3c7; }
+.sect.s-green  { border-top-color: var(--ok); }  .sect.s-green  .sect-ico { background: #d1fae5; }
+.sect.s-purple { border-top-color: #7c3aed; } .sect.s-purple .sect-ico { background: #ede9fe; }
+.sect.s-red    { border-top-color: var(--bad); } .sect.s-red    .sect-ico { background: #fee2e2; }
+
+/* Forms: one column on a phone, always. Two half-width boxes side by side at
+   360px is how a passphrase field ends up 80 pixels wide. */
+.f-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 640px) { .f-grid.c2 { grid-template-columns: 1fr 1fr; } }
+.f-grid label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 4px; }
+.f-grid .f-hint { font-size: 11.5px; color: var(--muted); font-weight: 400; }
+.f-grid input[type=text], .f-grid input[type=password], .f-grid input[type=file],
+.f-grid input[type=number], .f-grid select { width: 100%; }
+
+/* Buttons go full width on a phone, and never below the 44px a thumb needs. */
+@media (max-width: 640px) {
+  .sect .btn, .sect button.btn { min-height: 44px; }
+  .sect .page-actions .btn, .sect form > .btn, .sect .btn-block { width: 100%; justify-content: center; }
+}
+
+/* A log has to stay readable on a phone without turning into confetti. */
+.logtbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.logtbl th { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
+             text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.logtbl td { padding: 8px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.logtbl tbody tr:last-child td { border-bottom: 0; }
+.logtbl .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; word-break: break-all; }
+@media (max-width: 760px) {
+  .logtbl, .logtbl tbody, .logtbl tr, .logtbl td { display: block; width: 100%; min-width: 0; }
+  .logtbl thead { display: none; }
+  .logtbl tr { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+  .logtbl td { border: 0; padding: 2px 0; }
+  .logtbl td::before { content: attr(data-l) ' '; font-size: 11px; color: var(--muted); font-weight: 600; }
+  .logtbl td:empty { display: none; }
+}

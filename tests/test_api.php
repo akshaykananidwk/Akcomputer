@@ -824,20 +824,24 @@ t_ok('and says whether the backup is locked, since only a locked one is ever sen
 // Order: update first, undo second, backup third, errors fourth, the
 // set-once things last.
 $pos = fn($needle) => strpos($bk, $needle);
-t_ok('updating comes before taking a backup by hand',
-     $pos('⬆️ Update the software') < $pos('💾 Backup'));
-t_ok('undoing an update sits right under updating',
-     $pos('⬆️ Update the software') < $pos('🛟 Undo the last update')
-     && $pos('🛟 Undo the last update') < $pos('💾 Backup'));
-// The SECTION, not the sentence higher up that points down at it.
-t_ok('the repo and token settings are below everything, folded away',
-     $pos('⚙️ Where the code comes from') > $pos('💾 Backup')
-     && $pos('⚙️ Where the code comes from') > $pos('When something is wrong'));
-t_ok('so is opening an encrypted file, which is done about once ever',
-     $pos('Open an encrypted backup file') > $pos('💾 Backup'));
-t_ok('and the update history', $pos('Update history') > $pos('💾 Backup'));
-t_ok('three things are folded, not deleted', substr_count($bk, '<details') >= 3);
-
+t_ok('updating comes first — it is what gets pressed most',
+     $pos('<h3>Update the software</h3>') < $pos('<h3>Backup</h3>'));
+t_ok('undoing an update sits right beside updating',
+     $pos('<h3>Update the software</h3>') < $pos('<h3>Undo the last update</h3>')
+     && $pos('<h3>Undo the last update</h3>') < $pos('<h3>Backup</h3>'));
+// The heading, not the sentence higher up that points down at it.
+t_ok('the set-once things come after the everyday ones',
+     $pos('<h3>Where the code comes from — set once</h3>') > $pos('<h3>Backup</h3>'));
+t_ok('so does opening an encrypted file, which is done about once ever',
+     $pos('<h3>Open an encrypted backup file</h3>') > $pos('<h3>Backup</h3>'));
+t_ok('and the update history, which is folded away',
+     $pos('Update history') > $pos('<h3>Backup</h3>') && strpos($bk, '<details') !== false);
+t_ok('each section is one of the reusable coloured cards',
+     substr_count($bk, 'class="sect s-') >= 6);
+t_ok('the page names itself and where it sits',
+     strpos($bk, 'pg-crumb') !== false && strpos($bk, 'Update &amp; Backup</h1>') !== false);
+t_ok('the four facts are one strip, not four cards taking a screen each',
+     strpos($bk, 'fact-row') !== false && substr_count($bk, 'class="fact ') >= 3);
 t_ok('it says to press Migrate after an update that needs it', strpos($bk, 'migrate.php') !== false);
 t_ok('troubleshooting is written in rather than asked about',
      strpos($bk, 'The usual causes') !== false);
