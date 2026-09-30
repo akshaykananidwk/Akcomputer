@@ -1924,10 +1924,19 @@ function cheque_statuses() { return ['in_hand' => 'on hand', 'deposited' => 'Dep
 function cheque_add(array $c) {
     q('INSERT INTO cheques (direction, party_id, payment_id, cheque_no, bank_name, cheque_date, amount,
        status, bank_account_id, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-      [$c['direction'] ?? 'in', $c['party_id'] ?: null, $c['payment_id'] ?: null,
+      // Every OPTIONAL field defaults here. Without that, a caller who leaves
+      // one out - which is the normal case for a cash-counter cheque with no
+      // bank account picked - writes a PHP warning on every single call. The
+      // cheque still saved correctly, so nobody noticed until the error log
+      // was 159 lines of the same line, and a log that full is a log nobody
+      // reads when something real goes wrong.
+      //
+      // cheque_no and amount stay undefaulted on purpose: a cheque with
+      // neither is a mistake in the calling code, and should say so.
+      [$c['direction'] ?? 'in', ($c['party_id'] ?? null) ?: null, ($c['payment_id'] ?? null) ?: null,
        trim((string)$c['cheque_no']), trim((string)($c['bank_name'] ?? '')) ?: null,
-       $c['cheque_date'] ?: today(), (float)$c['amount'], $c['status'] ?? 'in_hand',
-       $c['bank_account_id'] ?: null, trim((string)($c['notes'] ?? '')) ?: null,
+       ($c['cheque_date'] ?? null) ?: today(), (float)$c['amount'], $c['status'] ?? 'in_hand',
+       ($c['bank_account_id'] ?? null) ?: null, trim((string)($c['notes'] ?? '')) ?: null,
        $_SESSION['user_id'] ?? null]);
     return insert_id();
 }

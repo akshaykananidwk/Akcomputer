@@ -1445,94 +1445,100 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
 <?php endif; ?>
 
 <?php if ($cat === 'backup'): ?>
-<div class="card">
-  <h3>💾 Backup</h3>
-  <p class="muted mb">Download a backup of the whole database (.sql file) — keep it saved on Google Drive / a pen drive. Add a passphrase to encrypt the file (AES-256) - leave it blank for a plain .sql file like before.</p>
-  <form method="post" action="settings.php" class="filterbar">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="backup">
-    <div><label>Passphrase (optional)</label><input type="password" name="passphrase" placeholder="leave blank for plain .sql"></div>
-    <button class="btn btn-outline" type="submit">⬇ Download backup</button>
-  </form>
-</div>
+<?php
+// Ordered by what the owner actually does here. Updating is pressed several
+// times a week; decrypting a backup file is done roughly never. The page used
+// to be the other way round, with the update button below three cards of
+// things nobody touches, and with the one fact that matters most on a backup
+// page - did the backup actually HAPPEN - printed nowhere at all.
+$bkDir   = __DIR__ . '/uploads/backups';
+$bkFiles = is_dir($bkDir) ? glob($bkDir . '/backup_*') : [];
+usort($bkFiles, fn($a, $b) => filemtime($b) <=> filemtime($a));
+$bkLast  = $bkFiles ? filemtime($bkFiles[0]) : 0;
+$bkAgeH  = $bkLast ? (int)floor((time() - $bkLast) / 3600) : -1;
+$bkOn    = setting('auto_backup_enabled', '1') === '1';
+$bkLock  = trim((string)setting('backup_passphrase', '')) !== '';
+$elog    = __DIR__ . '/uploads/logs/error.log';
+$eSize   = is_file($elog) ? filesize($elog) : 0;
+$eLast   = [];
+if ($eSize > 0) { $lines = @file($elog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []; $eLast = array_slice($lines, -8); }
+?>
 
 <div class="card">
-  <h3>🔐 Automatic daily backup</h3>
-  <p class="muted mb">The daily backup is a copy of the whole business — customers, prices, passwords, everything. Put a passphrase here and that file is <strong>locked (AES-256)</strong> and only then is it sent to Telegram. Without a passphrase the file stays on the server and Telegram gets a notice only — an unlocked file is never sent.</p>
-  <p class="muted mb"><strong>Keep the passphrase safe</strong> — without it the backup will not open (the "Decrypt a backup file" opens it).</p>
-  <form method="post" action="settings.php" class="filterbar">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="save_backup_auto">
-    <div><label>Backup passphrase <span class="muted" style="font-weight:normal">(blank = no file to Telegram)</span></label>
-      <input type="text" name="backup_passphrase" value="<?= e(setting('backup_passphrase')) ?>" placeholder="e.g. AkC-2026-Backup!"></div>
-    <label class="check-inline"><input type="checkbox" name="backup_telegram" value="1" <?= setting('backup_telegram', '1') === '1' ? 'checked' : '' ?>> Send the encrypted file to Telegram</label>
-    <label class="check-inline"><input type="checkbox" name="error_alerts" value="1" <?= setting('error_alerts', '1') === '1' ? 'checked' : '' ?>> 🚨 Tell me on Telegram the moment there is an error</label>
-    <button class="btn" type="submit">Save</button>
-  </form>
-  <?php $elog = dirname(__FILE__) . '/uploads/logs/error.log';
-        $eSize = is_file($elog) ? filesize($elog) : 0;
-        $eLast = [];
-        if ($eSize > 0) { $lines = @file($elog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []; $eLast = array_slice($lines, -8); } ?>
-  <h4 class="mt">🩺 Error log <span class="muted" style="font-weight:normal">(<?= $eSize ? round($eSize / 1024, 1) . ' KB' : 'Empty — no errors ✅' ?>)</span></h4>
-  <?php if ($eLast): ?>
-  <div class="table-wrap" style="box-shadow:none"><table class="table-sm"><tbody>
-    <?php foreach (array_reverse($eLast) as $ln): ?>
-    <tr><td style="font-size:12px;font-family:monospace;word-break:break-all"><?= e(mb_substr($ln, 0, 300)) ?></td></tr>
-    <?php endforeach; ?>
-  </tbody></table></div>
+  <h2>🔄 Update &amp; Backup</h2>
+  <div class="grid-stats">
+    <div class="stat"><div class="stat-label">Running version</div>
+      <div class="stat-value" style="font-size:15px">v<?= e(setting('app_version', APP_VERSION)) ?></div></div>
+    <div class="stat <?= $bkAgeH < 0 ? 's-bad' : ($bkAgeH > 48 ? 's-bad' : ($bkAgeH > 26 ? 's-warn' : 's-ok')) ?>">
+      <div class="stat-label">Last backup</div>
+      <div class="stat-value" style="font-size:15px"><?php
+        if ($bkAgeH < 0) echo 'Never';
+        elseif ($bkAgeH < 1) echo 'Just now';
+        elseif ($bkAgeH < 48) echo $bkAgeH . ' hours ago';
+        else echo (int)floor($bkAgeH / 24) . ' days ago'; ?></div></div>
+    <div class="stat <?= $bkLock ? 's-ok' : 's-warn' ?>"><div class="stat-label">Backup locked</div>
+      <div class="stat-value" style="font-size:15px"><?= $bkLock ? 'Yes 🔐' : 'No — stays on the server' ?></div></div>
+    <div class="stat <?= $eSize > 0 ? 's-warn' : 's-ok' ?>"><div class="stat-label">Errors recorded</div>
+      <div class="stat-value" style="font-size:15px"><?= $eSize ? round($eSize / 1024, 1) . ' KB' : 'None ✅' ?></div></div>
+  </div>
+  <?php if ($bkAgeH < 0 || $bkAgeH > 48): ?>
+  <div class="flash flash-error">
+    <strong><?= $bkAgeH < 0 ? 'No backup has ever been taken.' : 'The last backup is ' . (int)floor($bkAgeH / 24) . ' days old.' ?></strong>
+    The daily backup runs from the cron — check <a href="cron_manager.php">Cron Manager</a> is being called every
+    minute<?= $bkOn ? '' : ', and switch the daily backup back on below' ?>. Until then, take one by hand below.
+  </div>
   <?php endif; ?>
 </div>
 
+<?php /* ---------- 1. the thing pressed most often ---------- */ ?>
 <div class="card">
-  <h3>🔓 Decrypt a backup file</h3>
-  <p class="muted mb">Got an encrypted <code>.sql.enc</code> backup and need the plain <code>.sql</code> back? Upload it with its passphrase here.</p>
-  <form method="post" action="settings.php" enctype="multipart/form-data" class="filterbar">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="backup_decrypt">
-    <div><label>Encrypted file</label><input type="file" name="encfile" accept=".enc" required></div>
-    <div><label>Passphrase</label><input type="password" name="passphrase" required></div>
-    <button class="btn btn-outline" type="submit">Decrypt & Download</button>
-  </form>
-</div>
-
-<div class="card">
-  <h3>🔗 GitHub Update <span class="badge badge-info">v<?= e(setting('app_version', APP_VERSION)) ?></span></h3>
-  <p class="muted mb">Set the repo/branch once, then just "Check for Update" → "Update Now" — code comes straight from GitHub to the server, and the database updates automatically too. <code>config.php</code> (database password etc.) and <code>uploads/</code> (bills, photos) are never touched.</p>
-  <form method="post" class="form-row cols-3">
-    <?= csrf_field() ?>
-    <input type="hidden" name="do" value="gh_save">
-    <div><label>GitHub repo (owner/repo)</label><input type="text" name="gh_repo" value="<?= e(setting('gh_repo', 'akshaykananidwk/Akcomputer')) ?>" placeholder="akshaykananidwk/Akcomputer"></div>
-    <div><label>Branch</label><input type="text" name="gh_branch" value="<?= e(setting('gh_branch', 'claude/multi-location-billing-system-rs1ly6')) ?>" placeholder="main"></div>
-    <div><label>GitHub Token <span class="muted" style="font-weight:normal">(required for a private repo, leave blank to keep the existing one)</span></label><input type="password" name="gh_token" placeholder="ghp_xxxxxxxxxxxx"></div>
-    <div class="mt" style="grid-column:1/-1"><button class="btn btn-sm btn-outline" type="submit">Save Repo Settings</button></div>
-  </form>
-  <form method="post" class="mt">
+  <h3>⬆️ Update the software</h3>
+  <p class="muted mb">Code comes straight from GitHub to the server and the database is migrated with it.
+    <code>config.php</code> (the database password) and <code>uploads/</code> (bills, photos) are never touched.
+    A copy of the old files is taken first, so an update can always be undone.</p>
+  <form method="post">
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="gh_check">
-    <button class="btn btn-sm" type="submit">🔍 Check for Update</button>
+    <button class="btn" type="submit">🔍 Check for update</button>
+    <span class="muted" style="font-size:12px"> — from <code><?= e(setting('gh_repo', 'akshaykananidwk/Akcomputer')) ?></code>,
+      branch <code><?= e(setting('gh_branch', 'main')) ?></code></span>
   </form>
   <?php if ($ghCheck !== null): if (!$ghCheck['ok']): ?>
     <p class="flash flash-error mt"><?= e($ghCheck['error']) ?></p>
+    <p class="muted" style="font-size:12px">A private repository needs a token — see “Where the code comes from”
+      at the bottom of this page.</p>
   <?php elseif (!$ghCheck['has_update']): ?>
-    <p class="flash flash-success mt">✅ You're already on the latest version (<?= e($ghCheck['short']) ?>).</p>
+    <p class="flash flash-success mt">✅ You are already on the latest version (<?= e($ghCheck['short']) ?>).</p>
   <?php else: ?>
     <div class="card mt" style="background:var(--bg)">
       <p><strong>🆕 A new update is available</strong></p>
       <p class="muted">Current: <?= e($ghCheck['current_short'] ?: '(none)') ?> &nbsp;→&nbsp; New: <strong><?= e($ghCheck['short']) ?></strong></p>
       <p class="muted">"<?= e($ghCheck['message']) ?>" — <?= e($ghCheck['author']) ?>, <?= dmyt($ghCheck['date']) ?></p>
-      <form method="post" onsubmit="return confirm('Apply the update? Files will be replaced and the database migrated. config.php/uploads will not be touched.')">
+      <form method="post" onsubmit="return confirm('Apply the update? Files will be replaced and the database migrated. config.php and uploads are not touched.')">
         <?= csrf_field() ?>
         <input type="hidden" name="do" value="gh_apply">
         <input type="hidden" name="sha" value="<?= e($ghCheck['sha']) ?>">
-        <button class="btn btn-success btn-sm" type="submit">✅ Update Now</button>
+        <button class="btn btn-success" type="submit">✅ Update now</button>
       </form>
     </div>
   <?php endif; endif; ?>
-  <?php $rps = function_exists('gh_restore_points') ? gh_restore_points() : []; if ($rps): ?>
-  <h3 class="mt">🛟 Undo last update</h3>
-  <p class="muted mb">A copy of the old files and the database is taken automatically before every update. If something breaks afterwards, one click here brings the old software back. <strong>the database is not changed</strong> — bills made in the meantime are safe.</p>
+  <p class="muted mt" style="font-size:12px">
+    After an update that adds a database change, also press <a href="migrate.php"><strong>Migrate</strong></a>.
+  </p>
+</div>
+
+<?php /* ---------- 2. rare, but wanted in a hurry ---------- */ ?>
+<?php $rps = function_exists('gh_restore_points') ? gh_restore_points() : []; ?>
+<div class="card">
+  <h3>🛟 Undo the last update</h3>
+  <?php if (!$rps): ?>
+    <p class="muted">Nothing to undo — no update has been applied from here yet. A restore point is taken
+      automatically before each one.</p>
+  <?php else: ?>
+  <p class="muted mb">A copy of the old files is taken before every update. One click here brings that software
+    back. <strong>The database is not changed</strong> — bills made in the meantime are safe.</p>
   <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
-    <thead><tr><th>Restore point</th><th>Taken</th><th>Files</th><th>DB backup</th><th></th></tr></thead>
+    <thead><tr><th>Restore point</th><th>Taken</th><th class="num">Files</th><th>DB copy</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($rps as $rp): ?>
     <tr>
@@ -1543,7 +1549,7 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
       <td class="right">
         <form method="post" onsubmit="return confirm('Bring the old software back? Every application file goes back to this restore point (the database is left as it is).')">
           <?= csrf_field() ?><input type="hidden" name="do" value="gh_rollback"><input type="hidden" name="id" value="<?= e($rp['id']) ?>">
-          <button class="btn btn-sm btn-outline btn-danger" type="submit">↩ Restore this version</button>
+          <button class="btn btn-sm btn-danger" type="submit">↩ Restore this version</button>
         </form>
       </td>
     </tr>
@@ -1551,15 +1557,125 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
     </tbody>
   </table></div>
   <?php endif; ?>
-  <?php $hist = update_history(); if ($hist): ?>
-  <h3 class="mt">Update history</h3>
-  <table class="table-sm">
-    <?php foreach (array_slice($hist, 0, 10) as $h): ?>
-    <tr><td><strong><?= strpos($h['version'], 'gh:') === 0 ? e($h['version']) : 'v' . e($h['version']) ?></strong></td><td><?= e($h['applied_at']) ?></td><td><?= (int)$h['files'] ?> files</td><td><?= e($h['by']) ?></td></tr>
-    <?php endforeach; ?>
-  </table>
+</div>
+
+<?php /* ---------- 3. the copy of the business ---------- */ ?>
+<div class="card">
+  <h3>💾 Backup</h3>
+  <p class="muted mb">The backup is a copy of the whole business — customers, bills, prices, everything.
+    A passphrase locks the file (AES-256) and <strong>only a locked file is ever sent to Telegram</strong>;
+    without one it stays on the server and Telegram gets a notice only.
+    <strong>Keep the passphrase safe</strong> — without it the file will not open again.</p>
+  <form method="post" action="settings.php" class="filterbar">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="save_backup_auto">
+    <div style="min-width:260px"><label>Backup passphrase <span class="muted" style="font-weight:normal">(blank = nothing goes to Telegram)</span></label>
+      <input type="text" name="backup_passphrase" value="<?= e(setting('backup_passphrase')) ?>" placeholder="e.g. AkC-2026-Backup!"></div>
+    <label class="check-inline"><input type="checkbox" name="backup_telegram" value="1" <?= setting('backup_telegram', '1') === '1' ? 'checked' : '' ?>> Send the locked file to Telegram</label>
+    <label class="check-inline"><input type="checkbox" name="error_alerts" value="1" <?= setting('error_alerts', '1') === '1' ? 'checked' : '' ?>> 🚨 Tell me on Telegram the moment there is an error</label>
+    <button class="btn" type="submit">Save</button>
+  </form>
+  <form method="post" action="settings.php" class="filterbar mt">
+    <?= csrf_field() ?>
+    <input type="hidden" name="do" value="backup">
+    <div><label>Passphrase for this one download <span class="muted" style="font-weight:normal">(blank = plain .sql)</span></label>
+      <input type="password" name="passphrase" placeholder="leave blank for plain .sql"></div>
+    <button class="btn btn-outline" type="submit">⬇ Take a backup now</button>
+  </form>
+  <?php if ($bkFiles): ?>
+  <p class="muted mt" style="font-size:12px">
+    <?= count($bkFiles) ?> backup file(s) kept on the server, newest
+    <?= e(date('d-m-Y H:i', $bkLast)) ?> · <?= round(filesize($bkFiles[0]) / 1048576, 2) ?> MB
+    · <?= strpos($bkFiles[0], '.enc') !== false ? '🔐 locked' : '📦 not locked' ?>
+  </p>
   <?php endif; ?>
 </div>
+
+<?php /* ---------- 4. only worth reading when something is wrong ---------- */ ?>
+<div class="card">
+  <h3>🩺 When something is wrong</h3>
+  <?php if (!$eLast): ?>
+    <p class="muted">No errors have been recorded. ✅</p>
+  <?php else: ?>
+  <p class="muted mb">The last <?= count($eLast) ?> errors the software recorded, newest first.</p>
+  <div class="table-wrap" style="box-shadow:none"><table class="table-sm"><tbody>
+    <?php foreach (array_reverse($eLast) as $ln): ?>
+    <tr><td style="font-size:12px;font-family:monospace;word-break:break-all"><?= e(mb_substr($ln, 0, 300)) ?></td></tr>
+    <?php endforeach; ?>
+  </tbody></table></div>
+  <?php endif; ?>
+  <details class="mt">
+    <summary style="cursor:pointer;font-weight:700">🔧 The usual causes</summary>
+    <div class="table-wrap mt"><table class="table-sm">
+      <thead><tr><th>What you see</th><th>What it nearly always is</th></tr></thead>
+      <tbody>
+        <tr><td>“Check for update” gives an error</td>
+            <td>A private repository with no token, or the wrong branch name. Both are in “Where the code comes
+                from” below.</td></tr>
+        <tr><td>The update ran but the new screen looks broken</td>
+            <td>A database change has not been applied — press <a href="migrate.php"><strong>Migrate</strong></a>.
+                If it still looks wrong, undo the update above; nothing is lost.</td></tr>
+        <tr><td>Last backup says days ago</td>
+            <td>The cron is not being called. Everything automatic in this software runs off that one cron —
+                <a href="cron_manager.php">Cron Manager</a> shows when each job last ran.</td></tr>
+        <tr><td>No backup file reaches Telegram</td>
+            <td>No passphrase is set. An unlocked copy of the whole business is never sent anywhere — that is
+                deliberate. Set one above.</td></tr>
+        <tr><td>An encrypted backup will not open</td>
+            <td>Only the passphrase that locked it will open it. There is no way round that, by design. Use
+                “Open an encrypted backup file” below.</td></tr>
+        <tr><td>Disk filling up</td>
+            <td>Seven backups are kept and the rest deleted automatically. Old error logs and update restore
+                points are the other things worth clearing.</td></tr>
+      </tbody>
+    </table></div>
+  </details>
+</div>
+
+<?php /* ---------- 5. set once, or almost never ---------- */ ?>
+<div class="card">
+  <details>
+    <summary style="cursor:pointer;font-weight:700;font-size:1.05em">⚙️ Where the code comes from — set once</summary>
+    <p class="muted mt mb">Only needs changing if the repository, the branch or the token changes.</p>
+    <form method="post" class="form-row cols-3">
+      <?= csrf_field() ?>
+      <input type="hidden" name="do" value="gh_save">
+      <div><label>GitHub repo (owner/repo)</label><input type="text" name="gh_repo" value="<?= e(setting('gh_repo', 'akshaykananidwk/Akcomputer')) ?>" placeholder="akshaykananidwk/Akcomputer"></div>
+      <div><label>Branch</label><input type="text" name="gh_branch" value="<?= e(setting('gh_branch', 'claude/multi-location-billing-system-rs1ly6')) ?>" placeholder="main"></div>
+      <div><label>GitHub Token <span class="muted" style="font-weight:normal">(a private repo needs one; blank keeps the saved one)</span></label><input type="password" name="gh_token" placeholder="ghp_xxxxxxxxxxxx"></div>
+      <div class="mt" style="grid-column:1/-1"><button class="btn btn-sm btn-outline" type="submit">Save</button></div>
+    </form>
+  </details>
+</div>
+
+<div class="card">
+  <details>
+    <summary style="cursor:pointer;font-weight:700;font-size:1.05em">🔓 Open an encrypted backup file</summary>
+    <p class="muted mt mb">Got a locked <code>.sql.enc</code> backup and need the plain <code>.sql</code> back?
+      Upload it with its passphrase.</p>
+    <form method="post" action="settings.php" enctype="multipart/form-data" class="filterbar">
+      <?= csrf_field() ?>
+      <input type="hidden" name="do" value="backup_decrypt">
+      <div><label>Encrypted file</label><input type="file" name="encfile" accept=".enc" required></div>
+      <div><label>Passphrase</label><input type="password" name="passphrase" required></div>
+      <button class="btn btn-outline" type="submit">Decrypt &amp; download</button>
+    </form>
+  </details>
+</div>
+
+<?php $hist = update_history(); if ($hist): ?>
+<div class="card">
+  <details>
+    <summary style="cursor:pointer;font-weight:700;font-size:1.05em">🕘 Update history</summary>
+    <table class="table-sm mt">
+      <?php foreach (array_slice($hist, 0, 10) as $h): ?>
+      <tr><td><strong><?= strpos($h['version'], 'gh:') === 0 ? e($h['version']) : 'v' . e($h['version']) ?></strong></td>
+          <td><?= e($h['applied_at']) ?></td><td><?= (int)$h['files'] ?> files</td><td><?= e($h['by']) ?></td></tr>
+      <?php endforeach; ?>
+    </table>
+  </details>
+</div>
+<?php endif; ?>
 <?php endif; ?>
 
 <?php if ($cat === 'about'): ?>

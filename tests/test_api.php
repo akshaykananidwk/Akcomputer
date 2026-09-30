@@ -803,3 +803,73 @@ foreach (['131047', 'replaces</strong>', 'catalog_management', 'logged out'] as 
 t_ok('the reference tables are folded away, not deleted',
      substr_count($set, '<details') >= 3 && strpos($set, 'Message Templates') !== false
      && strpos($set, 'What this is costing you') !== false);
+
+t_group('Backup & Update — what you do most, at the top');
+
+// The page opened with a download button, an encryption box and a decrypt
+// form, and the Update button - pressed several times a week - was below all
+// three. Worse, the one fact that matters most on a backup page, whether the
+// backup actually HAPPENED, was printed nowhere at all.
+$set = file_get_contents(__DIR__ . '/../settings.php');
+$bk = substr($set, strpos($set, "cat === 'backup'"), strpos($set, "cat === 'about'") - strpos($set, "cat === 'backup'"));
+
+t_ok('the page says when the last backup was taken', strpos($bk, 'Last backup') !== false);
+t_ok('and shouts when there has not been one',
+     strpos($bk, 'No backup has ever been taken') !== false);
+t_ok('it points at the cron, which is what actually stopped',
+     strpos($bk, 'cron_manager.php') !== false);
+t_ok('and says whether the backup is locked, since only a locked one is ever sent',
+     strpos($bk, 'Backup locked') !== false);
+
+// Order: update first, undo second, backup third, errors fourth, the
+// set-once things last.
+$pos = fn($needle) => strpos($bk, $needle);
+t_ok('updating comes before taking a backup by hand',
+     $pos('⬆️ Update the software') < $pos('💾 Backup'));
+t_ok('undoing an update sits right under updating',
+     $pos('⬆️ Update the software') < $pos('🛟 Undo the last update')
+     && $pos('🛟 Undo the last update') < $pos('💾 Backup'));
+// The SECTION, not the sentence higher up that points down at it.
+t_ok('the repo and token settings are below everything, folded away',
+     $pos('⚙️ Where the code comes from') > $pos('💾 Backup')
+     && $pos('⚙️ Where the code comes from') > $pos('When something is wrong'));
+t_ok('so is opening an encrypted file, which is done about once ever',
+     $pos('Open an encrypted backup file') > $pos('💾 Backup'));
+t_ok('and the update history', $pos('Update history') > $pos('💾 Backup'));
+t_ok('three things are folded, not deleted', substr_count($bk, '<details') >= 3);
+
+t_ok('it says to press Migrate after an update that needs it', strpos($bk, 'migrate.php') !== false);
+t_ok('troubleshooting is written in rather than asked about',
+     strpos($bk, 'The usual causes') !== false);
+foreach (['Migrate', 'cron', 'passphrase'] as $why)
+    t_ok('the causes cover ' . $why, stripos($bk, $why) !== false);
+t_ok('nothing on the page was dropped: taking a backup by hand is still there',
+     strpos($bk, "value=\"backup\"") !== false);
+t_ok('so is the daily-backup setting', strpos($bk, 'save_backup_auto') !== false);
+t_ok('so is rolling an update back', strpos($bk, 'gh_rollback') !== false);
+t_ok('and decrypting a file', strpos($bk, 'backup_decrypt') !== false);
+
+t_group('A warning on every cheque is a log nobody reads');
+
+// cheque_add() read its OPTIONAL fields with no default, so the ordinary case
+// - a counter cheque with no bank account picked - wrote a PHP warning every
+// time. The cheque saved correctly, so nobody noticed until the error log was
+// 159 lines of the same line. A log that full is a log nobody reads when
+// something real goes wrong.
+$h = file_get_contents(__DIR__ . '/../includes/helpers.php');
+$fn = substr($h, strpos($h, 'function cheque_add'), 1400);
+foreach (['party_id', 'payment_id', 'bank_account_id', 'cheque_date'] as $k)
+    t_ok($k . ' has a default', strpos($fn, "\$c['" . $k . "'] ?? null") !== false);
+t_ok('but a cheque with no number is still a mistake worth hearing about',
+     strpos($fn, "trim((string)\$c['cheque_no'])") !== false);
+t_ok('and one with no amount too', strpos($fn, "(float)\$c['amount']") !== false);
+
+// It has to actually save, with the fields left out.
+$cid = cheque_add(['cheque_no' => 'TEST-' . bin2hex(random_bytes(3)), 'amount' => 500]);
+t_ok('a cheque saves with only a number and an amount', $cid > 0);
+$row = row('SELECT * FROM cheques WHERE id = ?', [$cid]);
+t_eq('and the fields left out are empty, not wrong', $row['bank_account_id'], null);
+t_eq('the direction defaults to money coming in', $row['direction'], 'in');
+t_eq('and it starts on hand', $row['status'], 'in_hand');
+t_eq('with today as its date', substr((string)$row['cheque_date'], 0, 10), today());
+q('DELETE FROM cheques WHERE id = ?', [$cid]);
