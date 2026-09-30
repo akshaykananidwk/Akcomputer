@@ -1286,9 +1286,15 @@ t_ok('the phone uses party_balance(), the statement rule',
 t_ok('and says why, so the two are not separated again',
      strpos($vinB, "wa_portal_route('portal:stmt') and here together") !== false);
 
-t_ok('the preview shows what a reminder call would say, so a mismatch is visible',
-     isset($pvB['chase']) && abs((float)$pvB['chase'] - (float)$pvB['due']) > 1);
-t_ok('and the screen explains the difference instead of hiding it',
+// This test used to PROVE the mismatch was visible: the phone said one
+// figure and a reminder call another, and the screen warned about it. The
+// mismatch itself is gone now - a reminder is capped at what the party owes
+// NET, which is the same rule the phone and the statement use - so what is
+// checked is that they agree.
+t_ok('a reminder call would now say the same figure as the phone and the statement',
+     isset($pvB['chase']) && abs((float)$pvB['chase'] - (float)$pvB['due']) < 0.01,
+     'chase ' . $pvB['chase'] . ' vs due ' . $pvB['due']);
+t_ok('and the screen still has the warning, for any case that does differ',
      strpos(file_get_contents(__DIR__ . '/../voice_setup.php'), 'would say ₹') !== false);
 
 t_group('Voice — a number written with a leading zero is still a number');

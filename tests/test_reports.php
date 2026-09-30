@@ -532,7 +532,10 @@ t_ok('the ledger page has a reminder button', strpos($paR, "name=\"do\" value=\"
 t_ok('...which goes through the same one rule', strpos($paR, 'collection_reminder_send($mobile, $due, $p[\'name\'])') !== false);
 // a stale page must not be able to ask a customer for money already paid
 t_ok('the amount is worked out on the server, never taken from the form',
-     strpos($paR, "\$due = \$p ? party_balance_side(\$pid, 'in') : 0.0;") !== false);
+     strpos($paR, "\$due = \$p ? money_chase_due(") !== false
+     && strpos($paR, "post('amount')") === false);
+t_ok('...and it is what they owe NET — a party whose two sides cancel out is not asked for the gross',
+     strpos($paR, "money_chase_due(party_balance_side(\$pid, 'in'), party_balance(\$pid))") !== false);
 t_ok('...and nothing is sent when they owe nothing',
      strpos($paR, 'no reminder was sent') !== false);
 t_ok('the button is only drawn when there is something to ask for',

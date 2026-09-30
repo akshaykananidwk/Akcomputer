@@ -768,3 +768,65 @@ t_ok('and one click brings them back', strpos($par, "get('z') === '1'") !== fals
      && strpos($par, 'Show them') !== false);
 t_ok('the running balance adds them either way — adding nothing changes nothing',
      strpos($par, "\$bal += \$en['dr'] - \$en['cr'];\n            \$isZero") !== false);
+
+t_group('every screen that ASKS for money asks for the same figure');
+
+// "One place shows how much is outstanding, you go to take the payment and
+// that much comes up, but the account is actually nought." Four screens were
+// reading the SALE side alone. A ₹16,504 sale against a ₹16,504 purchase nets
+// to nothing, and every one of them offered to chase ₹16,504.
+//
+// This walks the whole set, so a fifth cannot be added quietly.
+list($xp, $xs, $xb) = ts_both_party(16504, 16504);
+q("UPDATE sales SET due_date = DATE_SUB(CURDATE(), INTERVAL 20 DAY), sale_date = DATE_SUB(CURDATE(), INTERVAL 40 DAY) WHERE id = ?", [$xs]);
+q("UPDATE parties SET mobile = '9876500321', credit_limit = 20000 WHERE id = ?", [$xp]);
+
+t_eq('the net really is nought', party_balance($xp), 0.0);
+t_eq('the sale side really is the gross', party_balance_side($xp, 'in'), 16504.0);
+
+// 1. the collection queue
+$inQ = false; foreach (coll_queue(500, true) as $c) if ((int)$c['id'] === $xp) $inQ = true;
+t_ok('the collection queue leaves them out', !$inQ);
+// 2. the 360 / shared outstanding
+t_eq('nothing is outstanding to chase', cust_outstanding($xp)['total'], 0.0);
+// 3. the reminder call
+require_once __DIR__ . '/../includes/voice.php';
+t_eq('a reminder call would ask for nothing', (float)voice_party_context($xp)['due'], 0.0);
+t_eq('and draws no call button', voice_call_button($xp), '');
+// 4. the reminder MESSAGE from the ledger
+$parSrc = file_get_contents(dirname(__DIR__) . '/parties.php');
+t_ok('the ledger reminder works the amount out with the shared rule',
+     strpos($parSrc, "money_chase_due(party_balance_side(\$pid, 'in'), party_balance(\$pid))") !== false);
+t_ok('and so does the reminder button beside it',
+     strpos($parSrc, "money_chase_due(party_balance_side(\$p['id'], 'in'), party_balance(\$p['id']))") !== false);
+// 5. credit exposure - money the shop owes them can settle their bill
+$cl = credit_limit_state($xp, 0);
+t_eq('their credit exposure is nought, not the gross', (float)$cl['owed'], 0.0);
+t_ok('so a new bill is not refused to somebody who owes nothing', !$cl['over']);
+// 6. what the phone would say
+require_once __DIR__ . '/../includes/voice_in.php';
+$pvX = voice_in_preview('9876500321');
+t_ok('the phone and a reminder call agree',
+     abs((float)$pvX['chase'] - (float)$pvX['due']) < 0.01,
+     'chase ' . $pvX['chase'] . ' vs due ' . $pvX['due']);
+
+// The bill keeps its own figure. That rule was set deliberately and is not
+// what changed here.
+$billDue = sale_true_due(row('SELECT * FROM sales WHERE id = ?', [$xs]));
+t_eq('the invoice itself is still the full amount', $billDue, 16504.0);
+
+// And the Payment-In list says the net out loud instead of leaving the owner
+// to spot that "₹16,504 receivable" and "Party Balance: ₹0.00" are the same
+// party two lines apart.
+$paySrc = file_get_contents(dirname(__DIR__) . '/payments.php');
+t_ok('the party picker says the net when both sides are live',
+     strpos($paySrc, 'net ₹0 — settles by Contra') !== false);
+t_ok('and names the contra as the way to settle it',
+     strpos($paySrc, "'net ₹' . money(abs(\$p['balance']))") !== false);
+
+// A party who genuinely nets a debt is still chased, for the difference.
+list($yp, $ys, $yb) = ts_both_party(9000, 4000);
+q("UPDATE sales SET due_date = DATE_SUB(CURDATE(), INTERVAL 20 DAY), sale_date = DATE_SUB(CURDATE(), INTERVAL 40 DAY) WHERE id = ?", [$ys]);
+$yRow = null; foreach (coll_queue(500, true) as $c) if ((int)$c['id'] === $yp) $yRow = $c;
+t_eq('a real net debt is still chased, for the difference', $yRow ? $yRow['outstanding'] : -1, 5000.0);
+t_eq('and the credit exposure is that difference too', (float)credit_limit_state($yp, 0)['owed'], 5000.0);

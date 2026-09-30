@@ -198,7 +198,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'collection_reminder
     $pid = (int)post('id');
     $p = row('SELECT * FROM parties WHERE id = ?', [$pid]);
     $mobile = trim((string)(post('mobile') ?: ($p['mobile'] ?? '')));
-    $due = $p ? party_balance_side($pid, 'in') : 0.0;   // what THEY owe US
+    // What it is fair to ASK for, not the sale side alone. A party whose two
+    // sides cancel out owes the shop nothing, and must not be messaged for
+    // the gross figure on their bills.
+    $due = $p ? money_chase_due(party_balance_side($pid, 'in'), party_balance($pid)) : 0.0;
     if (!$p || !$mobile) {
         flash('No mobile number.', 'error');
     } elseif ($due <= 0.009) {

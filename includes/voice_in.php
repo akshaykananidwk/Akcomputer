@@ -1240,7 +1240,8 @@ function voice_in_preview($mobile) {
     // are the same number. They part company for one who also sells to the
     // shop - and then the shop quotes two figures. Showing both is how that
     // is noticed before a customer notices it.
-    $out['chase'] = round((float)party_balance_side((int)$party['id'], 'in'), 2);
+    $out['chase'] = money_chase_due(party_balance_side((int)$party['id'], 'in'),
+                                    party_balance((int)$party['id']));
     $mode = setting('voice_ivr_balance', 'speak');
     $out['lines']['press_1'] = $mode === 'off' ? $w['not_known']
         : ($due < -0.009 ? voice_in_words($lang, ['amount' => voice_tokens_text(voice_amount_tokens(-$due), $lang)])['balance_adv']

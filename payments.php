@@ -472,13 +472,22 @@ if ($action === 'new') {
               <?php $inGroup = true; foreach ($parties as $p):
                 $pending = $p['side_due'] > 0.009;
                 if ($inGroup && $pendingCount && !$pending) { echo '</optgroup><optgroup label="All other parties">'; $inGroup = false; }
-                // this side's own figure, not the netted one - on Payment-Out a
-                // party who also owes US money must still show what WE owe THEM
+                // This side's own figure, not the netted one: on Payment-Out a
+                // party who also owes US money must still show what WE owe THEM.
+                //
+                // But when BOTH sides are live, saying "₹16,504 receivable" and
+                // then "Party Balance: ₹0.00" two lines below reads as a
+                // contradiction - and it was the thing that made the owner
+                // distrust the figures. So the net is said out loud, in the
+                // same label, along with the fact that a contra settles it
+                // without any cash changing hands.
                 $lbl = $pending ? ' (₹' . money($p['side_due']) . ($dir === 'in' ? ' receivable' : ' payable') . ')' : '';
-                // ...and say so when the other side is live too, so the owner
-                // knows a contra settlement is available instead of cash
-                if ($pending && abs($p['balance']) < $p['side_due'] - 0.009)
-                    $lbl .= ' ↔ ' . ($dir === 'in' ? 'also payable' : 'also receivable'); ?>
+                if ($pending && abs($p['balance']) < $p['side_due'] - 0.009) {
+                    $netTxt = abs((float)$p['balance']) < 0.009
+                        ? 'net ₹0 — settles by Contra'
+                        : 'net ₹' . money(abs($p['balance'])) . ($p['balance'] > 0 ? ' receivable' : ' payable');
+                    $lbl .= ' ↔ ' . ($dir === 'in' ? 'also payable' : 'also receivable') . ' · ' . $netTxt;
+                } ?>
               <option value="<?= $p['id'] ?>" <?= $presetParty === (int)$p['id'] ? 'selected' : '' ?>><?= e($p['name']) . $lbl ?></option>
               <?php endforeach; ?>
               <?php if ($pendingCount): ?></optgroup><?php endif; ?>

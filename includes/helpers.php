@@ -1841,7 +1841,10 @@ function credit_limit_state($partyId, $adding = 0) {
     $p = row('SELECT id, name, credit_limit FROM parties WHERE id = ?', [(int)$partyId]);
     if (!$p) return null;
     $limit = (float)$p['credit_limit'];
-    $owed = party_balance_side((int)$partyId, 'in');
+    // The shop's real exposure is the NET. Money it owes this party can
+    // settle their bill, so counting the sale side alone refused a new bill
+    // to somebody who, on balance, owed the shop nothing.
+    $owed = money_chase_due(party_balance_side((int)$partyId, 'in'), party_balance((int)$partyId));
     $after = money_r($owed + (float)$adding);
     return ['limit' => $limit, 'owed' => money_r($owed), 'after' => $after,
             'set' => $limit > 0.009, 'over' => $limit > 0.009 && $after > $limit + 0.009,

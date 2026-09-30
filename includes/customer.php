@@ -301,7 +301,8 @@ function cust_credit($partyId, $bal = null) {
     // a reliable payer is trusted with the full window, a poor payer with half
     $factor = ['excellent' => 1.0, 'good' => 0.85, 'new' => 0.6, 'slow' => 0.5, 'poor' => 0.25][$rel['rating']] ?? 0.6;
     $suggested = round($monthly * $r['credit_months'] * $factor, -2); // to the nearest 100
-    $owed = party_balance_side($partyId, 'in');   // sale side only
+    // the shop's real exposure, net of anything it owes them back
+    $owed = money_chase_due(party_balance_side($partyId, 'in'), party_balance($partyId));
     return [
         'suggested' => max(0.0, (float)$suggested),
         'outstanding' => $owed,
