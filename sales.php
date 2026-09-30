@@ -729,85 +729,130 @@ if ($action === 'new' || $action === 'edit') {
     <?php elseif ($est): ?><div class="flash flash-info">Converting <?= e($est['estimate_no']) ?> — serial-tracked items will need their serial re-selected.</div><?php endif; ?>
     <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serials'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers will need to be re-selected.</div><?php endif; ?>
     <?php if ($isEdit && !is_full_admin() && strtotime($editSale['created_at']) < time() - 86400): ?><div class="flash flash-info">⏳ This bill is more than 24 hours old — saving will not apply the change directly, it goes for admin approval.</div><?php endif; ?>
-    <form method="post" id="billForm">
+    <form method="post" id="billForm" class="bf">
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">
       <?php if ($isEdit): ?><input type="hidden" name="id" value="<?= $editSale['id'] ?>"><?php endif; ?>
       <?php if ($parkId): ?><input type="hidden" name="park_id" value="<?= $parkId ?>"><?php endif; ?>
-      <?php if (!$isEdit): ?>
-      <div class="page-actions" style="justify-content:center">
-        <div class="cc-toggle">
-          <button type="button" id="ccCredit" class="<?= setting('cash_sale_default', '1') === '1' ? '' : 'on-credit' ?>" onclick="setCC('credit')">Credit</button>
-          <button type="button" id="ccCash" class="<?= setting('cash_sale_default', '1') === '1' ? 'on-cash' : '' ?>" onclick="setCC('cash')">Cash</button>
-        </div>
-      </div>
-      <?php endif; ?>
       <?php if ($est && $est['id']): ?><input type="hidden" name="estimate_id" value="<?= $est['id'] ?>"><?php endif; ?>
       <?php if ($chal): ?><input type="hidden" name="challan_id" value="<?= $chal['id'] ?>"><?php endif; ?>
-      <div class="card">
-        <div class="form-row cols-3">
-          <div><label>Invoice No.</label><input type="text" value="<?= $isEdit ? e($editSale['invoice_no']) : 'Auto' ?>" disabled></div>
-          <div><label>Date</label><input type="date" name="sale_date" value="<?= today() ?>"></div>
-          <div><label>Time</label><input type="text" id="saleTimeDisplay" value="<?= date('h:i A') ?>" disabled></div>
+
+      <!-- The bill's own identity - cash or credit, its number, the day and
+           the hour - sits with the title, because it is what the bill IS. The
+           boxes below are what goes ON it. -->
+      <div class="pg-head bf-head">
+        <div class="pg-main">
+          <div class="pg-crumb"><a href="sales.php">Sale</a> › <?= $isEdit ? 'Edit Bill' : 'New Bill' ?></div>
+          <h1>🧾 <?= $isEdit ? 'Edit Bill ' . e($editSale['invoice_no']) : 'New Bill' ?></h1>
+          <div class="pg-sub"><?= $isEdit ? 'Change this bill and save it back.' : 'Write a sale for a walk-in or a regular customer.' ?></div>
         </div>
-        <div class="form-row cols-2">
-          <div><label>Firm Name</label>
-            <select name="company_id" id="company_id">
-              <?php foreach ($companies as $c): ?>
-              <option value="<?= $c['id'] ?>" data-gst="<?= $c['is_gst'] ?>"><?= e($c['name']) ?><?= $c['is_gst'] ? ' (GST)' : '' ?></option>
-              <?php endforeach; ?>
-            </select></div>
-          <div><label>Godown Name</label>
-            <select name="location_id" id="location_id">
-              <?php foreach ($locations as $l): ?>
-              <option value="<?= $l['id'] ?>" <?= $l['id'] == $u['location_id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option>
-              <?php endforeach; ?>
-            </select></div>
+        <div class="bf-head-right">
+          <?php if (!$isEdit): ?>
+          <div class="cc-toggle">
+            <button type="button" id="ccCredit" class="<?= setting('cash_sale_default', '1') === '1' ? '' : 'on-credit' ?>" onclick="setCC('credit')">Credit</button>
+            <button type="button" id="ccCash" class="<?= setting('cash_sale_default', '1') === '1' ? 'on-cash' : '' ?>" onclick="setCC('cash')">Cash</button>
+          </div>
+          <?php endif; ?>
+          <div class="bf-mini"><label>Invoice No.</label><input type="text" value="<?= $isEdit ? e($editSale['invoice_no']) : 'Auto' ?>" disabled></div>
+          <div class="bf-mini"><label>Date</label><input type="date" name="sale_date" value="<?= today() ?>"></div>
+          <div class="bf-mini"><label>Time</label><input type="text" id="saleTimeDisplay" value="<?= date('h:i A') ?>" disabled></div>
         </div>
-        <div class="form-row cols-2">
-          <div><label>Pmt. Terms</label>
-            <select name="credit_days" id="credit_days">
-              <?php foreach ($terms as $t): ?><option value="<?= $t['days'] ?>"><?= e($t['label']) ?></option><?php endforeach; ?>
-            </select></div>
-          <div><label>Due On <span class="muted" style="font-weight:normal">(you can type a date too)</span></label>
-            <input type="date" name="due_date" id="due_date"></div>
+      </div>
+
+      <div class="bf-grid">
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico">🏢</span>Firm Name</div>
+          <select name="company_id" id="company_id">
+            <?php foreach ($companies as $c): ?>
+            <option value="<?= $c['id'] ?>" data-gst="<?= $c['is_gst'] ?>"><?= e($c['name']) ?><?= $c['is_gst'] ? ' (GST)' : '' ?></option>
+            <?php endforeach; ?>
+          </select>
         </div>
-        <div class="field"><label>Price type</label>
-          <select name="price_type" id="price_type"><option value="retail">Retail</option><option value="b2b">B2B</option></select></div>
-        <div class="field"><label>Party
-            <span class="muted" id="partyReqHint" style="font-weight:normal;color:var(--bad);display:none">— required for a Credit bill</span>
-            <?php if (can('parties.add')): ?><a href="#" onclick="document.getElementById('qpModal').style.display='block';document.getElementById('qp_name').focus();return false" style="float:right;font-weight:normal">+ New party</a><?php endif; ?></label>
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico i-green">🏬</span>Godown / Location</div>
+          <select name="location_id" id="location_id">
+            <?php foreach ($locations as $l): ?>
+            <option value="<?= $l['id'] ?>" <?= $l['id'] == $u['location_id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="bf-card bf-wide">
+          <div class="bf-t"><span class="bf-ico i-purple">📅</span>Payment Terms</div>
+          <!-- The terms are chips rather than a dropdown: they are picked on
+               every bill and the answer has to be readable across a counter.
+               The select underneath is still the value - see Bill.chips(). -->
+          <div class="bf-terms">
+            <div class="bf-terms-chips">
+              <select name="credit_days" id="credit_days">
+                <?php foreach ($terms as $t): ?><option value="<?= $t['days'] ?>"><?= e($t['label']) ?></option><?php endforeach; ?>
+              </select>
+            </div>
+            <div class="bf-terms-due">
+              <label for="due_date">Due On <span class="muted" style="font-weight:normal">— a day here overrides the terms</span></label>
+              <input type="date" name="due_date" id="due_date">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bf-grid">
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico i-orange">🏷️</span>Price Type</div>
+          <select name="price_type" id="price_type"><option value="retail">Retail</option><option value="b2b">B2B</option></select>
+        </div>
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico">👥</span>Party
+            <span class="bf-req" id="partyReqHint" style="display:none">— required for a Credit bill</span>
+            <?php if (can('parties.add')): ?><a href="#" onclick="document.getElementById('qpModal').style.display='block';document.getElementById('qp_name').focus();return false" style="margin-left:auto;font-weight:600;font-size:12.5px">+ New party</a><?php endif; ?>
+          </div>
           <select name="party_id" id="party_id">
             <option value="">-- Walk-in customer --</option>
             <?php foreach ($parties as $p): ?>
             <option value="<?= $p['id'] ?>" data-mobile="<?= e($p['mobile']) ?>" data-credit="<?= $p['credit_days'] ?>" data-points="<?= (int)$p['loyalty_points'] ?>"><?= e($p['name']) ?></option>
             <?php endforeach; ?>
-          </select></div>
-        <?php if (can('parties.add')): ?>
-        <div id="qpModal" style="display:none;border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;background:var(--bg)">
-          <strong>Quick add new party</strong>
-          <div class="form-row cols-3" style="margin-top:8px">
-            <div><input type="text" id="qp_name" placeholder="Party name *"></div>
-            <div><input type="tel" id="qp_mobile" placeholder="Mobile"></div>
-            <div><input type="text" id="qp_gstin" placeholder="GSTIN (optional)"></div>
+          </select>
+        </div>
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico i-green">🙋</span>Customer</div>
+          <input type="text" name="customer_name" id="customer_name" placeholder="Customer name (blank = walk-in)">
+        </div>
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico i-green">📞</span>Phone Number</div>
+          <input type="tel" name="customer_mobile" id="customer_mobile" placeholder="WhatsApp number (optional)">
+        </div>
+      </div>
+      <?php if (can('parties.add')): ?>
+      <div id="qpModal" class="bf-card" style="display:none;margin-bottom:12px">
+        <div class="bf-t"><span class="bf-ico">➕</span>Quick add a new party</div>
+        <div class="form-row cols-3">
+          <div><input type="text" id="qp_name" placeholder="Party name *"></div>
+          <div><input type="tel" id="qp_mobile" placeholder="Mobile"></div>
+          <div><input type="text" id="qp_gstin" placeholder="GSTIN (optional)"></div>
+        </div>
+        <div class="page-actions" style="margin-top:10px">
+          <button type="button" class="btn btn-sm" onclick="quickParty()">Add &amp; select</button>
+          <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('qpModal').style.display='none'">Cancel</button>
+        </div>
+      </div>
+      <?php endif; ?>
+      <div id="partyWarn" class="flash flash-info no-print" style="display:none;margin:0 0 12px"></div>
+
+      <div class="bf-card bf-items" style="margin-bottom:12px">
+        <div class="bf-head-row">
+          <div>
+            <h3>🛒 Items</h3>
+            <span class="muted">What is being sold on this bill</span>
           </div>
-          <div class="page-actions" style="margin-top:8px">
-            <button type="button" class="btn btn-sm" onclick="quickParty()">Add &amp; select</button>
-            <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('qpModal').style.display='none'">Cancel</button>
+          <div class="page-actions" style="margin:0">
+            <button type="button" class="btn btn-sm" id="addItemsBtn">＋ Add Items <span style="font-weight:normal">(optional)</span></button>
+            <button type="button" class="btn btn-sm btn-scan" id="scanItemBtn" style="display:none">📷 Scan</button>
           </div>
         </div>
-        <?php endif; ?>
-        <div class="field"><label>Customer</label><input type="text" name="customer_name" id="customer_name" placeholder="Customer name (leave blank for walk-in)"></div>
-        <div class="field"><label>Phone Number</label><input type="tel" name="customer_mobile" id="customer_mobile" placeholder="WhatsApp number"></div>
-        <div id="partyWarn" class="flash flash-info no-print" style="display:none;margin:8px 0 0"></div>
-      </div>
-
-      <div class="card">
-        <h3>Items</h3>
         <div class="bill-summary-list" id="billSummaryList"></div>
-        <div class="page-actions">
-          <button type="button" class="btn btn-outline btn-sm" id="addItemsBtn">+ Add Items <span class="muted" style="font-weight:normal">(optional)</span></button>
-          <button type="button" class="btn btn-outline btn-sm" id="scanItemBtn" style="display:none">📷 Scan</button>
+        <!-- the same two buttons again, at the end of the list: after ten
+             items the ones in the header are a scroll away -->
+        <div class="bf-emptyact">
+          <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('addItemsBtn').click()">＋ Add item</button>
         </div>
         <div class="bill-items" id="billItems" style="display:none"></div>
       </div>
@@ -830,125 +875,155 @@ if ($action === 'new' || $action === 'edit') {
         </div>
       </div>
 
-      <div class="card">
-        <?php $pms = active_payment_methods(); $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name'); ?>
-        <div class="form-row cols-4">
-          <div><label>Discount</label>
-            <div style="display:flex;gap:6px">
-              <input type="number" step="any" id="discount_val" name="discount_val" value="0" oninput="Bill.totals()" style="flex:1">
-              <div class="cc-toggle" style="flex-shrink:0">
-                <button type="button" id="discAmt" class="on-cash" onclick="setDiscType('amount')">₹</button>
-                <button type="button" id="discPct" onclick="setDiscType('percent')">%</button>
-              </div>
+      <?php $pms = active_payment_methods(); $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name'); ?>
+      <div class="bf-grid c4">
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico i-orange">🏷️</span>Discount</div>
+          <div style="display:flex;gap:6px">
+            <input type="number" step="any" inputmode="decimal" id="discount_val" name="discount_val" value="0" oninput="Bill.totals()" style="flex:1">
+            <div class="cc-toggle" style="flex-shrink:0">
+              <button type="button" id="discAmt" class="on-cash" onclick="setDiscType('amount')">₹</button>
+              <button type="button" id="discPct" onclick="setDiscType('percent')">%</button>
             </div>
-            <input type="hidden" name="discount" id="discount" value="0">
-            <input type="hidden" name="discount_type" id="discount_type" value="amount">
           </div>
-          <div><label>Shipping (₹)</label><input type="number" step="any" name="shipping" id="shipping" value="<?= 0 + (float)($preSale['shipping'] ?? 0) ?>" oninput="Bill.totals()"></div>
-          <div><label>Adjustment (₹, +/-)</label><input type="number" step="any" name="adjustment" id="adjustment" value="<?= 0 + (float)($preSale['adjustment'] ?? 0) ?>" oninput="Bill.totals()"></div>
-          <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
-          <div><label>⭐ Redeem Points <span class="muted" id="pointsAvail" style="font-weight:normal"></span></label>
-            <input type="number" step="1" min="0" name="redeem_points" id="redeem_points" value="0" oninput="Bill.totals()"></div>
-          <?php endif; ?>
-          <?php if ($isEdit): ?>
-          <div><label>Paid (₹)</label><input type="number" step="any" name="paid" id="paid" value="<?= 0 + $editSale['paid'] ?>" max="<?= 0 + $editSale['total'] ?>"></div>
-          <div><label>Payment mode</label>
-            <select name="payment_mode" id="payment_mode" onchange="pmChange()">
-              <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>" <?= $pm['code'] === $editSale['payment_mode'] ? 'selected' : '' ?>><?= e($pm['name']) ?></option><?php endforeach; ?>
-              <?php if (!in_array('credit', array_column($pms, 'code'), true)): ?><option value="credit" <?= $editSale['payment_mode'] === 'credit' ? 'selected' : '' ?>>Credit / Udhar</option><?php endif; ?>
-            </select></div>
-          <div id="bankAccBox" style="display:none"><label>Bank Account</label>
-            <select name="bank_account_id">
-              <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>" <?= (int)$editSale['bank_account_id'] === (int)$b['id'] ? 'selected' : '' ?>><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
-            </select></div>
-          <?php else: ?>
-          <div><label>Paid now (₹) <a href="javascript:payFull()" style="font-weight:normal">[full]</a></label><input type="number" step="any" name="paid" id="paid" value="0"></div>
-          <div><label>Payment mode</label>
-            <select name="payment_mode" id="payment_mode" onchange="pmChange()">
-              <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
-              <option value="credit" <?= setting('cash_sale_default', '1') === '1' ? '' : 'selected' ?>>Credit / Udhar</option>
-            </select></div>
-          <div id="bankAccBox" style="display:none"><label>Bank Account</label>
-            <select name="bank_account_id">
-              <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
-            </select></div>
-          <?php endif; ?>
+          <input type="hidden" name="discount" id="discount" value="0">
+          <input type="hidden" name="discount_type" id="discount_type" value="amount">
         </div>
-        <!-- EVERYTHING OPTIONAL LIVES BEHIND ONE LINE.
-             A counter screen has to be short. The bill that gets written a
-             hundred times a day needs a customer, items, what was paid and
-             Save; the exchange, the second payment and the delivery address
-             are real but rare, and having them all on view at once is what
-             made this screen feel like a form to fill in rather than a bill
-             to write. They open when they are wanted, and a bill that HAS
-             one opens with it already showing. -->
-        <details class="more-opts no-print"<?= ($tiRows || !empty($preSale['delivery_address'])) ? ' open' : '' ?>>
-          <summary>⚙️ More options — a second payment, a trade-in, a delivery address</summary>
-        <?php if (!$isEdit): ?>
-        <!-- Rs 2,000 cash + Rs 3,000 UPI: the second way to pay, hidden until asked for -->
-        <div class="no-print">
-          <a href="javascript:splitToggle()" id="splitLink">➕ A second way to pay too (cash + UPI)</a>
-          <div class="form-row cols-3" id="splitBox" style="display:none;margin-top:8px">
-            <div><label>Second payment (Rs)</label><input type="number" step="any" min="0" name="paid2" id="paid2" value="0" oninput="Bill.totals()"></div>
-            <div><label>its mode</label>
-              <select name="payment_mode2" id="payment_mode2" onchange="pm2Change()">
-                <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
-              </select></div>
-            <div id="bankAccBox2" style="display:none"><label>Bank account</label>
-              <select name="bank_account_id2">
-                <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
-              </select></div>
-          </div>
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico">🚚</span>Shipping (₹)</div>
+          <input type="number" step="any" inputmode="decimal" name="shipping" id="shipping" value="<?= 0 + (float)($preSale['shipping'] ?? 0) ?>" oninput="Bill.totals()">
+        </div>
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico i-purple">↕️</span>Adjustment (₹, +/-)</div>
+          <input type="number" step="any" inputmode="decimal" name="adjustment" id="adjustment" value="<?= 0 + (float)($preSale['adjustment'] ?? 0) ?>" oninput="Bill.totals()">
+        </div>
+        <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico i-orange">⭐</span>Redeem Points <span class="muted" id="pointsAvail" style="font-weight:normal"></span></div>
+          <input type="number" step="1" min="0" inputmode="numeric" name="redeem_points" id="redeem_points" value="0" oninput="Bill.totals()">
         </div>
         <?php endif; ?>
-
-        <!-- #4 Trade-in: the old part comes in, its value goes off the bill -->
-        <div class="no-print mt">
-          <a href="javascript:tiToggle()" id="tiLink">🔄 Trade-in (exchange)</a>
-          <div id="tiBox" style="display:<?= $tiRows ? 'block' : 'none' ?>;margin-top:8px">
-            <div id="tiRows"></div>
-            <button type="button" class="btn btn-sm btn-outline" onclick="tiAdd()">+ Add another</button>
-            <p class="muted" style="margin:6px 0 0">The value of what was taken back comes off the bill. Pick an item and it also goes into stock.</p>
+        <div class="bf-card">
+          <?php if ($isEdit): ?>
+          <div class="bf-t"><span class="bf-ico i-green">💵</span>Paid (₹)</div>
+          <input type="number" step="any" inputmode="decimal" name="paid" id="paid" value="<?= 0 + $editSale['paid'] ?>" max="<?= 0 + $editSale['total'] ?>">
+          <?php else: ?>
+          <div class="bf-t"><span class="bf-ico i-green">💵</span>Paid now (₹) <a href="javascript:payFull()" style="margin-left:auto;font-weight:600;font-size:12.5px">[full]</a></div>
+          <input type="number" step="any" inputmode="decimal" name="paid" id="paid" value="0">
+          <?php endif; ?>
+        </div>
+        <div class="bf-card bf-wide">
+          <div class="bf-t"><span class="bf-ico">💳</span>Payment mode</div>
+          <?php
+          // Credit is offered whether or not the shop set it up as a payment
+          // method - a bill has to be allowed to go on the ledger. It is only
+          // ADDED when the shop's own list does not already have it: as a
+          // dropdown a duplicate was invisible, as buttons it put "Credit /
+          // Udhar" on the screen twice.
+          $pmCur = $isEdit ? $editSale['payment_mode']
+                           : (setting('cash_sale_default', '1') === '1' ? '' : 'credit');
+          ?>
+          <select name="payment_mode" id="payment_mode" onchange="pmChange()">
+            <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>" <?= $pm['code'] === $pmCur ? 'selected' : '' ?>><?= e($pm['name']) ?></option><?php endforeach; ?>
+            <?php if (!in_array('credit', array_column($pms, 'code'), true)): ?><option value="credit" <?= $pmCur === 'credit' ? 'selected' : '' ?>>Credit / Udhar</option><?php endif; ?>
+          </select>
+          <div id="bankAccBox" style="display:none">
+            <label for="bank_account_id">Bank Account</label>
+            <select name="bank_account_id" id="bank_account_id">
+              <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>" <?= $isEdit && (int)$editSale['bank_account_id'] === (int)$b['id'] ? 'selected' : '' ?>><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
+            </select>
           </div>
         </div>
+      </div>
 
-        <!-- #5 Bill at one place, goods at another -->
-        <div class="field no-print"><label>Delivery address <span class="muted" style="font-weight:normal">(if different from the billing address)</span></label>
-          <input type="text" name="delivery_address" id="delivery_address" maxlength="250"
-                 value="<?= e($preSale['delivery_address'] ?? '') ?>" placeholder="Site address / where the goods are to be delivered"></div>
-        </details>
-        <div class="field"><label>Notes</label><input type="text" name="notes" value="<?= e($preSale['notes'] ?? '') ?>"></div>
-        <div class="bill-totals">
-          <div class="t-line"><span>Items</span><span id="t_items">0 items · 0 qty</span></div>
-          <div class="t-line" id="ldiscRow" style="display:none"><span>Item Discounts</span><span>- ₹ <span id="t_ldisc">0.00</span></span></div>
-          <div class="t-line"><span>Subtotal</span><span>₹ <span id="t_sub">0.00</span></span></div>
-          <div class="t-line"><span>GST</span><span>₹ <span id="t_tax">0.00</span></span></div>
-          <div class="t-line"><span>Shipping</span><span>₹ <span id="t_ship">0.00</span></span></div>
-          <div class="t-line" id="adjRow" style="display:none"><span>Adjustment</span><span>₹ <span id="t_adj">0.00</span></span></div>
-          <div class="t-line" id="tiRow" style="display:none"><span>🔄 Trade-in taken</span><span>- ₹ <span id="t_tradein">0.00</span></span></div>
-          <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
-          <div class="t-line" id="loyaltyRow" style="display:none"><span>⭐ Points Discount</span><span>- ₹ <span id="t_loyalty">0.00</span></span></div>
+      <!-- EVERYTHING OPTIONAL LIVES BEHIND ONE LINE.
+           A counter screen has to be short. The bill that gets written a
+           hundred times a day needs a customer, items, what was paid and
+           Save; the exchange, the second payment and the delivery address
+           are real but rare, and having them all on view at once is what
+           made this screen feel like a form to fill in rather than a bill
+           to write. They open when they are wanted, and a bill that HAS
+           one opens with it already showing. -->
+      <details class="more-opts no-print"<?= ($tiRows || !empty($preSale['delivery_address'])) ? ' open' : '' ?>>
+        <summary>⚙️ More options — a second payment, a trade-in, a delivery address</summary>
+        <div class="bf-opts">
+          <?php if (!$isEdit): ?>
+          <!-- Rs 2,000 cash + Rs 3,000 UPI: the second way to pay -->
+          <div class="bf-opt o-green no-print">
+            <a href="javascript:splitToggle()" id="splitLink">➕ A second way to pay too (cash + UPI)</a>
+            <div class="form-row cols-3" id="splitBox" style="display:none;margin-top:8px">
+              <div><label>Second payment (Rs)</label><input type="number" step="any" min="0" inputmode="decimal" name="paid2" id="paid2" value="0" oninput="Bill.totals()"></div>
+              <div><label>its mode</label>
+                <select name="payment_mode2" id="payment_mode2" onchange="pm2Change()">
+                  <?php foreach ($pms as $pm): ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
+                </select></div>
+              <div id="bankAccBox2" style="display:none"><label>Bank account</label>
+                <select name="bank_account_id2">
+                  <?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?>
+                </select></div>
+            </div>
+          </div>
           <?php endif; ?>
-          <div class="t-line" id="roundRow" style="display:none"><span>Round Off</span><span>₹ <span id="t_round">0.00</span></span></div>
-          <div class="t-line t-grand"><span>Total</span><span>₹ <span id="t_grand">0.00</span></span></div>
-          <?php if (!$isEdit && setting('show_profit_billing') === '1' && can('items.cost')): ?>
-          <div class="t-line" id="profitRow"><span>Estimated Profit</span><span>₹ <span id="t_profit">0.00</span></span></div>
-          <?php endif; ?>
-          <label class="check-inline"><input type="checkbox" name="round_off_on" id="round_off_chk" value="1" <?= (!$isEdit && setting('round_off_default', '1') === '1') || ($isEdit && abs((float)$editSale['round_off']) > 0.004) ? 'checked' : '' ?> onchange="Bill.totals()"> Round Off Total</label>
-          <input type="hidden" name="round_off" id="round_off" value="0">
-          <?php if (!$isEdit): ?><div class="t-line"><span>Balance due</span><span>₹ <span id="t_due">0.00</span></span></div><?php endif; ?>
+
+          <!-- #4 Trade-in: the old part comes in, its value goes off the bill -->
+          <div class="bf-opt o-orange no-print">
+            <a href="javascript:tiToggle()" id="tiLink">🔄 Trade-in (exchange)</a>
+            <div id="tiBox" style="display:<?= $tiRows ? 'block' : 'none' ?>;margin-top:8px">
+              <div id="tiRows"></div>
+              <button type="button" class="btn btn-sm btn-outline" onclick="tiAdd()">+ Add another</button>
+              <p class="bf-note">The value of what was taken back comes off the bill. Pick an item and it also goes into stock.</p>
+            </div>
+          </div>
+
+          <!-- #5 Bill at one place, goods at another -->
+          <div class="bf-opt o-blue no-print">
+            <a href="javascript:void(0)" onclick="document.getElementById('delivery_address').focus()">📍 Delivery address <span class="muted" style="font-weight:normal">(if it differs from billing)</span></a>
+            <input type="text" name="delivery_address" id="delivery_address" maxlength="250" style="margin-top:8px"
+                   value="<?= e($preSale['delivery_address'] ?? '') ?>" placeholder="Site address / where the goods go">
+          </div>
         </div>
-        <div class="form-row cols-2 mt">
-          <?php if ($isEdit): ?>
-          <a class="btn btn-outline" href="sale_view.php?id=<?= $editSale['id'] ?>">Cancel</a>
-          <button class="btn" type="submit">💾 Update Bill</button>
-          <?php else: ?>
-          <button class="btn btn-outline" type="submit" name="save_new" value="1">Save & New</button>
-          <button class="btn" type="submit">💾 Save</button>
-          <button class="btn btn-muted" type="submit" name="do" value="park"
-                  title="Park the bill until the customer comes back">⏸️ Park it</button>
-          <?php endif; ?>
+      </details>
+
+      <div class="bf-bottom">
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico">📝</span>Notes</div>
+          <input type="text" name="notes" value="<?= e($preSale['notes'] ?? '') ?>" placeholder="Anything worth writing on the bill">
         </div>
+        <div class="bf-sum">
+          <div class="bf-t"><span class="bf-ico">🧮</span>Bill Summary</div>
+          <div class="bill-totals">
+            <div class="t-line"><span>Items</span><span id="t_items">0 items · 0 qty</span></div>
+            <div class="t-line" id="ldiscRow" style="display:none"><span>Item Discounts</span><span>- ₹ <span id="t_ldisc">0.00</span></span></div>
+            <div class="t-line"><span>Subtotal</span><span>₹ <span id="t_sub">0.00</span></span></div>
+            <div class="t-line"><span>GST</span><span>₹ <span id="t_tax">0.00</span></span></div>
+            <div class="t-line"><span>Shipping</span><span>₹ <span id="t_ship">0.00</span></span></div>
+            <div class="t-line" id="adjRow" style="display:none"><span>Adjustment</span><span>₹ <span id="t_adj">0.00</span></span></div>
+            <div class="t-line" id="tiRow" style="display:none"><span>🔄 Trade-in taken</span><span>- ₹ <span id="t_tradein">0.00</span></span></div>
+            <?php if (!$isEdit && setting('loyalty_enabled') === '1'): ?>
+            <div class="t-line" id="loyaltyRow" style="display:none"><span>⭐ Points Discount</span><span>- ₹ <span id="t_loyalty">0.00</span></span></div>
+            <?php endif; ?>
+            <div class="t-line" id="roundRow" style="display:none"><span>Round Off</span><span>₹ <span id="t_round">0.00</span></span></div>
+            <div class="t-line t-grand"><span>Total</span><span>₹ <span id="t_grand">0.00</span></span></div>
+            <?php if (!$isEdit && setting('show_profit_billing') === '1' && can('items.cost')): ?>
+            <div class="t-line" id="profitRow"><span>Estimated Profit</span><span>₹ <span id="t_profit">0.00</span></span></div>
+            <?php endif; ?>
+            <label class="check-inline"><input type="checkbox" name="round_off_on" id="round_off_chk" value="1" <?= (!$isEdit && setting('round_off_default', '1') === '1') || ($isEdit && abs((float)$editSale['round_off']) > 0.004) ? 'checked' : '' ?> onchange="Bill.totals()"> Round Off Total</label>
+            <input type="hidden" name="round_off" id="round_off" value="0">
+          </div>
+          <?php if (!$isEdit): ?><div class="t-due"><span>Balance due</span><span>₹ <span id="t_due">0.00</span></span></div><?php endif; ?>
+        </div>
+      </div>
+
+      <div class="bf-bar">
+        <?php if ($isEdit): ?>
+        <a class="btn btn-outline" href="sale_view.php?id=<?= $editSale['id'] ?>">Cancel</a>
+        <button class="btn" type="submit">💾 Update Bill</button>
+        <?php else: ?>
+        <button class="btn btn-outline" type="submit" name="save_new" value="1">🗂️ Save &amp; New</button>
+        <button class="btn" type="submit">💾 Save</button>
+        <button class="btn btn-park" type="submit" name="do" value="park"
+                title="Park the bill until the customer comes back">⏸️ Park it</button>
+        <?php endif; ?>
       </div>
     </form>
     <script>
@@ -1191,6 +1266,7 @@ if ($action === 'new' || $action === 'edit') {
         var sel = document.getElementById('payment_mode');
         var opt = sel.options[sel.selectedIndex];
         document.getElementById('bankAccBox').style.display = opt.dataset.type === 'bank' ? '' : 'none';
+        if (sel.chipSync) sel.chipSync();   // setCC() sets .value without firing change
         if (!document.getElementById('ccCash')) return; // edit form has no Cash/Credit toggle
         if (sel.value === 'credit' && ccMode !== 'credit') setCC('credit');
         else if (sel.value !== 'credit' && ccMode === 'credit') setCC('cash');
@@ -1296,7 +1372,13 @@ if ($action === 'new' || $action === 'edit') {
           document.getElementById('customer_name').value = o.textContent.trim();
           document.getElementById('customer_mobile').value = o.dataset.mobile || '';
           var pa = document.getElementById('pointsAvail'); if (pa) pa.textContent = '(Available: ' + (o.dataset.points || 0) + ')';
-          document.getElementById('credit_days').value = o.dataset.credit || 0;
+          // ...and fire the change, so "Due On" is recomputed from THIS
+          // party's terms. It was being set silently, which left the due date
+          // showing the previous party's day - the day the overdue reminders
+          // and the collection queue would then have gone by.
+          var cd = document.getElementById('credit_days');
+          cd.value = o.dataset.credit || 0;
+          cd.dispatchEvent(new Event('change', { bubbles: true }));
           partyState();
         } else {
           var pa2 = document.getElementById('pointsAvail'); if (pa2) pa2.textContent = '';
@@ -1318,8 +1400,8 @@ if ($action === 'new' || $action === 'edit') {
             if (!d) { box.style.display = 'none'; return; }
             var bits = [];
             if (d.advance > 0.009)
-              bits.push('<span style="color:var(--ok)">💰 This party has Rs ' + d.advance.toFixed(2) +
-                        ' is held with us — it will be used against a bill.</span>');
+              bits.push('<span style="color:var(--ok)">💰 Rs ' + d.advance.toFixed(2) +
+                        ' of this party\'s money is held with us — it goes against this bill.</span>');
             if (d.set && d.over)
               bits.push('<span style="color:var(--bad)">⚠️ Credit limit Rs ' + d.limit.toFixed(2) +
                         ' . After this bill the due is Rs ' + d.after.toFixed(2) +
@@ -1341,6 +1423,14 @@ if ($action === 'new' || $action === 'edit') {
         _pwT = setTimeout(partyState, 400);
       };
       partyState();
+
+      // The three choices made on every single bill, shown as buttons rather
+      // than dropdowns: one tap instead of two, and the answer readable from
+      // the other side of the counter. Last, so all the prefill above has
+      // already put the real values into the selects.
+      Bill.chips('credit_days');
+      Bill.chips('price_type');
+      Bill.chips('payment_mode');
     </script>
     <?php
     include __DIR__ . '/includes/footer.php';

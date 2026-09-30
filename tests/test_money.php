@@ -384,3 +384,102 @@ t_ok('discount takes ₹ or %', strpos($slsSrc, "setDiscType('percent')") !== fa
 t_ok('round-off is one tick', strpos($slsSrc, 'name="round_off_on"') !== false);
 t_ok('...and the rounding is worked out on the server, never taken from the form',
      strpos($slsSrc, "if (post('round_off_on') === '1') {") !== false && strpos($slsSrc, '$roundOff = round($rounded - $total, 2);') !== false);
+
+t_group('the New Bill screen was redressed, not rebuilt');
+
+// The owner's own list, field by field. The screen's look was changed around
+// all of it, and this is the guard that says nothing fell out of the form on
+// the way: not a label, an id or a name - the actual inputs the server reads
+// and the actual ids the Bill engine in app.js drives.
+//
+// It is written as one list on purpose. A redesign that quietly drops a field
+// does not announce itself; it is found weeks later by somebody who cannot
+// enter a delivery address any more.
+$mustHave = [
+    'the invoice date'      => 'name="sale_date"',
+    'the time'              => 'id="saleTimeDisplay"',
+    'the firm'              => 'name="company_id"',
+    'the godown'            => 'name="location_id"',
+    'the payment terms'     => 'name="credit_days"',
+    'the due date'          => 'name="due_date"',
+    'retail or B2B'         => 'name="price_type"',
+    'the party'             => 'name="party_id"',
+    'quick-add a party'     => 'id="qp_name"',
+    'the customer name'     => 'name="customer_name"',
+    'the phone number'      => 'name="customer_mobile"',
+    'add items'             => 'id="addItemsBtn"',
+    'scan a barcode'        => 'id="scanItemBtn"',
+    'the item rows'         => 'id="billItems"',
+    'the discount'          => 'name="discount_val"',
+    'and whether it is ₹ or %' => 'name="discount_type"',
+    'shipping'              => 'name="shipping"',
+    'the adjustment'        => 'name="adjustment"',
+    'what was paid now'     => 'name="paid"',
+    'how it was paid'       => 'name="payment_mode"',
+    'which bank it went to' => 'name="bank_account_id"',
+    'a second payment'      => 'name="paid2"',
+    'and its mode'          => 'name="payment_mode2"',
+    'a trade-in'            => 'name="ti_value[]"',
+    'the delivery address'  => 'name="delivery_address"',
+    'the notes'             => 'name="notes"',
+    'the round-off tick'    => 'name="round_off_on"',
+    'save and start another'=> 'name="save_new"',
+    'park it for later'     => 'value="park"',
+];
+foreach ($mustHave as $what => $needle)
+    t_ok($what . ' is still on the form', strpos($slsSrc, $needle) !== false, $needle);
+
+// Totals: every line the counter reads off the screen.
+foreach (['t_items', 't_sub', 't_tax', 't_ship', 't_adj', 't_grand', 't_round', 't_due'] as $id)
+    t_ok('the summary still shows ' . $id, strpos($slsSrc, 'id="' . $id . '"') !== false);
+
+// The chips are a coat of paint on the select, not a replacement for it. If
+// they ever became the value there would be two answers to "how was this
+// paid", and the form posts only one of them.
+$appJs = file_get_contents(dirname(__DIR__) . '/assets/app.js');
+t_ok('Bill.chips() exists and is shared', strpos($appJs, 'chips: function (selectId)') !== false);
+t_ok('...and keeps the real select as the value',
+     strpos($appJs, 'sel.value = o.value;') !== false
+     && strpos($appJs, "sel.dispatchEvent(new Event('change', { bubbles: true }));") !== false);
+t_ok('...and re-reads it rather than keeping its own copy', strpos($appJs, 'sel.chipSync = sync;') !== false);
+t_ok('the three everyday choices use it',
+     strpos($slsSrc, "Bill.chips('credit_days')") !== false
+     && strpos($slsSrc, "Bill.chips('price_type')") !== false
+     && strpos($slsSrc, "Bill.chips('payment_mode')") !== false);
+// setCC() sets payment_mode without firing change, so the buttons would have
+// gone on showing the old answer.
+t_ok('a mode changed from code still moves the button', strpos($slsSrc, 'if (sel.chipSync) sel.chipSync();') !== false);
+
+// Credit has to be offered whether or not it is one of the shop's configured
+// payment methods - but offered ONCE. As a dropdown the duplicate was
+// invisible; as buttons it put "Credit / Udhar" on screen twice.
+t_ok('credit is offered exactly once',
+     substr_count($slsSrc, '>Credit / Udhar</option>') === 1
+     && strpos($slsSrc, "in_array('credit', array_column(\$pms, 'code'), true)") !== false);
+
+// Picking a party was setting the terms silently, so "Due On" kept the
+// PREVIOUS party's day - and that day is what the overdue reminders and the
+// collection queue then went by.
+t_ok('picking a party recomputes the due date',
+     strpos($slsSrc, "cd.dispatchEvent(new Event('change', { bubbles: true }));") !== false);
+
+// The counter must never have to scroll to reach Save.
+t_ok('the action bar is always on screen', strpos($slsSrc, 'class="bf-bar"') !== false);
+$css = file_get_contents(dirname(__DIR__) . '/assets/style.css');
+t_ok('...sitting above the phone bottom nav, not under it',
+     strpos($css, 'bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom));') !== false);
+t_ok('...and the round Quick Actions button is out of its way',
+     strpos($css, 'body:has(.bf) .fab-center { display: none; }') !== false);
+t_ok('every thumb target is 44px on a touch screen',
+     strpos($css, '.bf .chips .chip { min-height: 44px;') !== false
+     && strpos($css, '.bf .cc-toggle button { min-height: 44px;') !== false);
+t_ok('the layer is written to be reused by the other document screens',
+     strpos($css, 'BILL FORM — the counter layer') !== false
+     && strpos($css, 'Return, Delivery Challan') !== false);
+
+// Nothing about what a bill IS changed. These are the server-side rules the
+// redesign was not allowed to go near.
+t_ok('the server still checks the permission', strpos($slsSrc, "require_perm(\$isEdit ? 'sales.edit' : 'sales.add')") !== false);
+t_ok('the form still carries a CSRF token', strpos($slsSrc, 'csrf_field()') !== false);
+t_ok('a credit bill still needs somebody to put it on',
+     strpos($slsSrc, "Select a party (or add a new one) for a Credit bill") !== false);

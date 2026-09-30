@@ -979,3 +979,167 @@ a.kpi:hover { box-shadow: 0 4px 14px rgba(15,23,42,.12); transform: translateY(-
   .logtbl td::before { content: attr(data-l) ' '; font-size: 11px; color: var(--muted); font-weight: 600; }
   .logtbl td:empty { display: none; }
 }
+
+/* ============================================================
+   BILL FORM — the counter layer
+   ------------------------------------------------------------
+   The third reusable layer, after MONEY PANELS and SETTINGS
+   PANELS. This one is for the screens where a document is
+   WRITTEN rather than read: New Bill, Estimate, Purchase, Sale
+   Return, Delivery Challan. They all already share the same
+   Bill engine in app.js and the same field names; now they can
+   share the same shape too.
+
+   The rule this layer is built around: the bill that gets
+   written a hundred times a day needs a customer, some items,
+   what was paid, and Save. Everything else is real but rare and
+   must not be in the way. So the common path is four taps down
+   the middle of the screen, and the rare things sit behind one
+   line that opens.
+
+     .bf                 the form itself - bottom room for the bar
+     .bf-head            crumb + title on the left, the bill's
+                         own identity (cash/credit, no., date,
+                         time) on the right
+     .bf-grid            cards that fit as many across as the
+                         screen allows and stack on a phone
+     .bf-card  .bf-t     a card and its small icon + label head
+     .bf-ico             the round tinted icon in that head
+     .chips  .chip       a <select> shown as a row of buttons -
+                         see Bill.chips(), which keeps the real
+                         select as the single source of truth
+     .bf-empty           "no items added yet" with the two
+                         buttons that fix it, inside the box
+     .bf-opt             the rare things: second payment, a
+                         trade-in, a delivery address
+     .bf-sum             the running total, kept on screen
+     .bf-bar             Save & New / Save / Park, always
+                         reachable without scrolling
+   ============================================================ */
+
+/* Room at the bottom for the action bar, which is fixed on a phone (above
+   the app's own bottom nav) and sticky on a desktop. */
+.bf { padding-bottom: 86px; }
+@media (min-width: 1024px) { .bf { padding-bottom: 12px; } }
+
+/* ---- head ---- */
+.bf-head { align-items: flex-end; }
+.bf-head h1 { display: flex; align-items: center; gap: 10px; }
+.bf-head-right { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.bf-head-right .cc-toggle { align-self: center; }
+.bf-mini { min-width: 116px; }
+.bf-mini label { display: block; font-size: 11.5px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .3px; margin-bottom: 3px; }
+.bf-mini input { width: 100%; }
+
+/* ---- cards ---- */
+.bf-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 12px; }
+@media (min-width: 700px) { .bf-grid { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1024px) { .bf-grid.c4 { grid-template-columns: repeat(4, 1fr); } }
+.bf-grid .bf-wide { grid-column: 1 / -1; }
+@media (min-width: 700px) { .bf-grid .bf-half { grid-column: span 1; } }
+
+/* relative, so the chipped select below has something to be absolute inside */
+.bf-card { position: relative; background: var(--card); border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+.bf-t { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13.5px;
+  color: var(--label); margin-bottom: 10px; }
+.bf-t .bf-ico { width: 26px; height: 26px; border-radius: 8px; display: inline-flex;
+  align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;
+  background: color-mix(in srgb, var(--primary) 14%, transparent); }
+.bf-ico.i-green { background: color-mix(in srgb, var(--ok) 16%, transparent); }
+.bf-ico.i-orange { background: color-mix(in srgb, var(--warn) 18%, transparent); }
+.bf-ico.i-purple { background: rgba(124,58,237,.15); }
+.bf-ico.i-red { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.bf-card > label { display: block; font-size: 12.5px; font-weight: 600; color: var(--label); margin: 8px 0 4px; }
+.bf-card > label:first-of-type { margin-top: 0; }
+.bf-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.bf-req { color: var(--bad); font-weight: 600; font-size: 12px; }
+
+/* ---- a select shown as buttons ---- */
+/* The <select> is still there and still holds the value; these only click it.
+   That way every prefill, every handler and the form post are unchanged. */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips .chip { border: 1px solid var(--border); background: var(--card); color: var(--label);
+  border-radius: 999px; padding: 9px 14px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  min-height: 40px; line-height: 1.1; }
+.chips .chip:hover { border-color: var(--primary); }
+.chips .chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+select.chipped { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* ---- items ---- */
+.bf-items .bf-head-row { display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.bf-items .bf-head-row h3 { font-size: 17px; }
+.bf-items .bf-head-row .muted { font-size: 12.5px; font-weight: 400; }
+.bf-items .bsum-empty { padding: 26px 14px; }
+.bf-items .bsum-empty::before { content: '📦'; display: block; font-size: 26px; margin-bottom: 6px; }
+.bf-emptyact { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: -6px; }
+.btn-scan { background: var(--ok); border-color: var(--ok); color: #fff; }
+.btn-scan:hover { background: #047857; }
+
+/* ---- the rare things ---- */
+.bf-opts { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 900px) { .bf-opts { grid-template-columns: repeat(3, 1fr); } }
+.bf-opt { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--card); }
+.bf-opt > a { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; }
+.bf-opt.o-green { background: color-mix(in srgb, var(--ok) 7%, var(--card)); border-color: color-mix(in srgb, var(--ok) 25%, var(--border)); }
+.bf-opt.o-orange { background: color-mix(in srgb, var(--warn) 8%, var(--card)); border-color: color-mix(in srgb, var(--warn) 25%, var(--border)); }
+.bf-opt.o-blue { background: color-mix(in srgb, var(--primary) 6%, var(--card)); border-color: color-mix(in srgb, var(--primary) 22%, var(--border)); }
+
+/* ---- notes + the running total ---- */
+.bf-bottom { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 12px; }
+@media (min-width: 900px) { .bf-bottom { grid-template-columns: 1fr 380px; align-items: start; } }
+.bf-sum { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+.bf-sum .bill-totals { max-width: none; margin: 0; }
+.bf-sum .t-due { display: flex; justify-content: space-between; align-items: center;
+  background: color-mix(in srgb, var(--ok) 12%, transparent); border-radius: 10px;
+  padding: 11px 12px; margin-top: 10px; font-weight: 800; font-size: 16px; color: var(--ok); }
+@media (min-width: 900px) { .bf-sum { position: sticky; top: calc(var(--topbar-h) + 16px); } }
+
+/* ---- the action bar ---- */
+/* On a phone it sits just above the app's bottom nav, so Save never needs a
+   scroll however long the bill gets. On a desktop it rides the bottom of the
+   viewport instead of being nailed to it. */
+.bf-bar { display: flex; gap: 8px; position: fixed; left: 0; right: 0;
+  bottom: calc(var(--bottomnav-h) + env(safe-area-inset-bottom)); z-index: 45;
+  background: var(--card); border-top: 1px solid var(--border); padding: 10px 12px; }
+.bf-bar .btn { flex: 1; min-height: 46px; display: flex; align-items: center;
+  justify-content: center; gap: 6px; font-size: 14.5px; }
+.bf-bar .btn-park { background: #f59e0b; border-color: #f59e0b; color: #1f1300; }
+.bf-bar .btn-park:hover { background: #d97706; }
+/* Three buttons across a 390px phone: they stay on one line each rather than
+   wrapping into a two-line bar that eats the screen. */
+@media (max-width: 480px) { .bf-bar .btn { font-size: 13px; padding: 0 8px; white-space: nowrap; } }
+/* The round Quick Actions button in the bottom nav pokes up 26px and would
+   sit on top of Save. While a bill is being written it is also the one thing
+   nobody needs - its first entry is New Bill, which is this screen. */
+body:has(.bf) .fab-center { display: none; }
+@media (min-width: 1024px) {
+  .bf-bar { position: sticky; bottom: 12px; left: auto; right: auto; border: 1px solid var(--border);
+    border-radius: 14px; box-shadow: 0 6px 22px rgba(15,23,42,.10); }
+  .bf-bar .btn { flex: 0 1 auto; min-width: 150px; }
+}
+
+/* The terms and the day they land on, side by side: the chips take the room
+   they need and the date box stops at a date's width instead of stretching
+   across the card. */
+.bf-terms { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.bf-terms-chips { flex: 1 1 260px; min-width: 0; }
+.bf-terms-due { flex: 0 1 240px; min-width: 200px; }
+.bf-terms-due label { display: block; font-size: 12.5px; font-weight: 600; color: var(--label); margin-bottom: 4px; }
+.bf-terms-due input { width: 100%; }
+
+/* Touch, not a mouse: under the desktop breakpoint every single thing a
+   thumb has to hit is at least 44px, including the chips and the two small
+   pill toggles. A phone keyboard also covers the bottom of the screen, so
+   the number fields ask for the numeric keypad rather than the full one. */
+@media (max-width: 1023px) {
+  .bf-card input, .bf-card select, .bf-mini input { min-height: 44px; }
+  .bf .chips .chip { min-height: 44px; padding: 11px 16px; }
+  .bf .cc-toggle button { min-height: 44px; padding: 8px 20px; }
+  .bf .btn, .bf-bar .btn { min-height: 44px; }
+  .bf-head-right { width: 100%; }
+  .bf-mini { flex: 1; min-width: 104px; }
+  .bf-items .bf-head-row .btn { flex: 1; }
+}

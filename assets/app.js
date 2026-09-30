@@ -271,6 +271,53 @@ var Bill = {
     if (pt) pt.addEventListener('change', function () { self.repriceAll(); });
   },
 
+  /** Show a <select> as a row of buttons.
+   *
+   *  For the two or three choices made on every single bill - the payment
+   *  terms, retail or B2B, how it was paid. A dropdown hides the answer until
+   *  it is opened and costs two taps to change; these cost one and the answer
+   *  is readable from across the counter.
+   *
+   *  The select is not replaced. It stays in the DOM, it stays the value, and
+   *  the chips do nothing but click it, so every prefill, every existing
+   *  handler and the form post carry on working untouched. Code that sets the
+   *  value without firing a change - and there is some - calls sel.chipSync()
+   *  rather than the chips keeping a second copy of the answer that can drift
+   *  away from the first.
+   *
+   *  Used by New Bill; the other document screens can take it as they come. */
+  chips: function (selectId) {
+    var sel = document.getElementById(selectId);
+    if (!sel || sel.classList.contains('chipped')) return;
+    var box = document.createElement('div');
+    box.className = 'chips';
+    var btns = [];
+    Array.prototype.forEach.call(sel.options, function (o) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.textContent = o.textContent;
+      b.addEventListener('click', function () {
+        if (sel.value === o.value) return;
+        sel.value = o.value;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        sync();
+      });
+      btns.push(b);
+      box.appendChild(b);
+    });
+    function sync() {
+      btns.forEach(function (b, i) {
+        b.className = 'chip' + (sel.options[i] && sel.options[i].value === sel.value ? ' on' : '');
+      });
+    }
+    sel.classList.add('chipped');
+    sel.parentNode.insertBefore(box, sel.nextSibling);
+    sel.addEventListener('change', sync);
+    sel.chipSync = sync;
+    sync();
+  },
+
   // ----- 2-step "Add Items" panel (page 1 keeps just a summary list) -----
   /** Make an item without leaving the bill, and drop it straight into this
    *  row. Only what a bill needs is asked for: a name, what it sells for,
