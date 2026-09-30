@@ -728,12 +728,22 @@ exit;
   <?php if ($botLog): ?>
   <h4 class="mt">Last 10 bot conversations</h4>
   <div class="table-wrap" style="box-shadow:none"><table class="table-sm">
-    <thead><tr><th>Time</th><th>From</th><th>Asked</th><th class="num">Matches</th><th>Bot replied?</th></tr></thead>
+    <p class="muted" style="font-size:12px;margin:0 0 6px">
+      A tick here means the message <strong>left the building</strong>, not just that the bot wrote one.
+      It used to mean the second, which is how a customer could get nothing while this table looked fine.</p>
+    <thead><tr><th>Time</th><th>From</th><th>Asked</th><th class="num">Matches</th><th>Did it go?</th></tr></thead>
     <tbody><?php foreach ($botLog as $b): ?>
       <tr><td><?= dmyt($b['created_at']) ?></td><td><?= e($b['mobile']) ?></td>
       <td><?= $b['had_image'] ? '🖼️ ' : '' ?><?= e(mb_substr($b['in_text'], 0, 60)) ?></td>
       <td class="num"><?= (int)$b['matched'] ?></td>
-      <td><?= $b['reply'] ? '✅' : '<span class="muted">silent</span>' ?></td></tr>
+      <td>
+        <?php if ($b['reply'] === null): ?><span class="muted">silent</span>
+        <?php elseif (($b['sent'] ?? null) === null): ?>✅ <span class="muted" style="font-size:11px">(before this was tracked)</span>
+        <?php elseif ((int)$b['sent'] === 1): ?>✅ sent
+        <?php else: ?><span style="color:#b91c1c">❌ NOT sent</span>
+          <?php if (!empty($b['send_error'])): ?><br><span class="muted" style="font-size:11px"><?= e($b['send_error']) ?></span><?php endif; ?>
+        <?php endif; ?>
+      </td></tr>
     <?php endforeach; ?></tbody>
   </table></div>
   <?php endif; ?>

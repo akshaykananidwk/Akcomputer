@@ -92,6 +92,23 @@ function wa_is_group(array $p) {
     return false;
 }
 
+/**
+ * Remember how the last send went.
+ *
+ * Every send in this system ends here, so there is one honest answer to
+ * "did that message actually leave?" - and the bot's own log can stop
+ * guessing. It used to record a tick for every reply it COMPOSED, while
+ * throwing away the boolean that said whether the send worked.
+ */
+function wa_mark_send($ok, $err = '') {
+    $GLOBALS['_wa_send_ok'] = (bool)$ok;
+    $GLOBALS['_wa_send_err'] = (string)$err;
+}
+function wa_last_send() {
+    return ['ok' => (bool)($GLOBALS['_wa_send_ok'] ?? false),
+            'error' => (string)($GLOBALS['_wa_send_err'] ?? '')];
+}
+
 function wa_thirdparty_configured() {
     return setting('wa_api_url', 'https://bulk.akdwk.in/api.php') !== '' && setting('wa_session_id') !== '' && setting('wa_api_key') !== '';
 }
@@ -179,9 +196,11 @@ function send_whatsapp($mobile, $message, $media_url = '') {
     if ($sent) {
         wa_chat_log($mobile, 'out', $ctxKind === 'otp' ? '🔐 [OTP message]' : $message, $p, $media_url,
                     (string)($GLOBALS['_wa_last_msg_id'] ?? ''));
+        wa_mark_send(true);
         return true;
     }
     $GLOBALS['_wa_last_error'] = $errs ? implode(' | ', $errs) : 'No WhatsApp provider is configured (Settings > WhatsApp).';
+    wa_mark_send(false, $GLOBALS['_wa_last_error']);
     return false;
 }
 

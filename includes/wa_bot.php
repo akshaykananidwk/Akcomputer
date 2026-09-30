@@ -121,6 +121,26 @@ function wa_catalog_want($t, $st, $mobile) {
     return wa_catalog_kw($t) ? 'cats:0' : null;
 }
 
+/**
+ * Write down what the bot did - including whether the reply actually LEFT.
+ *
+ * Every call site used to insert this row by hand and pass only the text it
+ * had composed, so the log showed a tick for a message that was never
+ * delivered. send_whatsapp() has always returned that answer and the bot
+ * threw it away, every time. Called AFTER the send, so wa_last_send() is
+ * about this reply and not the one before it.
+ */
+function wa_bot_log_it($mobile, $text, $jpeg, $reply, $matched = 0, $usedAi = 0, $role = 'customer') {
+    $snt = wa_last_send();
+    q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role, sent, send_error)
+       VALUES (?,?,?,?,?,?,?,?,?)',
+      [$mobile, mb_substr((string)$text, 0, 500), $jpeg ? 1 : 0,
+       $reply === null ? null : mb_substr((string)$reply, 0, 1500),
+       (int)$matched, (int)$usedAi, $role,
+       $reply === null ? null : ($snt['ok'] ? 1 : 0),
+       $reply === null ? '' : mb_substr($snt['error'], 0, 255)]);
+}
+
 /** "catalog" / "menu" / "Price" as the WHOLE message = open the menu. */
 function wa_catalog_kw($t) {
     return (bool)preg_match('/^(catalog|catalogue|catlog|કેટલોગ|કૅટલોગ|menu|મેનુ|મેન્યુ|list|લિસ્ટ|price\s?list|rate\s?list|પ્રાઇસ\s?લિસ્ટ|ભાવ|બધા\s?ભાવ)[\s?.!)]*$/iu', $t);
@@ -385,8 +405,7 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
         // not chosen yet) asks the language question instead.
         wa_bot_clear_state($mobile);
         $hst = ($langKnown === null && count(wa_langs_enabled()) > 1) ? wa_lang_picker($mobile) : wa_bot_send_home($mobile);
-        q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
-          [$mobile, mb_substr((string)$text, 0, 500), 0, '🏠 ' . $hst, 0, 0, $role]);
+        wa_bot_log_it($mobile, $text, null, '🏠 ' . $hst, 0, 0, $role);
         return 'replied:' . $hst;
     } elseif (trim($text) !== '') {
         $t = mb_strtolower(trim($text));
@@ -408,27 +427,25 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
                 send_whatsapp($mobile, wa_t('lang_set'));
                 $lst = 'lang-set:' . $lm[1] . ':' . wa_bot_send_home($mobile);
             }
-            q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
-              [$mobile, mb_substr((string)$text, 0, 500), 0, '🌐 ' . $lst, 0, 0, $role]);
+            wa_bot_log_it($mobile, $text, null, '🌐 ' . $lst, 0, 0, $role);
             return 'replied:' . $lst;
         }
         // admin-defined auto replies (Settings: "keyword | reply" lines)
         if ($croute === null && ($ar = wa_auto_reply($t)) !== null) {
-            q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
-              [$mobile, mb_substr((string)$text, 0, 500), 0, mb_substr($ar, 0, 1500), 0, 0, $role]);
-            send_whatsapp($mobile, $ar);
-            return 'replied:auto-reply';
+            // Send FIRST, then write it down: a row written before the send
+            // can only ever claim success.
+            $arOk = send_whatsapp($mobile, $ar);
+            wa_bot_log_it($mobile, $text, null, $ar, 0, 0, $role);
+            return $arOk ? 'replied:auto-reply' : 'send-failed';
         }
         if ($croute !== null) {
             if (strpos($croute, 'portal:') === 0) {
                 $pst = wa_portal_route($mobile, $croute);
-                q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
-                  [$mobile, mb_substr((string)$text, 0, 500), 0, '🧾 portal (' . $pst . ')', 0, 0, $role]);
+                wa_bot_log_it($mobile, $text, null, '🧾 portal (' . $pst . ')', 0, 0, $role);
                 return 'portal:' . $pst;
             }
             $cst = wa_catalog_route($mobile, $croute);
-            q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
-              [$mobile, mb_substr((string)$text, 0, 500), 0, '📚 catalog (' . $cst . ')', 0, 0, $role]);
+            wa_bot_log_it($mobile, $text, null, '📚 catalog (' . $cst . ')', 0, 0, $role);
             return 'catalog:' . $cst;
         }
 
@@ -470,8 +487,7 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
         // - same screen as the Statement menu, so it is written only once
         elseif (preg_match('/baki|બાકી|balance|hisab|હિસાબ|ledger|ઉધાર|udhar|खाता|बकाया/iu', $t)) {
             $pst = wa_portal_route($mobile, 'portal:stmt');
-            q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
-              [$mobile, mb_substr((string)$text, 0, 500), 0, '🧾 portal (' . $pst . ')', 0, 0, $role]);
+            wa_bot_log_it($mobile, $text, null, '🧾 portal (' . $pst . ')', 0, 0, $role);
             return 'portal:' . $pst;
         }
         // 4) product search (any language - matches name/brand/model/category)
@@ -495,11 +511,16 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
         }
     }
 
-    q('INSERT INTO wa_bot_log (mobile, in_text, had_image, reply, matched, used_ai, sender_role) VALUES (?,?,?,?,?,?,?)',
-      [$mobile, mb_substr((string)$text, 0, 500), $jpeg ? 1 : 0, $reply ? mb_substr($reply, 0, 1500) : null, count($matches), $usedAi, $role]);
-
-    if ($reply === null) return 'silent';
-    send_whatsapp($mobile, $reply);
+    if ($reply === null) {
+        wa_bot_log_it($mobile, $text, $jpeg, null, count($matches), $usedAi, $role);
+        return 'silent';
+    }
+    // The answer send_whatsapp() gives was thrown away here for as long as
+    // this bot has existed, which is why the log could show a tick against a
+    // message nobody ever received.
+    $ok = send_whatsapp($mobile, $reply);
+    wa_bot_log_it($mobile, $text, $jpeg, $reply, count($matches), $usedAi, $role);
+    if (!$ok) return 'send-failed';
     return 'replied:' . count($matches) . ($usedAi ? ':ai' : '') . ($staff ? ':owner' : '');
 }
 

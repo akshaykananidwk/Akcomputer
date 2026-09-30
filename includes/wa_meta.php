@@ -206,6 +206,7 @@ function meta_wa_send_interactive($mobile, array $interactive) {
         // never received are the ones whose fate could not be looked up.
         $GLOBALS['_wa_last_msg_id'] = (string)($data['messages'][0]['id'] ?? '');
     }
+    wa_mark_send($ok, $ok ? '' : (string)$err);
     return [$ok, $err];
 }
 

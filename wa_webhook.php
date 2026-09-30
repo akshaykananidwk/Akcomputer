@@ -192,12 +192,18 @@ $notify = function ($botStatus) use ($mobile, $text, $isStaffSender, $waTapTitle
                 'empty', 'gone', 'quote-gone', 'bill-denied', 'pay-denied', 'repair-denied'];
     $ignored = ['own-echo', 'silent'];                       // deliberately not answered
     if (in_array($botStatus, $ignored, true)) return;
-    $answered = $botStatus !== '' && !in_array($botStatus, $noReply, true);
+    // A status can carry the failure inside it - "replied:send-failed",
+    // "portal:bills-failed" - and those matter MORE than an unknown word,
+    // not less: the bot had an answer ready and the customer never got it.
+    $failed = stripos($botStatus, 'failed') !== false;
+    $answered = $botStatus !== '' && !$failed && !in_array($botStatus, $noReply, true);
     if ($mode === 'unanswered' && $answered) return;
     try {
         tg_notify_admins("💬 New WhatsApp message\nFrom: +$mobile\n"
             . mb_substr($text !== '' ? $text : '📷 media', 0, 300)
-            . ($answered ? "\n\n🤖 The bot answered this one." : "\n\n⚠️ Nobody has answered this.")
+            . ($answered ? "\n\n🤖 The bot answered this one."
+                         : ($failed ? "\n\n❌ The bot had an answer ready and it FAILED to send."
+                                    : "\n\n⚠️ Nobody has answered this."))
             . "\n\nTo reply: " . base_url('wa_inbox.php?m=' . $mobile));
     } catch (Exception $e) { /* telegram optional */ }
 };

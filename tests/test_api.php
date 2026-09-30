@@ -591,3 +591,62 @@ t_ok('including when it sent nothing at all',
      strpos($inbox, 'The bot sent no reply to this') !== false);
 t_ok('and when it tried and the send failed',
      strpos($inbox, 'the send failed') !== false);
+
+t_group('WhatsApp — a tick means it went, not that the bot wrote one');
+
+// "Bot replied? ✅" against four messages, and the customer's phone empty.
+// send_whatsapp() has always returned whether the message actually left, and
+// the bot threw that answer away at every single call site - so the one
+// screen the owner would check to see whether things were working said they
+// were.
+$bot = file_get_contents(__DIR__ . '/../includes/wa_bot.php');
+t_ok('there is one place that writes the bot log', strpos($bot, 'function wa_bot_log_it') !== false);
+t_eq('and nothing writes that table by hand any more',
+     substr_count($bot, 'INSERT INTO wa_bot_log'), 1);
+t_ok('it records whether the send worked', strpos($bot, '$snt = wa_last_send();') !== false);
+// Compared against the CALL, not the function's own definition further up
+// the file - which is what the first draft of this test measured.
+$sendAt = strpos($bot, '$ok = send_whatsapp($mobile, $reply);');
+$logAt  = strpos($bot, 'wa_bot_log_it($mobile, $text, $jpeg, $reply', $sendAt);
+t_ok('the reply is sent BEFORE it is written down — a row written first can only claim success',
+     $sendAt !== false && $logAt !== false && $sendAt < $logAt);
+t_ok('a failed send is reported as one, not as a reply',
+     strpos($bot, "if (!\$ok) return 'send-failed';") !== false);
+t_ok('the admin auto-reply sends first too',
+     strpos($bot, '$arOk = send_whatsapp($mobile, $ar);') !== false);
+
+$wapp = file_get_contents(__DIR__ . '/../includes/whatsapp.php');
+t_ok('every send ends in one honest answer', strpos($wapp, 'function wa_mark_send') !== false
+     && strpos($wapp, 'wa_mark_send(true)') !== false && strpos($wapp, 'wa_mark_send(false,') !== false);
+t_ok('interactive sends mark themselves too — the menu and the bills list go that way',
+     strpos(file_get_contents(__DIR__ . '/../includes/wa_meta.php'), 'wa_mark_send($ok,') !== false);
+
+$set = file_get_contents(__DIR__ . '/../settings.php');
+t_ok('the table shows a cross when it did not go', strpos($set, '❌ NOT sent') !== false);
+t_ok('with the provider\'s own reason beside it', strpos($set, "\$b['send_error']") !== false);
+t_ok('and rows from before this was tracked are not claimed as successes',
+     strpos($set, "(\$b['sent'] ?? null) === null") !== false);
+
+// It has to actually record the failure, not merely be able to.
+wa_mark_send(false, 'Gateway: not configured');
+$m9 = '919999900001';
+q('DELETE FROM wa_bot_log WHERE mobile = ?', [$m9]);
+wa_bot_log_it($m9, 'Bill', null, 'the bills list', 0, 0, 'customer');
+$lg = row('SELECT * FROM wa_bot_log WHERE mobile = ? ORDER BY id DESC LIMIT 1', [$m9]);
+t_eq('a failed send is written down as failed', (int)$lg['sent'], 0);
+t_ok('with the reason', stripos($lg['send_error'], 'not configured') !== false, (string)$lg['send_error']);
+wa_mark_send(true);
+wa_bot_log_it($m9, 'Hi', null, 'the menu', 0, 0, 'customer');
+$lg2 = row('SELECT * FROM wa_bot_log WHERE mobile = ? ORDER BY id DESC LIMIT 1', [$m9]);
+t_eq('and one that worked as worked', (int)$lg2['sent'], 1);
+wa_bot_log_it($m9, 'xyz', null, null, 0, 0, 'customer');
+$lg3 = row('SELECT * FROM wa_bot_log WHERE mobile = ? ORDER BY id DESC LIMIT 1', [$m9]);
+t_eq('a message the bot chose not to answer is neither', $lg3['sent'], null);
+q('DELETE FROM wa_bot_log WHERE mobile = ?', [$m9]);
+
+// And a failure has to reach the owner, not sit in a table.
+$hook = file_get_contents(__DIR__ . '/../wa_webhook.php');
+t_ok('a failure hidden inside the status still counts as unanswered',
+     strpos($hook, "stripos(\$botStatus, 'failed') !== false") !== false);
+t_ok('and the alert says so in as many words',
+     strpos($hook, 'FAILED to send') !== false);
