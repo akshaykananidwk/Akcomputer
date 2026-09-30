@@ -18,6 +18,12 @@
   --label: #334155;
   --input-bg: #ffffff;
   --input-text: #16233b;
+  /* A divider INSIDE a card - softer than --border, which outlines the card
+     itself. Eleven rules were already asking for it; it had never been
+     declared, and a var() that resolves to nothing takes the whole border
+     shorthand down with it. Every one of those lines was silently missing.
+     See the test that now walks this file for undeclared tokens. */
+  --line: #eef2f7;
 }
 
 /* Dark mode: no explicit choice follows the OS (prefers-color-scheme);
@@ -31,12 +37,14 @@
     --bg: #0f1420; --card: #1a2233; --text: #e8edf5; --muted: #93a2ba;
     --border: #2e3a52; --card-alt: rgba(255,255,255,.05);
     --label: #cbd5e1; --input-bg: #232d42; --input-text: #e8edf5;
+    --line: #28334a;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0f1420; --card: #1a2233; --text: #e8edf5; --muted: #93a2ba;
   --border: #2e3a52; --card-alt: rgba(255,255,255,.05);
   --label: #cbd5e1; --input-bg: #232d42; --input-text: #e8edf5;
+  --line: #28334a;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -325,12 +333,18 @@ a.list-row:active { background: var(--bg); margin: 0 -16px; padding-left: 16px; 
   .grid-2 { grid-template-columns: 1fr 1fr; }
   .grid-stats { grid-template-columns: repeat(4, 1fr); }
 }
-.stat { background: var(--card); border-radius: var(--radius); padding: 14px; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
+/* Same card as .kpi, so a figure reads the same wherever it appears. */
+.stat { background: var(--card); border-radius: var(--radius); padding: 13px 14px;
+        box-shadow: 0 1px 3px rgba(15,23,42,.06); border-left: 3px solid var(--line, var(--border));
+        text-decoration: none; color: inherit; display: block;
+        transition: box-shadow .15s, transform .15s; }
+a.stat:hover { box-shadow: 0 4px 14px rgba(15,23,42,.12); transform: translateY(-1px); }
 .stat .stat-label { font-size: 12px; color: var(--muted); }
-.stat .stat-value { font-size: 20px; font-weight: 700; margin-top: 2px; }
-.stat.s-ok .stat-value { color: var(--ok); }
-.stat.s-bad .stat-value { color: var(--bad); }
-.stat.s-warn .stat-value { color: var(--warn); }
+.stat .stat-value { font-size: 21px; font-weight: 800; margin-top: 3px; letter-spacing: -.3px; }
+.stat.s-ok   { border-left-color: var(--ok); }   .stat.s-ok .stat-value { color: var(--ok); }
+.stat.s-bad  { border-left-color: var(--bad); }  .stat.s-bad .stat-value { color: var(--bad); }
+.stat.s-warn { border-left-color: var(--warn); } .stat.s-warn .stat-value { color: var(--warn); }
+.stat.s-good { border-left-color: var(--ok); }   .stat.s-good .stat-value { color: var(--ok); }
 
 /* ---------- Forms ---------- */
 label { display: block; font-size: 13px; font-weight: 600; color: var(--label); margin-bottom: 4px; }
@@ -748,26 +762,42 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .rcustom { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .rcustom input[type=date] { width: auto; padding: 5px 8px; font-size: 13px; }
 
-.kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.kpi { display: block; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
-       padding: 12px; text-decoration: none; color: var(--text); }
-.kpi:active { transform: scale(.99); }
-.kpi .kpi-label { font-size: 12px; color: var(--muted); }
-.kpi .kpi-value { font-size: 19px; font-weight: 700; margin-top: 2px; }
-.kpi .kpi-delta { font-size: 12px; margin-top: 3px; font-weight: 600; }
-.kpi .kpi-delta.up { color: var(--ok); }
-.kpi .kpi-delta.down { color: var(--bad); }
-.kpi.s-ok .kpi-value { color: var(--ok); }
-.kpi.s-bad .kpi-value { color: var(--bad); }
-.kpi.s-warn .kpi-value { color: var(--warn); }
+/* The dashboard's figures and the Payments screen's figures were two
+   different things called .kpi, which is a collision waiting to be noticed:
+   whichever block came last in the file won. They are now one component -
+   the MONEY PANELS .kpi further down draws the card, and these few rules add
+   the layout and the tone names the dashboard uses. */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.kpi .kpi-sub.up { color: var(--ok); font-weight: 700; }
+.kpi .kpi-sub.down { color: var(--bad); font-weight: 700; }
+.kpi.s-ok   { border-left-color: var(--ok); }   .kpi.s-ok   .kpi-val { color: var(--ok); }
+.kpi.s-bad  { border-left-color: var(--bad); }  .kpi.s-bad  .kpi-val { color: var(--bad); }
+.kpi.s-warn { border-left-color: var(--warn); } .kpi.s-warn .kpi-val { color: var(--warn); }
 
-.act { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--border); }
-.act:last-child { border-bottom: none; }
-.act .act-ico { font-size: 20px; flex-shrink: 0; }
-.act .act-body { flex: 1; font-size: 14px; line-height: 1.45; }
-.act .act-group { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
-.act .btn { flex-shrink: 0; }
-.act-bad .act-ico { filter: none; }
+/* DATA -> INSIGHT -> ACTION, one card each. A row with the button at the far
+   right of a phone is a button nobody presses; here the whole thing is a
+   card, the figure is the biggest part of it, and the button sits under the
+   sentence that explains why it is there. */
+.act { display: flex; align-items: flex-start; gap: 11px; padding: 12px 13px; margin-bottom: 10px;
+       border: 1px solid var(--line, var(--border)); border-left: 4px solid var(--line, var(--border));
+       border-radius: 12px; background: var(--card); }
+.act:last-child { margin-bottom: 0; }
+.act .act-ico { font-size: 20px; flex-shrink: 0; line-height: 1.3; }
+.act .act-body { flex: 1; min-width: 0; font-size: 14px; line-height: 1.45; }
+.act .act-group { display: block; font-size: 11px; color: var(--muted);
+                  text-transform: uppercase; letter-spacing: .4px; font-weight: 700; margin-bottom: 2px; }
+.act .btn { flex-shrink: 0; align-self: center; }
+.act.act-bad  { border-left-color: var(--bad); }
+.act.act-warn { border-left-color: var(--warn); }
+.act.act-ok   { border-left-color: var(--ok); }
+.act.act-info { border-left-color: var(--primary); }
+@media (max-width: 560px) {
+  /* the button goes under the sentence rather than squeezing beside it */
+  .act { flex-wrap: wrap; }
+  .act .act-body { flex: 1 1 100%; }
+  .act .btn { width: 100%; margin-top: 4px; }
+  .act .act-ico { order: -1; }
+}
 
 .alertrow { display: block; padding: 9px 0; border-bottom: 1px solid var(--border);
             text-decoration: none; color: var(--text); font-size: 14px; }
@@ -965,7 +995,12 @@ a.kpi:hover { box-shadow: 0 4px 14px rgba(15,23,42,.12); transform: translateY(-
 }
 
 /* A log has to stay readable on a phone without turning into confetti. */
-.logtbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+/* min-width: 0 and table-layout: fixed cancel the global table{min-width:550px}.
+   Without them this table stayed 550px wide inside a column narrower than
+   that and pushed the whole page sideways - but only on the days the error
+   log had something in it, which is exactly when the page is being read. */
+.logtbl { width: 100%; min-width: 0; table-layout: fixed; border-collapse: collapse; font-size: 12.5px; }
+.logtbl td, .logtbl th { overflow-wrap: anywhere; }
 .logtbl th { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
              text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .logtbl td { padding: 8px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -1235,6 +1270,8 @@ body:has(.bf) .fab-center { display: none; }
 @media (max-width: 1023px) {
   .btn, .btn-sm { min-height: 44px; }
   .seg a { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 15px; }
+  .rchip { min-height: 44px; display: inline-flex; align-items: center; padding: 8px 14px; }
+  .alertrow, .act .btn { min-height: 46px; }
   .filterbar button, .filterbar .btn { min-height: 44px; }
   .rowlist td.act .btn { min-height: 44px; padding: 8px 14px; }
   /* Fields too, inside the redesigned blocks. Scoped rather than global so a
@@ -1242,6 +1279,7 @@ body:has(.bf) .fab-center { display: none; }
      and tested with. */
   .pane input, .pane select, .bf-card input, .bf-card select,
   .cat-card input, .filterbar input, .filterbar select,
+  .dash-filter input, .dash-filter select,
   .modal-box input, .modal-box select {
     min-height: 44px;
   }
@@ -1296,3 +1334,35 @@ body:has(.bf) .fab-center { display: none; }
 .big-net.neg { background: color-mix(in srgb, var(--bad) 11%, transparent); color: var(--bad); }
 .big-net .bn-l { font-size: 13.5px; font-weight: 700; }
 .big-net .bn-v { font-size: 22px; letter-spacing: -.4px; }
+
+/* ---- Dashboard filter bar: which days, which branch, one submit -------- */
+.dash-filter { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  justify-content: space-between; margin-bottom: 12px; }
+.dash-filter .dash-filter-right { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* compact only where the pointer is a mouse - the touch rule below the
+   desktop breakpoint has to win, and it cannot outrank this selector */
+@media (min-width: 1024px) {
+  .dash-filter .dash-filter-right select,
+  .dash-filter .dash-filter-right input { min-height: 38px; }
+}
+.dash-custom > summary { list-style: none; cursor: pointer; }
+.dash-custom > summary::-webkit-details-marker { display: none; }
+.dash-custom .dash-custom-body { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+@media (max-width: 700px) {
+  .dash-filter > * { flex: 1 1 100%; }
+  .dash-filter .dash-filter-right select { flex: 1 1 100%; }
+  .dash-filter .dash-custom { flex: 1 1 100%; }
+  .dash-filter .dash-custom-body input { flex: 1 1 calc(50% - 3px); min-width: 0; }
+  .dash-filter .dash-custom-body .rchip { flex: 1 1 100%; }
+  .dash-filter .dash-filter-right select,
+  .dash-filter .dash-custom-body input,
+  .dash-filter .rchip, .dash-custom > summary { min-height: 44px; display: inline-flex;
+    align-items: center; justify-content: center; }
+}
+
+/* "Worth watching" as rows that look pressable, because they are */
+.alertrow { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 11px 12px; margin-bottom: 8px; border: 1px solid var(--line, var(--border));
+  border-radius: 10px; font-size: 13.5px; font-weight: 600; text-decoration: none; }
+.alertrow:last-child { margin-bottom: 0; }
+.alertrow:hover { border-color: currentColor; }

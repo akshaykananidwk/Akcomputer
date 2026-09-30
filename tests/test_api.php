@@ -938,3 +938,81 @@ t_ok('the cards are a reusable layer, not one page\'s styling',
      strpos($css, 'Settings landing: find it, see its state, open it') !== false);
 t_ok('and a thumb can hit the shortcuts on a phone',
      strpos($css, '@media (max-width: 1023px) { .cat-quick a { min-height: 44px;') !== false);
+
+t_group('a colour token that was never declared takes its border with it');
+
+// --line was used by eleven rules and declared by none. A var() that resolves
+// to nothing does not fall back to something sensible: it makes the whole
+// declaration invalid, so "border-bottom: 1px solid var(--line)" became no
+// border at all. Every pane header, every row separator, every card outline
+// on a phone and the coloured edge of every figure was silently missing, and
+// nothing anywhere said so - the screens still looked plausible.
+//
+// So: every token this stylesheet asks for without a fallback has to exist.
+$cssSrc = file_get_contents(__DIR__ . '/../assets/style.css');
+preg_match_all('/var\(\s*(--[a-z0-9-]+)\s*\)/i', $cssSrc, $used);      // no fallback
+// declarations can sit mid-line too - .inv-bill puts a dozen on one row
+preg_match_all('/(--[a-z0-9-]+)\s*:/i', $cssSrc, $declared);
+$declaredSet = array_unique($declared[1]);
+$missing = array_values(array_unique(array_diff(array_unique($used[1]), $declaredSet)));
+t_ok('every token used without a fallback is declared somewhere',
+     !$missing, 'undeclared: ' . implode(', ', $missing));
+t_ok('--line itself is declared', in_array('--line', $declaredSet, true));
+// ...and in the dark theme too, or half the app loses its lines at night.
+$darkBlocks = substr_count($cssSrc, '--line: #28334a;');
+t_ok('...including both dark-mode blocks', $darkBlocks === 2, "found $darkBlocks");
+
+t_group('the Dashboard opens with the shop, not with navigation');
+
+$idx = file_get_contents(__DIR__ . '/../index.php');
+// The page used to open with four big tiles - Sale List, Purchase List, Stock
+// Items, Parties - and a pile of chips. On a phone that was the whole first
+// screen: an owner had to scroll past four navigation buttons to find out
+// whether anything had been sold. Navigation is what the sidebar is for.
+t_ok('the day\'s summary is in the page head, above everything',
+     preg_match('/<div class="pg-head">.*?\$sSummary.*?<\/div>\s*<\/div>/s', $idx) === 1);
+t_ok('the navigation tiles are behind "More", not in front of the figures',
+     strpos($idx, 'More — lists, reports and the rest') !== false
+     && strpos($idx, '<div class="tile-grid">') === false);
+t_ok('the three things pressed all day are tiles of their own',
+     substr_count($idx, 'class="qa ') >= 3
+     && strpos($idx, 'sales.php?action=new"><span class="qa-i">🧾') !== false);
+// Two date boxes and a Show button are four rows on a phone and are wanted
+// about once a month.
+t_ok('the custom date range folds away', strpos($idx, 'class="dash-custom"') !== false);
+t_ok('...and opens by itself when a custom range IS the one showing',
+     strpos($idx, "\$rangeKey === 'custom' ? ' open' : ''") !== false);
+t_ok('the branch filter and the range are one form, one submit',
+     substr_count($idx, '<form method="get" class="dash-filter no-print">') === 1);
+
+// Nothing about what the dashboard COUNTS changed.
+foreach (['dash_kpis($dFrom, $dTo, $dashOwner, $dashLoc)' => 'the period figures',
+          'dash_actions($dashCtx)' => 'what to do today',
+          'dash_alerts($dashCtx)'  => 'worth watching',
+          'dash_summary($dashCtx)' => 'the plain-words summary',
+          '$topOrder as $_w'       => 'the customisable widget order',
+          'dashboard_customize.php'=> 'the customise screen',
+          'user_pref($u[\'id\'], \'dashboard_widgets\', \'\')' => 'the saved widget preference'] as $needle => $what)
+    t_ok($what . ' is untouched', strpos($idx, $needle) !== false);
+t_ok('a staff member without the permission still sees no money',
+     strpos($idx, 'if ($seeMoney)') !== false && strpos($idx, 'if ($seeProfit)') !== false);
+
+// One figure, one component, wherever it appears.
+$dashInc = file_get_contents(__DIR__ . '/../includes/dashboard.php');
+t_ok('the dashboard figures use the shared kpi names',
+     strpos($dashInc, '<div class="kpi-top">') !== false
+     && strpos($dashInc, '<div class="kpi-val">') !== false
+     && strpos($dashInc, 'kpi-sub ') !== false);
+t_ok('...and the two .kpi definitions were merged into one',
+     substr_count($cssSrc = file_get_contents(__DIR__ . '/../assets/style.css'), '.kpi .kpi-label') === 0);
+
+// Copy that a person has to decode is copy that does not get read.
+t_ok('the alerts read as English',
+     strpos($dashInc, "'Sales are ' . abs(\$d) . '% down on '") !== false
+     && strpos($dashInc, "' in the Data Health Check'") !== false);
+
+// A wide table inside a narrow column takes the whole page sideways with it,
+// and the error log only appears on the days something has gone wrong - which
+// is exactly when the page is being read.
+t_ok('the error log cannot push the page sideways',
+     strpos($cssSrc, '.logtbl { width: 100%; min-width: 0; table-layout: fixed;') !== false);

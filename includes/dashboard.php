@@ -79,13 +79,16 @@ function dash_card($label, $value, $link, $now = null, $before = null, $tone = '
     $d = ($now === null) ? null : dash_delta($now, $before);
     $arrow = $d === null ? '' : ($d > 0 ? '↑' : ($d < 0 ? '↓' : '→'));
     $dTone = $d === null ? '' : ($d > 0 ? 'up' : ($d < 0 ? 'down' : ''));
+    // kpi-top / kpi-val / kpi-sub are the shared names the rest of the
+    // software's figures use, so a number reads the same on the dashboard, on
+    // Payments and on Cash & Bank.
     echo '<a class="kpi ' . $tone . '" href="' . e($link) . '">'
-       . '<div class="kpi-label">' . e($label) . '</div>'
-       . '<div class="kpi-value">' . ($suffix === '₹' ? '₹' : '') . e($value) . ($suffix !== '₹' ? $suffix : '') . '</div>'
+       . '<div class="kpi-top">' . e($label) . '</div>'
+       . '<div class="kpi-val">' . ($suffix === '₹' ? '₹' : '') . e($value) . ($suffix !== '₹' ? $suffix : '') . '</div>'
        // no comparison to make -> an empty line, so the tiles still line up
        // without printing a dash the reader has to decode
-       . ($d === null ? '<div class="kpi-delta">&nbsp;</div>'
-                      : '<div class="kpi-delta ' . $dTone . '">' . $arrow . ' ' . abs($d) . '%</div>')
+       . ($d === null ? '<div class="kpi-sub">&nbsp;</div>'
+                      : '<div class="kpi-sub ' . $dTone . '">' . $arrow . ' ' . abs($d) . '%</div>')
        . '</a>';
 }
 
@@ -682,12 +685,12 @@ function dash_alerts(array $ctx) {
     if ($k && $prev) {
         $d = dash_delta($k['sales'], $prev['sales']);
         if ($d !== null && $d <= -20)
-            $al[] = ['sev' => 'bad', 'text' => 'Sales ' . abs($d) . '% down (' . e($ctx['compare_label'] ?? '') . ' than)', 'link' => 'reports.php?r=daily'];
+            $al[] = ['sev' => 'bad', 'text' => 'Sales are ' . abs($d) . '% down on ' . e($ctx['compare_label'] ?? 'the period before'), 'link' => 'reports.php?r=daily'];
         if ($d !== null && $d >= 20)
-            $al[] = ['sev' => 'ok', 'text' => 'Sales ' . $d . '% up (' . e($ctx['compare_label'] ?? '') . ' than)', 'link' => 'reports.php?r=daily'];
+            $al[] = ['sev' => 'ok', 'text' => 'Sales are ' . $d . '% up on ' . e($ctx['compare_label'] ?? 'the period before'), 'link' => 'reports.php?r=daily'];
     }
     if ($k && $k['margin_pct'] > 0 && $k['margin_pct'] < (float)setting('target_margin_pct', 10))
-        $al[] = ['sev' => 'warn', 'text' => 'the margin for this period ' . $k['margin_pct'] . '% — below target', 'link' => 'reports.php?r=profit'];
+        $al[] = ['sev' => 'warn', 'text' => 'The margin this period is ' . $k['margin_pct'] . '% — below target', 'link' => 'reports.php?r=profit'];
     if (!empty($ctx['collection']) && $ctx['collection']['overdue'] > 0.009)
         $al[] = ['sev' => 'bad', 'text' => '₹' . money($ctx['collection']['overdue']) . ' of receivables is past due', 'link' => 'reports.php?r=aging'];
     if (!empty($ctx['stock']) && dash_n($ctx['stock'], 'low') + dash_n($ctx['stock'], 'out') > 0)
@@ -697,7 +700,7 @@ function dash_alerts(array $ctx) {
     if (empty($ctx['purchase']) && !empty($ctx['price_up']))
         $al[] = ['sev' => 'warn', 'text' => count($ctx['price_up']) . ' products have gone up in cost', 'link' => 'reports.php?r=purchase'];
     if (!empty($ctx['health_issues']))
-        $al[] = ['sev' => 'warn', 'text' => 'in the Data Health Check ' . count($ctx['health_issues']) . ' warning', 'link' => 'reports.php?r=health'];
+        $al[] = ['sev' => 'warn', 'text' => count($ctx['health_issues']) . ' warning' . (count($ctx['health_issues']) === 1 ? '' : 's') . ' in the Data Health Check', 'link' => 'reports.php?r=health'];
     return $al;
 }
 

@@ -246,27 +246,103 @@ $page_title = 'Dashboard';
 include __DIR__ . '/includes/header.php';
 ?>
 
-<div class="tile-grid">
-  <?php if (can('sales.view')): ?><a class="tile" href="sales.php"><span><?= icon('receipt', 26) ?></span>Sale List</a><?php endif; ?>
-  <?php if (can('purchases.view')): ?><a class="tile" href="purchases.php"><span><?= icon('box', 26) ?></span>Purchase List</a><?php endif; ?>
-  <?php if (can('items.view')): ?><a class="tile" href="items.php"><span><?= icon('archive', 26) ?></span>Stock Items</a><?php endif; ?>
-  <?php if (can('parties.view')): ?><a class="tile" href="parties.php"><span><?= icon('users', 26) ?></span>Parties</a><?php endif; ?>
-  <?php if (!can('sales.view') && can('tasks.view')): ?><a class="tile" href="tasks.php"><span><?= icon('tool', 26) ?></span>My Tasks</a><?php endif; ?>
-  <?php if (!can('purchases.view')): ?><a class="tile" href="my_stock.php"><span><?= icon('archive', 26) ?></span>My Stock</a><?php endif; ?>
+<?php
+// WHAT IS THE SHOP DOING TODAY - and nothing above it.
+//
+// The page used to open with four big tiles (Sale List, Purchase List, Stock
+// Items, Parties) and a pile of chips. On a phone that was the entire first
+// screen: an owner had to scroll past four navigation buttons to find out
+// whether anything had been sold. Navigation is what the sidebar is for. The
+// tiles are still here, further down, under "More".
+$dashBranch = '';
+if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dashBranch = $l['name'];
+?>
+<div class="pg-head">
+  <div class="pg-main">
+    <div class="pg-crumb"><?= e($app_name ?? 'AK Computer') ?><?= $dashBranch ? ' · ' . e($dashBranch) : ($locsAllDash ? ' · all branches' : '') ?></div>
+    <h1>📊 Dashboard</h1>
+    <?php if ($sSummary): ?><div class="pg-sub"><?= e($sSummary) ?></div><?php endif; ?>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <?php if ($sHealth): ?>
+    <a class="hchip h-<?= e($sHealth['state']) ?>" href="reports.php?r=health" title="Data Health Check">
+      <?= $sHealth['state'] === 'ok' ? '🟢' : ($sHealth['state'] === 'warn' ? '🟡' : '🔴') ?>
+      <?= (int)$sHealth['healthy'] ?>/<?= (int)$sHealth['total'] ?>
+    </a>
+    <?php endif; ?>
+    <a class="btn btn-sm btn-outline no-print" href="dashboard_customize.php">⚙️ Customize</a>
+  </div>
 </div>
 
-<?php // the handful of things the owner opens every single day ?>
-<div class="range-bar no-print" style="margin-bottom:12px">
-  <?php if (can('sales.add')): ?><a class="rchip" href="sales.php?action=new">🧾 New bill</a><?php endif; ?>
-  <?php if (can('purchases.add')): ?><a class="rchip" href="purchases.php?action=new">📦 New purchase</a><?php endif; ?>
-  <?php if (can('payments.add')): ?><a class="rchip" href="payments.php?action=new&dir=in">💵 Take payment</a><?php endif; ?>
-  <?php if ($canMoney): ?><a class="rchip" href="reports.php?r=aging">💰 Collections</a><?php endif; ?>
-  <?php if ($seeStock): ?><a class="rchip" href="reports.php?r=low">📉 Low stock</a><?php endif; ?>
-  <?php if (can('repairs.view')): ?><a class="rchip" href="repairs.php">🛠️ Repairs<?= $repairsReady ? ' (' . $repairsReady . ')' : '' ?></a><?php endif; ?>
-  <?php if (can('weborders.view')): ?><a class="rchip" href="web_orders.php">🌐 Orders<?= $newOrders ? ' (' . $newOrders . ')' : '' ?></a><?php endif; ?>
-  <a class="rchip" href="reports.php">📊 Reports</a>
-  <?php if (is_full_admin()): ?><a class="rchip" href="reports.php?r=health">🩺 Data check</a><?php endif; ?>
+<!-- which days, and which branch: one bar, one submit -->
+<form method="get" class="dash-filter no-print">
+  <div class="range-bar">
+    <?php foreach (['today' => 'Today', 'yesterday' => 'Yesterday', 'week' => 'This week', 'month' => 'This month', 'prev_month' => 'Last month'] as $rk => $rl): ?>
+    <button type="submit" name="range" value="<?= $rk ?>" class="rchip <?= $rangeKey === $rk ? 'on' : '' ?>"><?= $rl ?></button>
+    <?php endforeach; ?>
+  </div>
+  <div class="dash-filter-right">
+    <?php if ($locsAllDash): ?>
+    <select name="loc" onchange="this.form.submit()" aria-label="Branch">
+      <option value="0">All branches</option>
+      <?php foreach ($locsAllDash as $l): ?><option value="<?= $l['id'] ?>" <?= $dashLoc == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option><?php endforeach; ?>
+    </select>
+    <?php endif; ?>
+    <!-- two date boxes and a Show button are four rows on a phone and are
+         wanted about once a month, so they stay shut until they are asked
+         for - and open by themselves when a custom range IS the one showing -->
+    <details class="dash-custom"<?= $rangeKey === 'custom' ? ' open' : '' ?>>
+      <summary class="rchip <?= $rangeKey === 'custom' ? 'on' : '' ?>">📅 Other dates</summary>
+      <div class="dash-custom-body">
+        <input type="date" name="from" value="<?= e($rangeKey === 'custom' ? $dFrom : '') ?>" aria-label="From">
+        <input type="date" name="to" value="<?= e($rangeKey === 'custom' ? $dTo : '') ?>" aria-label="To">
+        <button type="submit" name="range" value="custom" class="rchip">Show</button>
+      </div>
+    </details>
+  </div>
+</form>
+
+<!-- the three things that get pressed, then everything else behind one line -->
+<div class="qa-grid no-print" style="margin-bottom:12px">
+  <?php if (can('sales.add')): ?>
+  <a class="qa qa-ok" href="sales.php?action=new"><span class="qa-i">🧾</span><span class="qa-n">New bill</span><span class="qa-s">Write a sale</span></a>
+  <?php endif; ?>
+  <?php if (can('purchases.add')): ?>
+  <a class="qa" href="purchases.php?action=new"><span class="qa-i">📦</span><span class="qa-n">New purchase</span><span class="qa-s">Goods coming in</span></a>
+  <?php endif; ?>
+  <?php if (can('payments.add')): ?>
+  <a class="qa qa-ok" href="payments.php?action=new&dir=in"><span class="qa-i">💵</span><span class="qa-n">Take payment</span><span class="qa-s">Money received</span></a>
+  <?php endif; ?>
+  <?php if ($canMoney): ?>
+  <a class="qa qa-warn" href="collection.php"><span class="qa-i">📮</span><span class="qa-n">Collections</span><span class="qa-s">Who to ask today</span></a>
+  <?php endif; ?>
 </div>
+
+<details class="more-opts no-print" style="margin-bottom:12px">
+  <summary>More — lists, reports and the rest</summary>
+  <div class="range-bar" style="padding-bottom:10px">
+    <?php if (can('sales.view')): ?><a class="rchip" href="sales.php">🧾 Sale list</a><?php endif; ?>
+    <?php if (can('purchases.view')): ?><a class="rchip" href="purchases.php">📦 Purchase list</a><?php endif; ?>
+    <?php if (can('items.view')): ?><a class="rchip" href="items.php">🗃️ Stock items</a><?php endif; ?>
+    <?php if (can('parties.view')): ?><a class="rchip" href="parties.php">👥 Parties</a><?php endif; ?>
+    <?php if (can('payments.add')): ?><a class="rchip" href="payments.php?action=new&dir=out">💸 Pay out</a><?php endif; ?>
+    <?php if (can('expenses.add')): ?><a class="rchip" href="expenses.php">🧾 Expense</a><?php endif; ?>
+    <?php if (can('sales.add')): ?><a class="rchip" href="estimates.php?action=new">📄 Estimate</a><?php endif; ?>
+    <?php if (can('sales.add')): ?><a class="rchip" href="challans.php?action=new">🚚 Challan</a><?php endif; ?>
+    <?php if (can('sales.add')): ?><a class="rchip" href="sales_return.php?action=new">↩️ Sale return</a><?php endif; ?>
+    <?php if (can('parties.add')): ?><a class="rchip" href="parties.php?action=new">👤 New party</a><?php endif; ?>
+    <?php if (can('items.add')): ?><a class="rchip" href="items.php?action=new">🏷️ New item</a><?php endif; ?>
+    <?php if (can('repairs.view')): ?><a class="rchip" href="repairs.php">🛠️ Repairs<?= $repairsReady ? ' (' . $repairsReady . ')' : '' ?></a><?php endif; ?>
+    <?php if (can('tasks.view')): ?><a class="rchip" href="tasks.php">📋 Tasks</a><?php endif; ?>
+    <a class="rchip" href="my_stock.php">🤝 My stock</a>
+    <?php if (can('leads.view')): ?><a class="rchip" href="leads.php">🎯 Leads</a><?php endif; ?>
+    <?php if (can('tickets.view')): ?><a class="rchip" href="tickets.php">🎫 Tickets</a><?php endif; ?>
+    <?php if (can('weborders.view')): ?><a class="rchip" href="web_orders.php">🌐 Orders<?= $newOrders ? ' (' . $newOrders . ')' : '' ?></a><?php endif; ?>
+    <?php if ($seeStock): ?><a class="rchip" href="reports.php?r=low">📉 Low stock</a><?php endif; ?>
+    <a class="rchip" href="reports.php">📊 Reports</a>
+    <?php if (is_full_admin()): ?><a class="rchip" href="reports.php?r=health">🩺 Data check</a><?php endif; ?>
+  </div>
+</details>
 
 <?php if ($myHandovers): ?>
 <div class="flash flash-info">🤝 You have <?= $myHandovers ?> stock handover(s) pending. <a href="my_stock.php">Accept with OTP →</a></div>
@@ -279,52 +355,14 @@ include __DIR__ . '/includes/header.php';
 <?php endif;
     try { $waUnread = (int)val("SELECT COUNT(*) FROM wa_chats WHERE direction = 'in' AND is_read = 0"); } catch (Exception $e) { $waUnread = 0; }
     if ($waUnread): ?>
-<div class="flash flash-info">💬 In WhatsApp <?= $waUnread ?> new messages. <a href="wa_inbox.php">Open Inbox →</a></div>
+<div class="flash flash-info">💬 <?= $waUnread ?> new WhatsApp message<?= $waUnread === 1 ? '' : 's' ?>. <a href="wa_inbox.php">Open the inbox →</a></div>
 <?php endif; endif; ?>
 
-<div class="page-actions no-print" style="margin-bottom:10px">
-  <?php if ($locsAllDash): ?>
-  <form method="get" class="filterbar" style="margin:0">
-    <div><label>Branch</label>
-      <select name="loc" onchange="this.form.submit()">
-        <option value="0">All branches</option>
-        <?php foreach ($locsAllDash as $l): ?><option value="<?= $l['id'] ?>" <?= $dashLoc == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option><?php endforeach; ?>
-      </select></div>
-  </form>
-  <?php endif; ?>
-  <a class="btn btn-sm btn-outline" href="dashboard_customize.php">⚙️ Customize Dashboard</a>
-</div>
-
-<?php // ---------- What is happening today (always on top) ---------- ?>
-<?php if ($sSummary): ?>
-<div class="card smart-summary">
-  <div class="ss-head">
-    <h2 style="margin:0">The shop today <span class="muted" style="font-weight:400;font-size:13px">· <?= e($dLabel) ?></span></h2>
-    <?php if ($sHealth): ?>
-    <a class="hchip h-<?= e($sHealth['state']) ?>" href="reports.php?r=health" title="Data Health Check">
-      <?= $sHealth['state'] === 'ok' ? '🟢' : ($sHealth['state'] === 'warn' ? '🟡' : '🔴') ?>
-      <?= (int)$sHealth['healthy'] ?>/<?= (int)$sHealth['total'] ?>
-    </a>
-    <?php endif; ?>
-  </div>
-  <p class="ss-text"><?= e($sSummary) ?></p>
-  <form method="get" class="range-bar">
-    <?php if ($dashLoc): ?><input type="hidden" name="loc" value="<?= (int)$dashLoc ?>"><?php endif; ?>
-    <?php foreach (['today' => 'Today', 'yesterday' => 'Yesterday', 'week' => 'This week', 'month' => 'This month', 'prev_month' => 'Last month'] as $rk => $rl): ?>
-    <button type="submit" name="range" value="<?= $rk ?>" class="rchip <?= $rangeKey === $rk ? 'on' : '' ?>"><?= $rl ?></button>
-    <?php endforeach; ?>
-    <span class="rcustom">
-      <input type="date" name="from" value="<?= e($rangeKey === 'custom' ? $dFrom : '') ?>">
-      <input type="date" name="to" value="<?= e($rangeKey === 'custom' ? $dTo : '') ?>">
-      <button type="submit" name="range" value="custom" class="rchip <?= $rangeKey === 'custom' ? 'on' : '' ?>">Show</button>
-    </span>
-  </form>
-</div>
-<?php endif; ?>
-
 <?php if ($sActions): ?>
-<div class="card">
-  <h2>🔔 What to do today <span class="muted" style="font-weight:400;font-size:13px">(<?= count($sActions) ?>)</span></h2>
+<div class="pane">
+  <div class="pane-head"><h3>🔔 What to do today</h3>
+    <span class="pane-note" style="padding:0"><?= count($sActions) ?> thing<?= count($sActions) === 1 ? '' : 's' ?></span></div>
+  <div class="pane-body">
   <?php foreach ($sActions as $a): ?>
   <div class="act act-<?= e($a['sev']) ?>">
     <span class="act-ico"><?= $a['icon'] ?></span>
@@ -332,15 +370,18 @@ include __DIR__ . '/includes/header.php';
     <a class="btn btn-sm" href="<?= e($a['link']) ?>"><?= e($a['cta']) ?></a>
   </div>
   <?php endforeach; ?>
+  </div>
 </div>
 <?php endif; ?>
 
 <?php if ($sAlerts): ?>
-<div class="card">
-  <h2>⚠️ Worth watching</h2>
+<div class="pane">
+  <div class="pane-head"><h3>⚠️ Worth watching</h3></div>
+  <div class="pane-body">
   <?php foreach ($sAlerts as $al): ?>
   <a class="alertrow al-<?= e($al['sev']) ?>" href="<?= e($al['link']) ?>"><?= e($al['text']) ?> <span class="muted">›</span></a>
   <?php endforeach; ?>
+  </div>
 </div>
 <?php endif; ?>
 
@@ -348,7 +389,7 @@ include __DIR__ . '/includes/header.php';
     if (!$allWidgetDefs[$_w] || in_array($_w, $hiddenWidgets, true)) continue;
     if ($_w === 'smart_kpis'): ?>
 <div class="card">
-  <h2><?= e($dLabel) ?> <span class="muted" style="font-weight:400;font-size:13px">· <?= e($cLabel) ?> compared with</span></h2>
+  <h2><?= e($dLabel) ?> <span class="muted" style="font-weight:400;font-size:13px">· against <?= e($cLabel) ?></span></h2>
   <div class="kpi-grid">
     <?php
       $rq = 'from=' . urlencode($dFrom) . '&to=' . urlencode($dTo);
