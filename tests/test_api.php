@@ -1102,8 +1102,24 @@ t_ok('a header cell spanning two columns labels both',
 t_ok('three columns is already too wide at 390px', strpos($appT, 'if (labels.length < 3)') !== false);
 // What it must never touch.
 t_ok('a hand-designed phone screen is left alone', strpos($appT, 'rowlist|') !== false);
+// Both spellings are in the codebase - inv-table2 AND inv2-table - and a
+// word boundary means matching one does not match the other.
 t_ok('an invoice keeps its columns - they ARE the document',
-     strpos($appT, 'inv-table') !== false && strpos($appT, 'inv2-table') !== false);
+     strpos($appT, 'inv-table|') !== false && strpos($appT, 'inv-table2|') !== false
+     && strpos($appT, 'inv2-table|') !== false);
+t_ok('...every invoice table in the codebase is covered by that list', (function () {
+    $all = [];
+    foreach (array_merge(glob(dirname(__DIR__) . '/*.php'), glob(dirname(__DIR__) . '/includes/*.php')) as $f)
+        if (preg_match_all('/<table class="([^"]*inv[^"]*)"/', (string)file_get_contents($f), $m))
+            $all = array_merge($all, $m[1]);
+    foreach (array_unique($all) as $cls) {
+        $hit = false;
+        foreach (preg_split('/\s+/', $cls) as $tok)
+            if (in_array($tok, ['inv-table', 'inv-table2', 'inv2-table'], true)) $hit = true;
+        if (!$hit) return false;
+    }
+    return count($all) > 0;
+})());
 t_ok('there is a deliberate way out', strpos($appT, 'no-cards') !== false);
 t_ok('a table with no header is left alone - that is a layout grid, not a list',
      strpos($appT, "if (!headRows.length)") !== false);

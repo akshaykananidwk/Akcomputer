@@ -1388,7 +1388,7 @@ document.addEventListener('change', function (ev) {
    Runs once, and again if rows arrive later - re-running is cheap
    because every cell it has already seen is marked. */
 var Tables = {
-  SKIP: /\b(rowlist|inv-table|inv2-table|logtbl|ptable|no-cards)\b/,
+  SKIP: /\b(rowlist|inv-table|inv-table2|inv2-table|logtbl|ptable|no-cards)\b/,
 
   cards: function (root) {
     var tables = (root || document).querySelectorAll('table');
