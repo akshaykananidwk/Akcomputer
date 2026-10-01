@@ -58,8 +58,48 @@ function cron_last_run($id) {
     catch (Exception $e) { return null; } // pre-v51
 }
 
-/** Is this job due right now? Interval respected; a FAILED run retries after
- *  5 minutes; a run stuck in 'run' >10 min counts as crashed (due again). */
+/** How many times in a row this job has failed since it last succeeded. */
+function cron_fail_streak($id) {
+    try {
+        return (int)val("SELECT COUNT(*) FROM cron_runs
+                          WHERE job = ? AND status = 'fail'
+                            AND id > COALESCE((SELECT MAX(id) FROM cron_runs WHERE job = ? AND status = 'ok'), 0)",
+                        [$id, $id]);
+    } catch (Exception $e) { return 1; } // pre-v51: behave like a first failure
+}
+
+/**
+ * How long to wait before retrying a job that just failed.
+ *
+ * A flat five minutes was the old rule, and for the failure it was written
+ * for it is exactly right: a network blip, a provider hiccup, something that
+ * clears itself while nobody is looking.
+ *
+ * It is wrong for the other kind of failure. An expired API token cannot
+ * succeed until a person goes and replaces it - and the flat rule kept
+ * calling Meta's Graph API with a dead token every five minutes, 288 times a
+ * day, every one of them certain to fail. That is not persistence, it is a
+ * stampede: pointless cost, and repeated auth failures are the specific
+ * behaviour that gets an app rate-limited or flagged by a provider.
+ *
+ * So the wait doubles with each consecutive failure - 5, 10, 20, 40 minutes
+ * - until it reaches the job's own interval or an hour, whichever is longer.
+ * The first retry is still five minutes, so nothing is slower to recover
+ * from a blip than it was. A fault that needs a human instead settles
+ * quietly into the job's normal rhythm. One success clears the streak, and
+ * the next failure starts again at five minutes.
+ *
+ * It calms the alerts as a side effect, which is the point: fewer doomed
+ * runs is fewer identical messages on the owner's phone about something only
+ * they can fix.
+ */
+function cron_retry_delay($fails, $every) {
+    $wait = 5 * (1 << min(max(1, (int)$fails) - 1, 10)); // 5, 10, 20, 40, ... (shift capped)
+    return (int)min($wait, max((int)$every, 60));
+}
+
+/** Is this job due right now? Interval respected; a FAILED run backs off
+ *  (see cron_retry_delay); a run stuck in 'run' >10 min counts as crashed. */
 function cron_job_due($id, array $def) {
     if (setting("cron_{$id}_on", '1') !== '1') return false;
     if ($def[3] instanceof Closure && !$def[3]()) return false;
@@ -68,7 +108,7 @@ function cron_job_due($id, array $def) {
     $ageMin = (time() - strtotime($last['started_at'])) / 60;
     if ($last['status'] === 'run') return $ageMin >= 10; // crashed mid-run
     $every = max(1, (int)setting("cron_{$id}_every", (string)$def[2]));
-    if ($last['status'] === 'fail') return $ageMin >= min($every, 5);
+    if ($last['status'] === 'fail') return $ageMin >= cron_retry_delay(cron_fail_streak($id), $every);
     return $ageMin >= $every;
 }
 

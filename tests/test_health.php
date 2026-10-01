@@ -638,3 +638,36 @@ t_ok('a token error spotted only by its wording is caught too',
 // we have not seen is how a clear error becomes a misleading one.
 t_eq('any other failure is passed through untouched',
      meta_wa_explain(['code' => 131047], 'Re-engagement message'), 'Re-engagement message');
+
+t_group('a job that cannot succeed stops stampeding');
+require_once dirname(__DIR__) . '/includes/cron_jobs.php';
+// A blip must still be retried almost at once - that is what the flat
+// five-minute rule got right and nothing here is allowed to slow it down.
+t_eq('the first retry is still five minutes', cron_retry_delay(1, 360), 5);
+t_eq('...whatever the job\'s own interval is', cron_retry_delay(1, 5), 5);
+// Keep failing and the wait doubles, so a dead token is not hammered 288
+// times a day.
+t_eq('the second wait doubles', cron_retry_delay(2, 360), 10);
+t_eq('the third doubles again', cron_retry_delay(3, 360), 20);
+t_eq('the fourth too', cron_retry_delay(4, 360), 40);
+// ...but never past the job's normal rhythm. meta_tpl_sync runs 6-hourly.
+t_eq('it settles at the job\'s own interval', cron_retry_delay(20, 360), 360);
+t_ok('...and never overshoots it', cron_retry_delay(99, 360) <= 360);
+// A frequent job still backs off to something sane rather than its own
+// 15-minute rhythm, or it is still a stampede, just a slower one.
+t_eq('a frequent job backs off to an hour', cron_retry_delay(20, 15), 60);
+t_ok('a nonsense streak cannot make it retry faster than five minutes',
+     cron_retry_delay(0, 360) >= 5 && cron_retry_delay(-3, 360) >= 5);
+
+// The streak is what resets on success - that is what makes a blip after a
+// long healthy run cheap again.
+$jobName = 'test_streak_' . bin2hex(random_bytes(4));
+q("INSERT INTO cron_runs (job, started_at, status) VALUES (?, NOW(), 'fail')", [$jobName]);
+q("INSERT INTO cron_runs (job, started_at, status) VALUES (?, NOW(), 'fail')", [$jobName]);
+t_eq('two failures in a row count as two', cron_fail_streak($jobName), 2);
+q("INSERT INTO cron_runs (job, started_at, status) VALUES (?, NOW(), 'ok')", [$jobName]);
+t_eq('one success wipes the streak', cron_fail_streak($jobName), 0);
+q("INSERT INTO cron_runs (job, started_at, status) VALUES (?, NOW(), 'fail')", [$jobName]);
+t_eq('...so the next failure is a first failure again', cron_fail_streak($jobName), 1);
+t_eq('...and is retried in five minutes', cron_retry_delay(cron_fail_streak($jobName), 360), 5);
+q("DELETE FROM cron_runs WHERE job = ?", [$jobName]);
