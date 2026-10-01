@@ -37,13 +37,41 @@ function error_log_rotate($maxBytes = 2097152) {
     return 1;
 }
 
+/**
+ * What counts as "the same fault" for throttling - and ONLY for throttling.
+ *
+ * This used to be the message hashed verbatim, and it did not work, for a
+ * reason worth writing down. A great many real failure messages carry a
+ * clock or a counter inside them. Meta's expired-token reply, for one, ends
+ * "...The current time is Thursday, 01-Oct-26 05:16:02 PDT" - so every run
+ * produced a brand-new fingerprint, the hourly throttle never once matched,
+ * and the owner was sent the same dead-token alert every six hours until
+ * somebody noticed. A throttle that only recognises messages which never
+ * change is a throttle for the faults that were never going to repeat.
+ *
+ * So the digits come out. Two faults that differ only by a number now share
+ * a fingerprint and alert once an hour between them, which is the right
+ * trade: that is one fault with one cause, and the full text of every single
+ * occurrence is still written to error.log. The log is the record; the alert
+ * is only the tap on the shoulder.
+ *
+ * Day names are deliberately left alone. They change once a day, not once a
+ * run, so at worst the owner hears again tomorrow - which for a fault that
+ * is genuinely still broken tomorrow is not noise.
+ */
+function error_fingerprint($kind, $msg, $where = '') {
+    $m = preg_replace('/\d+/', '#', mb_substr((string)$msg, 0, 200));
+    $m = trim(preg_replace('/\s+/u', ' ', $m));
+    return md5($kind . '|' . $m . '|' . $where);
+}
+
 /** Telegram alert, throttled per fingerprint so a repeating fault alerts
  *  once per hour instead of every single request. */
 function error_alert($kind, $msg, $where = '') {
     // the DB itself may be what failed - never let alerting throw a second
     // error on top of the first one
     try { if (setting('error_alerts', '1') !== '1') return; } catch (Throwable $e) { return; }
-    $fp = md5($kind . '|' . mb_substr((string)$msg, 0, 200) . '|' . $where);
+    $fp = error_fingerprint($kind, $msg, $where);
     try { $seen = json_decode((string)setting('error_alert_seen', '{}'), true) ?: []; } catch (Throwable $e) { $seen = []; }
     $now = time();
     foreach ($seen as $k => $t) if ($t < $now - 86400) unset($seen[$k]); // forget day-old fingerprints

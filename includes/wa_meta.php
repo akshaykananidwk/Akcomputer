@@ -35,9 +35,40 @@ function meta_wa_call($method, $path, $payload = null) {
     if ($resp === false) return [false, [], 'Network error reaching graph.facebook.com'];
     if ($http >= 400 || isset($data['error'])) {
         $e = $data['error'] ?? [];
-        return [false, $data, trim(($e['message'] ?? ('HTTP ' . $http)) . (isset($e['error_data']['details']) ? ' - ' . $e['error_data']['details'] : ''))];
+        $msg = trim(($e['message'] ?? ('HTTP ' . $http)) . (isset($e['error_data']['details']) ? ' - ' . $e['error_data']['details'] : ''));
+        return [false, $data, meta_wa_explain($e, $msg)];
     }
     return [true, $data, ''];
+}
+
+/**
+ * Turn Meta's reply into something the shopkeeper can act on.
+ *
+ * Only the dead-token case is rewritten, and only because that one failure
+ * is both the commonest and the one whose own wording sends the reader the
+ * wrong way. Meta answers an expired token with "Session has expired on
+ * <date>. The current time is <date>." - two timestamps and no mention of
+ * what a token is, let alone which of this shop's screens holds one. The
+ * owner reads it as a fault in the software, forwards it, and waits.
+ *
+ * The field it belongs in is already labelled "Permanent Access Token", so
+ * a token that expires at all is a temporary one pasted into a permanent
+ * slot. That is what the replacement text says, because that is the fix -
+ * and a System User token, once pasted, does not come back.
+ *
+ * Every other error keeps Meta's own wording. Guessing at the meaning of a
+ * failure we have not seen is how a clear error becomes a misleading one.
+ */
+function meta_wa_explain(array $err, $fallback) {
+    $expired = (int)($err['code'] ?? 0) === 190
+            || ($err['type'] ?? '') === 'OAuthException'
+            || stripos($fallback, 'access token') !== false;
+    if (!$expired) return $fallback;
+    return 'The Meta WhatsApp token is no longer valid (it was a temporary one and has expired). '
+         . 'Fix: Meta Business Settings -> Users -> System Users -> your user -> Generate new token, '
+         . 'tick whatsapp_business_messaging and whatsapp_business_management, then paste it into '
+         . 'Settings -> WhatsApp -> Permanent Access Token. A System User token does not expire. '
+         . 'Until then anything that sends through Meta will fail.';
 }
 
 /** Template parameters must not contain newlines/tabs - flatten the app's

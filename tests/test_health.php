@@ -597,3 +597,44 @@ t_group('the billing screen is short again');
 t_ok('the rare parts of a bill are folded away', strpos($slsUX, 'class="more-opts no-print"') !== false);
 t_ok('...but a bill that HAS one opens with it showing',
      strpos($slsUX, "(\$tiRows || !empty(\$preSale['delivery_address'])) ? ' open' : ''") !== false);
+
+t_group('an alert that repeats is only sent once');
+// The throttle in error_alert() fingerprints the fault. It used to hash the
+// message verbatim, which quietly excused every message with a clock in it -
+// and Meta's dead-token reply is exactly that. This is the real alert the
+// shop received, twice, 24 minutes apart.
+require_once dirname(__DIR__) . '/includes/errors.php';
+$meta1 = "job 'meta_tpl_sync' failed: Could not read templates from Meta: Error validating access token: "
+       . "Session has expired on Thursday, 01-Oct-26 04:52:07 PDT. The current time is Thursday, 01-Oct-26 05:16:02 PDT.";
+$meta2 = "job 'meta_tpl_sync' failed: Could not read templates from Meta: Error validating access token: "
+       . "Session has expired on Thursday, 01-Oct-26 04:52:07 PDT. The current time is Thursday, 01-Oct-26 11:42:55 PDT.";
+t_eq('the same dead token six hours later is the same fault',
+     error_fingerprint('cron', $meta1, 'cron_jobs.php:434'),
+     error_fingerprint('cron', $meta2, 'cron_jobs.php:434'));
+
+// ...without becoming so forgiving that two different faults go quiet.
+$other = "job 'auto_backup' failed: Could not write the backup file";
+t_ok('a different fault is still a different fault',
+     error_fingerprint('cron', $meta1, 'cron_jobs.php:434')
+     !== error_fingerprint('cron', $other, 'cron_jobs.php:434'));
+t_ok('...and so is the same words from somewhere else',
+     error_fingerprint('cron', $meta1, 'cron_jobs.php:434')
+     !== error_fingerprint('cron', $meta1, 'wa_meta.php:222'));
+t_ok('...and the same words of a different kind',
+     error_fingerprint('cron', $meta1, 'x.php:1') !== error_fingerprint('whatsapp', $meta1, 'x.php:1'));
+
+t_group('a dead Meta token says what to do about it');
+require_once dirname(__DIR__) . '/includes/wa_meta.php';
+// Meta's own wording names two timestamps and never says the word "token
+// setting", so the owner reads it as a fault in the software.
+$raw = 'Error validating access token: Session has expired on Thursday, 01-Oct-26 04:52:07 PDT.';
+$said = meta_wa_explain(['code' => 190, 'type' => 'OAuthException'], $raw);
+t_ok('it names the screen that holds the token', strpos($said, 'Permanent Access Token') !== false, $said);
+t_ok('...and says a System User token is the fix', stripos($said, 'System User') !== false);
+t_ok('...and warns that Meta sends nothing until then', stripos($said, 'will fail') !== false);
+t_ok('a token error spotted only by its wording is caught too',
+     strpos(meta_wa_explain([], $raw), 'Permanent Access Token') !== false);
+// Everything else keeps Meta's own words - inventing a meaning for a failure
+// we have not seen is how a clear error becomes a misleading one.
+t_eq('any other failure is passed through untouched',
+     meta_wa_explain(['code' => 131047], 'Re-engagement message'), 'Re-engagement message');
