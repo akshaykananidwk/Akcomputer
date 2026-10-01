@@ -723,3 +723,47 @@ t_ok('the whole variant lives inside the phone breakpoint',
      $scanPos > $mqPos && $scanPos < $mqEnd);
 t_ok('nothing about .rl-scan leaks into the desktop table',
      strpos(substr($cssScan, $mqEnd), '.rl-scan') === false);
+
+t_group('Cash & Bank: every list on the page is read at a glance');
+// Three of the six panes were still drawing one record per card - the
+// wallets at 153px a row, the bank accounts at 185px and the transfers at
+// 310px, beside a cash list at 71px. They were skipped by the automatic
+// layer because they are hand-written, which is an exemption a table has to
+// keep earning.
+$cb  = file_get_contents(dirname(__DIR__) . '/cash_bank.php');
+$cssC = file_get_contents(dirname(__DIR__) . '/assets/style.css');
+$appC = file_get_contents(dirname(__DIR__) . '/assets/app.js');
+t_eq('three tables ask for the card layout', substr_count($cb, 'class="rowlist rl-cards"'), 3);
+t_ok('the opt-in beats the skip list', strpos($appC, "if (!/\\brl-cards\\b/.test(t.className || '')") !== false);
+// On a phone the first line of a transfer must say what it WAS, not when.
+t_ok('a transfer leads with what it was, not the date',
+     strpos($cb, '<th>What</th><th>Date</th>') !== false);
+t_ok('...and the cells follow the same order',
+     strpos($cb, '<td data-l="What">') < strpos($cb, '<td data-l="Date"><?= dmy($t[\'txn_date\']) ?>'));
+
+t_group('two layouts cannot both win on the same table');
+// Every rule in the label-above-value block is a single class, exactly like
+// .rl-scan and .rl-auto, so without :not() the winner was whichever sat
+// lower in the file. Left to that, a card came out with "What" welded to
+// the front of its own headline and "Amount" to the front of its figure.
+t_ok('the old card layout is held off the scan variant',
+     strpos($cssC, '.rowlist:not(.rl-scan):not(.rl-auto) td::before') !== false);
+t_ok('...and off the automatic one', substr_count($cssC, '.rowlist:not(.rl-scan):not(.rl-auto)') >= 5);
+t_ok('a card never prints a label in front of its own headline',
+     strpos($cssC, '.rl-auto td::before { content: none; }') !== false
+     || strpos($cssC, '.rl-auto td.rl-rest::before') !== false);
+
+t_group('an alert row and a table\'s buttons column are not the same thing');
+// Two different components wore one name. <td class="act"> was taking the
+// alert ROW's padding and bottom margin on a desktop, and below 560px its
+// "the button goes under the sentence" rule stretched every Edit and Delete
+// in those tables to the full width of the card, one per line.
+t_ok('the alert row is scoped away from table cells',
+     strpos($cssC, '.act:not(td) { display: flex; align-items: flex-start;') !== false);
+t_ok('...including the rule that stretches its button',
+     strpos($cssC, '.act:not(td) .btn { width: 100%; margin-top: 4px; }') !== false);
+t_ok('...and the icon, body and tone variants with it',
+     substr_count($cssC, '.act:not(td)') >= 8);
+// The table cell keeps its own 44px rule - that was never the problem.
+t_ok('a table action button is still thumb-sized',
+     strpos($cssC, '.rowlist td.act .btn { min-height: 44px;') !== false);

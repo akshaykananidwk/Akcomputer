@@ -521,7 +521,7 @@ include __DIR__ . '/includes/header.php';
   <div class="pane" id="wallets">
     <div class="pane-head"><h3>👥 <?= $seeAll ? 'Whose hand holds how much' : 'My wallet' ?></h3></div>
     <div class="pane-body tight">
-      <table class="rowlist">
+      <table class="rowlist rl-cards">
         <thead><tr><th>Staff</th><th class="num">Cash</th><th class="act"></th></tr></thead>
         <tbody>
         <?php foreach ($wallets as $w): ?>
@@ -558,7 +558,7 @@ include __DIR__ . '/includes/header.php';
   <?php if (!$banks): ?>
     <p class="pane-note" style="padding:20px 14px">No bank account yet. <a href="bank_accounts.php">Add the first one →</a></p>
   <?php else: ?>
-    <table class="rowlist">
+    <table class="rowlist rl-cards">
       <thead><tr><th>Account</th><th>Bank</th><th class="num">Balance</th><th class="act"></th></tr></thead>
       <tbody>
       <?php foreach ($banks as $b): ?>
@@ -582,12 +582,17 @@ include __DIR__ . '/includes/header.php';
   <div class="pane-head"><h3>🔁 Recent transfers &amp; adjustments</h3>
     <span class="pane-note" style="padding:0">Last <?= count($recentMoves) ?></span></div>
   <div class="pane-body tight">
-  <table class="rowlist rl-wide">
-    <thead><tr><th>Date</th><th>What</th><th class="num">Amount</th><th>Note</th><th>Status</th><?= $isAdminMt ? '<th class="act"></th>' : '' ?></tr></thead>
+  <!-- "What" leads, not the date: on a phone the first line of the card is
+       what the entry WAS, and every row here would otherwise open with a
+       date that tells you nothing about which transfer you are looking at.
+       The desktop column order follows the same change, which is right -
+       the description is the subject of the row in both. -->
+  <table class="rowlist rl-cards">
+    <thead><tr><th>What</th><th>Date</th><th class="num">Amount</th><th>Note</th><th>Status</th><?= $isAdminMt ? '<th class="act"></th>' : '' ?></tr></thead>
     <tbody><?php foreach ($recentMoves as $t): ?>
     <tr <?= $t['status'] === 'cancelled' ? 'style="opacity:.55"' : '' ?>>
-      <td data-l="Date"><?= dmy($t['txn_date']) ?></td>
       <td data-l="What"><?= e(mt_label($t)) ?></td>
+      <td data-l="Date"><?= dmy($t['txn_date']) ?></td>
       <td class="num" data-l="Amount"><strong>₹<?= money($t['amount']) ?></strong></td>
       <td data-l="Note" class="muted"><?= $t['notes'] ? e($t['notes']) : '—' ?></td>
       <td data-l="Status"><?= $t['status'] === 'cancelled'

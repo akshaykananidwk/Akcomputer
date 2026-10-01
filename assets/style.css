@@ -797,25 +797,33 @@ td.num, th.num { text-align: right; white-space: nowrap; }
    right of a phone is a button nobody presses; here the whole thing is a
    card, the figure is the biggest part of it, and the button sits under the
    sentence that explains why it is there. */
-.act { display: flex; align-items: flex-start; gap: 11px; padding: 12px 13px; margin-bottom: 10px;
+/* NOT a table's actions column, which is also called .act.
+   Two different things wearing one name: this is the alert ROW - a sentence,
+   a figure and a button - while cash_bank, payments and sales each mark the
+   buttons column of a table <td class="act">. The cell was quietly taking
+   this component's padding and margin on a desktop, and below 560px its
+   "the button goes under the sentence" rule stretched every Edit and Delete
+   in those tables to the full width of the card, one per line.
+   :not(td) because the alert is never a cell and the column always is. */
+.act:not(td) { display: flex; align-items: flex-start; gap: 11px; padding: 12px 13px; margin-bottom: 10px;
        border: 1px solid var(--line, var(--border)); border-left: 4px solid var(--line, var(--border));
        border-radius: 12px; background: var(--card); }
-.act:last-child { margin-bottom: 0; }
-.act .act-ico { font-size: 20px; flex-shrink: 0; line-height: 1.3; }
-.act .act-body { flex: 1; min-width: 0; font-size: 14px; line-height: 1.45; }
-.act .act-group { display: block; font-size: 11px; color: var(--muted);
+.act:not(td):last-child { margin-bottom: 0; }
+.act:not(td) .act-ico { font-size: 20px; flex-shrink: 0; line-height: 1.3; }
+.act:not(td) .act-body { flex: 1; min-width: 0; font-size: 14px; line-height: 1.45; }
+.act:not(td) .act-group { display: block; font-size: 11px; color: var(--muted);
                   text-transform: uppercase; letter-spacing: .4px; font-weight: 700; margin-bottom: 2px; }
 .act .btn { flex-shrink: 0; align-self: center; }
 .act.act-bad  { border-left-color: var(--bad); }
-.act.act-warn { border-left-color: var(--warn); }
+.act:not(td).act-warn { border-left-color: var(--warn); }
 .act.act-ok   { border-left-color: var(--ok); }
-.act.act-info { border-left-color: var(--primary); }
+.act:not(td).act-info { border-left-color: var(--primary); }
 @media (max-width: 560px) {
   /* the button goes under the sentence rather than squeezing beside it */
-  .act { flex-wrap: wrap; }
-  .act .act-body { flex: 1 1 100%; }
-  .act .btn { width: 100%; margin-top: 4px; }
-  .act .act-ico { order: -1; }
+  .act:not(td) { flex-wrap: wrap; }
+  .act:not(td) .act-body { flex: 1 1 100%; }
+  .act:not(td) .btn { width: 100%; margin-top: 4px; }
+  .act:not(td) .act-ico { order: -1; }
 }
 
 .alertrow { display: block; padding: 9px 0; border-bottom: 1px solid var(--border);
@@ -929,17 +937,30 @@ a.kpi:hover { box-shadow: 0 4px 14px rgba(15,23,42,.12); transform: translateY(-
      becomes cards - and .pane clips its overflow, so without this the row
      stayed 550px wide inside a 390px phone and every VALUE sat off the right
      edge, invisible, with only the label showing. */
-  .rowlist, .rowlist tbody, .rowlist tr, .rowlist td { display: block; width: 100%; min-width: 0; }
+  /* ---- the label-above-every-value card ----
+     Written for ONE record you opened on purpose, where each field is a
+     thing you came to check.
+     Every selector below is held off the two variants that follow, by name.
+     They are all single-class rules, so without :not() they would sit at
+     exactly the same specificity as .rl-scan and .rl-auto and be settled by
+     which happened to be further down the file - and that is not a thing to
+     leave to luck. Left to it, a .rl-auto card came out with "What" welded
+     to the front of its own headline and "Amount" to the front of its
+     figure, and Edit and Delete on two separate lines. */
+  .rowlist, .rowlist tbody, .rowlist tr,
+  .rowlist:not(.rl-scan):not(.rl-auto) td { display: block; width: 100%; min-width: 0; }
   .rowlist thead { display: none; }
   .rowlist tr { border: 1px solid var(--line); border-radius: 12px; padding: 4px 0; margin: 0 0 10px; }
   .rowlist tbody tr:hover { background: transparent; }
-  .rowlist td { border: 0; padding: 6px 12px; display: flex; justify-content: space-between;
+  .rowlist:not(.rl-scan):not(.rl-auto) td {
+                border: 0; padding: 6px 12px; display: flex; justify-content: space-between;
                 align-items: center; gap: 12px; text-align: right; }
-  .rowlist td::before { content: attr(data-l); font-size: 11.5px; color: var(--muted);
+  .rowlist:not(.rl-scan):not(.rl-auto) td::before {
+                        content: attr(data-l); font-size: 11.5px; color: var(--muted);
                         font-weight: 600; text-align: left; flex: 0 0 auto; }
-  .rowlist td:empty { display: none; }
-  .rowlist td.act { justify-content: flex-end; padding-top: 10px; }
-  .rowlist td.act::before { content: ''; }
+  .rowlist:not(.rl-scan):not(.rl-auto) td:empty { display: none; }
+  .rowlist:not(.rl-scan):not(.rl-auto) td.act { justify-content: flex-end; padding-top: 10px; }
+  .rowlist:not(.rl-scan):not(.rl-auto) td.act::before { content: ''; }
   .rowlist td.act .btn { min-height: 36px; padding: 7px 14px; }   /* thumbs, not pixels */
 
   /* ---- .rl-scan: a list you SCAN, not a record you READ ----

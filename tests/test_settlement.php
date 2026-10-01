@@ -694,11 +694,18 @@ t_ok('and only the receivable views we know',
 // The phone layout: a squeezed table is how a Receive button ends up three
 // pixels wide.
 $css = file_get_contents(dirname(__DIR__) . '/assets/style.css');
-t_ok('there is a row list that becomes cards on a phone', strpos($css, '.rowlist td::before') !== false);
+// Both selectors below carry :not(.rl-scan):not(.rl-auto) now. Those two
+// variants draw the same row a shorter way, and every rule here is a single
+// class - so without the exclusion the winner was whichever sat lower in
+// the file. The behaviour being protected is unchanged: a phone gets cards,
+// and the 550px table minimum is cancelled so no value hides off the right
+// edge. The checks follow the selectors rather than being dropped.
+t_ok('there is a row list that becomes cards on a phone',
+     strpos($css, '.rowlist:not(.rl-scan):not(.rl-auto) td::before') !== false);
 t_ok('each cell carries its own label for that', strpos($pay, 'data-l="Customer"') !== false);
 t_ok('the shared 550px table minimum is cancelled for it — without that every '
      . 'value sits off the right edge of the phone',
-     strpos($css, '.rowlist, .rowlist tbody, .rowlist tr, .rowlist td { display: block; width: 100%; min-width: 0; }') !== false);
+     strpos($css, '.rowlist, .rowlist tbody, .rowlist tr,' . "\n" . '  .rowlist:not(.rl-scan):not(.rl-auto) td { display: block; width: 100%; min-width: 0; }') !== false);
 t_ok('and the buttons are thumb-sized there', strpos($css, '.rowlist td.act .btn { min-height: 36px') !== false);
 t_ok('the pieces are named for reuse on the other accounting screens',
      strpos($css, 'MONEY PANELS') !== false && strpos($css, '.kpi-row') !== false

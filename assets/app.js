@@ -1397,7 +1397,14 @@ var Tables = {
 
   one: function (t) {
     if (t.dataset.cards === '1') return;
-    if (Tables.SKIP.test(t.className || '')) { t.dataset.cards = '1'; return; }
+    // .rl-cards is the opt IN, and it beats the skip list. A hand-written
+    // phone table earns its exemption by being better than the automatic
+    // layout; the moment it is not - the Cash & Bank wallets and transfers
+    // were 153px and 310px a row, against 71px for the list beside them -
+    // the page says so and gets the same treatment as everything else,
+    // rather than a third hand-written variant nobody will maintain.
+    if (!/\brl-cards\b/.test(t.className || '')
+        && Tables.SKIP.test(t.className || '')) { t.dataset.cards = '1'; return; }
     if (t.closest('.no-cards')) { t.dataset.cards = '1'; return; }
 
     // The header row is the last one in <thead>: a two-tier header's
