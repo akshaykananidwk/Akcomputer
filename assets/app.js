@@ -1360,3 +1360,147 @@ document.addEventListener('change', function (ev) {
   var el = ev.target;
   if (el && el.classList && el.classList.contains('field-bad') && (el.value || '').trim() !== '') FormGuard.clear(el);
 }, true);
+
+/* ===================================================================
+   Tables.cards() — a wide table becomes cards on a phone
+   ===================================================================
+   An audit of all 84 screens at 390px found the same defect in 43 of
+   them: the shared table rule carries min-width 550px, so a table of
+   five or more columns has to be dragged sideways inside its own box.
+   At seven to nine columns most of each row is never seen at all, and
+   a box that looks static is a box nobody thinks to drag.
+
+   Doing it in the markup would have meant editing 46 tables in 43
+   files - 46 chances to differ, and no promise the next one written
+   follows the pattern. Every one of those tables already has a real
+   <thead>, which is the whole trick: the labels a card needs are
+   sitting there, one row above the data. This copies them down and
+   lets .rl-auto in the stylesheet do the drawing.
+
+   What it will NOT touch, and why each matters:
+     - a table with no <thead>, which is a layout grid or a totals
+       block, not a list of records
+     - anything already handled by hand (.rowlist and friends), since a
+       page that was designed for a phone knows better than a guess
+     - an invoice or print table, where the columns ARE the document
+     - anything inside .no-cards, the deliberate way out
+
+   Runs once, and again if rows arrive later - re-running is cheap
+   because every cell it has already seen is marked. */
+var Tables = {
+  SKIP: /\b(rowlist|inv-table|inv2-table|logtbl|ptable|no-cards)\b/,
+
+  cards: function (root) {
+    var tables = (root || document).querySelectorAll('table');
+    for (var i = 0; i < tables.length; i++) Tables.one(tables[i]);
+  },
+
+  one: function (t) {
+    if (t.dataset.cards === '1') return;
+    if (Tables.SKIP.test(t.className || '')) { t.dataset.cards = '1'; return; }
+    if (t.closest('.no-cards')) { t.dataset.cards = '1'; return; }
+
+    // The header row is the last one in <thead>: a two-tier header's
+    // lower row is the one that actually names the columns.
+    var headRows = t.querySelectorAll('thead tr');
+    if (!headRows.length) { t.dataset.cards = '1'; return; }
+    var cells = headRows[headRows.length - 1].children;
+    var labels = [], j;
+    for (j = 0; j < cells.length; j++) {
+      var span = cells[j].colSpan || 1;
+      var text = (cells[j].textContent || '').trim();
+      while (span--) labels.push(text);
+    }
+    // Three, not four. A three-column table looks narrow and is not: the
+    // shared rule gives EVERY table min-width 550px, so even three columns
+    // are dragged sideways on a 390px phone. Guessing from the column count
+    // is what let forecast.php through the first time.
+    if (labels.length < 3) { t.dataset.cards = '1'; return; }
+
+    var rows = t.querySelectorAll('tbody tr');
+    for (j = 0; j < rows.length; j++) Tables.row(rows[j], labels);
+    t.classList.add('rl-auto');
+    t.dataset.cards = '1';
+  },
+
+  row: function (tr, labels) {
+    var tds = tr.children, col = 0, mainDone = false, amtDone = false, k;
+    // More than one figure in the row? Then the leading one is named too.
+    var figures = 0;
+    for (k = 0; k < tds.length; k++)
+      if (tds[k].tagName === 'TD' && tds[k].classList.contains('num')) figures++;
+    // "No expenses in this period." and friends - one cell across the
+    // whole row. It is a sentence, not a field, so it is not given a
+    // label it never had.
+    if (tds.length === 1 && (tds[0].colSpan || 1) > 1) {
+      tds[0].classList.add('rl-full');
+      return;
+    }
+    for (k = 0; k < tds.length; k++) {
+      var td = tds[k];
+      var label = labels[col] || '';
+      col += td.colSpan || 1;
+      if (td.tagName !== 'TD') continue;
+
+      var txt = (td.textContent || '').trim();
+      var acts = td.querySelector('.btn, button, form');
+
+      // A column the header never named, holding buttons, is the
+      // actions column however each page chose to spell it.
+      if (acts && label === '') { td.classList.add('rl-act'); continue; }
+      // A tick box is a handle, not a heading. The collection queue leads
+      // with one, and it was being promoted to the top line of the card
+      // while the customer's name sat below as a chip - so the card said
+      // nothing about whose debt it was until you read the second line.
+      if (txt === '' && td.querySelector('input[type=checkbox], input[type=radio]')) {
+        td.classList.add('rl-ctl'); continue;
+      }
+      if (txt === '' && !td.querySelector('img, svg, input')) { td.classList.add('rl-blank'); continue; }
+
+      // The headline is the first cell with words in it. Not the
+      // number: "₹450" tells you nothing about which row you are on.
+      if (!mainDone && !td.classList.contains('num') && txt !== '') {
+        td.classList.add('rl-main');
+        if (!td.hasAttribute('data-l') && label) td.setAttribute('data-l', label);
+        mainDone = true;
+        continue;
+      }
+      // ONE number gets the top line. Only one.
+      //
+      // The first pass floated every .num cell right, and the Items screen
+      // has four of them - cost, price, B2B, stock. They came out as a bare
+      // column of "3,500.00 / 0.00 / 15 PCS" with nothing to say which was
+      // which, under a heading that named none of them. A figure you cannot
+      // identify is worse than a figure you have to scroll for. So the first
+      // one leads the card and the rest fall back to labelled chips with
+      // everything else.
+      if (td.classList.contains('num')) {
+        if (!td.hasAttribute('data-l') && label) td.setAttribute('data-l', label);
+        if (!amtDone) {
+          td.classList.add('rl-amt');
+          if (figures > 1 && label) td.classList.add('rl-named');
+          amtDone = true; continue;
+        }
+        td.classList.add('rl-rest');
+        if (!label) td.classList.add('rl-nolabel');
+        continue;
+      }
+      td.classList.add('rl-rest');
+      if (label) td.setAttribute('data-l', label);
+      else td.classList.add('rl-nolabel');         // nothing to call it, so call it nothing
+    }
+    // Every cell was a number or a button: promote the first one so the
+    // card still has something to lead with.
+    if (!mainDone) {
+      for (k = 0; k < tds.length; k++) {
+        if (tds[k].tagName === 'TD' && !tds[k].classList.contains('rl-blank')) {
+          tds[k].classList.add('rl-main'); break;
+        }
+      }
+    }
+  }
+};
+
+if (document.readyState === 'loading')
+  document.addEventListener('DOMContentLoaded', function () { Tables.cards(); });
+else Tables.cards();

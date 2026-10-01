@@ -314,7 +314,26 @@ a.list-row:active { background: var(--bg); margin: 0 -16px; padding-left: 16px; 
 .list-style-table td a:active { opacity: .6; }
 
 /* ---------- Cards / layout ---------- */
-.card { background: var(--card); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(15,23,42,.06); }
+/* ============================================================
+   .card — the box almost every screen is built from
+   ------------------------------------------------------------
+   The screens rebuilt this month use .pane, which has a hairline
+   border, a titled head with a rule under it and a softer
+   shadow. Everything else still used .card and looked a year
+   older beside them. Rather than convert forty-odd files by
+   hand, .card is given the same language here: same tokens,
+   same radius, same head. One change, every screen, and the two
+   halves of the software stop looking like two products.
+   The heading keeps its emoji - that is where the colour on
+   these pages comes from, and it was already being typed.
+   ============================================================ */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+        padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 6px 18px rgba(15,23,42,.05); }
+/* A title with a rule under it reads as the top of a section rather than a
+   line of bold text floating above a form. :first-child only - an h2 further
+   down is a sub-heading and gets no rule. */
+.card > h2:first-child { font-size: 16.5px; letter-spacing: -.2px; margin: -16px -16px 14px;
+        padding: 13px 16px; border-bottom: 1px solid var(--line); }
 .card h2 { font-size: 17px; margin-bottom: 12px; }
 .card h3 { font-size: 15px; margin-bottom: 10px; }
 .settings-cat-list { background: var(--card); border-radius: var(--radius); box-shadow: 0 1px 3px rgba(15,23,42,.06); overflow: hidden; margin-bottom: 14px; }
@@ -955,6 +974,76 @@ a.kpi:hover { box-shadow: 0 4px 14px rgba(15,23,42,.12); transform: translateY(-
   .rl-scan td:not(.rl-main):not(.num):not(:last-child)::after {
                    content: '·'; margin: 0 2px 0 6px; color: var(--line); }
   .rl-scan td:empty { display: none; }
+
+  /* ================================================================
+     .rl-auto — EVERY OTHER TABLE IN THE SOFTWARE, ON A PHONE
+     ================================================================
+     An audit of all 84 screens at 390px found one defect in 43 of them,
+     not 43 defects: the shared table rule sets min-width 550px, so any
+     table of five columns or more has to be dragged sideways inside its
+     own box, and at seven to nine columns most of each row is simply
+     never seen. Hidden is worse than cramped - nobody scrolls a box they
+     cannot tell is scrollable.
+     Hand-editing 46 tables across 43 files would be 46 chances to get it
+     wrong and no guarantee the 47th follows. Every one of those tables
+     turned out to have a real <thead>, so the labels needed to redraw a
+     row as a card are already in the markup; Tables.cards() in app.js
+     copies them onto the cells and adds this class. One rule, one home,
+     and a table written next year inherits it.
+     Deliberately a PHONE rule only, inside this breakpoint and nowhere
+     else. The desktop tables are not the thing that is broken, and
+     rewriting what works to match what does not is how a fix becomes a
+     regression. */
+  .rl-auto, .rl-auto tbody { display: block; width: 100%; min-width: 0; }
+  /* NOT width:100% on the cell. The row is a flex container, so a cell told
+     to be full width takes a line to itself however small its contents -
+     which turned "Retail · B2B · Stock" from one flowing line into three
+     stacked ones and made every card three times taller than it needed. */
+  .rl-auto td { display: block; width: auto; min-width: 0; }
+  .rl-auto thead { display: none; }
+  .rl-auto tbody tr:hover { background: transparent; }
+  .rl-auto tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px;
+                width: 100%; min-width: 0; padding: 11px 13px; margin: 0 0 10px;
+                border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+  .rl-auto td { border: 0; padding: 0; text-align: left; }
+  /* line one: the thing you are looking for, and the number */
+  .rl-auto td.rl-main { order: 1; flex: 1 1 52%; font-size: 14.5px; font-weight: 700;
+                        min-width: 0; overflow-wrap: anywhere; }
+  .rl-auto td.rl-amt { order: 2; flex: 0 0 auto; margin-left: auto; text-align: right;
+                       font-size: 15px; font-weight: 800; white-space: nowrap;
+                       font-variant-numeric: tabular-nums; }
+  /* a second, third, fourth figure is a chip like anything else - see the
+     note on .rl-amt in app.js for the screen that proved it */
+  .rl-auto td.rl-rest.num { text-align: left; font-variant-numeric: tabular-nums; }
+  .rl-auto tr::after { content: ''; order: 3; flex: 0 0 100%; height: 0; }
+  /* line two onwards: everything else, still carrying its own label, because
+     seven unlabelled values in a row is a puzzle, not a card */
+  /* 0 1 auto, not 0 0 auto. A chip holding two words should sit beside its
+     neighbours, but a chip holding a whole sentence - and the cash forecast
+     has several, explaining why a figure is not counted - must be allowed to
+     shrink and wrap. Refusing to shrink, one of them measured 1028px inside
+     a 334px card and put the sideways scroll straight back. */
+  .rl-auto td.rl-rest { order: 4; flex: 0 1 auto; max-width: 100%; margin: 5px 10px 0 0;
+                        font-size: 11.5px; color: var(--muted); line-height: 1.45;
+                        overflow-wrap: anywhere; }
+  .rl-auto td.rl-rest::before { content: attr(data-l) ': '; font-weight: 600; opacity: .75; }
+  /* When a row carries SEVERAL figures the leading one needs naming too.
+     Alone it is obviously "the amount"; beside three others, a bare 900.00
+     on the Items screen could be the cost, the price or the B2B rate. */
+  .rl-auto td.rl-amt.rl-named::before { content: attr(data-l) ' '; font-size: 11px;
+                                        font-weight: 600; color: var(--muted); opacity: .8; }
+  .rl-auto td.rl-rest.rl-nolabel::before { content: none; }
+  /* the buttons get the full width and a thumb-sized target */
+  .rl-auto td.rl-act { order: 5; flex: 0 0 100%; margin-top: 10px;
+                       display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .rl-auto td.rl-act .btn { min-height: 38px; display: inline-flex; align-items: center; }
+  .rl-auto td.rl-act form { display: inline-flex; }
+  /* "nothing here yet" spans the card instead of pretending to be a field */
+  .rl-auto td.rl-full { order: 1; flex: 0 0 100%; font-size: 13px; color: var(--muted); }
+  .rl-auto td.rl-blank { display: none; }
+  /* a tick box keeps its place at the front of the line without claiming to
+     be the heading - see the note in app.js */
+  .rl-auto td.rl-ctl { order: 0; flex: 0 0 auto; margin-right: 2px; }
 }
 
 .mini { font-size: 11px; color: var(--muted); }
@@ -1294,10 +1383,26 @@ body:has(.bf) .fab-center { display: none; }
    a search box and a date field side by side in 390px, and neither was
    usable. */
 @media (max-width: 700px) {
-  .filterbar.ff-stack > div { flex: 1 1 calc(50% - 4px); min-width: 0; }
-  .filterbar.ff-stack > div.ff-wide { flex: 1 1 100%; }
-  .filterbar.ff-stack input, .filterbar.ff-stack select { width: 100%; }
-  .filterbar.ff-stack > button, .filterbar.ff-stack > .btn { flex: 1 1 100%; }
+  /* TWO ACROSS, NOT FIVE.
+     .ff-stack said this already, but only the screens somebody had looked
+     at carried the class. Everything else kept flex:1 with a 130px floor,
+     and .filterbar is used for data-entry forms as much as for filters - so
+     "Add expense" put date, category, amount, mode and notes in one 390px
+     row. The boxes were about 70px each and the labels overlapped into
+     "Category₹". It fitted the screen and could not be used.
+     Half a row is the floor now for every bar, the class is kept as the way
+     to say "this one field gets the whole width", and the button takes the
+     full width because a submit squeezed between two fields is a mis-tap. */
+  .filterbar > div { flex: 1 1 calc(50% - 4px); min-width: 0; }
+  .filterbar > div.ff-wide { flex: 1 1 100%; }
+  .filterbar > button, .filterbar > .btn { flex: 1 1 100%; }
+  .filterbar label { display: block; }
+  /* EVERY filter bar, not only the ones that opted in. .ff-stack was added
+     to the screens that were looked at; the rest kept flex:1 with a 130px
+     floor and a date box whose intrinsic width is about 180px, so on a 360px
+     phone it simply hung off the right edge. The screens nobody got round to
+     are exactly the screens that need the default to be right. */
+  .filterbar input, .filterbar select { width: 100%; max-width: 100%; min-width: 0; }
 }
 
 @media (max-width: 1023px) {
@@ -1307,6 +1412,16 @@ body:has(.bf) .fab-center { display: none; }
   .alertrow, .act .btn { min-height: 46px; }
   .filterbar button, .filterbar .btn { min-height: 44px; }
   .rowlist td.act .btn { min-height: 44px; padding: 8px 14px; }
+  /* The shop's own controls. The storefront is the one screen a CUSTOMER
+     uses, on their own phone, and it was the worst offender in the audit:
+     24 wishlist hearts at 32px and carousel dots at 8px. */
+  .wishbtn, .hbtn { min-height: 44px; min-width: 44px; display: inline-flex;
+                    align-items: center; justify-content: center; }
+  /* A dot SHOULD look like a dot. It only has to be 44px to the thumb, so
+     the target is grown invisibly around it rather than the dot itself. */
+  .dots button { position: relative; }
+  .dots button::after { content: ''; position: absolute; left: -16px; right: -16px;
+                        top: -18px; bottom: -18px; }
   /* Fields too, inside the redesigned blocks. Scoped rather than global so a
      screen that has not been through this yet keeps the layout it was built
      and tested with. */

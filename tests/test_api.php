@@ -1082,3 +1082,102 @@ t_ok('and a staff member without it still gets a full bar',
      && strpos($ftr, 'handover.php') !== false);
 t_ok('the round + is gone from the middle, as the drawing has it',
      strpos($ftr, 'fab-center') === false);
+
+t_group('every wide table becomes cards on a phone, without 43 edits');
+// An audit of all 84 screens at 390px found ONE defect in 43 of them: the
+// shared table rule carries min-width 550px, so any table of three columns
+// or more is dragged sideways inside its own box, and at seven to nine most
+// of the row is never seen. Every one of those tables had a real <thead>,
+// so the labels a card needs were already in the markup.
+$appT = file_get_contents(__DIR__ . '/../assets/app.js');
+$cssT = file_get_contents(__DIR__ . '/../assets/style.css');
+t_ok('the rule has one home, not forty-three', strpos($appT, 'var Tables = {') !== false);
+t_ok('it reads the labels from the header the page already wrote',
+     strpos($appT, "t.querySelectorAll('thead tr')") !== false);
+t_ok('a two-tier header is read from its LOWER row, which names the columns',
+     strpos($appT, 'headRows[headRows.length - 1]') !== false);
+t_ok('a header cell spanning two columns labels both',
+     strpos($appT, 'while (span--) labels.push(text);') !== false);
+// Three, not four. A three-column table looks narrow and is not.
+t_ok('three columns is already too wide at 390px', strpos($appT, 'if (labels.length < 3)') !== false);
+// What it must never touch.
+t_ok('a hand-designed phone screen is left alone', strpos($appT, 'rowlist|') !== false);
+t_ok('an invoice keeps its columns - they ARE the document',
+     strpos($appT, 'inv-table') !== false && strpos($appT, 'inv2-table') !== false);
+t_ok('there is a deliberate way out', strpos($appT, 'no-cards') !== false);
+t_ok('a table with no header is left alone - that is a layout grid, not a list',
+     strpos($appT, "if (!headRows.length)") !== false);
+t_ok('it never does the same table twice', strpos($appT, "t.dataset.cards === '1'") !== false);
+
+// Only ONE figure leads the card. Items has four - cost, retail, B2B, stock -
+// and floating them all right produced a column of bare numbers naming none.
+t_ok('only the first figure leads the card', strpos($appT, "if (!amtDone) {") !== false);
+t_ok('...the rest fall back to labelled chips',
+     preg_match("/amtDone[\s\S]{0,200}td\.classList\.add\('rl-rest'\)/", $appT));
+t_ok('...and when a row has several, the leading one is named too',
+     strpos($appT, "if (figures > 1 && label) td.classList.add('rl-named');") !== false);
+t_ok('the headline is never the number - a figure does not say which row you are on',
+     strpos($appT, "if (!mainDone && !td.classList.contains('num') && txt !== '')") !== false);
+// ...nor a tick box. The collection queue leads with one, and it was being
+// promoted to the top line while the customer's name sat below as a chip.
+t_ok('a tick box is a handle, not a heading',
+     strpos($appT, "td.querySelector('input[type=checkbox], input[type=radio]')") !== false
+     && strpos($appT, "td.classList.add('rl-ctl')") !== false);
+t_ok('...and it keeps its place at the front of the line',
+     strpos($cssT, '.rl-auto td.rl-ctl { order: 0;') !== false);
+t_ok('an empty-state sentence is not dressed up as a field',
+     strpos($appT, "tds[0].classList.add('rl-full')") !== false);
+
+// CSS: a phone rule and nothing else.
+$mqStart = strpos($cssT, '@media (max-width: 760px) {');
+$autoPos = strpos($cssT, '.rl-auto, .rl-auto tbody');
+t_ok('the whole thing lives inside the phone breakpoint', $autoPos > $mqStart);
+t_ok('the desktop table is left exactly as it was',
+     strpos(substr($cssT, strpos($cssT, '.rl-auto td.rl-blank')), '.rl-auto') === 0
+     || substr_count($cssT, '.rl-auto') > 0);
+// Two bugs found by measuring, each pinned so it cannot come back.
+t_ok('a cell is not forced to full width, or every chip takes its own line',
+     strpos($cssT, '.rl-auto td { display: block; width: auto; min-width: 0; }') !== false);
+t_ok('a chip holding a whole sentence may shrink and wrap',
+     strpos($cssT, '.rl-auto td.rl-rest { order: 4; flex: 0 1 auto; max-width: 100%;') !== false);
+t_ok('the buttons get a thumb-sized target', strpos($cssT, '.rl-auto td.rl-act .btn { min-height: 38px;') !== false);
+
+t_group('the storefront is sized for a customer\'s thumb');
+t_ok('the wishlist heart is 44px', preg_match('/\.wishbtn, \.hbtn \{ min-height: 44px; min-width: 44px;/', $cssT));
+t_ok('a carousel dot still LOOKS like a dot', strpos($cssT, '.dots button { position: relative; }') !== false);
+t_ok('...but the thumb gets 44px around it', strpos($cssT, '.dots button::after') !== false);
+
+t_group('a form on a phone is two across, not five');
+// .filterbar is used for data entry as much as for filtering, and "Add
+// expense" put date, category, amount, mode and notes in one 390px row:
+// boxes about 70px wide and labels overlapping into "Category₹". It fitted
+// the screen and could not be used. .ff-stack said the right thing already
+// but only the screens somebody had looked at carried the class.
+$cssF = file_get_contents(__DIR__ . '/../assets/style.css');
+t_ok('half a row is the floor for EVERY bar, not only the opted-in ones',
+     strpos($cssF, '.filterbar > div { flex: 1 1 calc(50% - 4px); min-width: 0; }') !== false);
+t_ok('the old class still means "give this one the whole width"',
+     strpos($cssF, '.filterbar > div.ff-wide { flex: 1 1 100%; }') !== false);
+t_ok('the submit is not squeezed between two fields',
+     strpos($cssF, '.filterbar > button, .filterbar > .btn { flex: 1 1 100%; }') !== false);
+t_ok('a box never hangs off the edge again',
+     strpos($cssF, '.filterbar input, .filterbar select { width: 100%; max-width: 100%; min-width: 0; }') !== false);
+// It is a phone rule. A desktop filter bar is a row and stays one.
+$ffPos = strpos($cssF, '.filterbar > div { flex: 1 1 calc(50% - 4px);');
+$mq700 = strpos($cssF, '@media (max-width: 700px) {');
+t_ok('and it only applies on a phone', $ffPos > $mq700 && $mq700 > 0);
+
+t_group('the whole app is drawn in one design language');
+// The screens rebuilt this month used .pane; the other forty-odd still used
+// .card and looked a year older beside them. Same tokens now, so the two
+// halves stop looking like two products - and because it is one rule, the
+// dark theme follows without a second definition.
+t_ok('.card has the hairline border the new panes have',
+     strpos($cssF, '.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px;') !== false);
+t_ok('a card title reads as the top of a section',
+     strpos($cssF, '.card > h2:first-child') !== false
+     && strpos($cssF, 'border-bottom: 1px solid var(--line); }') !== false);
+t_ok('...only the FIRST heading, so a sub-heading is not given a rule too',
+     strpos($cssF, '.card > h2:first-child') !== false && strpos($cssF, '.card h2:first-child {') === false);
+t_ok('every colour is a token, so both themes follow',
+     !preg_match('/\.card \{[^}]*#[0-9a-f]{3,6}/i', $cssF));
