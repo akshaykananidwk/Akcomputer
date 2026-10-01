@@ -27,7 +27,7 @@ if ($a === 'item_search' && can('items.view')) {
     // sub-select in ORDER BY, then the starts-with test
     $params[] = $loc;
     $params[] = $first;
-    // ...BUT WHAT IS ON THE SHELF COMES FIRST.
+    // ...BUT WHAT IS ON THE SHELF COMES FIRST - AND ON A PURCHASE, LAST.
     //
     // Fifteen suggestions is all a person sees, and an out-of-stock item that
     // happens to sort earlier alphabetically pushed a stocked one off the end
@@ -35,11 +35,23 @@ if ($a === 'item_search' && can('items.view')) {
     // actually be sold today is the thing to show. A service has no stock and
     // is always sellable, so it ranks with the stocked ones rather than below
     // everything.
+    //
+    // Writing a PURCHASE is the same screen asking the opposite question. The
+    // shopkeeper is not looking for what they can sell, they are looking for
+    // what they have run out of - so the empty ones rise and the full ones
+    // sink. One flag, because it is one rule read from either end; a second
+    // query here would be two places to fix the day the ranking changes.
+    // Services are excluded from the flip: nothing is ever bought to restock
+    // one, so they stay out of the way at the bottom of a purchase.
+    $buying = get('mode') === 'purchase';
+    $onShelf = $buying
+        ? "(i.item_type <> 'service' AND COALESCE((SELECT qty FROM stock s2 WHERE s2.item_id = i.id AND s2.location_id = ?), 0) <= 0)"
+        : "(i.item_type = 'service' OR COALESCE((SELECT qty FROM stock s2 WHERE s2.item_id = i.id AND s2.location_id = ?), 0) > 0)";
     $items = all("SELECT i.id, i.name, i.unit, i.tax_rate, i.purchase_price, i.selling_price, i.b2b_price, i.serial_tracked, i.barcode, i.item_type,
                   IF(i.item_type = 'service', NULL, COALESCE((SELECT qty FROM stock s WHERE s.item_id = i.id AND s.location_id = ?), 0)) AS stock
                   FROM items i
                   WHERE i.is_active = 1 AND ($where)
-                  ORDER BY (i.item_type = 'service' OR COALESCE((SELECT qty FROM stock s2 WHERE s2.item_id = i.id AND s2.location_id = ?), 0) > 0) DESC,
+                  ORDER BY $onShelf DESC,
                            (i.name LIKE ?) DESC, i.name LIMIT 15", $params);
     // The purchase (cost) price is a guarded number: staff without the
     // items.cost permission never receive it in SALE screens (no profit

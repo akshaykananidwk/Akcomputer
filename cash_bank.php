@@ -648,14 +648,17 @@ include __DIR__ . '/includes/header.php';
   <?php if (!$recentCash): ?>
     <p class="pane-note" style="padding:20px 14px">No cash has moved yet.</p>
   <?php else: ?>
-  <table class="rowlist">
-    <thead><tr><th>Date</th><th>Party</th><th>Wallet</th><th>In / out</th><th class="num">Amount</th></tr></thead>
+  <!-- rl-scan: on a phone this is a list to glance down, so the party and the
+       amount sit on the first line and the date, wallet and direction follow
+       as one quiet strip. The desktop table is unchanged. -->
+  <table class="rowlist rl-scan">
+    <thead><tr><th>Party</th><th>Date</th><th>Wallet</th><th>In / out</th><th class="num">Amount</th></tr></thead>
     <tbody><?php foreach ($recentCash as $c): ?>
     <tr>
-      <td data-l="Date"><?= dmy($c['pay_date']) ?></td>
-      <td data-l="Party"><?= $c['party_id']
+      <td class="rl-main" data-l="Party"><?= $c['party_id']
             ? '<a href="parties.php?action=ledger&id=' . (int)$c['party_id'] . '">' . e($c['party_name']) . '</a>'
             : e($c['party_name'] ?: 'Walk-in') ?></td>
+      <td data-l="Date"><?= dmy($c['pay_date']) ?></td>
       <td data-l="Wallet" class="muted"><?= e($c['staff_name']) ?></td>
       <td data-l="In / out"><?= $c['direction'] === 'in'
             ? '<span class="badge badge-ok">🟢 IN</span>' : '<span class="badge badge-bad">🔴 OUT</span>' ?></td>

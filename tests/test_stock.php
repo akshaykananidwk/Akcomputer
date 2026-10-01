@@ -1043,8 +1043,40 @@ t_ok('a service ranks with the sellable ones, not with the empty shelves',
      implode(',', $isTop2));
 
 $ajx = file_get_contents(dirname(__DIR__) . '/ajax.php');
+// This used to pin the ranking expression inline in the ORDER BY. It has
+// since moved into $onShelf, because the purchase screen needed the same
+// rule read backwards and two copies of a ranking is two places to fix. The
+// expression itself is unchanged, so the check follows it to its new home
+// rather than being deleted.
 t_ok('and that is the order the search screen really uses',
-     strpos($ajx, "ORDER BY (i.item_type = 'service' OR COALESCE((SELECT qty FROM stock s2 WHERE s2.item_id = i.id AND s2.location_id = ?), 0) > 0) DESC") !== false);
+     strpos($ajx, ": \"(i.item_type = 'service' OR COALESCE((SELECT qty FROM stock s2 WHERE s2.item_id = i.id AND s2.location_id = ?), 0) > 0)\"") !== false
+     && strpos($ajx, 'ORDER BY $onShelf DESC') !== false);
 // One misplaced ? and the whole suggestion list is wrong without erroring.
 t_ok('its placeholders are bound in the order MySQL meets them',
      strpos($ajx, "\$params[] = \$loc;\n    \$params[] = \$first;") !== false);
+
+t_group('what is on the shelf is offered first - and on a purchase, last');
+// The counter and the purchase form are the same search asking opposite
+// questions. Selling: show me what I can hand over today. Buying: show me
+// what I have run out of. One flag in one query, read from either end.
+$ajaxSrc = file_get_contents(dirname(__DIR__) . '/ajax.php');
+$block = substr($ajaxSrc, strpos($ajaxSrc, "a === 'item_search'"), 4200);
+t_ok('the purchase screen is recognised', strpos($block, "\$buying = get('mode') === 'purchase'") !== false);
+t_ok('selling ranks stocked items above empty ones',
+     preg_match('/\$onShelf = \$buying[\s\S]{0,420}?qty FROM stock s2[\s\S]{0,60}?\), 0\) > 0\)"/', $block));
+t_ok('buying ranks empty items above stocked ones',
+     preg_match('/\$buying\s*\?\s*"\(i\.item_type <> \'service\' AND COALESCE[\s\S]{0,120}?<= 0\)"/', $block));
+t_ok('one ORDER BY serves both, so the rule has one home',
+     substr_count($block, 'ORDER BY $onShelf DESC') === 1);
+t_ok('a service never outranks a real item on a purchase - nothing restocks one',
+     strpos($block, "i.item_type <> 'service' AND COALESCE") !== false);
+t_ok('...but a service still ranks with the sellable ones when selling',
+     strpos($block, "(i.item_type = 'service' OR COALESCE") !== false);
+
+// "wherever an item name is searched OR SEEN" - the Items list is seen, so
+// it obeys the same rule as the search box.
+$itemsSrc = file_get_contents(dirname(__DIR__) . '/items.php');
+t_ok('the Items list puts stocked items on top too',
+     preg_match("/ORDER BY \(i\.item_type = \\\\'service\\\\' OR ' \. \\\$stockExpr \. ' > 0\) DESC, i\.name/", $itemsSrc), 'items.php ORDER BY');
+t_ok('...and still sorts by name inside each group',
+     strpos($itemsSrc, "> 0) DESC, i.name'") !== false);

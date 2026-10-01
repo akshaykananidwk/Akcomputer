@@ -273,7 +273,8 @@ $items = all('SELECT i.*, c.name AS cat_name, ' . $stockExpr . ' AS total_stock
               LEFT JOIN categories c ON c.id = i.category_id
               LEFT JOIN stock s ON s.item_id = i.id
               ' . ($w ? 'WHERE ' . implode(' AND ', $w) : '') . '
-              GROUP BY i.id ' . $having . ' ORDER BY i.name');
+              GROUP BY i.id ' . $having . '
+              ORDER BY (i.item_type = \'service\' OR ' . $stockExpr . ' > 0) DESC, i.name');
 // per-location split shown under every stock figure (all-locations view)
 $locSplit = [];
 if (count($locsAll) > 1) {

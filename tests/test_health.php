@@ -696,3 +696,30 @@ t_ok('the card name is sized to be read, not to be a caption',
      preg_match('/\.hm-card \.hm-l \{[^}]*font-size: 16px/', $cssHome));
 t_ok('the rule for the removed figure is gone too, not left as dead weight',
      strpos($cssHome, '.hm-card .hm-v') === false);
+
+t_group('a list you scan is not drawn as ten records you read');
+// The generic .rowlist phone card prints a label above every value. That is
+// right for one record opened on purpose; for a list it turned ten cash
+// entries into fifty lines. .rl-scan keeps who and how much on the first
+// line and lets the rest follow quietly.
+$cbSrc  = file_get_contents(dirname(__DIR__) . '/cash_bank.php');
+$cssScan = file_get_contents(dirname(__DIR__) . '/assets/style.css');
+t_ok('the cash list is marked as one to scan', strpos($cbSrc, 'class="rowlist rl-scan"') !== false);
+t_ok('the party is the line you read first', strpos($cbSrc, 'class="rl-main" data-l="Party"') !== false);
+t_ok('...and it comes before the date in the markup, so it leads on a phone',
+     strpos($cbSrc, 'class="rl-main" data-l="Party"') < strpos($cbSrc, '<td data-l="Date"><?= dmy($c[\'pay_date\']) ?>'));
+t_ok('the amount still reads as the amount', strpos($cbSrc, 'class="num <?= $c[\'direction\']') !== false);
+// The second line must not wander - a list whose shape changes row to row is
+// harder to scan than the card it replaced.
+t_ok('the quiet strip is forced onto its own line',
+     strpos($cssScan, ".rl-scan tr::after { content: ''; order: 3; flex: 0 0 100%; height: 0; }") !== false);
+t_ok('...and the labels are dropped, since the first line says what it is',
+     strpos($cssScan, '.rl-scan td::before { content: none; }') !== false);
+// It is a PHONE rule only. On a desktop this is still a plain table.
+$scanPos = strpos($cssScan, '.rl-scan tr {');
+$mqPos   = strpos($cssScan, '@media (max-width: 760px) {');
+$mqEnd   = strpos($cssScan, "\n}", strpos($cssScan, '.rl-scan td:empty'));
+t_ok('the whole variant lives inside the phone breakpoint',
+     $scanPos > $mqPos && $scanPos < $mqEnd);
+t_ok('nothing about .rl-scan leaks into the desktop table',
+     strpos(substr($cssScan, $mqEnd), '.rl-scan') === false);
