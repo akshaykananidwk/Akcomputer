@@ -1061,13 +1061,14 @@ t_ok('the home cards are drawn from tokens, so the dark theme follows',
      && strpos($cssH, 'background: color-mix(in srgb, var(--ok) 11%, var(--card));') !== false);
 t_ok('and the tiles too', strpos($cssH, 'HOME SCREEN — the six things') !== false);
 
-// A FIGURE MUST NEVER BE CUT OFF. Two cards side by side on a 360px phone
-// leave about 100px for the number, and "₹1,95,140.00" at a fixed 24px does
-// not fit - the card clipped it to "₹16,266." which is not a smaller figure,
-// it is a wrong one.
-t_ok('the figure sizes itself to the screen instead of being clipped',
-     strpos($cssH, 'font-size: clamp(12px, 3.7vw, 24px); white-space: nowrap; }') !== false);
-t_ok('...and on the narrowest phone the layout gives way, not the number',
+// This used to check that the figure on these cards shrank to fit rather
+// than being clipped to a wrong one. There is no figure to clip any more -
+// the owner had it taken off, because a phone on the counter was showing
+// everyone in the shop what it was owed. So the check that replaces it is
+// the one that now matters: the cards must not grow a figure back.
+t_ok('the two cards carry no amount at all',
+     strpos($cssH, '.hm-card .hm-v') === false);
+t_ok('...and on the narrowest phone the layout still gives way rather than squeezing',
      strpos($cssH, '@media (max-width: 359px) {' . "\n" . '  .hm-card { flex-direction: column;') !== false);
 
 // The bar along the bottom names the same six as the screen above it.

@@ -671,3 +671,28 @@ q("INSERT INTO cron_runs (job, started_at, status) VALUES (?, NOW(), 'fail')", [
 t_eq('...so the next failure is a first failure again', cron_fail_streak($jobName), 1);
 t_eq('...and is retried in five minutes', cron_retry_delay(cron_fail_streak($jobName), 360), 5);
 q("DELETE FROM cron_runs WHERE job = ?", [$jobName]);
+
+t_group('the home screen does not read out the money to the room');
+// A phone lying on the counter showed anybody standing there the whole of
+// what the shop is owed and owes. The two cards stayed - they are the way in
+// - but the figures came off them. The amount lives on the page they open.
+$homeSrc = file_get_contents(dirname(__DIR__) . '/index.php');
+$moneyCards = substr($homeSrc, strpos($homeSrc, '<div class="hm-money">'),
+                     strpos($homeSrc, '<div class="hm-tiles">') - strpos($homeSrc, '<div class="hm-money">'));
+t_ok('the To Receive card is still there', strpos($moneyCards, 'To Receive') !== false);
+t_ok('...and the To Pay card', strpos($moneyCards, 'To Pay') !== false);
+t_ok('neither card prints a rupee figure', strpos($moneyCards, 'money(') === false, $moneyCards);
+t_ok('...not even an unformatted one', !preg_match('/receivable\']|payable\']/', str_replace(["_parties']"], [''], $moneyCards)));
+t_ok('the party count stays - it is a count, not an amount',
+     strpos($moneyCards, "receivable_parties") !== false && strpos($moneyCards, "payable_parties") !== false);
+// Both cards must still lead somewhere, or hiding the figure just breaks them.
+t_ok('each card still opens the page that HAS the figure',
+     substr_count($moneyCards, 'parties.php?bal=') === 2
+     || substr_count($moneyCards, 'reports.php?r=') === 2
+     || (strpos($moneyCards, 'bal=get') !== false && strpos($moneyCards, 'bal=give') !== false));
+// The name has to carry the card now that no figure does.
+$cssHome = file_get_contents(dirname(__DIR__) . '/assets/style.css');
+t_ok('the card name is sized to be read, not to be a caption',
+     preg_match('/\.hm-card \.hm-l \{[^}]*font-size: 16px/', $cssHome));
+t_ok('the rule for the removed figure is gone too, not left as dead weight',
+     strpos($cssHome, '.hm-card .hm-v') === false);

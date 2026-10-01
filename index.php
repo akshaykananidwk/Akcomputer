@@ -282,7 +282,6 @@ if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dash
     <span class="hm-ico"><?= icon('arrow-down', 24) ?></span>
     <span class="hm-txt">
       <span class="hm-l">To Receive</span>
-      <span class="hm-v">₹<?= money($sBals['receivable']) ?></span>
       <span class="hm-s"><?= (int)$sBals['receivable_parties'] ?> <?= (int)$sBals['receivable_parties'] === 1 ? 'party' : 'parties' ?></span>
     </span>
     <span class="hm-go"><?= icon('chevron-right', 16) ?></span>
@@ -291,7 +290,6 @@ if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dash
     <span class="hm-ico"><?= icon('arrow-up', 24) ?></span>
     <span class="hm-txt">
       <span class="hm-l">To Pay</span>
-      <span class="hm-v">₹<?= money($sBals['payable']) ?></span>
       <span class="hm-s"><?= (int)$sBals['payable_parties'] ?> <?= (int)$sBals['payable_parties'] === 1 ? 'party' : 'parties' ?></span>
     </span>
     <span class="hm-go"><?= icon('chevron-right', 16) ?></span>
