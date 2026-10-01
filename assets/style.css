@@ -1044,6 +1044,8 @@ a.kpi:hover { box-shadow: 0 4px 14px rgba(15,23,42,.12); transform: translateY(-
   /* a tick box keeps its place at the front of the line without claiming to
      be the heading - see the note in app.js */
   .rl-auto td.rl-ctl { order: 0; flex: 0 0 auto; margin-right: 2px; }
+  /* no empty strip under the last card inside its box */
+  .rl-auto tbody tr:last-child { margin-bottom: 0; }
 }
 
 .mini { font-size: 11px; color: var(--muted); }
@@ -1395,7 +1397,13 @@ body:has(.bf) .fab-center { display: none; }
      full width because a submit squeezed between two fields is a mis-tap. */
   .filterbar > div { flex: 1 1 calc(50% - 4px); min-width: 0; }
   .filterbar > div.ff-wide { flex: 1 1 100%; }
-  .filterbar > button, .filterbar > .btn { flex: 1 1 100%; }
+  /* The SUBMIT gets the whole width - it is the one thing the bar is for,
+     and a submit squeezed between two fields is a mis-tap. Everything else
+     in the bar shares a line: the reports screen carries Print, CSV, Excel,
+     PDF and Save, and five full-width buttons is a staircase to scroll past
+     before the report itself. */
+  .filterbar > button[type="submit"] { flex: 1 1 100%; }
+  .filterbar > .btn, .filterbar > button:not([type="submit"]) { flex: 1 1 calc(50% - 4px); }
   .filterbar label { display: block; }
   /* EVERY filter bar, not only the ones that opted in. .ff-stack was added
      to the screens that were looked at; the rest kept flex:1 with a 130px

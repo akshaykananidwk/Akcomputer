@@ -1159,7 +1159,12 @@ t_ok('half a row is the floor for EVERY bar, not only the opted-in ones',
 t_ok('the old class still means "give this one the whole width"',
      strpos($cssF, '.filterbar > div.ff-wide { flex: 1 1 100%; }') !== false);
 t_ok('the submit is not squeezed between two fields',
-     strpos($cssF, '.filterbar > button, .filterbar > .btn { flex: 1 1 100%; }') !== false);
+     strpos($cssF, '.filterbar > button[type="submit"] { flex: 1 1 100%; }') !== false);
+// ...but only the submit. The reports screen carries Print, CSV, Excel, PDF
+// and Save, and five full-width buttons is a staircase to scroll past
+// before the report itself.
+t_ok('the other buttons share a line instead of stacking',
+     strpos($cssF, '.filterbar > .btn, .filterbar > button:not([type="submit"]) { flex: 1 1 calc(50% - 4px); }') !== false);
 t_ok('a box never hangs off the edge again',
      strpos($cssF, '.filterbar input, .filterbar select { width: 100%; max-width: 100%; min-width: 0; }') !== false);
 // It is a phone rule. A desktop filter bar is a row and stays one.
