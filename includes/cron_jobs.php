@@ -215,13 +215,13 @@ function cron_job_overdue_reminders() {
             ? send_whatsapp($s['customer_mobile'], dunning_message($step['tone'], [
                 'shop' => $s['company_name'], 'customer' => $s['customer_name'] ?: 'Customer',
                 'amount' => money($trueDue), 'days' => $lateDays, 'invoice_no' => $s['invoice_no'],
-              ]))
+              ]), '', wa_customer_buttons($s['customer_mobile'], 'due', $s, $trueDue))
             : send_whatsapp($s['customer_mobile'], wa_template('reminder', [
                 'firm' => $s['company_name'], 'invoice_no' => $s['invoice_no'], 'date' => dmy($s['sale_date']),
                 'due' => money($trueDue),
                 'due_date_line' => $lateDays <= 0 ? "📅 Payment is due today!\n"
                     : '📅 Due date: ' . dmy($s['due_date']) . " — ⏰ *$lateDays days* have passed\n",
-              ]));
+              ]), '', wa_customer_buttons($s['customer_mobile'], 'due', $s, $trueDue));
         if ($ok) {
             q('UPDATE sales SET last_reminder = ? WHERE id = ?', [$today, $s['id']]);
             $sent++;

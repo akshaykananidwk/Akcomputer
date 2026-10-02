@@ -193,17 +193,12 @@ function wa_portal_route($mobile, $id) {
         if (!$s) { send_whatsapp($mobile, wa_t('bill_denied')); return 'bill-denied'; }
         $due = sale_true_due($s);
         $body = wa_portal_bill_text($s);
-        if ($due > 0.009) {
-            require_once __DIR__ . '/wa_meta.php';
-            [$ok, ] = meta_wa_configured() ? meta_wa_send_interactive($mobile, [
-                'type' => 'button', 'body' => ['text' => $body],
-                'action' => ['buttons' => [['type' => 'reply', 'reply' => ['id' => 'portal:paybill:' . $s['id'], 'title' => wa_cat_cut(wa_t('btn_paybill'), 20)]]]],
-            ]) : [false, ''];
-            if ($ok) { wa_chat_log($mobile, 'out', $body . "\n[" . wa_t('btn_paybill') . ']', 'meta', '', (string)($GLOBALS['_wa_last_msg_id'] ?? '')); return 'bill'; }
-            $body .= "\n\n" . wa_t('pay_hint');
-        }
-        send_whatsapp($mobile, $body);
-        return 'bill';
+        $btn = [['type' => 'reply', 'reply' => ['id' => 'portal:bills', 'title' => wa_cat_cut(wa_t('m_bills'), 20)]],
+                ['type' => 'reply', 'reply' => ['id' => 'portal:menu', 'title' => wa_cat_cut(wa_t('btn_menu'), 20)]]];
+        if ($due > 0.009) array_unshift($btn, ['type' => 'reply', 'reply' => ['id' => 'portal:paybill:' . $s['id'], 'title' => wa_cat_cut(wa_t('btn_paybill'), 20)]]);
+        $st = wa_catalog_deliver($mobile, ['type' => 'button', 'body' => ['text' => mb_substr($body, 0, 1024)], 'action' => ['buttons' => $btn]],
+                                 $body . ($due > 0.009 ? "\n\n" . wa_t('pay_hint') : ''));
+        return $st === 'send-failed' ? 'bill-failed' : 'bill';
     }
 
     // ---------- statement / balance ----------
@@ -229,7 +224,9 @@ function wa_portal_route($mobile, $id) {
             }
         }
         $out .= "\n\n" . wa_t('stmt_footer') . ($bal > 0.009 ? wa_t('stmt_pay') : '');
-        send_whatsapp($mobile, $out);
+        $btn = [wa_btn(wa_t('m_bills'), 'id', 'portal:bills'), wa_btn(wa_t('btn_menu'), 'id', 'portal:menu')];
+        if ($bal > 0.009) array_unshift($btn, wa_btn(wa_t('m_pay'), 'id', 'portal:pay'));
+        send_whatsapp($mobile, $out, '', $btn);
         return 'stmt';
     }
 
@@ -292,7 +289,7 @@ function wa_portal_route($mobile, $id) {
         if ((float)$r['estimate_cost'] > 0 && !in_array($r['status'], ['delivered', 'returned_unrepaired'], true)) $out .= "\n" . wa_t('rj_est', ['amt' => money($r['estimate_cost'])]);
         if ((float)$r['final_charge'] > 0) $out .= "\n" . wa_t('rj_charge', ['amt' => money($r['final_charge'])]);
         if ($r['report_token']) $out .= "\n\n" . wa_t('rj_report') . ' ' . base_url('service_report.php?token=' . $r['report_token']);
-        send_whatsapp($mobile, $out);
+        send_whatsapp($mobile, $out, '', [wa_btn(wa_t('m_repairs'), 'id', 'portal:repairs'), wa_btn(wa_t('btn_menu'), 'id', 'portal:menu')]);
         return 'repair';
     }
 
@@ -335,20 +332,17 @@ function wa_portal_route($mobile, $id) {
         $qw = $party ? "(e.party_id = ? OR REPLACE(REPLACE(e.customer_mobile, '+', ''), ' ', '') LIKE ?)" : "REPLACE(REPLACE(e.customer_mobile, '+', ''), ' ', '') LIKE ?";
         $qs = all("SELECT e.* FROM estimates e WHERE e.status = 'open' AND $qw ORDER BY e.id DESC LIMIT 3", $qp);
         if (!$qs) { send_whatsapp($mobile, wa_t('quotes_none', ['shop' => $shop])); return 'quotes-none'; }
-        require_once __DIR__ . '/wa_meta.php';
         foreach ($qs as $qt) {
             $body = wa_t('q_title', ['no' => $qt['estimate_no']]) . "\n📅 " . dmy($qt['estimate_date']) . "\n" . wa_t('bill_total') . " *₹" . money($qt['total']) . '*'
                   . ($qt['notes'] ? "\n📝 " . mb_substr($qt['notes'], 0, 200) : '')
                   . "\n\n" . wa_t('q_note');
-            [$ok, ] = meta_wa_configured() ? meta_wa_send_interactive($mobile, [
+            wa_catalog_deliver($mobile, [
                 'type' => 'button', 'body' => ['text' => $body],
                 'action' => ['buttons' => [
                     ['type' => 'reply', 'reply' => ['id' => 'portal:qacc:' . $qt['id'], 'title' => wa_cat_cut(wa_t('btn_qacc'), 20)]],
                     ['type' => 'reply', 'reply' => ['id' => 'portal:qrej:' . $qt['id'], 'title' => wa_cat_cut(wa_t('btn_qrej'), 20)]],
                 ]],
-            ]) : [false, ''];
-            if ($ok) wa_chat_log($mobile, 'out', $body . "\n[" . wa_t('btn_qacc') . '] [' . wa_t('btn_qrej') . ']', 'meta', '', (string)($GLOBALS['_wa_last_msg_id'] ?? ''));
-            else send_whatsapp($mobile, $body . "\n\n" . wa_t('q_text_hint', ['no' => $qt['estimate_no']]));
+            ], $body . "\n\n" . wa_t('q_text_hint', ['no' => $qt['estimate_no']]));
         }
         return 'quotes';
     }
@@ -378,9 +372,11 @@ function wa_portal_route($mobile, $id) {
         $addr = trim(($co['address'] ?? '') !== '' ? $co['address'] : 'Dwarka, Gujarat');
         $out = "📍 *" . ($co['name'] ?? $shop) . "*\n$addr";
         if (!empty($co['phone'])) $out .= "\n📞 " . $co['phone'];
-        $out .= "\n🗺 " . 'https://maps.google.com/?q=' . rawurlencode(($co['name'] ?? $shop) . ' ' . $addr)
-              . "\n🌐 " . base_url('') . '/';
-        send_whatsapp($mobile, $out);
+        $maps = 'https://maps.google.com/?q=' . rawurlencode(($co['name'] ?? $shop) . ' ' . $addr);
+        $out .= "\n🗺 " . $maps . "\n🌐 " . base_url('') . '/';
+        $btn = [wa_btn('🗺 Google Maps', 'url', $maps)];
+        if (!empty($co['phone'])) $btn[] = wa_btn(wa_t('btn_call'), 'phone', $co['phone']);
+        send_whatsapp($mobile, $out, '', $btn);
         return 'location';
     }
 

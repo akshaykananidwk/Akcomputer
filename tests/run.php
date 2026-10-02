@@ -18,7 +18,7 @@ $pdo = db();
 $pdo->beginTransaction();
 
 try {
-    foreach (['money', 'payments', 'stock', 'permissions', 'health', 'settlement', 'dashboard', 'customer', 'purchase', 'ai', 'market', 'campaign', 'forecast', 'scaling', 'reports', 'api', 'voice'] as $suite) {
+    foreach (['money', 'payments', 'stock', 'permissions', 'health', 'settlement', 'dashboard', 'customer', 'purchase', 'ai', 'market', 'campaign', 'forecast', 'scaling', 'reports', 'api', 'voice', 'wa_buttons'] as $suite) {
         require __DIR__ . '/test_' . $suite . '.php';
     }
 } catch (Throwable $e) {

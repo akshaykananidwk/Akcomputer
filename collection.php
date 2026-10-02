@@ -267,7 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             file_put_contents($imgDir . '/' . $img, reminder_image_jpg($shop, $c['overdue']));
             wa_context(['kind' => 'reminder']);
             $msg = wa_template('aging_reminder', ['amount' => money($c['overdue']), 'shop' => $shop, 'customer' => $c['name']]);
-            if (send_whatsapp($c['mobile'], $msg, base_url('uploads/reminders/' . $img))) {
+            if (send_whatsapp($c['mobile'], $msg, base_url('uploads/reminders/' . $img), wa_customer_buttons($c['mobile'], 'due'))) {
                 $sent++;
                 coll_log($c['id'], 'reminder', ['channel' => 'whatsapp', 'amount' => $c['overdue'],
                                                'note' => '₹' . money($c['overdue']) . ' reminder', 'status' => 'done']);

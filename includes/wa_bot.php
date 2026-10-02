@@ -146,16 +146,36 @@ function wa_catalog_kw($t) {
     return (bool)preg_match('/^(catalog|catalogue|catlog|કેટલોગ|કૅટલોગ|menu|મેનુ|મેન્યુ|list|લિસ્ટ|price\s?list|rate\s?list|પ્રાઇસ\s?લિસ્ટ|ભાવ|બધા\s?ભાવ)[\s?.!)]*$/iu', $t);
 }
 
-/** Try the interactive message first (Meta); otherwise send the numbered
- *  text version and remember the number->route map for the reply. */
+/**
+ * Send one menu screen as tap-buttons, on whichever number this goes out of.
+ *
+ * Meta (when it is the number in use) gets its own interactive message. The
+ * gateway gets the numbered text WITH the same choices as buttons under it -
+ * so a tap works, and a typed number still works if a phone shows no
+ * buttons. This used to try Meta whenever Meta's keys were filled in, even
+ * when the customer had written to the gateway's number.
+ */
 function wa_catalog_deliver($mobile, array $interactive, $text, array $map = []) {
     require_once __DIR__ . '/wa_meta.php';
-    if (meta_wa_configured()) {
+    if (wa_providers()[0] === 'meta' && meta_wa_configured()) {
         [$ok, ] = meta_wa_send_interactive($mobile, $interactive);
         if ($ok) { wa_chat_log($mobile, 'out', $text, 'meta', '', (string)($GLOBALS['_wa_last_msg_id'] ?? '')); return 'interactive'; }
     }
     if ($map) wa_bot_set_state($mobile, 'catalog_pick', $map);
-    return send_whatsapp($mobile, $text) ? 'text-menu' : 'send-failed';
+    $buttons = wa_interactive_buttons($interactive);
+    return send_whatsapp($mobile, $text, '', $buttons) ? ($buttons ? 'buttons' : 'text-menu') : 'send-failed';
+}
+
+/** The choices of a Meta interactive message as wa_btn() buttons. */
+function wa_interactive_buttons(array $i) {
+    $b = [];
+    foreach ($i['action']['buttons'] ?? [] as $x)
+        if (isset($x['reply']['id'])) $b[] = wa_btn($x['reply']['title'] ?? $x['reply']['id'], 'id', $x['reply']['id']);
+    foreach ($i['action']['sections'] ?? [] as $sec)
+        foreach ($sec['rows'] ?? [] as $r) $b[] = wa_btn($r['title'] ?? $r['id'], 'id', $r['id']);
+    if (($i['type'] ?? '') === 'cta_url' && !empty($i['action']['parameters']['url']))
+        $b[] = wa_btn($i['action']['parameters']['display_text'] ?? 'Open', 'url', $i['action']['parameters']['url']);
+    return $b;
 }
 
 /** Route one menu tap / number reply to the right screen. */
@@ -275,18 +295,14 @@ function wa_bot_party_for($mobile) {
 function wa_lang_picker($mobile) {
     $prompt = wa_t('lang_prompt', ['shop' => setting('app_name', 'AK Computer')]);
     $langs = wa_langs_enabled();
-    require_once __DIR__ . '/wa_meta.php';
-    if (meta_wa_configured()) {
-        $btns = [];
-        foreach (array_slice($langs, 0, 3) as $L) $btns[] = ['type' => 'reply', 'reply' => ['id' => 'lang:' . $L, 'title' => wa_lang_name($L)]];
-        [$ok, ] = meta_wa_send_interactive($mobile, ['type' => 'button', 'body' => ['text' => $prompt], 'action' => ['buttons' => $btns]]);
-        if ($ok) { wa_chat_log($mobile, 'out', $prompt . "\n[" . implode('] [', array_map('wa_lang_name', $langs)) . ']', 'meta', '', (string)($GLOBALS['_wa_last_msg_id'] ?? '')); return 'lang-buttons'; }
+    $txt = $prompt; $map = []; $btns = []; $n = 1;
+    foreach ($langs as $L) {
+        $txt .= "\n*$n)* " . wa_lang_name($L); $map[(string)$n] = 'lang:' . $L; $n++;
+        $btns[] = ['type' => 'reply', 'reply' => ['id' => 'lang:' . $L, 'title' => wa_lang_name($L)]];
     }
-    $txt = $prompt; $map = []; $n = 1;
-    foreach ($langs as $L) { $txt .= "\n*$n)* " . wa_lang_name($L); $map[(string)$n] = 'lang:' . $L; $n++; }
     $txt .= "\n\n" . wa_t('reply_number');
-    if ($map) wa_bot_set_state($mobile, 'catalog_pick', $map);
-    return send_whatsapp($mobile, $txt) ? 'lang-text' : 'send-failed';
+    $st = wa_catalog_deliver($mobile, ['type' => 'button', 'body' => ['text' => $prompt], 'action' => ['buttons' => array_slice($btns, 0, 3)]], $txt, $map);
+    return $st === 'send-failed' ? $st : 'lang-' . $st;
 }
 
 /** The main menu / welcome, in the customer's language: 3 tap-buttons
@@ -294,25 +310,13 @@ function wa_lang_picker($mobile) {
 function wa_bot_send_home($mobile) {
     $shop = setting('app_name', 'AK Computer');
     $hello = wa_t('welcome', ['shop' => $shop]);
-    if (wa_catalog_on()) {
-        require_once __DIR__ . '/wa_meta.php';
-        [$bok, ] = meta_wa_configured() ? meta_wa_send_interactive($mobile, [
-            'type' => 'button',
-            'body' => ['text' => $hello],
-            'action' => ['buttons' => [
-                ['type' => 'reply', 'reply' => ['id' => 'cats:0', 'title' => wa_cat_cut(wa_t('btn_catalog'), 20)]],
-                ['type' => 'reply', 'reply' => ['id' => 'portal:menu', 'title' => wa_cat_cut(wa_t('btn_account'), 20)]],
-                ['type' => 'reply', 'reply' => ['id' => 'portal:stmt', 'title' => wa_cat_cut(wa_t('btn_stmt'), 20)]],
-            ]],
-        ]) : [false, ''];
-        if ($bok) {
-            wa_chat_log($mobile, 'out', $hello . "\n\n[" . wa_t('btn_catalog') . '] [' . wa_t('btn_account') . '] [' . wa_t('btn_stmt') . ']', 'meta', '', (string)($GLOBALS['_wa_last_msg_id'] ?? ''));
-            return 'home-buttons';
-        }
-    }
     $map = ['1' => 'cats:0', '2' => 'portal:menu', '3' => 'portal:stmt', '4' => 'lang:pick'];
-    wa_bot_set_state($mobile, 'catalog_pick', $map);
-    return send_whatsapp($mobile, $hello . wa_t('welcome_opts')) ? 'home-text' : 'send-failed';
+    $btns = [['id' => 'portal:menu', 'title' => wa_t('btn_account')], ['id' => 'portal:stmt', 'title' => wa_t('btn_stmt')]];
+    if (wa_catalog_on()) array_unshift($btns, ['id' => 'cats:0', 'title' => wa_t('btn_catalog')]);
+    $st = wa_catalog_deliver($mobile, ['type' => 'button', 'body' => ['text' => $hello], 'action' => ['buttons' => array_map(
+        fn($b) => ['type' => 'reply', 'reply' => ['id' => $b['id'], 'title' => wa_cat_cut($b['title'], 20)]], $btns)]],
+        $hello . wa_t('welcome_opts'), $map);
+    return $st === 'send-failed' ? $st : 'home-' . $st;
 }
 
 /** "I need 4 કેમેરા લગાડવા છે" (પછી IP/HD) -> stock-based mini quotation. */
@@ -373,7 +377,7 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
     // (menu taps, trigger keywords like "hi"/"menu" and language picks skip
     // the 15s brake - those must ALWAYS answer, whatever happened before;
     // same for a "2" reply while a numbered text menu is waiting)
-    $isMenuTap = (bool)preg_match('/^(cats:|cat:|item:|act:|portal:|lang:)/', trim($text))
+    $isMenuTap = (bool)preg_match('/^(cats:|cat:|item:|act:|portal:|lang:|task:|staff:)/', trim($text))
         || wa_catalog_kw(mb_strtolower(trim($text)))
         || wa_is_trigger($text)
         || wa_portal_want(mb_strtolower(trim($text))) !== null
@@ -384,11 +388,18 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
     // staff/owner? their WhatsApp number matches an active user -> the bot
     // becomes a shop assistant (answers straight from the database, free)
     $staff = row("SELECT * FROM users WHERE is_active = 1 AND mobile <> '' AND ? LIKE CONCAT('%', RIGHT(REPLACE(REPLACE(mobile, '+', ''), ' ', ''), 10)) LIMIT 1", [$mobile]);
+    // A customer button tapped from a staff number (the owner trying the
+    // customer side, or staff who also buy) opens the customer screen - it
+    // only ever shows what belongs to that same number.
+    if ($staff && preg_match('/^(portal:|cats:|cat:|item:|lang:)/', trim($text))) $staff = null;
     $role = $staff ? 'owner' : 'customer';
 
     $matches = []; $photoGuess = ''; $reply = null; $usedAi = 0;
 
-    if ($staff && trim($text) !== '' && !$jpeg) {
+    if ($staff && !$jpeg && ($sst = wa_staff_route($staff, $mobile, trim($text))) !== null) {
+        wa_bot_log_it($mobile, $text, null, '👷 ' . $sst, 0, 0, $role);
+        return 'staff:' . $sst;
+    } elseif ($staff && trim($text) !== '' && !$jpeg) {
         $reply = wa_bot_owner_answer($text, $usedAi, $staff);
     } elseif ($jpeg) {
         $photoGuess = (string)wa_bot_identify_photo($jpeg);
@@ -662,4 +673,82 @@ function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
     if ($err || $out === null || trim($out) === '') return null;
     $usedAi = 1;
     return "🤖 " . mb_substr(trim($out), 0, 700);
+}
+
+/** Does this staff member's role allow $perm? (No session on a webhook, so
+ *  the same rule can() applies, read straight from their role.) */
+function wa_staff_can(array $staff, $perm) {
+    $r = row('SELECT r.permissions FROM roles r WHERE r.id = ?', [(int)($staff['role_id'] ?? 0)]);
+    $perms = array_merge(json_decode($r['permissions'] ?? '[]', true) ?: [], json_decode($staff['permissions'] ?? '[]', true) ?: []);
+    return in_array('*', $perms, true) || in_array($perm, $perms, true);
+}
+
+/** The buttons under one field task, for the staff member it is assigned to. */
+function wa_task_buttons(array $t) {
+    $b = [];
+    if ($t['status'] === 'assigned') $b[] = wa_btn(wa_t('st_start'), 'id', 'task:start:' . $t['id']);
+    $b[] = wa_btn(wa_t($t['status'] === 'started' ? 'st_finish' : 'st_open'), 'url', base_url('tasks.php?action=view&id=' . $t['id']));
+    if (trim((string)$t['customer_mobile']) !== '') $b[] = wa_btn(wa_t('st_call'), 'phone', $t['customer_mobile']);
+    return $b;
+}
+
+/** Send the message about a new task to the staff member it is assigned to. */
+function wa_task_notify(array $staff, array $t) {
+    if (trim((string)$staff['mobile']) === '') return false;
+    $was = $GLOBALS['_wa_lang'] ?? null;
+    $GLOBALS['_wa_lang'] = wa_lang_of(wa_normalize_number($staff['mobile'])) ?: wa_lang_default();
+    $ok = send_whatsapp($staff['mobile'], wa_template('task', [
+        'task_no' => $t['task_no'], 'customer' => $t['customer_name'], 'mobile' => $t['customer_mobile'],
+        'address' => $t['address'], 'work' => $t['description'],
+    ]), '', wa_task_buttons($t));
+    $GLOBALS['_wa_lang'] = $was;
+    return $ok;
+}
+
+/**
+ * The staff side of the chat, all by buttons:
+ *   a greeting / staff:menu - their menu
+ *   staff:tasks             - their open field tasks, one button each
+ *   task:open:ID            - one task, with Start / Open / Call
+ *   task:start:ID           - starts it, the same as Start on the screen
+ * Only a task assigned to THIS staff member answers - a forwarded button
+ * does nothing for anyone else. Finishing stays on the screen: it books
+ * material out of their stock and a service charge, which want the form.
+ * Returns a status, or null to let the shop assistant answer as before.
+ */
+function wa_staff_route(array $staff, $mobile, $t) {
+    $GLOBALS['_wa_lang'] = wa_lang_of($mobile) ?: wa_lang_default();
+    if ($t === 'staff:menu' || wa_is_trigger($t)) {
+        $b = [wa_btn(wa_t('st_tasks'), 'id', 'staff:tasks')];
+        if (wa_staff_can($staff, 'reports.view')) $b[] = wa_btn(wa_t('st_today'), 'id', 'sales');
+        $b[] = wa_btn('🌐 ' . setting('app_name', 'AK Computer'), 'url', base_url('index.php'));
+        return send_whatsapp($mobile, wa_t('st_menu_body', ['name' => $staff['name']]), '', $b) ? 'menu' : 'menu-failed';
+    }
+    if ($t === 'staff:tasks') {
+        $ts = all("SELECT * FROM tasks WHERE assigned_to = ? AND status IN ('assigned','started')
+                   ORDER BY status = 'started' DESC, scheduled_date IS NULL, scheduled_date, id LIMIT 10", [$staff['id']]);
+        if (!$ts) return send_whatsapp($mobile, wa_t('st_none')) ? 'tasks-none' : 'tasks-failed';
+        $txt = wa_t('st_list_head', ['n' => count($ts)]); $b = [];
+        foreach ($ts as $x) {
+            $txt .= "\n\n" . ($x['status'] === 'started' ? '▶️' : '🕒') . " *{$x['task_no']}* — {$x['customer_name']}"
+                  . ($x['scheduled_date'] ? ' · ' . dmy($x['scheduled_date']) : '') . "\n" . mb_substr((string)$x['description'], 0, 80);
+            $b[] = wa_btn($x['task_no'] . ' ' . $x['customer_name'], 'id', 'task:open:' . $x['id']);
+        }
+        return send_whatsapp($mobile, $txt, '', $b) ? 'tasks' : 'tasks-failed';
+    }
+    if (!preg_match('/^task:(open|start):(\d+)$/', $t, $m)) return null;
+    $task = row("SELECT * FROM tasks WHERE id = ? AND assigned_to = ? AND status IN ('assigned','started')", [(int)$m[2], $staff['id']]);
+    if (!$task) return send_whatsapp($mobile, wa_t('st_not_yours')) ? 'task-denied' : 'task-failed';
+    if ($m[1] === 'start' && $task['status'] === 'assigned') {
+        q("UPDATE tasks SET status = 'started', start_time = NOW() WHERE id = ? AND status = 'assigned'", [$task['id']]);
+        log_activity('task_start', $task['task_no'] . ' (WhatsApp, ' . $staff['name'] . ')');
+        $task['status'] = 'started';
+        $txt = wa_t('st_started', ['no' => $task['task_no'], 'time' => date('h:i A')]);
+    } else {
+        $txt = ($task['status'] === 'started' ? '▶️' : '🕒') . " *{$task['task_no']}*\n👤 {$task['customer_name']}"
+             . ($task['customer_mobile'] ? " ({$task['customer_mobile']})" : '')
+             . ($task['address'] ? "\n📍 {$task['address']}" : '') . "\n🛠 {$task['description']}"
+             . ($task['scheduled_date'] ? "\n📅 " . dmy($task['scheduled_date']) : '');
+    }
+    return send_whatsapp($mobile, $txt, '', wa_task_buttons($task)) ? 'task-' . $m[1] : 'task-failed';
 }

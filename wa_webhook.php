@@ -124,6 +124,13 @@ if (isset($p['interactive']) && is_array($p['interactive'])) {
     }
 }
 
+// Gateway button tap: the message text is the button's id already; keep
+// its label for the Inbox, the same as a Meta tap above.
+if (isset($p['button']) && is_array($p['button']) && trim((string)($p['button']['id'] ?? '')) !== '') {
+    $text = trim((string)$p['button']['id']);
+    $waTapTitle = trim((string)($p['button']['text'] ?? '')) ?: $text;
+}
+
 // image: either a fetchable URL or inline base64
 $jpeg = null;
 $mediaUrl = (string)($p['media_url'] ?? $p['mediaUrl'] ?? $p['image'] ?? $p['imageUrl'] ?? $p['url'] ?? '');

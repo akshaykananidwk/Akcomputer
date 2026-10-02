@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                 send_whatsapp(post('customer_mobile'), wa_template('repair_status', [
                     'job_no' => post('job_no'), 'device' => post('device_type'),
                     'status_line' => $stMsg[post('status')],
-                ]));
+                ]), '', wa_customer_buttons(post('customer_mobile'), 'repair'));
             }
         }
         // job handed back to customer - ask for feedback once, separately
@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             send_whatsapp(post('customer_mobile'), wa_template('repair_received', [
                 'job_no' => doc_no('JOB', $id), 'device' => trim(post('device_type') . ' ' . post('brand_model')),
                 'problem' => post('problem'), 'customer' => post('customer_name'),
-            ]));
+            ]), '', wa_customer_buttons(post('customer_mobile'), 'repair'));
         }
         flash('Job sheet ' . doc_no('JOB', $id) . ' created.');
     }
@@ -209,7 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'share_report') {
         if (post('notify') && $job['customer_mobile']) {
             send_whatsapp($job['customer_mobile'], wa_template('service_report', [
                 'customer' => $job['customer_name'] ?: 'Customer', 'job_no' => $job['job_no'], 'link' => $link,
-            ]));
+            ]), '', array_merge([wa_btn('📄 Service report', 'url', $link)], array_slice(wa_customer_buttons($job['customer_mobile'], 'repair'), 0, 2)));
             flash('Service report link sent on WhatsApp: ' . $link);
         } else {
             flash('Service report link: ' . $link);

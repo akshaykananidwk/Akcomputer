@@ -137,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
                 'amount' => money($amount), 'mode' => post('mode', 'cash'), 'date' => dmy(post('pay_date', today())),
                 'alloc' => ($allocNotes ? 'Against: ' . implode(', ', $allocNotes) . "\n" : '') . $discLine,
                 'balance' => $balTxt, 'party' => $party['name'],
-            ]));
+            ]), '', wa_customer_buttons($party['mobile'], 'receipt'));
         }
         flash(($dir === 'in' ? 'Payment-In' : 'Payment-Out') . ' of ₹' . money($amount) . ' saved'
             . ($discount > 0.009 ? ' + discount Rs ' . money($discount) : '')
@@ -203,7 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'remind') {
             'firm' => $s['company_name'], 'invoice_no' => $s['invoice_no'], 'date' => dmy($s['sale_date']),
             'due' => money($trueDue),
             'due_date_line' => $s['due_date'] ? 'Due date: ' . dmy($s['due_date']) . "\n" : '',
-        ]));
+        ]), '', wa_customer_buttons($s['customer_mobile'], 'due', $s, $trueDue));
         flash('Reminder sent on WhatsApp.');
     } else {
         flash('No customer mobile on this bill.', 'error');

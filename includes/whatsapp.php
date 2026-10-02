@@ -177,10 +177,81 @@ function wa_thirdparty_configured() {
 }
 
 /**
- * Send through the THIRD-PARTY gateway. Returns true on success.
- * $media_url (optional) sends an image/document with $message as caption.
+ * Tap-buttons under a message - one shape for the whole app.
+ *
+ * Each button is ['title' => what it says] plus exactly one of:
+ *   'id'    => reply button: the tap comes back to wa_webhook.php as a
+ *              message whose text is this id (portal:stmt, task:start:5 ...)
+ *   'url'   => opens a link        'phone' => starts a call
+ *   'code'  => copies a code (UPI id, coupon)
+ * The gateway draws them as real buttons. Meta draws reply buttons and a
+ * single link button; anything it cannot draw is written out under the text,
+ * so a link or phone number is never lost whichever number the message
+ * leaves from.
  */
-function wa_send_thirdparty($mobile, $message, $media_url = '') {
+function wa_btn($title, $kind, $value) {
+    return ['title' => (string)$title, $kind => (string)$value];
+}
+
+/** The buttons in the gateway's own format; broken ones are dropped. */
+function wa_gateway_buttons(array $buttons) {
+    $out = [];
+    foreach ($buttons as $b) {
+        $t = trim(preg_replace('/\s+/u', ' ', (string)($b['title'] ?? '')));
+        if ($t === '') continue;
+        if (mb_strlen($t) > 25) $t = mb_substr($t, 0, 24) . '…';
+        if (isset($b['id']) && $b['id'] !== '') $out[] = ['type' => 'reply', 'text' => $t, 'id' => mb_substr($b['id'], 0, 64)];
+        elseif (!empty($b['url']) && preg_match('#^https?://#i', $b['url'])) $out[] = ['type' => 'url', 'text' => $t, 'url' => $b['url']];
+        elseif (!empty($b['phone']) && strlen(wa_normalize_number($b['phone'])) >= 12) $out[] = ['type' => 'call', 'text' => $t, 'phone' => wa_normalize_number($b['phone'])];
+        elseif (isset($b['code']) && $b['code'] !== '') $out[] = ['type' => 'copy', 'text' => $t, 'code' => mb_substr($b['code'], 0, 200)];
+    }
+    return array_slice($out, 0, 10);
+}
+
+/** Link / call / copy buttons written out as text, for a channel that cannot
+ *  draw them. Reply buttons are left out: typed, they would mean nothing. */
+function wa_buttons_text(array $buttons) {
+    $lines = [];
+    foreach (wa_gateway_buttons($buttons) as $b) {
+        if ($b['type'] === 'url') $lines[] = $b['text'] . ': ' . $b['url'];
+        elseif ($b['type'] === 'call') $lines[] = $b['text'] . ': +' . $b['phone'];
+        elseif ($b['type'] === 'copy') $lines[] = $b['text'] . ': ' . $b['code'];
+    }
+    return $lines ? "\n\n" . implode("\n", $lines) : '';
+}
+
+/** The same buttons as a Meta interactive message, or null when Meta has no
+ *  shape for them (a mix of links and replies, or more than ten). */
+function wa_buttons_interactive($text, array $buttons) {
+    $g = wa_gateway_buttons($buttons);
+    if (!$g) return null;
+    $replies = array_values(array_filter($g, fn($b) => $b['type'] === 'reply'));
+    $body = ['text' => mb_substr($text, 0, 1024)];
+    $cut = fn($s, $n) => mb_strlen($s) > $n ? mb_substr($s, 0, $n - 1) . '…' : $s;
+    if (count($replies) === count($g) && count($g) <= 3)
+        return ['type' => 'button', 'body' => $body, 'action' => ['buttons' => array_map(
+            fn($b) => ['type' => 'reply', 'reply' => ['id' => $b['id'], 'title' => $cut($b['text'], 20)]], $g)]];
+    if (count($replies) === count($g))
+        return ['type' => 'list', 'body' => $body, 'action' => ['button' => $cut(function_exists('wa_t') ? wa_t('menu_btn') : 'Menu', 20),
+            'sections' => [['title' => $cut(setting('app_name', 'AK Computer'), 24), 'rows' => array_map(
+                fn($b) => ['id' => $b['id'], 'title' => $cut($b['text'], 24)], $g)]]]];
+    if (count($g) === 1 && $g[0]['type'] === 'url')
+        return ['type' => 'cta_url', 'body' => $body, 'action' => ['name' => 'cta_url',
+            'parameters' => ['display_text' => $cut($g[0]['text'], 20), 'url' => $g[0]['url']]]];
+    return null;
+}
+
+/**
+ * Send through the THIRD-PARTY gateway. Returns true on success.
+ * $media_url (optional) sends an image/document with $message as caption;
+ * $buttons (optional, see wa_btn) go under it as tap-buttons.
+ *
+ * POST with a JSON body, as the gateway asks: the API key used to ride in
+ * the URL, where every proxy and server log along the way wrote it down.
+ * A gateway that only understands the old GET form gets one retry that way,
+ * so a shop on some other provider keeps working.
+ */
+function wa_send_thirdparty($mobile, $message, $media_url = '', array $buttons = []) {
     $GLOBALS['_wa_last_error'] = '';
     $api_url    = rtrim(setting('wa_api_url', 'https://bulk.akdwk.in/api.php'), '/');
     $session_id = setting('wa_session_id', '');
@@ -199,33 +270,45 @@ function wa_send_thirdparty($mobile, $message, $media_url = '') {
         'api_key' => $api_key,
     ];
     if ($media_url) $params['media_url'] = $media_url;
+    $btns = wa_gateway_buttons($buttons);
+    if ($btns) $params['buttons'] = $btns;
 
-    $url = $api_url . '?' . http_build_query($params);
+    [$resp, $httpCode] = wa_http('POST', $api_url, $params);
+    // An old GET-only gateway: try once more the old way (buttons cannot
+    // travel in a URL, so they are written out instead).
+    if ($httpCode === 404 || $httpCode === 405) {
+        unset($params['buttons']);
+        $params['message'] = $message . wa_buttons_text($buttons);
+        [$resp, $httpCode] = wa_http('GET', $api_url . '?' . http_build_query($params));
+    }
+    $ok = wa_interpret_response($resp, $httpCode);
+    if ($ok) api_usage_log('whatsapp', 'gateway', 0, 1); // own recharge - counted, not costed
+    else { log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
+           if (function_exists('app_error')) app_error('whatsapp', 'send failed to ' . $number . ': ' . whatsapp_last_error(), 'whatsapp.php'); }
+    return $ok;
+}
 
+/** One HTTP call to the gateway: [body|false, http code]. */
+function wa_http($method, $url, array $json = null) {
+    if (isset($GLOBALS['_wa_http_mock'])) return ($GLOBALS['_wa_http_mock'])($method, $url, $json);
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 20,
-            CURLOPT_SSL_VERIFYPEER => true,
-        ]);
+        $opt = [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_SSL_VERIFYPEER => true];
+        if ($method === 'POST') $opt += [CURLOPT_POST => true, CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => json_encode($json, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)];
+        curl_setopt_array($ch, $opt);
         $resp = curl_exec($ch);
-        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        $ok = wa_interpret_response($resp, $httpCode);
-        if ($ok) api_usage_log('whatsapp', 'gateway', 0, 1); // own recharge - counted, not costed
-        else { log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
-               if (function_exists('app_error')) app_error('whatsapp', 'send failed to ' . $number . ': ' . whatsapp_last_error(), 'whatsapp.php'); }
-        return $ok;
+        return [$resp, $code];
     }
-    $ctx = stream_context_create(['http' => ['timeout' => 20, 'ignore_errors' => true]]);
-    $resp = @file_get_contents($url, false, $ctx);
-    $httpCode = 200;
-    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) $httpCode = (int)$m[1];
-    $ok = wa_interpret_response($resp, $httpCode);
-    if (!$ok) { log_activity('whatsapp_send_fail', mb_substr($number . ': ' . whatsapp_last_error(), 0, 400));
-                if (function_exists('app_error')) app_error('whatsapp', 'send failed to ' . $number . ': ' . whatsapp_last_error(), 'whatsapp.php'); }
-    return $ok;
+    $http = ['timeout' => 20, 'ignore_errors' => true, 'method' => $method];
+    if ($method === 'POST') $http += ['header' => "Content-Type: application/json\r\n",
+        'content' => json_encode($json, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)];
+    $resp = @file_get_contents($url, false, stream_context_create(['http' => $http]));
+    $code = 200;
+    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) $code = (int)$m[1];
+    return [$resp, $code];
 }
 
 /**
@@ -234,29 +317,35 @@ function wa_send_thirdparty($mobile, $message, $media_url = '') {
  * Meta (Facebook) Cloud API (includes/wa_meta.php). The wa_provider_order
  * setting decides which goes FIRST; if the primary fails or isn't
  * configured, the other automatically takes over as backup.
+ * $buttons (optional, see wa_btn) become tap-buttons under the message.
  */
-function send_whatsapp($mobile, $message, $media_url = '') {
+function send_whatsapp($mobile, $message, $media_url = '', array $buttons = []) {
     require_once __DIR__ . '/wa_meta.php';
     $order = wa_providers();
     $errs = [];
     $sent = false;
+    $logged = $message . wa_buttons_label($buttons);
     foreach ($order as $p) {
         if ($p === 'meta') {
             if (!meta_wa_configured()) { $errs[] = 'Meta: not configured'; continue; }
-            if (meta_wa_send($mobile, $message, $media_url)) { $sent = true; break; }
+            // Buttons first when Meta can draw them; outside the 24-hour
+            // window it refuses, and the plain message (a template) goes.
+            $ia = !$media_url && $buttons ? wa_buttons_interactive($message, $buttons) : null;
+            if ($ia && meta_wa_send_interactive($mobile, $ia)[0]) { $sent = true; break; }
+            if (meta_wa_send($mobile, $message . wa_buttons_text($buttons), $media_url)) { $sent = true; break; }
             $errs[] = 'Meta: ' . whatsapp_last_error();
             log_activity('whatsapp_send_fail', mb_substr('meta ' . wa_normalize_number($mobile) . ': ' . whatsapp_last_error(), 0, 400));
             if (function_exists('app_error')) app_error('whatsapp', 'meta send failed to ' . wa_normalize_number($mobile) . ': ' . whatsapp_last_error(), 'whatsapp.php');
         } else {
             if (!wa_thirdparty_configured()) { $errs[] = 'Gateway: not configured'; continue; }
-            if (wa_send_thirdparty($mobile, $message, $media_url)) { $sent = true; break; }
+            if (wa_send_thirdparty($mobile, $message, $media_url, $buttons)) { $sent = true; break; }
             $errs[] = 'Gateway: ' . whatsapp_last_error();
         }
     }
     $ctxKind = is_array($GLOBALS['_wa_ctx'] ?? null) ? ($GLOBALS['_wa_ctx']['kind'] ?? '') : '';
     $GLOBALS['_wa_ctx'] = []; // the context only ever applies to one send
     if ($sent) {
-        wa_chat_log($mobile, 'out', $ctxKind === 'otp' ? '🔐 [OTP message]' : $message, $p, $media_url,
+        wa_chat_log($mobile, 'out', $ctxKind === 'otp' ? '🔐 [OTP message]' : $logged, $p, $media_url,
                     (string)($GLOBALS['_wa_last_msg_id'] ?? ''));
         wa_mark_send(true);
         return true;
@@ -264,6 +353,44 @@ function send_whatsapp($mobile, $message, $media_url = '') {
     $GLOBALS['_wa_last_error'] = $errs ? implode(' | ', $errs) : 'No WhatsApp provider is configured (Settings > WhatsApp).';
     wa_mark_send(false, $GLOBALS['_wa_last_error']);
     return false;
+}
+
+/**
+ * The buttons a message to a CUSTOMER carries, by what the message is about:
+ *   bill    - pay this bill (when something is due), statement, menu
+ *   due     - pay, statement, call the shop
+ *   receipt - statement, my bills, menu
+ *   repair  - repair status, call the shop, menu
+ * Labels follow the language that customer chose in the chat. Reply buttons
+ * only go out while the bot is switched on - with nobody to answer, a button
+ * that does nothing is worse than none. Link and call buttons always go.
+ */
+function wa_customer_buttons($mobile, $kind, array $sale = null, $due = null) {
+    require_once __DIR__ . '/wa_lang.php';
+    $was = $GLOBALS['_wa_lang'] ?? null;
+    $GLOBALS['_wa_lang'] = wa_lang_of(wa_normalize_number($mobile)) ?: wa_lang_default();
+    $bot = setting('wa_bot_enabled', '0') === '1';
+    $phone = setting('wa_shop_number', '') ?: (string)val('SELECT phone FROM companies ORDER BY id LIMIT 1');
+    $b = [];
+    if ($kind === 'bill' || $kind === 'due') {
+        if ($due === null) $due = $sale ? (float)$sale['total'] - (float)$sale['paid'] : 0;
+        if ($sale && $due > 0.009) $b[] = wa_btn(wa_t('btn_pay', ['amt' => money($due)]), 'url', invoice_pay_url($sale));
+        elseif ($kind === 'due' && $bot) $b[] = wa_btn(wa_t('m_pay'), 'id', 'portal:pay');
+    }
+    if ($kind === 'repair' && $bot) $b[] = wa_btn(wa_t('m_repairs'), 'id', 'portal:repairs');
+    if ($kind !== 'repair' && $bot) $b[] = wa_btn(wa_t('btn_stmt'), 'id', 'portal:stmt');
+    if ($kind === 'receipt' && $bot) $b[] = wa_btn(wa_t('m_bills'), 'id', 'portal:bills');
+    if (($kind === 'due' || $kind === 'repair') && $phone !== '') $b[] = wa_btn(wa_t('btn_call'), 'phone', $phone);
+    if ($kind !== 'due' && $bot) $b[] = wa_btn(wa_t('btn_menu'), 'id', 'portal:menu');
+    $GLOBALS['_wa_lang'] = $was;
+    if ($was === null) unset($GLOBALS['_wa_lang']);
+    return array_slice($b, 0, 3);
+}
+
+/** "[Pay] [Statement]" - how the buttons look in the Inbox history. */
+function wa_buttons_label(array $buttons) {
+    $g = wa_gateway_buttons($buttons);
+    return $g ? "\n[" . implode('] [', array_column($g, 'text')) . ']' : '';
 }
 
 /** Chat-history log (WhatsApp Inbox). Tolerant of the table not existing
@@ -399,7 +526,7 @@ function sale_whatsapp_send($saleId, $mobile = null) {
     wa_context(['kind' => 'bill', 'invoice' => $sale['invoice_no'], 'total' => money($sale['total']),
                 'firm' => $sale['company_name'], 'link' => $link]);
 
-    if (send_whatsapp($mobile, $msg, $pdfUrl)) {
+    if (send_whatsapp($mobile, $msg, $pdfUrl, wa_customer_buttons($mobile, 'bill', $sale, $due))) {
         log_activity('sale_whatsapp', $sale['invoice_no'] . ' to ' . $mobile);
         return ['ok' => true, 'error' => '', 'mobile' => $mobile, 'pdf' => $pdfUrl];
     }
