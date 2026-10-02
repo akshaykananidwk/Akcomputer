@@ -977,7 +977,7 @@ a.kpi:hover { box-shadow: 0 4px 14px rgba(15,23,42,.12); transform: translateY(-
      phone is told that these rows are read at a glance. */
   .rl-scan tr { display: flex; flex-wrap: wrap; align-items: baseline;
                 padding: 10px 12px; gap: 0 8px; }
-  .rl-scan td { display: inline; width: auto; padding: 0; text-align: left; }
+  .rl-scan td { display: inline; width: auto; padding: 0; text-align: left; border: 0; }
   .rl-scan td::before { content: none; }
   .rl-scan td.rl-main { order: 1; flex: 1 1 55%; font-size: 14.5px; font-weight: 700;
                         min-width: 0; overflow-wrap: anywhere; }
@@ -996,6 +996,18 @@ a.kpi:hover { box-shadow: 0 4px 14px rgba(15,23,42,.12); transform: translateY(-
   .rl-scan td:not(.rl-main):not(.num):not(:last-child)::after {
                    content: '·'; margin: 0 2px 0 6px; color: var(--line); }
   .rl-scan td:empty { display: none; }
+  /* Optional third line: a note, with small row buttons at its right
+     (expenses). A second zero-height break keeps it off the strip. */
+  .rl-scan tr::before { content: ''; order: 5; flex: 0 0 100%; height: 0; }
+  .rl-scan td.rl-note:not(.rl-main):not(.num) { order: 6; flex: 1 1 0; min-width: 0; margin-top: 4px;
+                        font-size: 12.5px; color: var(--text); overflow-wrap: anywhere; }
+  .rl-scan td.rl-act:not(.rl-main):not(.num) { order: 7; flex: 0 0 auto; margin: 4px 0 0 auto;
+                        font-size: inherit; color: inherit; }
+  /* no middot after the strip's last item, the note or the buttons */
+  .rl-scan td.rl-note::after, .rl-scan td.rl-act::after,
+  .rl-scan td:has(+ td.rl-note)::after { content: none !important; }
+  .rl-scan td.rl-act .btn { padding: 4px 9px; font-size: 12px; min-height: 0; line-height: 1.4; }
+  .rl-scan td.rl-act form { display: inline; }
 
   /* ================================================================
      .rl-auto — EVERY OTHER TABLE IN THE SOFTWARE, ON A PHONE

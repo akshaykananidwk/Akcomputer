@@ -171,17 +171,19 @@ foreach ($rows as $rw) { if (expense_is_home($rw['category'])) $homeTot += (floa
   <?php endif; ?>
 </div>
 <div class="table-wrap">
-<table>
-  <thead><tr><th>Date</th><th>Category</th><th class="num">Amount</th><th>Mode</th><th>Notes</th><th>By</th><th></th></tr></thead>
+<!-- rl-scan: on a phone, category and amount on the first line, date ·
+     mode · who as a small strip, then the note with small Edit / ✕ -->
+<table class="rowlist rl-scan">
+  <thead><tr><th>Category</th><th class="num">Amount</th><th>Date</th><th>Mode</th><th>By</th><th>Notes</th><th></th></tr></thead>
   <tbody><?php foreach ($rows as $x): ?>
     <tr>
-      <td><?= dmy($x['exp_date']) ?></td>
-      <td><?= e($x['category']) ?></td>
+      <td class="rl-main"><?= e($x['category']) ?></td>
       <td class="num">₹<?= money($x['amount']) ?></td>
-      <td><?= e($x['mode']) ?></td>
-      <td><?= e($x['notes']) ?></td>
+      <td><?= dmy($x['exp_date']) ?></td>
+      <td><?= e(ucfirst((string)$x['mode'])) ?></td>
       <td><?= e($x['by_name']) ?></td>
-      <td style="white-space:nowrap"><?php if (can('expenses.edit')): ?>
+      <td class="rl-note"><?= e($x['notes']) ?></td>
+      <td class="rl-act" style="white-space:nowrap"><?php if (can('expenses.edit')): ?>
         <a class="btn btn-sm btn-outline" href="expenses.php?edit=<?= $x['id'] ?>">✏️ Edit</a><?php endif; ?>
         <?php if (can('expenses.delete')): ?>
         <form method="post" style="display:inline" onsubmit="return confirm('Delete?')"><?= csrf_field() ?>
