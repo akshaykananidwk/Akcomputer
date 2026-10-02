@@ -20,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'reply') {
     $to = preg_replace('/\D/', '', post('to'));
     $body = trim(post('body'));
     if ($to !== '' && $body !== '') {
+        wa_context(['kind' => 'human']);
         if (send_whatsapp($to, $body)) flash('Message sent ✔');
         else flash('Send error: ' . whatsapp_last_error(), 'error');
     }

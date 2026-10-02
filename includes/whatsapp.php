@@ -349,7 +349,9 @@ function send_whatsapp($mobile, $message, $media_url = '', array $buttons = [], 
     $ctxKind = is_array($GLOBALS['_wa_ctx'] ?? null) ? ($GLOBALS['_wa_ctx']['kind'] ?? '') : '';
     $GLOBALS['_wa_ctx'] = []; // the context only ever applies to one send
     if ($sent) {
-        wa_chat_log($mobile, 'out', $ctxKind === 'otp' ? '🔐 [OTP message]' : $logged, $p, $media_url,
+        // a reply typed by a person in the Inbox is marked as such: while one
+        // is talking, the bot keeps out of that chat (wa_human_active)
+        wa_chat_log($mobile, 'out', $ctxKind === 'otp' ? '🔐 [OTP message]' : $logged, $ctxKind === 'human' ? 'inbox' : $p, $media_url,
                     (string)($GLOBALS['_wa_last_msg_id'] ?? ''));
         wa_mark_send(true);
         return true;

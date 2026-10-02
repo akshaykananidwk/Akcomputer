@@ -94,7 +94,27 @@ if (isset($p['messages'][0]) && is_array($p['messages'][0])) $p = array_merge($p
 
 // never react to our own outgoing messages or group chats
 $fromMe = $p['fromMe'] ?? $p['from_me'] ?? $p['self'] ?? false;
-if ($fromMe === true || $fromMe === 'true' || $fromMe === 1 || $fromMe === '1') die(json_encode(['ok' => true, 'status' => 'own-message']));
+$fromMe = $fromMe === true || $fromMe === 'true' || $fromMe === 1 || $fromMe === '1';
+// The owner typed a reply on the shop's phone (the gateway reports it as
+// type "phone_reply"). It goes in the Inbox history, and it tells the bot a
+// person is handling this chat - see wa_human_active().
+if ($fromMe && (string)($p['type'] ?? '') === 'phone_reply') {
+    $to = preg_replace('/\D/', '', explode('@', (string)($p['sender'] ?? $p['to'] ?? ''))[0]);
+    $body = trim((string)(is_array($p['message'] ?? null) ? '' : ($p['message'] ?? '')));
+    // a message this software itself sent a moment ago is not a person
+    // talking - if one ever came back this way, it must not silence the bot
+    $echo = $body !== '' && (bool)val("SELECT COUNT(*) FROM wa_chats WHERE mobile = ? AND direction = 'out' AND via NOT IN ('phone', 'inbox')
+                                       AND created_at > DATE_SUB(NOW(), INTERVAL 3 MINUTE) AND LEFT(body, 200) = LEFT(?, 200)",
+                                      [wa_normalize_number($to), $body]);
+    if (!$echo && strlen(wa_normalize_number($to)) >= 12 && !wa_is_group($p))
+        wa_chat_log($to, 'out', $body !== '' ? $body : '📎 [media]', 'phone');
+    if ($echo) die(json_encode(['ok' => true, 'status' => 'own-message']));
+    die(json_encode(['ok' => true, 'status' => 'human-reply-noted']));
+}
+if ($fromMe) die(json_encode(['ok' => true, 'status' => 'own-message']));
+// the gateway's own auto-replies come back as "outgoing_message" - never
+// treat them as something the customer said
+if ((string)($p['event'] ?? '') === 'outgoing_message') die(json_encode(['ok' => true, 'status' => 'own-message']));
 // A group message is never answered. The shop's number is in a lot of
 // groups, and the bot was replying PRIVATELY to whoever posted in one of
 // them - an unasked-for message to a stranger, in the shop's name. The whole
@@ -211,7 +231,7 @@ $notify = function ($botStatus) use ($mobile, $text, $isStaffSender, $waTapTitle
     // which is the one failure that matters here.
     $noReply = ['unknown', 'bad-number', 'send-failed', 'bot-off', 'rate-limited',
                 'empty', 'gone', 'quote-gone', 'bill-denied', 'pay-denied', 'repair-denied'];
-    $ignored = ['own-echo', 'silent'];                       // deliberately not answered
+    $ignored = ['own-echo', 'silent', 'human-chat'];                       // deliberately not answered
     if (in_array($botStatus, $ignored, true)) return;
     // A status can carry the failure inside it - "replied:send-failed",
     // "portal:bills-failed" - and those matter MORE than an unknown word,

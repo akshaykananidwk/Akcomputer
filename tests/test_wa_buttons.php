@@ -223,3 +223,44 @@ $GLOBALS['_wa_sent'] = [];
 wa_bot_handle('919811100001', 'portal:bill:' . $sid);
 t_ok('and still only for their own number', strpos($last()['json']['message'] ?? '', $sale['invoice_no']) === false);
 unset($GLOBALS['_wa_http_mock']);
+
+t_group('WhatsApp bot: stays out of a chat a person is having');
+$GLOBALS['_wa_http_mock'] = function ($method, $url, $json) {
+    $GLOBALS['_wa_sent'][] = ['method' => $method, 'url' => $url, 'json' => $json];
+    return ['{"status":"success"}', 200];
+};
+set_setting('wa_human_pause_min', '60');
+$cust = '919833300004';
+q('DELETE FROM wa_chats WHERE mobile = ?', [$cust]);
+q('DELETE FROM wa_bot_log WHERE mobile = ?', [$cust]);
+t_ok('nobody has replied: the bot may answer', !wa_human_active($cust));
+wa_chat_log($cust, 'out', '16000 આવશે', 'phone');
+t_ok('the owner replied from the phone: a person is handling it', wa_human_active($cust));
+$GLOBALS['_wa_sent'] = [];
+$st = wa_bot_handle($cust, 'Credit card chale');
+t_eq('so a question in that chat gets no bot reply', $st, 'human-chat');
+t_eq('nothing is sent', count($GLOBALS['_wa_sent']), 0);
+$st = wa_bot_handle($cust, 'portal:menu');
+t_eq('but a button tap still answers', $st, 'portal:menu');
+q("UPDATE wa_chats SET created_at = DATE_SUB(NOW(), INTERVAL 61 MINUTE) WHERE mobile = ? AND via = 'phone'", [$cust]);
+t_ok('an hour later the bot is back', !wa_human_active($cust));
+set_setting('wa_human_pause_min', '0');
+wa_chat_log($cust, 'out', 'x', 'phone');
+t_ok('0 minutes = the bot never steps aside', !wa_human_active($cust));
+set_setting('wa_human_pause_min', '60');
+q('DELETE FROM wa_chats WHERE mobile = ?', [$cust]);
+wa_chat_log($cust, 'out', 'Bill sent', 'thirdparty');
+t_ok('the software\'s own messages do not count as a person', !wa_human_active($cust));
+wa_context(['kind' => 'human']);
+send_whatsapp($cust, 'Typed in the Inbox');
+t_eq('a reply typed in the Inbox is marked as a person\'s', val("SELECT via FROM wa_chats WHERE mobile = ? ORDER BY id DESC LIMIT 1", [$cust]), 'inbox');
+t_ok('and counts the same', wa_human_active($cust));
+
+q('DELETE FROM wa_chats WHERE mobile = ?', [$cust]);
+q("INSERT INTO wa_bot_log (mobile, in_text, reply, used_ai, sender_role, sent) VALUES (?, 'emi?', '🙏 Our team will reply', 1, 'customer', 1)", [$cust]);
+t_ok('the AI "our team will reply" goes once per conversation, not per message', strpos(file_get_contents(__DIR__ . '/../includes/wa_bot.php'),
+     "AND used_ai = 1 AND reply IS NOT NULL\n                               AND created_at > DATE_SUB(NOW(), INTERVAL 6 HOUR)") !== false);
+$hook = file_get_contents(__DIR__ . '/../wa_webhook.php');
+t_ok('the webhook records the owner\'s phone reply', strpos($hook, "=== 'phone_reply'") !== false && strpos($hook, "wa_chat_log(\$to, 'out'") !== false);
+t_ok('and ignores the gateway\'s own auto-replies', strpos($hook, "=== 'outgoing_message') die(") !== false);
+unset($GLOBALS['_wa_http_mock']);

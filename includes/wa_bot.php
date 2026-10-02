@@ -402,6 +402,12 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
 
     $matches = []; $photoGuess = ''; $reply = null; $usedAi = 0;
 
+    // a person is handling this chat: only taps and menu words still answer
+    if (!$staff && !$isMenuTap && wa_human_active($mobile)) {
+        wa_bot_log_it($mobile, $text, $jpeg, null, 0, 0, $role);
+        return 'human-chat';
+    }
+
     if ($staff && !$jpeg && ($sst = wa_staff_route($staff, $mobile, trim($text))) !== null) {
         wa_bot_log_it($mobile, $text, null, '👷 ' . $sst, 0, 0, $role);
         return 'staff:' . $sst;
@@ -512,7 +518,11 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
             $matches = wa_bot_search($text);
             if ($matches) {
                 $reply = wa_bot_reply_text($matches);
-            } elseif (mb_strlen(trim($text)) >= 5 && wa_bot_ai_allowed()) {
+            } elseif (mb_strlen(trim($text)) >= 5 && wa_bot_ai_allowed()
+                      // one "our team will reply" per conversation is help;
+                      // one per message is the bot talking over the team
+                      && !val("SELECT COUNT(*) FROM wa_bot_log WHERE mobile = ? AND used_ai = 1 AND reply IS NOT NULL
+                               AND created_at > DATE_SUB(NOW(), INTERVAL 6 HOUR)", [$mobile])) {
                 // local search understood nothing - ONE tiny AI call so the
                 // customer still gets a helpful 1-2 line answer
                 $reply = wa_bot_ai_reply($text);
@@ -679,6 +689,24 @@ function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
     if ($err || $out === null || trim($out) === '') return null;
     $usedAi = 1;
     return "🤖 " . mb_substr(trim($out), 0, 700);
+}
+
+/**
+ * Is a PERSON talking to this customer right now?
+ *
+ * The owner answers customers from the shop's phone, and the bot kept
+ * cutting in - "our team will reply soon" three times in a conversation the
+ * team was already having. A reply typed on the phone (reported by the
+ * gateway) or in the Inbox counts; for the next wa_human_pause_min minutes
+ * (default 60) the bot answers only menu taps and buttons in that chat.
+ */
+function wa_human_active($mobile) {
+    $min = max(0, (int)setting('wa_human_pause_min', '60'));
+    if ($min === 0) return false;
+    try {
+        return (bool)val("SELECT COUNT(*) FROM wa_chats WHERE mobile = ? AND direction = 'out' AND via IN ('phone', 'inbox')
+                          AND created_at > DATE_SUB(NOW(), INTERVAL ? MINUTE)", [wa_normalize_number($mobile), $min]);
+    } catch (Exception $e) { return false; }
 }
 
 /** Does this staff member's role allow $perm? (No session on a webhook, so
