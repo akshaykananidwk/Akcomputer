@@ -251,7 +251,16 @@ function wa_buttons_interactive($text, array $buttons) {
  * A gateway that only understands the old GET form gets one retry that way,
  * so a shop on some other provider keeps working.
  */
-function wa_send_thirdparty($mobile, $message, $media_url = '', array $buttons = []) {
+function wa_send_thirdparty($mobile, $message, $media_url = '', array $buttons = [], $footer = '') {
+    // The gateway's button message loses its line breaks: a statement or a
+    // bill arrived as one run-on paragraph. So anything longer than a line
+    // goes as an ordinary message first, exactly as written, and the buttons
+    // follow it under one short line of their own.
+    if (wa_gateway_buttons($buttons) && strpos(trim($message), "\n") !== false) {
+        if (!wa_send_thirdparty($mobile, $message, $media_url)) return false;
+        return wa_send_thirdparty($mobile, $footer !== '' && mb_strlen($footer) <= 60 && strpos($footer, "\n") === false
+            ? $footer : wa_buttons_prompt($mobile), '', $buttons);
+    }
     $GLOBALS['_wa_last_error'] = '';
     $api_url    = rtrim(setting('wa_api_url', 'https://bulk.akdwk.in/api.php'), '/');
     $session_id = setting('wa_session_id', '');
@@ -272,6 +281,7 @@ function wa_send_thirdparty($mobile, $message, $media_url = '', array $buttons =
     if ($media_url) $params['media_url'] = $media_url;
     $btns = wa_gateway_buttons($buttons);
     if ($btns) $params['buttons'] = $btns;
+    if ($btns && trim($footer) !== '') $params['footer'] = mb_substr(trim($footer), 0, 60);
 
     [$resp, $httpCode] = wa_http('POST', $api_url, $params);
     // An old GET-only gateway: try once more the old way (buttons cannot
@@ -319,7 +329,7 @@ function wa_http($method, $url, array $json = null) {
  * configured, the other automatically takes over as backup.
  * $buttons (optional, see wa_btn) become tap-buttons under the message.
  */
-function send_whatsapp($mobile, $message, $media_url = '', array $buttons = []) {
+function send_whatsapp($mobile, $message, $media_url = '', array $buttons = [], $footer = '') {
     require_once __DIR__ . '/wa_meta.php';
     $order = wa_providers();
     $errs = [];
@@ -330,7 +340,7 @@ function send_whatsapp($mobile, $message, $media_url = '', array $buttons = []) 
             if (!meta_wa_configured()) { $errs[] = 'Meta: not configured'; continue; }
             // Buttons first when Meta can draw them; outside the 24-hour
             // window it refuses, and the plain message (a template) goes.
-            $ia = !$media_url && $buttons ? wa_buttons_interactive($message, $buttons) : null;
+            $ia = !$media_url && $buttons ? wa_buttons_interactive(trim($message . ($footer !== '' ? "\n\n" . $footer : '')), $buttons) : null;
             if ($ia && meta_wa_send_interactive($mobile, $ia)[0]) { $sent = true; break; }
             if (meta_wa_send($mobile, $message . wa_buttons_text($buttons), $media_url)) { $sent = true; break; }
             $errs[] = 'Meta: ' . whatsapp_last_error();
@@ -338,7 +348,7 @@ function send_whatsapp($mobile, $message, $media_url = '', array $buttons = []) 
             if (function_exists('app_error')) app_error('whatsapp', 'meta send failed to ' . wa_normalize_number($mobile) . ': ' . whatsapp_last_error(), 'whatsapp.php');
         } else {
             if (!wa_thirdparty_configured()) { $errs[] = 'Gateway: not configured'; continue; }
-            if (wa_send_thirdparty($mobile, $message, $media_url, $buttons)) { $sent = true; break; }
+            if (wa_send_thirdparty($mobile, $message, $media_url, $buttons, $footer)) { $sent = true; break; }
             $errs[] = 'Gateway: ' . whatsapp_last_error();
         }
     }
@@ -385,6 +395,17 @@ function wa_customer_buttons($mobile, $kind, array $sale = null, $due = null) {
     $GLOBALS['_wa_lang'] = $was;
     if ($was === null) unset($GLOBALS['_wa_lang']);
     return array_slice($b, 0, 3);
+}
+
+/** The one line that carries the buttons under a longer message, in the
+ *  language that number chose. */
+function wa_buttons_prompt($mobile) {
+    require_once __DIR__ . '/wa_lang.php';
+    $was = $GLOBALS['_wa_lang'] ?? null;
+    $GLOBALS['_wa_lang'] = wa_lang_of(wa_normalize_number($mobile)) ?: wa_lang_default();
+    $t = wa_t('btn_prompt');
+    if ($was === null) unset($GLOBALS['_wa_lang']); else $GLOBALS['_wa_lang'] = $was;
+    return $t;
 }
 
 /** "[Pay] [Statement]" - how the buttons look in the Inbox history. */

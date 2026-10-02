@@ -223,7 +223,7 @@ function wa_portal_route($mobile, $id) {
                 $out .= "\n• " . dmy($l['d']) . ' — ' . $label . ' — ₹' . money($l['amt']);
             }
         }
-        $out .= "\n\n" . wa_t('stmt_footer') . ($bal > 0.009 ? wa_t('stmt_pay') : '');
+        // (the old "type 'bill' / type 'pay'" line is the buttons now)
         $btn = [wa_btn(wa_t('m_bills'), 'id', 'portal:bills'), wa_btn(wa_t('btn_menu'), 'id', 'portal:menu')];
         if ($bal > 0.009) array_unshift($btn, wa_btn(wa_t('m_pay'), 'id', 'portal:pay'));
         send_whatsapp($mobile, $out, '', $btn);

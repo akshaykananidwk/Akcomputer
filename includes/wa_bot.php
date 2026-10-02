@@ -163,7 +163,14 @@ function wa_catalog_deliver($mobile, array $interactive, $text, array $map = [])
     }
     if ($map) wa_bot_set_state($mobile, 'catalog_pick', $map);
     $buttons = wa_interactive_buttons($interactive);
-    return send_whatsapp($mobile, $text, '', $buttons) ? ($buttons ? 'buttons' : 'text-menu') : 'send-failed';
+    if (!$buttons) return send_whatsapp($mobile, $text) ? 'text-menu' : 'send-failed';
+    // With buttons the numbered list is only noise: the title goes in bold
+    // and a short line of help under it, and the choices are the buttons.
+    $head = trim((string)($interactive['header']['text'] ?? ''));
+    $body = trim((string)($interactive['body']['text'] ?? ''));
+    [$msg, $foot] = $head !== '' ? ['*' . $head . '*', $body] : [$body, ''];
+    if ($foot !== '' && (mb_strlen($foot) > 60 || strpos($foot, "\n") !== false)) { $msg .= "\n\n" . $foot; $foot = ''; }
+    return send_whatsapp($mobile, $msg !== '' ? $msg : $text, '', $buttons, $foot) ? 'buttons' : 'send-failed';
 }
 
 /** The choices of a Meta interactive message as wa_btn() buttons. */
