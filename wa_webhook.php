@@ -231,7 +231,7 @@ $notify = function ($botStatus) use ($mobile, $text, $isStaffSender, $waTapTitle
     // which is the one failure that matters here.
     $noReply = ['unknown', 'bad-number', 'send-failed', 'bot-off', 'rate-limited',
                 'empty', 'gone', 'quote-gone', 'bill-denied', 'pay-denied', 'repair-denied'];
-    $ignored = ['own-echo', 'silent', 'human-chat'];                       // deliberately not answered
+    $ignored = ['own-echo', 'silent', 'human-chat', 'ignored'];                       // deliberately not answered
     if (in_array($botStatus, $ignored, true)) return;
     // A status can carry the failure inside it - "replied:send-failed",
     // "portal:bills-failed" - and those matter MORE than an unknown word,

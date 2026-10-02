@@ -264,3 +264,43 @@ $hook = file_get_contents(__DIR__ . '/../wa_webhook.php');
 t_ok('the webhook records the owner\'s phone reply', strpos($hook, "=== 'phone_reply'") !== false && strpos($hook, "wa_chat_log(\$to, 'out'") !== false);
 t_ok('and ignores the gateway\'s own auto-replies', strpos($hook, "=== 'outgoing_message') die(") !== false);
 unset($GLOBALS['_wa_http_mock']);
+
+t_group('WhatsApp bot: staff chats, links and personal numbers');
+$GLOBALS['_wa_http_mock'] = function ($method, $url, $json) {
+    $GLOBALS['_wa_sent'][] = ['method' => $method, 'url' => $url, 'json' => $json];
+    return ['{"status":"success"}', 200];
+};
+set_setting('wa_human_pause_min', '60');
+$fieldRole2 = (int)val("SELECT id FROM roles WHERE name = 'Field Staff'");
+q("INSERT INTO users (name, username, mobile, password, role_id, location_id, is_active) VALUES ('Raj Test', 'raj_bot_t', '9844400005', 'x', ?, ?, 1)",
+  [$fieldRole2 ?: (int)val('SELECT id FROM roles ORDER BY id DESC LIMIT 1'), (int)val('SELECT id FROM locations ORDER BY id LIMIT 1')]);
+$raj = row('SELECT * FROM users WHERE id = ?', [insert_id()]);
+q('DELETE FROM wa_chats WHERE mobile = ?', ['919844400005']);
+$u0 = 0;
+t_ok('a staff member without report rights is told no sales', strpos((string)wa_bot_owner_answer('aaj nu sales ketlu', $u0, $raj), 'Today') === false);
+t_eq('nor the cash', wa_bot_owner_answer('cash ketli che', $u0, $raj), null);
+t_eq('a two-word chat line from staff gets no bot reply', wa_bot_owner_answer('Kenu ..?', $u0, $raj), null);
+t_ok('stock questions still answer for staff', strpos((string)wa_bot_owner_answer('stock zzzznothing', $u0, $raj), 'No item') !== false);
+$boss = row("SELECT u.* FROM users u JOIN roles r ON r.id = u.role_id WHERE r.permissions LIKE '%*%' LIMIT 1");
+t_ok('the owner still gets the figures', strpos((string)wa_bot_owner_answer('sales', $u0, $boss), 'Today') !== false);
+wa_chat_log('919844400005', 'out', 'voice note', 'phone');
+$GLOBALS['_wa_sent'] = [];
+t_eq('the owner talking to staff from the phone keeps the bot out of that chat too', wa_bot_handle('919844400005', 'No mistake hati kale kari dese'), 'human-chat');
+t_eq('nothing sent', count($GLOBALS['_wa_sent']), 0);
+
+$GLOBALS['_wa_sent'] = [];
+q('DELETE FROM wa_bot_log WHERE mobile = ?', ['919855500006']);
+q('DELETE FROM wa_chats WHERE mobile = ?', ['919855500006']);
+wa_lang_set('919855500006', 'hi');
+$st = wa_bot_handle('919855500006', 'Instagram: "reel" https://www.instagram.com/reel/abc/');
+t_eq('a forwarded Instagram link gets no reply', $st, 'silent');
+t_eq('not even the "type menu" nudge', count($GLOBALS['_wa_sent']), 0);
+
+set_setting('wa_bot_ignore', "98666 00007\n9877700008");
+$GLOBALS['_wa_sent'] = [];
+t_eq('a number on the never-answer list is ignored', wa_bot_handle('919866600007', 'hi'), 'ignored');
+t_eq('the second one too', wa_bot_handle('919877700008', 'menu'), 'ignored');
+t_eq('nothing goes to them', count($GLOBALS['_wa_sent']), 0);
+t_ok('anyone else is answered as before', wa_bot_handle('919888800009', 'hi') !== 'ignored');
+set_setting('wa_bot_ignore', '');
+unset($GLOBALS['_wa_http_mock']);

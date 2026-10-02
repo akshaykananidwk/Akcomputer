@@ -402,8 +402,14 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
 
     $matches = []; $photoGuess = ''; $reply = null; $usedAi = 0;
 
+    // family and friends on the shop's number: the bot never answers them
+    if (wa_bot_ignored($mobile)) {
+        wa_bot_log_it($mobile, $text, $jpeg, null, 0, 0, $role);
+        return 'ignored';
+    }
+
     // a person is handling this chat: only taps and menu words still answer
-    if (!$staff && !$isMenuTap && wa_human_active($mobile)) {
+    if (!$isMenuTap && wa_human_active($mobile)) {
         wa_bot_log_it($mobile, $text, $jpeg, null, 0, 0, $role);
         return 'human-chat';
     }
@@ -515,10 +521,13 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
         }
         // 4) product search (any language - matches name/brand/model/category)
         else {
-            $matches = wa_bot_search($text);
+            // a forwarded link (an Instagram reel, a YouTube video) is somebody
+            // sharing something, not a question for the shop
+            $isLink = (bool)preg_match('#https?://|www\.#i', $text);
+            $matches = $isLink ? [] : wa_bot_search($text);
             if ($matches) {
                 $reply = wa_bot_reply_text($matches);
-            } elseif (mb_strlen(trim($text)) >= 5 && wa_bot_ai_allowed()
+            } elseif (!$isLink && mb_strlen(trim($text)) >= 5 && wa_bot_ai_allowed()
                       // one "our team will reply" per conversation is help;
                       // one per message is the bot talking over the team
                       && !val("SELECT COUNT(*) FROM wa_bot_log WHERE mobile = ? AND used_ai = 1 AND reply IS NOT NULL
@@ -531,7 +540,7 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
             // nothing matched -> a short "type menu" nudge (once per 10 min,
             // so the bot never spams over a real conversation the owner is
             // having with the customer; switchable off in Settings)
-            if ($reply === null && setting('wa_bot_fallback', '1') === '1') {
+            if ($reply === null && !$isLink && setting('wa_bot_fallback', '1') === '1') {
                 $nudged = val("SELECT COUNT(*) FROM wa_bot_log WHERE mobile = ? AND reply IS NOT NULL AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)", [$mobile]);
                 if (!$nudged) $reply = wa_t('fallback');
             }
@@ -620,15 +629,19 @@ function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
         }
     }
 
+    // Sales, dues and cash are the owner's figures: a staff member whose role
+    // may not see reports gets none of them here either - they used to go to
+    // anyone whose number was in Users, in the middle of an ordinary chat.
+    $seesMoney = !$staffUser || wa_staff_can($staffUser, 'reports.view');
     if ($has('help', 'મદદ', 'menu')) {
         return "*$shop bot* 🤖 You can ask for:\n- today sales\n- credit outstanding\n- cash\n- stock <Item name>\n- orders\n- repairs\n- visitors\nType anything else and the AI gives a short answer.";
     }
-    if ($has('sale', 'sales', 'વેચાણ', 'vechan')) {
+    if ($seesMoney && $has('sale', 'sales', 'વેચાણ', 'vechan')) {
         $td = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t, COALESCE(SUM(total-paid),0) due FROM sales WHERE is_cancelled = 0 AND sale_date = CURDATE()");
         $mo = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date >= DATE_FORMAT(NOW(), '%Y-%m-01')");
         return "📊 *$shop*\nToday: *Rs " . money($td['t']) . "* ({$td['c']} bills, due Rs " . money($td['due']) . ")\nThis month: *Rs " . money($mo) . "*";
     }
-    if ($has('baki', 'udhar', 'ઉધાર', 'બાકી', 'લેણા', 'due', 'receive')) {
+    if ($seesMoney && $has('baki', 'udhar', 'ઉધાર', 'બાકી', 'લેણા', 'due', 'receive')) {
         $recv = 0; $pay = 0;
         $bx = party_balance_expr('p');
         foreach (all("SELECT $bx AS bal FROM parties p WHERE p.is_active = 1 OR ABS($bx) > 0.009") as $b) {
@@ -636,7 +649,7 @@ function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
         }
         return "💰 *$shop*\nTo receive: *Rs " . money($recv) . "*\nTo pay: *Rs " . money($pay) . "*";
     }
-    if ($has('cash', 'કેશ', 'રોકડ', 'bank', 'બેંક')) {
+    if ($seesMoney && $has('cash', 'કેશ', 'રોકડ', 'bank', 'બેંક')) {
         $cash = function_exists('total_cash_in_hand') ? total_cash_in_hand() : 0;
         $out = "💵 *$shop*\nTotal cash: *Rs " . money($cash) . "*";
         foreach (all('SELECT * FROM bank_accounts WHERE is_active = 1') as $b) {
@@ -674,7 +687,11 @@ function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
         return "🙏 At your service! 'help' send it for the list of all questions.";
     }
 
-    // free intents exhausted - one compact AI call with a tiny shop snapshot
+    // free intents exhausted - one compact AI call with a tiny shop snapshot.
+    // Not for a staff member who may not see the figures, and not for a
+    // two-word chat line ("Kenu..?", "ok") - that is people talking, and the
+    // bot answering it is the bot talking over them.
+    if (!$seesMoney || count(preg_split('/\s+/u', trim($text))) < 3) return null;
     if (!wa_bot_ai_allowed()) return "🤖 This month AI limit is used up. 'help' send it — direct questions (sales, cash, stock...) work free anyway.";
     $td = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date = CURDATE()");
     $mo = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date >= DATE_FORMAT(NOW(), '%Y-%m-01')");
@@ -707,6 +724,18 @@ function wa_human_active($mobile) {
         return (bool)val("SELECT COUNT(*) FROM wa_chats WHERE mobile = ? AND direction = 'out' AND via IN ('phone', 'inbox')
                           AND created_at > DATE_SUB(NOW(), INTERVAL ? MINUTE)", [wa_normalize_number($mobile), $min]);
     } catch (Exception $e) { return false; }
+}
+
+/** Is this number on the "bot never answers" list (Settings > WhatsApp
+ *  bot)? Matched on the last 10 digits, however it was typed. */
+function wa_bot_ignored($mobile) {
+    $mine = substr(preg_replace('/\D/', '', (string)$mobile), -10);
+    if (strlen($mine) < 10) return false;
+    foreach (preg_split('/[\r\n,;]+/', (string)setting('wa_bot_ignore', '')) as $n) {   // "98666 00007" is one number
+        $n = substr(preg_replace('/\D/', '', $n), -10);
+        if ($n !== '' && $n === $mine) return true;
+    }
+    return false;
 }
 
 /** Does this staff member's role allow $perm? (No session on a webhook, so
