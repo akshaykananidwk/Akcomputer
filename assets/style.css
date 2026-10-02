@@ -414,6 +414,7 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .flash-success { background: #d1fae5; color: #065f46; }
 .flash-error { background: #fee2e2; color: #991b1b; }
 .flash-info { background: #e0f2fe; color: #075985; }
+.flash-warn { background: #fef3c7; color: #92400e; }
 
 /* ---------- Billing item rows ---------- */
 .bill-items { margin-bottom: 12px; }

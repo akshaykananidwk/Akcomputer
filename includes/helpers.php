@@ -925,6 +925,25 @@ function default_margin_pct() {
  *  Explicit per-item margin recalculates exactly (old behaviour); the
  *  default margin only ever RAISES a price, never lowers one the owner
  *  set higher. Services and zero-cost items are left alone. */
+/**
+ * Units on a purchase bill that have NO serial number recorded, per item:
+ * [item_id => count]. A bill saved before the item was switched to "serial
+ * tracked" has none at all; editing it used to demand every serial again,
+ * so the bill could never be saved for any other change. Those units may
+ * stay without one; anything new on the bill still needs its serial.
+ */
+function purchase_untracked_units($pid) {
+    $out = [];
+    foreach (all("SELECT pi.item_id, SUM(pi.qty) q,
+                         (SELECT COUNT(*) FROM item_serials s WHERE s.purchase_id = pi.purchase_id AND s.item_id = pi.item_id) sn
+                  FROM purchase_items pi JOIN items i ON i.id = pi.item_id
+                  WHERE pi.purchase_id = ? AND i.serial_tracked = 1 GROUP BY pi.item_id", [(int)$pid]) as $r) {
+        $gap = (int)round((float)$r['q']) - (int)$r['sn'];
+        if ($gap > 0) $out[(int)$r['item_id']] = $gap;
+    }
+    return $out;
+}
+
 function enforce_min_margin($itemId) {
     $it = row("SELECT purchase_price, selling_price, margin_pct, item_type FROM items WHERE id = ?", [$itemId]);
     if (!$it || $it['item_type'] === 'service' || (float)$it['purchase_price'] <= 0) return;

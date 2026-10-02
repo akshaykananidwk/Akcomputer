@@ -186,6 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     // detail on an older bill. The moved serials are PROTECTED below: they are
     // never deleted or duplicated (so their linked sale/warranty stays intact)
     // and they can't be removed from the bill.
+    $untracked = purchase_untracked_units($pid);   // units saved without a serial - may stay so
     $movedSerials = [];
     foreach (all("SELECT item_id, serial_no FROM item_serials WHERE purchase_id = ? AND status <> 'in_stock'", [$pid]) as $ms) {
         $movedSerials[(int)$ms['item_id']][] = $ms['serial_no'];
@@ -209,7 +210,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         // 4 serials with qty left at 1 becomes qty 4 automatically (no error).
         $serialsRaw = trim((string)($serials_in[$i] ?? ''));
         $snCount = $serialsRaw !== '' ? count(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $serialsRaw)))) : 0;
-        if ($snCount > 0) $qty = $snCount;
+        // ...except where the bill holds units saved without a serial: there
+        // the typed qty stands, and the serials cover what they can
+        if ($snCount > 0 && ($snCount > $qty || empty($untracked[$iid]))) $qty = $snCount;
         if (!$iid || $qty <= 0) { continue; }
         $tr = ($company && $company['is_gst']) ? (float)($taxes[$i] ?? 0) : 0;
         $rows[] = ['item_id' => $iid, 'qty' => $qty, 'price' => (float)($prices[$i] ?? 0),
@@ -258,7 +261,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
 
             if ($item['serial_tracked']) {
                 $sns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $r['serials']))));
-                if (count($sns) != $r['qty']) throw new Exception("Enter {$r['qty']} serial number(s) for {$item['name']} (one per line).");
+                $short = (int)round($r['qty']) - count($sns);
+                $allow = $untracked[(int)$r['item_id']] ?? 0;
+                if ($short < 0 || $short > $allow)
+                    throw new Exception("Enter {$r['qty']} serial number(s) for {$item['name']} (one per line)"
+                        . ($allow ? " — $allow of them were saved without a serial and may stay blank, so at least " . max(0, (int)round($r['qty']) - $allow) . ' are needed' : '') . '.');
+                $untracked[(int)$r['item_id']] = $allow - $short;   // the same item twice on one bill shares it
                 // A serial that already moved on must stay on the bill.
                 $movedForItem = $movedSerials[(int)$r['item_id']] ?? [];
                 $missing = array_diff($movedForItem, $sns);
@@ -339,12 +347,14 @@ if ($action === 'new' || $action === 'edit') {
             }
         }
         unset($_ei);
+        $editUntracked = purchase_untracked_units($editPurchase['id']);
     }
     $parties = all("SELECT id, name, mobile, credit_days FROM parties WHERE is_active = 1 ORDER BY name");
     $page_title = $isEdit ? 'Edit Purchase #' . $editPurchase['id'] : 'New Purchase';
     include __DIR__ . '/includes/header.php';
     ?>
-    <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serial_tracked'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers are pre-filled - you can change them if needed.</div><?php endif; ?>
+    <?php if ($isEdit && !empty($editUntracked)): ?><div class="flash flash-warn">Some serial-tracked items on this bill were saved without serial numbers (<?= array_sum($editUntracked) ?> unit<?= array_sum($editUntracked) === 1 ? '' : 's' ?>). Add them if you have them, or leave them blank — the bill saves either way.</div>
+    <?php elseif ($isEdit && array_filter($editItems, fn($it) => $it['serial_tracked'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers are pre-filled - you can change them if needed.</div><?php endif; ?>
     <?php if ($isEdit && !is_full_admin() && strtotime($editPurchase['created_at']) < time() - 86400): ?><div class="flash flash-info">⏳ This bill is more than 24 hours old — saving will not apply the change directly, it goes for admin approval.</div><?php endif; ?>
     <form method="post">
       <?= csrf_field() ?>
@@ -487,6 +497,7 @@ if ($action === 'new' || $action === 'edit') {
             'id' => (int)$x['item_id'], 'name' => $x['name'], 'qty' => (float)$x['qty'],
             'price' => (float)$x['price'], 'tax' => (float)$x['tax_rate'],
             'serialTracked' => (int)$x['serial_tracked'], 'serials' => $x['serial_list'] ?? '',
+            'untracked' => (int)($editUntracked[(int)$x['item_id']] ?? 0),
         ], $editItems)) ?>;
         document.getElementById('company_id').value = '<?= (int)$editPurchase['company_id'] ?>';
         document.getElementById('party_id').value = '<?= (int)$editPurchase['party_id'] ?>';
@@ -507,10 +518,13 @@ if ($action === 'new' || $action === 'edit') {
           div.querySelector('.i-price').value = it.price;
           var extra = div.querySelector('.i-extra');
           if (it.serialTracked) {
-            extra.innerHTML = '<label class="mt">Serial numbers (one per line, count = qty)</label><textarea name="serials[]" rows="2"></textarea>';
+            extra.innerHTML = '<label class="mt">Serial numbers (one per line, count = qty)</label><textarea name="serials[]" rows="2"></textarea>'
+              + (it.untracked ? '<div class="muted" style="font-size:12px">' + it.untracked + ' unit(s) were saved without a serial number — add them if you have them, or leave them blank.</div>' : '');
             extra.querySelector('textarea').value = it.serials;
             div.dataset.hasSerialBox = '1';
-            Bill.wireSerialQtySync(div);
+            // with units saved serial-less, the typed qty stands: syncing it to
+            // the serial count would quietly drop those units from the bill
+            if (!it.untracked) Bill.wireSerialQtySync(div);
           } else {
             extra.innerHTML = '<input type="hidden" name="serials[]" value="">';
           }

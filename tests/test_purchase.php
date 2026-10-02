@@ -409,3 +409,25 @@ t_ok('the buckets still add up to the dead total', (function () {
     $s = dash_stock(0, 0);
     return abs(array_sum($s['dead_buckets']) - $s['dead_value']) < 0.011;
 })());
+
+t_group('Purchase edit: units saved without a serial number');
+$loc = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+$sup = t_party('PU Serial Supplier');
+$ssd = t_item(0, $loc, 1200);
+q('UPDATE items SET serial_tracked = 1 WHERE id = ?', [$ssd]);
+q("INSERT INTO purchases (company_id, bill_no, party_id, location_id, purchase_date, subtotal, total, paid, status, created_by)
+   VALUES (1, 'T-SN-1', ?, ?, CURDATE(), 1800, 1800, 0, 'due', 1)", [$sup, $loc]);
+$pu = insert_id();
+q('INSERT INTO purchase_items (purchase_id, item_id, qty, price, tax_rate, total) VALUES (?,?,3,600,0,1800)', [$pu, $ssd]);
+t_ok('a bill saved before serials were tracked: all 3 units have none', purchase_untracked_units($pu) === [$ssd => 3]);
+q("INSERT INTO item_serials (item_id, serial_no, location_id, status, purchase_id) VALUES (?, 'SNX-1', ?, 'in_stock', ?)", [$ssd, $loc, $pu]);
+t_ok('one serial added: 2 left without', purchase_untracked_units($pu) === [$ssd => 2]);
+q("INSERT INTO item_serials (item_id, serial_no, location_id, status, purchase_id) VALUES (?, 'SNX-2', ?, 'sold', ?), (?, 'SNX-3', ?, 'in_stock', ?)", [$ssd, $loc, $pu, $ssd, $loc, $pu]);
+t_ok('every unit has its serial: nothing is untracked', purchase_untracked_units($pu) === []);
+$plain = t_item(0, $loc);
+q('INSERT INTO purchase_items (purchase_id, item_id, qty, price, tax_rate, total) VALUES (?,?,5,10,0,50)', [$pu, $plain]);
+t_ok('an item that is not serial tracked is never counted', !isset(purchase_untracked_units($pu)[$plain]));
+$src = file_get_contents(__DIR__ . '/../purchases.php');
+t_ok('the edit save allows them to stay blank', strpos($src, '$untracked = purchase_untracked_units($pid);') !== false
+     && strpos($src, 'if ($short < 0 || $short > $allow)') !== false);
+t_ok('and the edit screen does not shrink the qty to the serial count', strpos($src, 'if (!it.untracked) Bill.wireSerialQtySync(div);') !== false);
