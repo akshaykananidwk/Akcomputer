@@ -767,3 +767,34 @@ t_ok('...and the icon, body and tone variants with it',
 // The table cell keeps its own 44px rule - that was never the problem.
 t_ok('a table action button is still thumb-sized',
      strpos($cssC, '.rowlist td.act .btn { min-height: 44px;') !== false);
+
+t_group('Staff birthdays on the owner\'s dashboard');
+$loc = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+$role = (int)val('SELECT id FROM roles ORDER BY id DESC LIMIT 1');
+$mk = function ($name, $dob, $active = 1) use ($loc, $role) {
+    q('INSERT INTO users (name, username, mobile, password, role_id, location_id, is_active, dob) VALUES (?,?,?,?,?,?,?,?)',
+      [$name, 'bd_' . md5($name), '', 'x', $role, $loc, $active, $dob]);
+};
+q('UPDATE users SET dob = NULL'); // only this test's people
+$mk('BD Tomorrow', '1995-03-18');
+$mk('BD Today', '1990-03-17');
+$mk('BD Next Week', '1992-03-24');
+$mk('BD Left Staff', '1993-03-18', 0);
+$mk('BD Leap', '2000-02-29');
+$bd = staff_birthdays_soon('2027-03-17');
+t_eq('today and tomorrow, nobody else', count($bd), 2);
+t_ok('today first, then tomorrow', $bd[0]['name'] === 'BD Today' && $bd[0]['days'] === 0 && $bd[1]['name'] === 'BD Tomorrow' && $bd[1]['days'] === 1);
+t_eq('the 18th shows on the 17th with its date', $bd[1]['date'], '2027-03-18');
+t_eq('with the age they turn', $bd[1]['age'], 32);
+t_ok('someone who has left is not shown', !in_array('BD Left Staff', array_column($bd, 'name'), true));
+t_ok('a 29 February birthday shows on the 27th in a normal year (for the 28th)',
+     ($l = staff_birthdays_soon('2027-02-27')) && $l[0]['name'] === 'BD Leap' && $l[0]['date'] === '2027-02-28');
+t_ok('and on the 28th itself in a leap year it is tomorrow', ($l = staff_birthdays_soon('2028-02-28')) && $l[0]['date'] === '2028-02-29');
+t_ok('across the new year: 31 Dec sees a 1 Jan birthday', (function () use ($mk) {
+    $mk('BD NewYear', '1988-01-01'); $l = staff_birthdays_soon('2026-12-31');
+    return $l && $l[0]['name'] === 'BD NewYear' && $l[0]['date'] === '2027-01-01'; })());
+t_eq('a date in the future is not a date of birth', user_dob_value(date('Y-m-d', strtotime('+2 days'))), null);
+t_eq('nor is a broken one', user_dob_value('2001-02-30'), null);
+t_eq('a real one is kept', user_dob_value('2001-02-28'), '2001-02-28');
+$idx = file_get_contents(__DIR__ . '/../index.php');
+t_ok('the dashboard shows it to the owner only', strpos($idx, "\$sBirthdays = is_full_admin() ? staff_birthdays_soon() : [];") !== false);

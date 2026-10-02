@@ -196,6 +196,8 @@ $dashCtx = [
     'promises_broken' => count($sPromises['broken']),
 ];
 $sActions = dash_actions($dashCtx);
+// staff birthdays - the day before and on the day, for the owner only
+$sBirthdays = is_full_admin() ? staff_birthdays_soon() : [];
 $sAlerts  = dash_alerts($dashCtx);
 $sSummary = $ctxKpis ? dash_summary($dashCtx) : '';
 
@@ -275,6 +277,11 @@ if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dash
     if ($waUnread): ?>
 <div class="flash flash-info">💬 <?= $waUnread ?> new WhatsApp message<?= $waUnread === 1 ? '' : 's' ?>. <a href="wa_inbox.php">Open the inbox →</a></div>
 <?php endif; endif; ?>
+<?php foreach ($sBirthdays as $bd): ?>
+<div class="flash flash-<?= $bd['days'] ? 'info' : 'success' ?>">🎂 <?= $bd['days'] ? 'Tomorrow (' . e(dmy($bd['date'])) . ') is' : '<b>Today</b> is' ?>
+  <b><?= e($bd['name']) ?></b>'s birthday<?= $bd['age'] > 0 && $bd['age'] < 100 ? ' — turning ' . (int)$bd['age'] : '' ?>.
+  <a href="users.php?action=edit&amp;id=<?= (int)$bd['id'] ?>">Open →</a></div>
+<?php endforeach; ?>
 
 <?php if ($seeMoney && $sBals): ?>
 <div class="hm-money">

@@ -61,6 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         q('UPDATE users SET name=?, username=?, mobile=?, role_id=?, location_id=?, permissions=?, is_active=? WHERE id=?',
           array_merge($data, [$id]));
         try { q('UPDATE users SET location_locked = ? WHERE id = ?', [post('location_locked') ? 1 : 0, $id]); } catch (Exception $e) {}
+        try { q('UPDATE users SET dob = ? WHERE id = ?', [user_dob_value(post('dob')), $id]); } catch (Exception $e) { /* pre-v86 */ }
         if (post('password') !== '') {
             q('UPDATE users SET password=?, password_changed_at=NOW() WHERE id=?', [password_hash(post('password'), PASSWORD_DEFAULT), $id]);
         }
@@ -71,7 +72,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if ($pwdErr) { flash($pwdErr, 'error'); redirect('users.php?action=new'); }
         q('INSERT INTO users (name, username, mobile, role_id, location_id, permissions, is_active, password, password_changed_at) VALUES (?,?,?,?,?,?,?,?,NOW())',
           array_merge($data, [password_hash(post('password'), PASSWORD_DEFAULT)]));
-        try { q('UPDATE users SET location_locked = ? WHERE id = ?', [post('location_locked') ? 1 : 0, insert_id()]); } catch (Exception $e) {}
+        $newId = insert_id();
+        try { q('UPDATE users SET location_locked = ? WHERE id = ?', [post('location_locked') ? 1 : 0, $newId]); } catch (Exception $e) {}
+        try { q('UPDATE users SET dob = ? WHERE id = ?', [user_dob_value(post('dob')), $newId]); } catch (Exception $e) { /* pre-v86 */ }
         flash('User created.');
     }
     log_activity('user_save', post('username'));
@@ -154,9 +157,10 @@ if ($action === 'new' || $action === 'edit') {
       <form method="post">
         <?= csrf_field() ?>
         <input type="hidden" name="do" value="save">
-        <div class="form-row cols-2">
+        <div class="form-row cols-3">
           <div><label>Name *</label><input type="text" name="name" value="<?= e($usr['name'] ?? '') ?>" required></div>
           <div><label>Username *</label><input type="text" name="username" value="<?= e($usr['username'] ?? '') ?>" required autocapitalize="none"></div>
+          <div><label>🎂 Date of birth</label><input type="date" name="dob" value="<?= e($usr['dob'] ?? '') ?>" max="<?= date('Y-m-d') ?>"></div>
         </div>
         <div class="form-row cols-3">
           <div><label>Mobile (WhatsApp, for OTP) *</label><input type="tel" name="mobile" value="<?= e($usr['mobile'] ?? '') ?>" required></div>

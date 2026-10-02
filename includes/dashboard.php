@@ -678,6 +678,42 @@ function dash_actions(array $ctx) {
 
 /** Rule-based business alerts. Same discipline as the Action Center: every
  *  one is a plain comparison against real data, never a prediction. */
+/** A date typed into the form, or null: an empty box, a bad date or one in
+ *  the future is no date of birth. */
+function user_dob_value($v) {
+    $v = trim((string)$v);
+    $d = DateTime::createFromFormat('!Y-m-d', $v);
+    return $d && $d->format('Y-m-d') === $v && $v <= date('Y-m-d') && $v >= '1900-01-01' ? $v : null;
+}
+
+/**
+ * Staff whose birthday is today or tomorrow, nearest first:
+ * [['id', 'name', 'days' => 0|1, 'date' => 'Y-m-d', 'age' => int], ...].
+ * Someone born on 29 February has it on the 28th in other years.
+ */
+function staff_birthdays_soon($today = null) {
+    $today = $today ?: date('Y-m-d');
+    try { $rows = all("SELECT id, name, dob FROM users WHERE is_active = 1 AND dob IS NOT NULL"); }
+    catch (Exception $e) { return []; } // before v86
+    $t = new DateTime($today);
+    $out = [];
+    foreach ($rows as $r) {
+        [$by, $bm, $bd] = array_map('intval', explode('-', $r['dob']));
+        foreach ([0, 1] as $days) {
+            $day = (clone $t)->modify("+$days day");
+            $y = (int)$day->format('Y');
+            $d = ($bm === 2 && $bd === 29 && !checkdate(2, 29, $y)) ? 28 : $bd;
+            if ((int)$day->format('n') === $bm && (int)$day->format('j') === $d) {
+                $out[] = ['id' => (int)$r['id'], 'name' => $r['name'], 'days' => $days,
+                          'date' => $day->format('Y-m-d'), 'age' => $y - $by];
+                break;
+            }
+        }
+    }
+    usort($out, fn($a, $b) => $a['days'] <=> $b['days'] ?: strcmp($a['name'], $b['name']));
+    return $out;
+}
+
 function dash_alerts(array $ctx) {
     $al = [];
     $k = $ctx['kpis'] ?? null;
