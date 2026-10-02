@@ -168,9 +168,8 @@ function wa_catalog_deliver($mobile, array $interactive, $text, array $map = [])
     // and a short line of help under it, and the choices are the buttons.
     $head = trim((string)($interactive['header']['text'] ?? ''));
     $body = trim((string)($interactive['body']['text'] ?? ''));
-    [$msg, $foot] = $head !== '' ? ['*' . $head . '*', $body] : [$body, ''];
-    if ($foot !== '' && (mb_strlen($foot) > 60 || strpos($foot, "\n") !== false)) { $msg .= "\n\n" . $foot; $foot = ''; }
-    return send_whatsapp($mobile, $msg !== '' ? $msg : $text, '', $buttons, $foot) ? 'buttons' : 'send-failed';
+    $msg = trim(($head !== '' ? '*' . $head . "*\n\n" : '') . $body);
+    return send_whatsapp($mobile, $msg !== '' ? $msg : $text, '', $buttons) ? 'buttons' : 'send-failed';
 }
 
 /** The choices of a Meta interactive message as wa_btn() buttons. */

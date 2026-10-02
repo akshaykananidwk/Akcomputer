@@ -74,24 +74,20 @@ t_ok('a refused send reports failure', !send_whatsapp('9876543210', 'x', '', [wa
 t_ok('with the gateway\'s own reason', strpos(whatsapp_last_error(), 'Button 2') !== false);
 $GLOBALS['_wa_reply'] = [200, '{"status":"success"}'];
 
-t_group('WhatsApp buttons: a long message keeps its lines');
-// the gateway's button message runs every line together, so a statement
-// came out as one paragraph
+t_group('WhatsApp buttons: one message, text and buttons together');
 $GLOBALS['_wa_sent'] = [];
 $ok = send_whatsapp('9876543210', "Statement\nLine one\nLine two", '', [wa_btn('Menu', 'id', 'portal:menu')]);
-t_ok('it goes as two sends', $ok && count($GLOBALS['_wa_sent']) === 2);
-t_ok('first the text itself, line breaks and all, with no buttons',
-     $GLOBALS['_wa_sent'][0]['json']['message'] === "Statement\nLine one\nLine two" && !isset($GLOBALS['_wa_sent'][0]['json']['buttons']));
-t_ok('then one short line carrying the buttons', strpos($GLOBALS['_wa_sent'][1]['json']['message'], "\n") === false
-     && ($GLOBALS['_wa_sent'][1]['json']['buttons'][0]['id'] ?? '') === 'portal:menu');
+t_ok('a long message goes as ONE send with its buttons', $ok && count($GLOBALS['_wa_sent']) === 1
+     && ($last()['json']['buttons'][0]['id'] ?? '') === 'portal:menu');
+t_ok('its line breaks are sent as they are', $last()['json']['message'] === "Statement\nLine one\nLine two");
+t_eq('the small grey footer names the shop', $last()['json']['footer'] ?? '', setting('app_name', 'AK Computer'));
 $GLOBALS['_wa_sent'] = [];
 send_whatsapp('9876543210', "Bill\nTotal 500", 'https://shop.test/a.pdf', [wa_btn('Pay', 'url', 'https://shop.test/pay')]);
-t_ok('a bill PDF goes with its full caption, the buttons after it',
-     ($GLOBALS['_wa_sent'][0]['json']['media_url'] ?? '') === 'https://shop.test/a.pdf' && empty($GLOBALS['_wa_sent'][1]['json']['media_url']));
+t_ok('a bill PDF rides in the same request (the gateway puts the file first)', count($GLOBALS['_wa_sent']) === 1
+     && ($last()['json']['media_url'] ?? '') === 'https://shop.test/a.pdf');
 $GLOBALS['_wa_sent'] = [];
-send_whatsapp('9876543210', '*My Account*', '', [wa_btn('Bills', 'id', 'portal:bills')], 'Choose what you need');
-t_ok('a one-line title goes as one message with its help line as the footer',
-     count($GLOBALS['_wa_sent']) === 1 && ($last()['json']['footer'] ?? '') === 'Choose what you need');
+send_whatsapp('9876543210', 'Plain text');
+t_ok('a message without buttons has no footer', !isset($last()['json']['footer']));
 
 t_group('WhatsApp buttons: the same buttons on the Meta number');
 $ia = wa_buttons_interactive('Hi', [wa_btn('A', 'id', 'a'), wa_btn('B', 'id', 'b')]);

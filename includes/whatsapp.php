@@ -252,15 +252,7 @@ function wa_buttons_interactive($text, array $buttons) {
  * so a shop on some other provider keeps working.
  */
 function wa_send_thirdparty($mobile, $message, $media_url = '', array $buttons = [], $footer = '') {
-    // The gateway's button message loses its line breaks: a statement or a
-    // bill arrived as one run-on paragraph. So anything longer than a line
-    // goes as an ordinary message first, exactly as written, and the buttons
-    // follow it under one short line of their own.
-    if (wa_gateway_buttons($buttons) && strpos(trim($message), "\n") !== false) {
-        if (!wa_send_thirdparty($mobile, $message, $media_url)) return false;
-        return wa_send_thirdparty($mobile, $footer !== '' && mb_strlen($footer) <= 60 && strpos($footer, "\n") === false
-            ? $footer : wa_buttons_prompt($mobile), '', $buttons);
-    }
+
     $GLOBALS['_wa_last_error'] = '';
     $api_url    = rtrim(setting('wa_api_url', 'https://bulk.akdwk.in/api.php'), '/');
     $session_id = setting('wa_session_id', '');
@@ -281,7 +273,9 @@ function wa_send_thirdparty($mobile, $message, $media_url = '', array $buttons =
     if ($media_url) $params['media_url'] = $media_url;
     $btns = wa_gateway_buttons($buttons);
     if ($btns) $params['buttons'] = $btns;
-    if ($btns && trim($footer) !== '') $params['footer'] = mb_substr(trim($footer), 0, 60);
+    // One message: the text with its buttons under it (a PDF, if any, goes
+    // just before it). The small grey footer names the shop.
+    if ($btns) $params['footer'] = mb_substr(trim(preg_replace('/\s+/u', ' ', $footer !== '' ? $footer : setting('app_name', 'AK Computer'))), 0, 60);
 
     [$resp, $httpCode] = wa_http('POST', $api_url, $params);
     // An old GET-only gateway: try once more the old way (buttons cannot
@@ -395,17 +389,6 @@ function wa_customer_buttons($mobile, $kind, array $sale = null, $due = null) {
     $GLOBALS['_wa_lang'] = $was;
     if ($was === null) unset($GLOBALS['_wa_lang']);
     return array_slice($b, 0, 3);
-}
-
-/** The one line that carries the buttons under a longer message, in the
- *  language that number chose. */
-function wa_buttons_prompt($mobile) {
-    require_once __DIR__ . '/wa_lang.php';
-    $was = $GLOBALS['_wa_lang'] ?? null;
-    $GLOBALS['_wa_lang'] = wa_lang_of(wa_normalize_number($mobile)) ?: wa_lang_default();
-    $t = wa_t('btn_prompt');
-    if ($was === null) unset($GLOBALS['_wa_lang']); else $GLOBALS['_wa_lang'] = $was;
-    return $t;
 }
 
 /** "[Pay] [Statement]" - how the buttons look in the Inbox history. */
