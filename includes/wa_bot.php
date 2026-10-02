@@ -379,7 +379,9 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
 
     // anti-loop / anti-spam: never answer the same person more than once per
     // 15 seconds, and never react to text identical to our own last reply
-    $recent = row('SELECT reply, created_at FROM wa_bot_log WHERE mobile = ? ORDER BY id DESC LIMIT 1', [$mobile]);
+    // (only what the bot actually SAID counts - a message it stayed silent on
+    // must not hold back the real command that follows it)
+    $recent = row('SELECT reply, created_at FROM wa_bot_log WHERE mobile = ? AND reply IS NOT NULL ORDER BY id DESC LIMIT 1', [$mobile]);
     // (menu taps, trigger keywords like "hi"/"menu" and language picks skip
     // the 15s brake - those must ALWAYS answer, whatever happened before;
     // same for a "2" reply while a numbered text menu is waiting)
@@ -406,6 +408,27 @@ function wa_bot_handle($mobile, $text, $jpeg = null) {
     if (wa_bot_ignored($mobile)) {
         wa_bot_log_it($mobile, $text, $jpeg, null, 0, 0, $role);
         return 'ignored';
+    }
+
+    // MENU ONLY (the default). The shop's number is also the owner's phone:
+    // family, staff and customers write to it all day, and the bot answered
+    // every line - a product search, an AI guess, a "type menu" nudge -
+    // in conversations that were people talking. Now it speaks only when
+    // spoken to: a menu word ("menu", "hi"...), a button tap or a menu
+    // number, an answer it asked for (the complaint text), an owner-set
+    // keyword reply, or a short staff command ("sales", "stock hp mouse",
+    // "ખર્ચ 50 ચા"). Everything else stays in the Inbox for a person.
+    if (wa_bot_menu_only() && !$isMenuTap) {
+        $t0 = trim((string)$text);
+        $st0 = wa_bot_get_state($mobile);
+        $asked = ($st0 && $st0['state'] === 'ticket_wait')
+            || preg_match('/^(ok|yes|no|na)\s+[A-Za-z]{2,5}-\d{2}-\d{2,6}$/i', $t0)
+            || ($t0 !== '' && wa_auto_reply(mb_strtolower($t0)) !== null)
+            || ($staff && !$jpeg && $t0 !== '' && count(preg_split('/\s+/u', $t0)) <= 4);
+        if (!$asked) {
+            wa_bot_log_it($mobile, $text, $jpeg, null, 0, 0, $role);
+            return 'menu-only';
+        }
     }
 
     // a person is handling this chat: only taps and menu words still answer
@@ -691,7 +714,7 @@ function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
     // Not for a staff member who may not see the figures, and not for a
     // two-word chat line ("Kenu..?", "ok") - that is people talking, and the
     // bot answering it is the bot talking over them.
-    if (!$seesMoney || count(preg_split('/\s+/u', trim($text))) < 3) return null;
+    if (!$seesMoney || count(preg_split('/\s+/u', trim($text))) < 3 || wa_bot_menu_only()) return null;
     if (!wa_bot_ai_allowed()) return "🤖 This month AI limit is used up. 'help' send it — direct questions (sales, cash, stock...) work free anyway.";
     $td = row("SELECT COUNT(*) c, COALESCE(SUM(total),0) t FROM sales WHERE is_cancelled = 0 AND sale_date = CURDATE()");
     $mo = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date >= DATE_FORMAT(NOW(), '%Y-%m-01')");
@@ -725,6 +748,10 @@ function wa_human_active($mobile) {
                           AND created_at > DATE_SUB(NOW(), INTERVAL ? MINUTE)", [wa_normalize_number($mobile), $min]);
     } catch (Exception $e) { return false; }
 }
+
+/** Menu-only mode (Settings > WhatsApp bot, on by default): the bot answers
+ *  menu words, taps and short staff commands, and nothing else. */
+function wa_bot_menu_only() { return setting('wa_bot_menu_only', '1') === '1'; }
 
 /** Is this number on the "bot never answers" list (Settings > WhatsApp
  *  bot)? Matched on the last 10 digits, however it was typed. */

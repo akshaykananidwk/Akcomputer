@@ -230,7 +230,7 @@ $notify = function ($botStatus) use ($mobile, $text, $isStaffSender, $waTapTitle
     // pattern, because a status this list forgets would go quietly unseen,
     // which is the one failure that matters here.
     $noReply = ['unknown', 'bad-number', 'send-failed', 'bot-off', 'rate-limited',
-                'empty', 'gone', 'quote-gone', 'bill-denied', 'pay-denied', 'repair-denied'];
+                'empty', 'gone', 'quote-gone', 'bill-denied', 'pay-denied', 'repair-denied', 'menu-only'];
     $ignored = ['own-echo', 'silent', 'human-chat', 'ignored'];                       // deliberately not answered
     if (in_array($botStatus, $ignored, true)) return;
     // A status can carry the failure inside it - "replied:send-failed",

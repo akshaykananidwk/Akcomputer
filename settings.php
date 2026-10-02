@@ -77,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_wabot') {
     set_setting('wa_lang_default', in_array(post('wa_lang_default'), $langs ?: ['en'], true) ? post('wa_lang_default') : ($langs[0] ?? 'en'));
     set_setting('wa_bot_fallback', post('wa_bot_fallback') ? '1' : '0');
     set_setting('wa_bot_ignore', trim(post('wa_bot_ignore')));
+    set_setting('wa_bot_menu_only', post('wa_bot_menu_only') ? '1' : '0');
     set_setting('wa_human_pause_min', (string)max(0, min(1440, (int)post('wa_human_pause_min', 60))));
     set_setting('wa_auto_replies', trim(post('wa_auto_replies')));
     set_setting('wa_stmt_entries', (string)max(3, min(25, (int)post('wa_stmt_entries', 10))));
@@ -1071,6 +1072,7 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
           <option value="<?= $lc ?>" <?= wa_lang_default() === $lc ? 'selected' : '' ?>><?= $ln ?></option>
           <?php endforeach; ?>
         </select>
+        <label class="check-inline mt" style="display:block"><input type="checkbox" name="wa_bot_menu_only" value="1" <?= setting('wa_bot_menu_only', '1') === '1' ? 'checked' : '' ?>> <b>Reply only to the menu</b> <span class="muted">(menu words like "menu"/"hi", button taps, menu numbers, short staff commands — every other message waits in the Inbox for a person. Untick for product search / AI answers on any message)</span></label>
         <label class="check-inline mt" style="display:block"><input type="checkbox" name="wa_bot_fallback" value="1" <?= setting('wa_bot_fallback', '1') === '1' ? 'checked' : '' ?>> Unknown message → "Type *menu*" nudge <span class="muted">(max once / 10 min, so it never spams a live chat)</span></label>
         <div class="mt"><label>Bot stays quiet after a person replies (minutes) <span class="muted" style="font-weight:normal">(a reply from the shop's phone or the Inbox; buttons still work · 0 = never)</span></label><input type="number" min="0" max="1440" name="wa_human_pause_min" value="<?= (int)setting('wa_human_pause_min', '60') ?>"></div>
         <div class="mt"><label>Numbers the bot never answers <span class="muted" style="font-weight:normal">(family, friends — one per line or comma separated; their messages still show in the Inbox)</span></label><textarea name="wa_bot_ignore" rows="2" placeholder="98xxxxxxxx"><?= e(setting('wa_bot_ignore', '')) ?></textarea></div>

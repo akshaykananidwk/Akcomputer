@@ -225,6 +225,7 @@ t_ok('and still only for their own number', strpos($last()['json']['message'] ??
 unset($GLOBALS['_wa_http_mock']);
 
 t_group('WhatsApp bot: stays out of a chat a person is having');
+set_setting('wa_bot_menu_only', '0'); // the rules underneath menu-only mode
 $GLOBALS['_wa_http_mock'] = function ($method, $url, $json) {
     $GLOBALS['_wa_sent'][] = ['method' => $method, 'url' => $url, 'json' => $json];
     return ['{"status":"success"}', 200];
@@ -266,6 +267,7 @@ t_ok('and ignores the gateway\'s own auto-replies', strpos($hook, "=== 'outgoing
 unset($GLOBALS['_wa_http_mock']);
 
 t_group('WhatsApp bot: staff chats, links and personal numbers');
+set_setting('wa_bot_menu_only', '0'); // the rules underneath menu-only mode
 $GLOBALS['_wa_http_mock'] = function ($method, $url, $json) {
     $GLOBALS['_wa_sent'][] = ['method' => $method, 'url' => $url, 'json' => $json];
     return ['{"status":"success"}', 200];
@@ -303,4 +305,47 @@ t_eq('the second one too', wa_bot_handle('919877700008', 'menu'), 'ignored');
 t_eq('nothing goes to them', count($GLOBALS['_wa_sent']), 0);
 t_ok('anyone else is answered as before', wa_bot_handle('919888800009', 'hi') !== 'ignored');
 set_setting('wa_bot_ignore', '');
+unset($GLOBALS['_wa_http_mock']);
+
+t_group('WhatsApp bot: menu only - answers only when spoken to');
+$GLOBALS['_wa_http_mock'] = function ($method, $url, $json) {
+    $GLOBALS['_wa_sent'][] = ['method' => $method, 'url' => $url, 'json' => $json];
+    return ['{"status":"success"}', 200];
+};
+set_setting('wa_bot_menu_only', '1');
+$m = '919811122210';
+q('DELETE FROM wa_bot_log WHERE mobile = ?', [$m]); q('DELETE FROM wa_chats WHERE mobile = ?', [$m]); q('DELETE FROM wa_bot_state WHERE mobile = ?', [$m]);
+wa_lang_set($m, 'en');
+$GLOBALS['_wa_sent'] = [];
+foreach (['Credit card chale', 'hp laptop price', 'Kale bapor pachi aavish', 'ok'] as $chat) {
+    $st = wa_bot_handle($m, $chat);
+    t_eq("\"$chat\" gets no reply", $st, 'menu-only');
+}
+t_eq('nothing at all was sent', count($GLOBALS['_wa_sent']), 0);
+t_ok('"menu" opens the menu', strpos(wa_bot_handle($m, 'menu'), 'replied:') === 0 && count($GLOBALS['_wa_sent']) > 0);
+t_ok('a button tap answers', strpos(wa_bot_handle($m, 'portal:stmt'), 'portal:stmt') === 0);
+t_ok('a menu word answers', strpos(wa_bot_handle($m, 'balance'), 'portal:stmt') === 0);
+wa_bot_handle($m, 'portal:ticket');
+$ago = fn() => q('UPDATE wa_bot_log SET created_at = DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE mobile = ?', [$m]);
+$ago();
+$GLOBALS['_wa_sent'] = [];
+wa_bot_handle($m, 'Printer is not printing since morning');
+t_ok('the complaint text it asked for is taken', count($GLOBALS['_wa_sent']) === 1 && strpos($last()['json']['message'], 'TKT') !== false);
+set_setting('wa_auto_replies', "timing | 10 am to 8 pm");
+$ago();
+$GLOBALS['_wa_sent'] = [];
+wa_bot_handle($m, 'timing');
+t_ok('an owner-set keyword reply still goes', strpos($last()['json']['message'] ?? '', '10 am') !== false);
+set_setting('wa_auto_replies', '');
+$boss2 = '91' . substr(preg_replace('/\D/', '', (string)val("SELECT u.mobile FROM users u JOIN roles r ON r.id = u.role_id WHERE r.permissions LIKE '%*%' AND u.mobile <> '' LIMIT 1")), -10);
+if (strlen($boss2) === 12) {
+    q('DELETE FROM wa_chats WHERE mobile = ?', [$boss2]); q('DELETE FROM wa_bot_log WHERE mobile = ?', [$boss2]);
+    $GLOBALS['_wa_sent'] = [];
+    wa_bot_handle($boss2, 'sales');
+    t_ok('a short staff command still answers', strpos($last()['json']['message'] ?? '', 'Today') !== false);
+    q('UPDATE wa_bot_log SET created_at = DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE mobile = ?', [$boss2]);
+    $GLOBALS['_wa_sent'] = [];
+    t_eq('a staff chat sentence does not', wa_bot_handle($boss2, 'No mistake hati vat thai gai kale kari dese'), 'menu-only');
+}
+t_eq('menu only is the default', setting('wa_bot_menu_only', '1'), '1');
 unset($GLOBALS['_wa_http_mock']);
