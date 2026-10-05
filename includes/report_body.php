@@ -469,6 +469,9 @@ if ($r === 'payables') {
     // bucket: overdue first, then one bucket per calendar week (Mon-Sun)
     $groups = [];
     $sumOverdue = 0; $sumThisWeek = 0; $sumNextWeek = 0; $sumAll = 0;
+    // month-wise: what has to be paid in each calendar month. Anything
+    // already overdue has to be paid now, so it counts in THIS month.
+    $months = [];
     $thisMon = date('Y-m-d', strtotime('monday this week'));
     $nextMon = date('Y-m-d', strtotime($thisMon . ' +7 days'));
     $afterNext = date('Y-m-d', strtotime($thisMon . ' +14 days'));
@@ -483,14 +486,21 @@ if ($r === 'payables') {
             elseif ($key === $nextMon) $sumNextWeek += $owe;
         }
         $groups[$key][] = $x;
+        $mk = substr(max($due, $today), 0, 7);
+        $months[$mk]['sum'] = ($months[$mk]['sum'] ?? 0) + $owe;
+        $months[$mk]['n'] = ($months[$mk]['n'] ?? 0) + 1;
     }
+    $thisMonth = $months[substr($today, 0, 7)]['sum'] ?? 0;
     echo '<div class="grid-stats">';
     echo '<div class="stat ' . ($sumOverdue > 0.009 ? 's-bad' : '') . '"><div class="stat-label">Overdue</div><div class="stat-value">₹' . money($sumOverdue) . '</div></div>';
     echo '<div class="stat"><div class="stat-label">This Week</div><div class="stat-value">₹' . money($sumThisWeek) . '</div></div>';
     echo '<div class="stat"><div class="stat-label">Next Week</div><div class="stat-value">₹' . money($sumNextWeek) . '</div></div>';
+    echo '<div class="stat s-warn"><div class="stat-label">This Month (with overdue)</div><div class="stat-value">₹' . money($thisMonth) . '</div></div>';
     echo '<div class="stat"><div class="stat-label">Total Payable</div><div class="stat-value">₹' . money($sumAll) . '</div></div>';
     echo '</div>';
-    echo '<div class="table-wrap"><table><thead><tr><th>Due Date</th><th>Party</th><th>Bill No</th><th class="num">Bill ₹</th><th class="num">Paid ₹</th><th class="num">To pay Rs </th></tr></thead><tbody>';
+    // rl-scan: on a phone each bill is two short lines - party and amount to
+    // pay, then the due date and bill no. Bill / Paid stay on the desktop.
+    echo '<div class="table-wrap"><table class="rowlist rl-scan"><thead><tr><th>Due Date</th><th>Party</th><th>Bill No</th><th class="num">Bill ₹</th><th class="num">Paid ₹</th><th class="num">To pay ₹</th></tr></thead><tbody>';
     if (!$groups) echo '<tr><td colspan="6" class="muted">🎉 No purchase bills outstanding - everything is settled.</td></tr>';
     foreach ($groups as $key => $list) {
         if ($key === 'overdue') {
@@ -501,22 +511,36 @@ if ($r === 'payables') {
             if ($key === $thisMon) $label .= ' (this week)';
             elseif ($key === $nextMon) $label .= ' (next week)';
         }
-        echo '<tr><td colspan="6" style="background:var(--bg);font-weight:700">' . e($label) . '</td></tr>';
+        echo '<tr class="rl-grp"><td colspan="6" class="rl-main" style="background:var(--bg);font-weight:700">' . e($label) . '</td></tr>';
         $sub = 0;
         foreach ($list as $x) {
             $owe = $x['total'] - $x['paid'];
             $sub += $owe;
             echo '<tr><td>' . dmy($x['eff_due']) . ($key === 'overdue' ? ' <span class="badge badge-bad">overdue</span>' : '') . '</td>'
-               . '<td><a href="purchase_view.php?id=' . (int)$x['id'] . '">' . e($x['pname']) . '</a></td>'
+               . '<td class="rl-main"><a href="purchase_view.php?id=' . (int)$x['id'] . '">' . e($x['pname']) . '</a></td>'
                . '<td>' . e($x['bill_no'] ?: ('#' . $x['id'])) . '</td>'
-               . '<td class="num">' . money($x['total']) . '</td><td class="num">' . money($x['paid']) . '</td>'
+               . '<td class="num hide-phone">' . money($x['total']) . '</td><td class="num hide-phone">' . money($x['paid']) . '</td>'
                . '<td class="num"><strong>' . money($owe) . '</strong></td></tr>';
         }
-        echo '<tr><td></td><td colspan="4" style="font-weight:700">Total (' . count($list) . ' bills)</td>'
+        echo '<tr class="rl-sub"><td></td><td colspan="4" class="rl-main" style="font-weight:700">Total (' . count($list) . (count($list) === 1 ? ' bill' : ' bills') . ')</td>'
            . '<td class="num" style="font-weight:800">₹' . money($sub) . '</td></tr>';
     }
     echo '</tbody></table></div>';
-    echo '<p class="muted no-print" style="margin-top:8px">Due date = bill date + the party credit days. With no credit days set, the bill date itself is used.</p>';
+    if ($months) {
+        ksort($months);
+        echo '<h3 style="margin:18px 0 8px">📆 Month-wise total</h3>';
+        echo '<div class="table-wrap"><table class="rowlist rl-scan"><thead><tr><th>Month</th><th>Bills</th><th class="num">To pay ₹</th></tr></thead><tbody>';
+        foreach ($months as $mk => $m) {
+            $isNow = $mk === substr($today, 0, 7);
+            echo '<tr><td class="rl-main">' . date('F Y', strtotime($mk . '-01')) . ($isNow ? ' <span class="badge badge-warn">this month, with overdue</span>' : '') . '</td>'
+               . '<td>' . (int)$m['n'] . ' bill' . ($m['n'] == 1 ? '' : 's') . '</td>'
+               . '<td class="num"><strong>₹' . money($m['sum']) . '</strong></td></tr>';
+        }
+        echo '<tr class="rl-sub"><td class="rl-main" style="font-weight:800">Total payable</td><td>' . count($rows) . ' bills</td>'
+           . '<td class="num" style="font-weight:800">₹' . money($sumAll) . '</td></tr>';
+        echo '</tbody></table></div>';
+    }
+    echo '<p class="muted no-print" style="margin-top:8px">Due date = bill date + the party credit days. With no credit days set, the bill date itself is used. Month-wise: an overdue bill counts in the current month, because it is to be paid now.</p>';
 }
 
 // ---------------- aging / collection (as of today, ignores from/to) ----------------

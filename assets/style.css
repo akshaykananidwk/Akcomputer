@@ -1006,6 +1006,10 @@ a.kpi:hover { box-shadow: 0 4px 14px rgba(15,23,42,.12); transform: translateY(-
   /* no middot after the strip's last item, the note or the buttons */
   .rl-scan td.rl-note::after, .rl-scan td.rl-act::after,
   .rl-scan td:has(+ td.rl-note)::after { content: none !important; }
+  /* a group heading inside a scan list (a week, a month) reads as a heading */
+  .rl-scan tr.rl-grp { background: transparent; border: 0; box-shadow: none; padding: 12px 2px 2px; }
+  .rl-scan tr.rl-grp td { background: transparent !important; font-size: 13.5px; }
+  .rl-scan tr.rl-sub { background: var(--bg); }
   .rl-scan td.rl-act .btn { padding: 4px 9px; font-size: 12px; min-height: 0; line-height: 1.4; }
   .rl-scan td.rl-act form { display: inline; }
 
@@ -1525,7 +1529,11 @@ body:has(.bf) .fab-center { display: none; }
   .hide-phone { display: none !important; }
 }
 /* an odd card left alone on the last row of figures takes the whole row */
-@media (max-width: 640px) { .kpi-row > .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; } }
+@media (max-width: 640px) {
+  .kpi-row > .kpi:last-child:nth-child(odd), .grid-stats > .stat:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  /* report export buttons: four small ones on one line, not four big rows */
+  .filterbar > .rpt-x { flex: 1 1 calc(25% - 6px) !important; padding: 6px 4px; font-size: 12px; min-height: 0; }
+}
 .qa.qa-warn:hover { border-color: var(--warn); }
 
 /* The one figure a block exists to produce, said loudly at the end of it. */

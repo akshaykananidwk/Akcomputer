@@ -431,3 +431,25 @@ $src = file_get_contents(__DIR__ . '/../purchases.php');
 t_ok('the edit save allows them to stay blank', strpos($src, '$untracked = purchase_untracked_units($pid);') !== false
      && strpos($src, 'if ($short < 0 || $short > $allow)') !== false);
 t_ok('and the edit screen does not shrink the qty to the serial count', strpos($src, 'if (!it.untracked) Bill.wireSerialQtySync(div);') !== false);
+
+t_group('Purchase Dues Calendar: month-wise totals');
+$supM = t_party('PD Month Supplier');
+$locM = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+$mkPu = function ($due, $total, $paid) use ($supM, $locM) {
+    q("INSERT INTO purchases (company_id, bill_no, party_id, location_id, purchase_date, due_date, subtotal, total, paid, status, created_by)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, 'due', 1)", ['PDM-' . $due, $supM, $locM, $due, $due, $total, $total, $paid]);
+};
+$late = date('Y-m-d', strtotime('first day of last month'));
+$later = date('Y-m-t');                                       // last day of this month
+$next = date('Y-m-d', strtotime('first day of next month +4 days'));
+$mkPu($late, 1000, 0);        // overdue: to be paid now
+$mkPu($later, 3000, 500);     // this month, part paid
+$mkPu($next, 7000, 0);        // next month
+$r = 'payables'; $from = today(); $to = today(); $fCompany = 0; $fParty = $supM; $fStatus = ''; $fUser = 0;
+ob_start(); include dirname(__DIR__) . '/includes/report_body.php'; $html = ob_get_clean();
+$plain = preg_replace('/\s+/', ' ', preg_replace('/<[^>]+>/', ' ', $html));
+t_ok('the "This Month" card counts this month plus what is overdue', strpos($plain, 'This Month (with overdue) ₹3,500.00') !== false);
+t_ok('the month-wise table has this month with the overdue bill in it',
+     strpos($plain, date('F Y') . ' this month, with overdue 2 bills ₹3,500.00') !== false);
+t_ok('and next month on its own line', strpos($plain, date('F Y', strtotime($next)) . ' 1 bill ₹7,000.00') !== false);
+t_ok('the months add up to the total payable', strpos($plain, 'Total payable 3 bills ₹10,500.00') !== false);

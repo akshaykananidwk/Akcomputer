@@ -286,6 +286,11 @@ $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
 
 <form method="get" class="filterbar" id="reportFilterForm">
   <input type="hidden" name="r" value="<?= e($r) ?>">
+  <?php // these two always show everything outstanding as of today - a date box
+        // that changes nothing is only something to misread
+        if (in_array($r, ['payables', 'aging'], true)): ?>
+  <input type="hidden" name="from" value="<?= e($from) ?>"><input type="hidden" name="to" value="<?= e($to) ?>">
+  <?php else: ?>
   <div><label>Period</label>
     <?php $preset = get('preset'); ?>
     <select id="datePreset" name="preset" onchange="applyPreset(this.value)">
@@ -299,6 +304,7 @@ $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
   </div>
   <div><label>From</label><input type="date" name="from" id="fFrom" value="<?= e($from) ?>" onchange="document.getElementById('datePreset').value=''"></div>
   <div><label>To</label><input type="date" name="to" id="fTo" value="<?= e($to) ?>" onchange="document.getElementById('datePreset').value=''"></div>
+  <?php endif; ?>
   <?php if ($r === 'bank_ledger'): ?>
   <div><label>Bank Account</label>
     <select name="bank_id" onchange="document.getElementById('reportFilterForm').submit()">
@@ -333,10 +339,10 @@ $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
   <div><button class="btn btn-sm btn-outline no-print" type="button" onclick="openFilterModal()">🔽 Filters<?php $nf = ($fCompany?1:0)+($fParty?1:0)+($fStatus?1:0)+($fUser?1:0); if ($nf): ?> <span class="badge badge-info" style="padding:1px 7px"><?= $nf ?></span><?php endif; ?></button></div>
   <?php endif; ?>
   <button class="btn btn-sm" type="submit">Apply</button>
-  <button class="btn btn-sm btn-outline no-print" type="button" onclick="window.print()">🖨️ Print</button>
-  <button class="btn btn-sm btn-outline no-print" type="button" onclick="openExportDialog('csv')">⬇ CSV</button>
-  <button class="btn btn-sm btn-outline no-print" type="button" onclick="openExportDialog('xlsx')">⬇ Excel</button>
-  <button class="btn btn-sm btn-outline no-print" type="button" onclick="openExportDialog('pdf')">⬇ PDF</button>
+  <button class="btn btn-sm btn-outline no-print rpt-x" type="button" onclick="window.print()">🖨️ Print</button>
+  <button class="btn btn-sm btn-outline no-print rpt-x" type="button" onclick="openExportDialog('csv')">⬇ CSV</button>
+  <button class="btn btn-sm btn-outline no-print rpt-x" type="button" onclick="openExportDialog('xlsx')">⬇ Excel</button>
+  <button class="btn btn-sm btn-outline no-print rpt-x" type="button" onclick="openExportDialog('pdf')">⬇ PDF</button>
   <?php $tallyType = ['sales' => 'sales', 'purchase' => 'purchase', 'cashbook' => 'payments', 'expense' => 'expenses'][$r] ?? null; ?>
   <?php if ($tallyType): ?>
   <a class="btn btn-sm btn-outline no-print" href="tally_export.php?type=<?= $tallyType ?>&from=<?= e($from) ?>&to=<?= e($to) ?>">⬇ Tally XML</a>
