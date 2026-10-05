@@ -433,18 +433,13 @@ include __DIR__ . '/includes/header.php';
     <div class="kpi-sub"><?= $holders ? e($holders[0]['name']) . ' has the most, ₹' . money($holders[0]['cash']) : 'nobody is carrying cash' ?></div>
   </a>
   <?php endif; ?>
-  <a class="kpi <?= $netCash < -0.009 ? 'k-bad' : 'k-ok' ?>" href="#daysum">
-    <div class="kpi-top">📅 Net cash · <?= dmy($sumDate) ?></div>
-    <div class="kpi-val">₹<?= money($netCash) ?></div>
-    <div class="kpi-sub">in, less what went out →</div>
-  </a>
 </div>
 
 <!-- The things this screen exists to DO, before the things it exists to SHOW -->
 <div class="pane">
   <div class="pane-head"><h3>⚡ Move money</h3></div>
   <div class="pane-body">
-    <div class="qa-grid">
+    <div class="qa-grid qa-compact">
       <?php if ($canTransfer): ?>
       <button type="button" class="qa qa-ok" onclick="cbShowTransfer('cash_to_bank')">
         <span class="qa-i">💵→🏦</span><span class="qa-n">Cash to Bank</span><span class="qa-s">Deposit takings</span></button>
@@ -504,49 +499,43 @@ include __DIR__ . '/includes/header.php';
       </form>
     </div>
     <div class="pane-body">
-      <table class="rowlist">
+      <table class="rowlist rl-scan">
         <tbody>
-          <tr><td data-l="Cash received">Cash received</td><td class="num money-in" data-l="Cash received">₹<?= money($todayCashIn) ?></td></tr>
-          <tr><td data-l="Cash paid out">Cash paid out</td><td class="num money-out" data-l="Cash paid out">₹<?= money($todayCashOut) ?></td></tr>
-          <tr><td data-l="Cash expenses">Cash expenses</td><td class="num money-out" data-l="Cash expenses">₹<?= money($todayCashExp) ?></td></tr>
+          <tr><td class="rl-main">Cash received</td><td class="num money-in">₹<?= money($todayCashIn) ?></td></tr>
+          <tr><td class="rl-main">Cash paid out</td><td class="num money-out">₹<?= money($todayCashOut) ?></td></tr>
+          <tr><td class="rl-main">Cash expenses</td><td class="num money-out">₹<?= money($todayCashExp) ?></td></tr>
         </tbody>
       </table>
-      <div class="big-net<?= $netCash < -0.009 ? ' neg' : '' ?>">
-        <span class="bn-l">Net cash on <?= dmy($sumDate) ?></span>
-        <span class="bn-v">₹<?= money($netCash) ?></span>
-      </div>
     </div>
   </div>
 
   <div class="pane" id="wallets">
     <div class="pane-head"><h3>👥 <?= $seeAll ? 'Whose hand holds how much' : 'My wallet' ?></h3></div>
     <div class="pane-body tight">
-      <table class="rowlist rl-cards">
-        <thead><tr><th>Staff</th><th class="num">Cash</th><th class="act"></th></tr></thead>
+      <!-- the name opens that wallet; no separate button row -->
+      <table class="rowlist rl-scan">
+        <thead><tr><th>Staff</th><th class="num">Cash</th></tr></thead>
         <tbody>
         <?php foreach ($wallets as $w): ?>
           <tr>
-            <td data-l="Staff"><?= e($w['name']) ?><?= $w['id'] == $u['id'] ? ' <span class="badge badge-info">you</span>' : '' ?><?= $w['active'] ? '' : ' <span class="badge badge-bad">left</span>' ?></td>
-            <td class="num" data-l="Cash" style="font-weight:700;color:<?= $w['cash'] < -0.009 ? 'var(--bad)' : 'var(--ok)' ?>">₹<?= money($w['cash']) ?></td>
-            <td class="act"><a class="btn btn-sm btn-outline" href="cash_bank.php?action=cash_ledger&staff=<?= (int)$w['id'] ?>">Wallet →</a></td>
+            <td class="rl-main"><a href="cash_bank.php?action=cash_ledger&staff=<?= (int)$w['id'] ?>"><?= e($w['name']) ?></a><?= $w['id'] == $u['id'] ? ' <span class="badge badge-info">you</span>' : '' ?><?= $w['active'] ? '' : ' <span class="badge badge-bad">left</span>' ?></td>
+            <td class="num" style="font-weight:700;color:<?= $w['cash'] < -0.009 ? 'var(--bad)' : 'var(--ok)' ?>">₹<?= money($w['cash']) ?></td>
           </tr>
         <?php endforeach; ?>
         <?php if ($seeAll && abs($unassigned) > 0.009): ?>
           <tr>
-            <td data-l="Staff"><strong style="color:var(--warn)">⚠️ Not in anybody's wallet</strong>
-              <div class="muted" style="font-size:11.5px;font-weight:400">Cash entries recorded under a staff account that has since been removed. The money is in the shop total but there is no hand to ask for it.</div></td>
-            <td class="num" data-l="Cash" style="font-weight:700;color:var(--warn)">₹<?= money($unassigned) ?></td>
-            <td class="act"></td>
+            <td class="rl-main"><span style="color:var(--warn)">⚠️ Not in anybody's wallet</span></td>
+            <td class="num" style="font-weight:700;color:var(--warn)">₹<?= money($unassigned) ?></td>
           </tr>
         <?php endif; ?>
         <?php if ($seeAll): ?>
-          <tr><td data-l="Total"><strong>Total cash in hand</strong></td>
-              <td class="num" data-l="Total"><strong>₹<?= money($cashInHand) ?></strong></td><td class="act"></td></tr>
+          <tr><td class="rl-main">Total cash in hand</td>
+              <td class="num"><strong>₹<?= money($cashInHand) ?></strong></td></tr>
         <?php endif; ?>
         </tbody>
       </table>
     </div>
-    <p class="pane-note" style="padding:10px 14px 14px">A wallet is the cash that person collected, less what they paid or spent, plus or minus handovers and bank deposits. Entries from before wallets existed sit under whoever recorded them.</p>
+    <p class="pane-note hide-phone" style="padding:10px 14px 14px">A wallet is the cash that person collected, less what they paid or spent, plus or minus handovers and bank deposits. Entries from before wallets existed sit under whoever recorded them.</p>
   </div>
 </div>
 
@@ -558,16 +547,16 @@ include __DIR__ . '/includes/header.php';
   <?php if (!$banks): ?>
     <p class="pane-note" style="padding:20px 14px">No bank account yet. <a href="bank_accounts.php">Add the first one →</a></p>
   <?php else: ?>
-    <table class="rowlist rl-cards">
-      <thead><tr><th>Account</th><th>Bank</th><th class="num">Balance</th><th class="act"></th></tr></thead>
+    <!-- the account name opens its ledger; the bank follows in small type -->
+    <table class="rowlist rl-scan">
+      <thead><tr><th>Account</th><th class="num">Balance</th><th>Bank</th></tr></thead>
       <tbody>
       <?php foreach ($banks as $b): ?>
         <tr>
-          <td data-l="Account"><a href="reports.php?r=bank_ledger&bank_id=<?= $b['id'] ?>"><strong><?= e($b['account_name']) ?></strong></a>
+          <td class="rl-main"><a href="reports.php?r=bank_ledger&bank_id=<?= $b['id'] ?>"><?= e($b['account_name']) ?></a>
             <?= $b['is_default'] ? ' <span class="badge badge-ok">DEFAULT</span>' : '' ?></td>
-          <td data-l="Bank" class="muted"><?= e($b['bank_name']) ?></td>
-          <td class="num" data-l="Balance" style="font-weight:700;color:<?= $b['balance'] < -0.009 ? 'var(--bad)' : 'inherit' ?>">₹<?= money($b['balance']) ?></td>
-          <td class="act"><a class="btn btn-sm btn-outline" href="reports.php?r=bank_ledger&bank_id=<?= $b['id'] ?>">📒 Ledger</a></td>
+          <td class="num" style="font-weight:700;color:<?= $b['balance'] < -0.009 ? 'var(--bad)' : 'inherit' ?>">₹<?= money($b['balance']) ?></td>
+          <td><?= e($b['bank_name']) ?></td>
         </tr>
       <?php endforeach; ?>
       </tbody>
@@ -587,19 +576,18 @@ include __DIR__ . '/includes/header.php';
        date that tells you nothing about which transfer you are looking at.
        The desktop column order follows the same change, which is right -
        the description is the subject of the row in both. -->
-  <table class="rowlist rl-cards">
-    <thead><tr><th>What</th><th>Date</th><th class="num">Amount</th><th>Note</th><th>Status</th><?= $isAdminMt ? '<th class="act"></th>' : '' ?></tr></thead>
+  <!-- what it was and how much on line 1, the date (and CANCELLED when it
+       was) under it, then the note with small Edit / Delete -->
+  <table class="rowlist rl-scan">
+    <thead><tr><th>What</th><th class="num">Amount</th><th>Date</th><th>Note</th><?= $isAdminMt ? '<th class="act"></th>' : '' ?></tr></thead>
     <tbody><?php foreach ($recentMoves as $t): ?>
     <tr <?= $t['status'] === 'cancelled' ? 'style="opacity:.55"' : '' ?>>
-      <td data-l="What"><?= e(mt_label($t)) ?></td>
-      <td data-l="Date"><?= dmy($t['txn_date']) ?></td>
-      <td class="num" data-l="Amount"><strong>₹<?= money($t['amount']) ?></strong></td>
-      <td data-l="Note" class="muted"><?= $t['notes'] ? e($t['notes']) : '—' ?></td>
-      <td data-l="Status"><?= $t['status'] === 'cancelled'
-            ? '<span class="badge badge-bad">CANCELLED</span>'
-            : '<span class="badge badge-ok">DONE</span>' ?></td>
+      <td class="rl-main"><?= e(mt_label($t)) ?></td>
+      <td class="num">₹<?= money($t['amount']) ?></td>
+      <td><?= dmy($t['txn_date']) ?><?= $t['status'] === 'cancelled' ? ' <span class="badge badge-bad">CANCELLED</span>' : '' ?></td>
+      <td class="rl-note muted"><?= e((string)$t['notes']) ?></td>
       <?php if ($isAdminMt): ?>
-      <td class="act no-print">
+      <td class="rl-act no-print">
         <?php if ($t['status'] === 'done'): ?>
         <button type="button" class="btn btn-sm btn-outline" onclick='mtEdit(<?= json_encode([
             'id' => (int)$t['id'], 'label' => mt_label($t), 'amount' => (float)$t['amount'],
@@ -610,14 +598,14 @@ include __DIR__ . '/includes/header.php';
         <?php endif; ?>
         <form method="post" style="display:inline" onsubmit="return confirm('Delete this entry?\n\nEvery balance it touched — cash in hand, the wallet, the bank account — is recalculated from the remaining rows.')">
           <?= csrf_field() ?><input type="hidden" name="do" value="mt_delete"><input type="hidden" name="id" value="<?= $t['id'] ?>">
-          <button class="btn btn-sm btn-danger" type="submit">🗑 Delete</button></form>
+          <button class="btn btn-sm btn-danger" type="submit" title="Delete">🗑</button></form>
       </td>
       <?php endif; ?>
     </tr>
     <?php endforeach; ?></tbody>
   </table>
   </div>
-  <?php if ($isAdminMt): ?><p class="pane-note" style="padding:10px 14px 14px">Edit and Delete are an admin's only — change or remove an entry and every balance is worked out again from what is left.</p><?php endif; ?>
+  <?php if ($isAdminMt): ?><p class="pane-note hide-phone" style="padding:10px 14px 14px">Edit and Delete are an admin's only — change or remove an entry and every balance is worked out again from what is left.</p><?php endif; ?>
 </div>
 
 <?php if ($isAdminMt): ?>

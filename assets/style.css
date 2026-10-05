@@ -1515,6 +1515,17 @@ body:has(.bf) .fab-center { display: none; }
 .qa .qa-n { font-weight: 700; font-size: 13.5px; }
 .qa .qa-s { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
 .qa.qa-ok:hover { border-color: var(--ok); }
+/* qa-compact: on a phone, three small tiles a row - icon and name only */
+@media (max-width: 640px) {
+  .qa-grid.qa-compact { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .qa-compact .qa { min-height: 0; padding: 9px 6px; align-items: center; text-align: center; border-radius: 11px; }
+  .qa-compact .qa .qa-i { font-size: 15px; }
+  .qa-compact .qa .qa-n { font-size: 11.5px; line-height: 1.25; }
+  .qa-compact .qa .qa-s { display: none; }
+  .hide-phone { display: none !important; }
+}
+/* an odd card left alone on the last row of figures takes the whole row */
+@media (max-width: 640px) { .kpi-row > .kpi:last-child:nth-child(odd) { grid-column: 1 / -1; } }
 .qa.qa-warn:hover { border-color: var(--warn); }
 
 /* The one figure a block exists to produce, said loudly at the end of it. */

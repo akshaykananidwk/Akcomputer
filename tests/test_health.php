@@ -733,13 +733,13 @@ t_group('Cash & Bank: every list on the page is read at a glance');
 $cb  = file_get_contents(dirname(__DIR__) . '/cash_bank.php');
 $cssC = file_get_contents(dirname(__DIR__) . '/assets/style.css');
 $appC = file_get_contents(dirname(__DIR__) . '/assets/app.js');
-t_eq('three tables ask for the card layout', substr_count($cb, 'class="rowlist rl-cards"'), 3);
-t_ok('the opt-in beats the skip list', strpos($appC, "if (!/\\brl-cards\\b/.test(t.className || '')") !== false);
+t_eq('every list on the page is a compact scan list', substr_count($cb, 'class="rowlist rl-scan"'), 5);
+t_eq('none is drawn one record per card any more', substr_count($cb, 'rl-cards'), 0);
+t_ok('the opt-in for other screens is still there', strpos($appC, "if (!/\\brl-cards\\b/.test(t.className || '')") !== false);
 // On a phone the first line of a transfer must say what it WAS, not when.
-t_ok('a transfer leads with what it was, not the date',
-     strpos($cb, '<th>What</th><th>Date</th>') !== false);
-t_ok('...and the cells follow the same order',
-     strpos($cb, '<td data-l="What">') < strpos($cb, '<td data-l="Date"><?= dmy($t[\'txn_date\']) ?>'));
+t_ok('a transfer leads with what it was and how much',
+     strpos($cb, '<th>What</th><th class="num">Amount</th><th>Date</th>') !== false);
+t_ok('the negative "Net cash" figure is gone from the page', strpos($cb, 'Net cash') === false && strpos($cb, 'big-net') === false);
 
 t_group('two layouts cannot both win on the same table');
 // Every rule in the label-above-value block is a single class, exactly like
