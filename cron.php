@@ -10,6 +10,7 @@
 // panel's "Run now" button, works externally too).
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/cron_jobs.php';
+ignore_user_abort(true);   // a shop's tick finishes even when the caller stops listening
 
 $key = PHP_SAPI === 'cli' ? ($argv[1] ?? '') : get('key');
 $cronKey = setting('cron_key', '');
@@ -32,3 +33,12 @@ foreach ($results as $r) {
     echo strtoupper($r['status']) . '  ' . $r['job'] . ' — ' . $r['detail'] . "\n";
 }
 echo 'Master cron tick done (' . count($results) . " job(s) ran) @ " . date('Y-m-d H:i:s') . "\n";
+
+// The owner's tick also wakes every other shop's own cron (each in its own
+// request, against its own database). Only on the full tick, never on a
+// "Run now" of one job, and never from a shop's own address.
+if (!tenant_active() && !$only) {
+    require_once __DIR__ . '/includes/platform.php';
+    $n = tenants_cron_fanout();
+    if ($n) echo "Woke $n other shop(s).\n";
+}

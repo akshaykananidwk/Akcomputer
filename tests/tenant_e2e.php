@@ -29,8 +29,15 @@ try {
     $out['main_title'] = trim((string)shell_exec("$php -r $code 2>&1"));
     $unk = tenant_find_by_host('nosuchshop.e2e.test');
     $out['unknown_code'] = ($unk['status'] ?? '') === 'closed' ? 404 : 200;
+    // its own MySQL login, when the server allows one, reaches nothing else
+    $out['own_user'] = $t['db_user'] !== DB_USER;
+    if ($out['own_user']) {
+        try { $pdo->query('SELECT COUNT(*) FROM `' . DB_NAME . '`.users')->fetchColumn(); $out['owner_db_blocked'] = false; }
+        catch (Exception $e) { $out['owner_db_blocked'] = true; }
+    }
     // clean up
     db()->exec('DROP DATABASE IF EXISTS `' . $t['db_name'] . '`');
+    if ($out['own_user']) db()->exec("DROP USER IF EXISTS '" . $t['db_user'] . "'@'localhost'");
     q('DELETE FROM tenants WHERE id = ?', [$t['id']]);
     $out['cleaned'] = !val('SELECT id FROM tenants WHERE slug = ?', [$slug])
         && !val('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?', [$t['db_name']]);

@@ -131,6 +131,16 @@ function tenant_closed_page(array $t) {
     exit;
 }
 
+/** Stop here unless this is the owner's own address: some actions (updating
+ *  the code every shop runs on, the platform screens) belong to the owner of
+ *  the platform, never to a shop's own admin. */
+function platform_owner_only() {
+    if (!tenant_active()) return;
+    http_response_code(403);
+    if (function_exists('flash')) { flash('This belongs to the software\'s owner, not to a shop.', 'error'); redirect('index.php'); }
+    exit('Not available here.');
+}
+
 /** Where this shop's files live on disk: uploads/ for the owner's shop, uploads/t/<slug>/ for any other. */
 function up_dir($sub = '') {
     $base = dirname(__DIR__) . '/uploads' . (tenant_active() ? '/t/' . tenant_key() : '');

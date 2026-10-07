@@ -10,6 +10,7 @@ $cat = get('cat', '');
 // ---- GitHub update: save repo settings / check / apply ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_save') {
     require_perm('settings.edit');
+    platform_owner_only();
     gh_save_settings(post('gh_repo'), post('gh_branch'), post('gh_token'));
     flash('GitHub update settings saved.');
     redirect('settings.php?cat=backup');
@@ -17,11 +18,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_save') {
 $ghCheck = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_check') {
     require_perm('settings.edit');
+    platform_owner_only();
     $ghCheck = gh_check_update();
     $cat = 'backup';
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_apply') {
     require_perm('settings.edit');
+    platform_owner_only();
     // overwriting every application file is an owner-level action, not a
     // "can edit settings" one - and it now snapshots files + DB first
     if (!is_full_admin()) { flash('Only an admin can update the software.', 'error'); redirect('settings.php?cat=backup'); }
@@ -380,6 +383,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_backup_auto') 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'gh_rollback') {
     require_perm('settings.edit');
+    platform_owner_only();
     if (!is_full_admin()) { flash('Only an admin can roll back.', 'error'); redirect('settings.php?cat=backup'); }
     list($ok, $msg) = gh_rollback(post('id'));
     flash($msg, $ok ? 'success' : 'error');
@@ -1645,6 +1649,7 @@ $elParse = function ($ln) {
 </div>
 <?php endif; ?>
 
+<?php if (!tenant_active()): // the code is shared by every shop: only its owner updates it ?>
 <div class="row-2">
 <?php // ---------- update ---------- ?>
 <div class="sect s-blue">
@@ -1724,6 +1729,7 @@ $elParse = function ($ln) {
   <?php endif; ?>
 </div>
 </div>
+<?php endif; ?>
 
 <div class="row-2">
 <?php // ---------- backup ---------- ?>

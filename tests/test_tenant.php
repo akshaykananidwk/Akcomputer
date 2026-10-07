@@ -74,6 +74,10 @@ t_ok('its address answers with its own name', ($res['login_title'] ?? '') === 'S
 t_ok('the owner\'s address still answers as the owner\'s shop', ($res['main_title'] ?? '') !== 'Shree Test Mobile' && ($res['main_title'] ?? '') !== '');
 t_ok('an address no shop has says so', ($res['unknown_code'] ?? 0) === 404);
 t_ok('and everything was cleaned up', ($res['cleaned'] ?? false) === true);
+if (!empty($res['own_user']))
+    t_ok('its own MySQL login cannot read the owner\'s database', ($res['owner_db_blocked'] ?? false) === true);
+else
+    t_ok('(this server would not make a MySQL login per shop; the shop shares the app\'s - noted on the shop)', true);
 
 /** A setting read straight from the table (the request cache predates this group). */
 function setting_raw($n) { return val('SELECT value FROM settings WHERE name = ?', [$n]); }

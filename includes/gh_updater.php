@@ -222,6 +222,11 @@ function gh_apply_update($sha) {
 
     require_once __DIR__ . '/dbmigrate.php';
     $migration = run_all_migrations();
+    // every other shop runs the same code, so every shop's database moves too
+    require_once __DIR__ . '/platform.php';
+    $shops = tenants_migrate_all();
+    foreach ($shops as $slug => $tot) if (!empty($tot['error']) || !empty($tot['failed']))
+        log_activity('tenant_migrate_fail', $slug . ': ' . ($tot['error'] ?? $tot['failed'] . ' statements'));
 
     set_setting('gh_last_sha', $sha);
     set_setting('app_version', substr($sha, 0, 7));

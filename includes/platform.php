@@ -59,7 +59,22 @@ function platform_create_database($slug) {
     }
     if ($mode === 'manual') throw new Exception('manual');
     platform_db()->exec('CREATE DATABASE IF NOT EXISTS `' . $name . '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
-    return [DB_HOST, $name, DB_USER, DB_PASS];
+    // A MySQL user of its own that can reach THIS database and nothing else,
+    // so even a mistake inside one shop can never read another shop's - or
+    // the owner's - tables. Where the server will not let us make users,
+    // the shop shares the app's own login (and the owner is told).
+    $user = substr('s_' . $slug, 0, 32);
+    $pass = bin2hex(random_bytes(14));
+    try {
+        $pdo = platform_db();
+        $pdo->exec("CREATE USER IF NOT EXISTS '" . $user . "'@'localhost' IDENTIFIED BY '" . $pass . "'");
+        $pdo->exec("ALTER USER '" . $user . "'@'localhost' IDENTIFIED BY '" . $pass . "'");
+        $pdo->exec('GRANT ALL PRIVILEGES ON `' . $name . "`.* TO '" . $user . "'@'localhost'");
+        return [DB_HOST, $name, $user, $pass];
+    } catch (Exception $e) {
+        $GLOBALS['_tenant_db_note'] = 'shares the app\'s MySQL login (could not make its own: ' . mb_substr($e->getMessage(), 0, 150) . ')';
+        return [DB_HOST, $name, DB_USER, DB_PASS];
+    }
 }
 
 /** One cPanel UAPI call with the owner's API token. */
@@ -120,6 +135,7 @@ function provision_tenant(array $in) {
         pq('DELETE FROM tenants WHERE id = ?', [$tid]);
         if (platform_setting('platform_db_mode', 'mysql') === 'mysql') {
             try { platform_db()->exec('DROP DATABASE IF EXISTS `' . $n . '`'); } catch (Exception $e2) {}
+            if ($u !== DB_USER) { try { platform_db()->exec("DROP USER IF EXISTS '" . $u . "'@'localhost'"); } catch (Exception $e2) {} }
         }
         throw new Exception('The shop could not be set up: ' . $e->getMessage());
     }
@@ -137,8 +153,9 @@ function tenant_install($tid, $h, $n, $u, $pw, array $in) {
     $set = $pdo->prepare('INSERT INTO settings (name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)');
     $cron = bin2hex(random_bytes(16));
     foreach ([['db_last_migrated', date('Y-m-d H:i:s')], ['cron_key', $cron], ['setup_wizard_done', '0']] as $s) $set->execute($s);
-    pq("UPDATE tenants SET db_host = ?, db_name = ?, db_user = ?, db_pass_enc = ?, cron_key_enc = ?, status = ? WHERE id = ?",
-       [$h, $n, $u, vault_encrypt($pw), vault_encrypt($cron), !empty($in['is_demo']) ? 'active' : 'trial', $tid]);
+    pq("UPDATE tenants SET db_host = ?, db_name = ?, db_user = ?, db_pass_enc = ?, cron_key_enc = ?, status = ?, notes = ? WHERE id = ?",
+       [$h, $n, $u, vault_encrypt($pw), vault_encrypt($cron), !empty($in['is_demo']) ? 'active' : 'trial',
+        $GLOBALS['_tenant_db_note'] ?? null, $tid]);
     if ($mig['totals']['failed'] > 0) log_activity('tenant_migrate_warn', $n . ': ' . $mig['totals']['failed'] . ' statements failed');
     return prow('SELECT * FROM tenants WHERE id = ?', [$tid]);
 }
@@ -146,6 +163,28 @@ function tenant_install($tid, $h, $n, $u, $pw, array $in) {
 /** Connection to an existing shop's database. */
 function tenant_pdo_for(array $t) {
     return tenant_pdo($t['db_host'] ?: 'localhost', $t['db_name'], $t['db_user'], (string)vault_decrypt((string)$t['db_pass_enc']));
+}
+
+/**
+ * Wake each open shop's own cron.php. Every call is a separate request on
+ * the shop's own address with the shop's own key, so its jobs run against
+ * its own database. Fire and forget: 3 seconds to connect, then move on -
+ * the shop's tick carries on without us (cron.php ignores a hang-up).
+ */
+function tenants_cron_fanout() {
+    $shops = pall("SELECT * FROM tenants WHERE status IN ('trial','active') AND db_name <> '' AND cron_key_enc IS NOT NULL");
+    if (!$shops || !function_exists('curl_multi_init')) return 0;
+    $scheme = defined('BASE_URL') && BASE_URL ? (parse_url(BASE_URL, PHP_URL_SCHEME) ?: 'https') : 'https';
+    $mh = curl_multi_init(); $hs = [];
+    foreach ($shops as $t) {
+        $ch = curl_init($scheme . '://' . $t['domain'] . '/cron.php?key=' . rawurlencode((string)vault_decrypt($t['cron_key_enc'])));
+        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 3, CURLOPT_CONNECTTIMEOUT => 3, CURLOPT_NOSIGNAL => 1]);
+        curl_multi_add_handle($mh, $ch); $hs[] = $ch;
+    }
+    do { $st = curl_multi_exec($mh, $running); if ($running) curl_multi_select($mh, 1); } while ($running && $st === CURLM_OK);
+    foreach ($hs as $ch) { curl_multi_remove_handle($mh, $ch); curl_close($ch); }
+    curl_multi_close($mh);
+    return count($hs);
 }
 
 /** Bring every shop's database up to the current code (after an update). */
