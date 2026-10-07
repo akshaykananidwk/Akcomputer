@@ -123,7 +123,7 @@ const SECRET_PREFIX = 'enc:v1:';
 function secret_setting_keys() {
     return ['meta_wa_token', 'razorpay_key_secret', 'razorpay_webhook_secret', 'gemini_api_key',
             'gemini_api_key_paid', 'wa_api_key', 'tg_bot_token', 'ocr_api_key', 'google_cse_key',
-            'smtp_pass', 'wa_session_id', 'backup_passphrase', 'vobiz_auth_token', 'vobiz_webhook_secret'];
+            'smtp_pass', 'wa_session_id', 'backup_passphrase', 'vobiz_auth_token', 'vobiz_webhook_secret', 'cpanel_token'];
 }
 function is_secret_setting($name) { return in_array($name, secret_setting_keys(), true); }
 

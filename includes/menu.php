@@ -116,6 +116,10 @@ return [
         ['roles.php', 'Roles / Permissions', 'roles.view', 'roles.php?action=new', 'roles.add'],
         ['locations.php', 'Locations', 'locations.view', null, null],
         ['companies.php', 'Companies / Firms', 'companies.view', null, null],
+        // the platform: the owner sees every shop; a shop sees its own plan
+        ...(function_exists('tenant_active') && tenant_active()
+            ? [['my_plan.php', '💳 My plan & usage', '*', null, null]]
+            : [['platform.php', '🌐 Shops on this software', '*', null, null]]),
     ]],
     ['link', 'settings.php', 'gear', 'Settings', 'settings.view'],
 ];

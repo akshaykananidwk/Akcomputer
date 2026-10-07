@@ -81,3 +81,19 @@ else
 
 /** A setting read straight from the table (the request cache predates this group). */
 function setting_raw($n) { return val('SELECT value FROM settings WHERE name = ?', [$n]); }
+
+t_group('Shops: sign-up and the owner\'s panel');
+$su = file_get_contents(dirname(__DIR__) . '/signup.php');
+t_ok('sign-up lives only on the owner\'s address', strpos($su, "if (tenant_active()) { http_response_code(404)") !== false);
+t_ok('it is closed until the owner opens it', strpos($su, "setting('platform_signup_open', '0') === '1'") !== false);
+t_ok('it is rate-limited per connection', strpos($su, "api_rate_ok('signup:' . \$ip, 6, 3600)") !== false);
+t_ok('the OTP is kept hashed, expires and allows 5 tries', strpos($su, "password_hash(\$code, PASSWORD_DEFAULT), 'until' => time() + 600") !== false
+     && strpos($su, "++\$_SESSION['signup_otp']['tries'] > 5") !== false);
+t_ok('the password follows the shop\'s password rules', strpos($su, 'password_policy_check($pass)') !== false);
+$pl = file_get_contents(dirname(__DIR__) . '/platform.php');
+t_ok('the owner\'s panel refuses a shop\'s address', strpos($pl, "platform_owner_only();") !== false);
+t_ok('...and anyone but a full admin', strpos($pl, 'if (!is_full_admin())') !== false);
+t_ok('the cPanel token is kept encrypted', is_secret_setting('cpanel_token'));
+$st = file_get_contents(dirname(__DIR__) . '/settings.php');
+t_eq('a shop cannot update or roll back the shared code', substr_count($st, 'platform_owner_only();'), 4);
+t_ok('every plan feature names real screens', !array_filter(platform_features(), fn($f) => array_filter($f[1], fn($s) => !is_file(dirname(__DIR__) . "/$s.php"))));

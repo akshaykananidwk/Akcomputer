@@ -113,7 +113,7 @@ function tenant_bind_session($key) {
     if (session_status() !== PHP_SESSION_ACTIVE) return;
     if (isset($_SESSION['_shop']) && $_SESSION['_shop'] !== $key) {
         $_SESSION = [];
-        session_regenerate_id(true);
+        if (!headers_sent() && PHP_SAPI !== 'cli') session_regenerate_id(true);
     }
     $_SESSION['_shop'] = $key;
 }
