@@ -497,7 +497,7 @@ if ($planPub): ?>
   <div class="inv-sig-row2">
     <div class="inv-sig-line"><?php $sigFile = !empty($sale['signature']) ? up_dir('signatures') . '/' . basename($sale['signature']) : '';
                 if ($sigFile && is_file($sigFile)): ?><img src="<?= e(base_url(up_rel('signatures') . '/' . $sale['signature'])) ?>" alt="" style="max-height:52px;display:block;margin:0 auto 2px"><?php endif; ?>Receiver's Signature</div>
-    <div class="inv-stamp"><div class="inv-stamp-text">AK COMPUTER<br>* THANK YOU *<br><?= e(strtoupper($sale['loc_city'])) ?></div></div>
+    <div class="inv-stamp"><div class="inv-stamp-text"><?= e(bill_stamp_name()) ?><br>* THANK YOU *<br><?= e(strtoupper($sale['loc_city'])) ?></div></div>
     <div class="inv-sig-line">For <?= e($sale['company_name']) ?><br>Authorised Signatory</div>
   </div>
   <div class="inv-footer-bar">
@@ -506,9 +506,9 @@ if ($planPub): ?>
       <div class="inv-social-icons"><span>f</span><span>IG</span><span>W</span><span>YT</span></div>
     </div>
     <?php if ($sale['c_phone']): ?><div style="text-align:center"><strong>For Support</strong><?= e($sale['c_phone']) ?></div><?php endif; ?>
-    <div style="text-align:right"><strong>We Deal In:</strong>Computers . Laptops . Accessories . CCTV . Networking . AMC</div>
+    <?php if (bill_deal_in()): ?><div style="text-align:right"><strong>We Deal In:</strong><?= e(implode(' . ', bill_deal_in())) ?></div><?php endif; ?>
   </div>
-  <div class="inv-bottom-strip">This is a computer generated invoice.</div>
+  <div class="inv-bottom-strip">This is a computer generated invoice.<?= powered_by_line() !== '' ? ' · ' . e(powered_by_line()) : '' ?></div>
   <p class="muted mt" style="font-size:11px">Billed by: <?= e($sale['staff_name']) ?><?= $sale['notes'] ? ' | ' . e($sale['notes']) : '' ?></p>
 </div>
 <?php endif; ?>

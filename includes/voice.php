@@ -124,7 +124,9 @@ function voice_phrases($lang) {
  * directions read beats two that drift apart.
  */
 function voice_greeting_default($lang) {
-    $d = ['gu' => 'જય દ્વારકાધીશ.', 'hi' => 'जय द्वारकाधीश.', 'en' => 'Jay Dwarkadhish.'];
+    $d = function_exists('tenant_active') && tenant_active()   // the owner's own greeting; another shop says namaste
+        ? ['gu' => 'નમસ્તે.', 'hi' => 'नमस्ते.', 'en' => 'Namaste.']
+        : ['gu' => 'જય દ્વારકાધીશ.', 'hi' => 'जय द्वारकाधीश.', 'en' => 'Jay Dwarkadhish.'];
     return $d[$lang] ?? $d['en'];
 }
 function voice_greeting($lang) {

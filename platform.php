@@ -89,9 +89,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ((int)post('rid')) pq('UPDATE resellers SET name=?, mobile=?, email=?, commission_pct=?, is_active=? WHERE id=?',
             [post('name'), post('mobile'), post('email'), max(0, min(90, (float)post('commission_pct'))), post('is_active') ? 1 : 0, (int)post('rid')]);
         elseif (pval('SELECT id FROM resellers WHERE code = ?', [$code])) { flash('That code is taken.', 'error'); redirect($back('resellers')); }
-        else pq('INSERT INTO resellers (name, mobile, email, code, commission_pct) VALUES (?,?,?,?,?)',
-                [post('name'), post('mobile'), post('email'), $code, max(0, min(90, (float)post('commission_pct')))]);
+        else pq('INSERT INTO resellers (name, mobile, email, code, commission_pct, password) VALUES (?,?,?,?,?,?)',
+                [post('name'), post('mobile'), post('email'), $code, max(0, min(90, (float)post('commission_pct'))),
+                 post('password') !== '' ? password_hash(post('password'), PASSWORD_DEFAULT) : '']);
         flash('Reseller saved.');
+        redirect($back('resellers'));
+    }
+    if ($do === 'demo') {
+        try { $d = demo_make_or_reset(); flash('The demo shop is ready at ' . $d['domain'] . ' (demo / demo1234). It starts fresh every night.'); }
+        catch (Exception $e) { flash('Could not make the demo shop: ' . $e->getMessage(), 'error'); }
+        redirect($back('settings'));
+    }
+    if ($do === 'reseller_password' && strlen((string)post('password')) >= 8) {
+        pq('UPDATE resellers SET password = ? WHERE id = ?', [password_hash(post('password'), PASSWORD_DEFAULT), (int)post('rid')]);
+        flash('Password set. They log in at ' . base_url('reseller.php') . ' with their code.');
         redirect($back('resellers'));
     }
     if ($do === 'pay_commission') {
@@ -209,13 +220,14 @@ include __DIR__ . '/includes/header.php';
 $rs = pall("SELECT r.*, (SELECT COUNT(*) FROM tenants t WHERE t.reseller_id = r.id) shops,
             (SELECT COALESCE(SUM(commission),0) FROM tenant_payments p WHERE p.reseller_id = r.id AND p.status = 'paid' AND p.commission > 0) due
             FROM resellers r ORDER BY r.id DESC"); ?>
-<p class="muted">A reseller shares <code><?= e(base_url('signup.php')) ?>?ref=CODE</code>. Shops that sign up with the code are theirs, and every payment those shops make earns the commission.</p>
+<p class="muted">A reseller shares <code><?= e(base_url('signup.php')) ?>?ref=CODE</code> and sees their shops at <code><?= e(base_url('reseller.php')) ?></code>. Shops that sign up with the code are theirs, and every payment those shops make earns the commission.</p>
 <div class="pane"><div class="pane-body tight"><table class="rowlist rl-scan">
-  <thead><tr><th>Reseller</th><th class="num">Commission due</th><th>Code</th><th>Shops</th><th>%</th><th></th></tr></thead><tbody>
+  <thead><tr><th>Reseller</th><th class="num">Commission due</th><th>Code</th><th>Shops</th><th>%</th><th>Their page</th><th></th></tr></thead><tbody>
   <?php foreach ($rs as $r): ?><tr>
     <td class="rl-main"><?= e($r['name']) ?> <?= $r['is_active'] ? '' : '<span class="badge badge-bad">off</span>' ?></td>
     <td class="num">₹<?= money($r['due']) ?></td>
     <td><?= e($r['code']) ?> · <?= e($r['mobile']) ?></td><td><?= (int)$r['shops'] ?> shops</td><td><?= (float)$r['commission_pct'] ?>%</td>
+    <td class="rl-note"><form method="post" style="display:inline-flex;gap:4px"><?= csrf_field() ?><input type="hidden" name="do" value="reseller_password"><input type="hidden" name="rid" value="<?= $r['id'] ?>"><input type="text" name="password" minlength="8" placeholder="new password" style="max-width:130px" autocomplete="off"><button class="btn btn-sm btn-outline" type="submit">Set</button></form></td>
     <td class="rl-act"><?php if ($r['due'] > 0.009): ?><form method="post" onsubmit="return confirm('Mark ₹<?= money($r['due']) ?> as paid to <?= e($r['name']) ?>?')"><?= csrf_field() ?><input type="hidden" name="do" value="pay_commission"><input type="hidden" name="rid" value="<?= $r['id'] ?>"><button class="btn btn-sm btn-outline" type="submit">Paid</button></form><?php endif; ?></td>
   </tr><?php endforeach; ?>
   <?php if (!$rs): ?><tr><td class="rl-main muted">No resellers yet.</td></tr><?php endif; ?>
@@ -224,7 +236,8 @@ $rs = pall("SELECT r.*, (SELECT COUNT(*) FROM tenants t WHERE t.reseller_id = r.
 <form method="post"><?= csrf_field() ?><input type="hidden" name="do" value="save_reseller">
   <div class="form-row cols-3"><div><label>Name</label><input name="name" required></div><div><label>Mobile</label><input name="mobile"></div>
   <div><label>Email</label><input name="email" type="email"></div><div><label>Code (blank = make one)</label><input name="code" maxlength="20"></div>
-  <div><label>Commission %</label><input type="number" name="commission_pct" value="20" min="0" max="90" step="0.5"></div></div>
+  <div><label>Commission %</label><input type="number" name="commission_pct" value="20" min="0" max="90" step="0.5"></div>
+  <div><label>Password for their page</label><input type="text" name="password" minlength="8" autocomplete="off"></div></div>
   <input type="hidden" name="is_active" value="1"><button class="btn btn-sm mt" type="submit">Add</button></form></div></div>
 
 <?php elseif ($tab === 'payments'):
@@ -277,5 +290,11 @@ $tks = pall("SELECT k.*, t.name shop, t.owner_mobile FROM platform_tickets k JOI
   </div>
   <button class="btn mt" type="submit">Save settings</button>
 </form></div></div>
+<div class="pane"><div class="pane-head"><h3>🎮 Demo shop</h3></div><div class="pane-body">
+  <?php $dm = demo_shop(); ?>
+  <p class="muted" style="margin-top:0"><?= $dm ? 'Live at <strong>' . e($dm['domain']) . '</strong> — log in as <strong>demo / demo1234</strong>. It is wiped and made fresh every night; sign-up visitors reach it from "Try the demo".'
+      : 'A sample computer shop anyone can try, without signing up. Reset every night.' ?></p>
+  <form method="post"><?= csrf_field() ?><input type="hidden" name="do" value="demo"><button class="btn btn-sm btn-outline" type="submit"><?= $dm ? 'Reset it now' : 'Make the demo shop' ?></button></form>
+</div></div>
 <?php endif; ?>
 <?php include __DIR__ . '/includes/footer.php'; ?>

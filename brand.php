@@ -22,7 +22,7 @@ foreach ($items as $i) if ($i['cat_name']) $cats[$i['cat_name']] = true;
 $cats = array_keys($cats);
 $prices = array_map(fn($i) => (float)$i['selling_price'], $items);
 $curl = seo_brand_url($brand);
-$metaDesc = $brand . ' products in Dwarka, Gujarat — ' . count($items) . ' genuine ' . $brand . ' products' .
+$metaDesc = $brand . ' products in ' . shop_place() . ' — ' . count($items) . ' genuine ' . $brand . ' products' .
             ($cats ? ' (' . implode(', ', array_slice($cats, 0, 5)) . ')' : '') .
             ' from ₹' . money(min($prices)) . ' at ' . $app_name . '. Warranty, installation & WhatsApp ordering.';
 
@@ -35,18 +35,18 @@ foreach (array_slice($items, 0, 30) as $pos => $i) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= e($brand) ?> in Dwarka, Gujarat — Genuine <?= e($brand) ?> Products | <?= e($app_name) ?></title>
+<title><?= e($brand) ?> in <?= e(shop_place()) ?> — Genuine <?= e($brand) ?> Products | <?= e($app_name) ?></title>
 <meta name="description" content="<?= e(mb_substr($metaDesc, 0, 300)) ?>">
 <link rel="canonical" href="<?= e($curl) ?>">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="<?= e($app_name) ?>">
-<meta property="og:title" content="<?= e($brand) ?> — Dwarka | <?= e($app_name) ?>">
+<meta property="og:title" content="<?= e($brand) ?> — <?= e(shop_city()) ?> | <?= e($app_name) ?>">
 <meta property="og:description" content="<?= e(mb_substr($metaDesc, 0, 200)) ?>">
 <meta property="og:url" content="<?= e($curl) ?>">
 <link rel="icon" href="<?= e(base_url('assets/icon.svg')) ?>" type="image/svg+xml">
 <link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=<?= asset_v('style.css') ?>">
 <?= seo_public_css() ?>
-<?= seo_jsonld(['@context' => 'https://schema.org', '@type' => 'ItemList', 'name' => $brand . ' — ' . $app_name . ' Dwarka', 'itemListElement' => $listLd]) ?>
+<?= seo_jsonld(['@context' => 'https://schema.org', '@type' => 'ItemList', 'name' => $brand . ' — ' . $app_name . ' ' . shop_city(), 'itemListElement' => $listLd]) ?>
 <?= seo_breadcrumbs([[$app_name, base_url('catalog.php')], [$brand]]) ?>
 </head>
 <body>
@@ -55,8 +55,8 @@ foreach (array_slice($items, 0, 30) as $pos => $i) {
 
 <div class="swrap">
   <div class="scard">
-    <h1><?= e($brand) ?> Products in Dwarka, Gujarat</h1>
-    <p><?= e($brand) ?> original products in Dwarka <?= e($app_name) ?> on — <strong><?= count($items) ?> Products</strong>,
+    <h1><?= e($brand) ?> Products in <?= e(shop_place()) ?></h1>
+    <p><?= e($brand) ?> original products in <?= e(shop_city()) ?> <?= e($app_name) ?> on — <strong><?= count($items) ?> Products</strong>,
        Price Rs <?= money(min($prices)) ?> from Rs <?= money(max($prices)) ?>.
        <?php if ($cats): ?><?= e(implode(', ', array_slice($cats, 0, 6))) ?> —<?php endif; ?>
        All with warranty and service support. Ask the price or order on WhatsApp.</p>
@@ -72,7 +72,7 @@ foreach (array_slice($items, 0, 30) as $pos => $i) {
   <div class="pgrid">
     <?php foreach ($items as $i): $pp = dealer_price($i['selling_price'], $waPct); ?>
     <a class="pcard" href="<?= e(seo_product_url($i)) ?>">
-      <?php if ($i['photo']): ?><img src="<?= e(base_url($i['photo'])) ?>" alt="<?= e($brand . ' ' . $i['name'] . ' Dwarka') ?>" loading="lazy">
+      <?php if ($i['photo']): ?><img src="<?= e(base_url($i['photo'])) ?>" alt="<?= e($brand . ' ' . $i['name'] . ' ' . shop_city()) ?>" loading="lazy">
       <?php else: ?><div class="ph"><?= e(cat_icon($i['cat_name'] ?? '')) ?></div><?php endif; ?>
       <div class="pb"><div class="pn"><?= e($i['name']) ?></div><div class="pp">₹<?= money($pp) ?></div></div>
     </a>

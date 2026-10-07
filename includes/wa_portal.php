@@ -369,7 +369,7 @@ function wa_portal_route($mobile, $id) {
     // ---------- store location ----------
     if ($id === 'portal:location') {
         $co = row('SELECT * FROM companies ORDER BY id LIMIT 1') ?: [];
-        $addr = trim(($co['address'] ?? '') !== '' ? $co['address'] : 'Dwarka, Gujarat');
+        $addr = trim(($co['address'] ?? '') !== '' ? $co['address'] : shop_place());
         $out = "📍 *" . ($co['name'] ?? $shop) . "*\n$addr";
         if (!empty($co['phone'])) $out .= "\n📞 " . $co['phone'];
         $maps = 'https://maps.google.com/?q=' . rawurlencode(($co['name'] ?? $shop) . ' ' . $addr);

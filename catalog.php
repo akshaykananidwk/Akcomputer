@@ -142,7 +142,13 @@ $showQty = web_show_qty();
 $cats = [];
 foreach ($items as $it) { $cn = $it['cat_name'] ?: ''; if ($cn !== '') $cats[$cn] = ($cats[$cn] ?? 0) + 1; }
 ksort($cats);
-$metaDesc = $app_name . ' - the trusted computer and CCTV store in Dwarka, Gujarat. Computers, Laptops, CCTV Cameras, Printers, Accessories & Repairs in Dwarka, Gujarat. ' . count($items) . '+ products online - order on WhatsApp.';
+// The owner's own computer shop keeps its words; another shop on this
+// software gets its own trade and town - and NEVER the owner's sample
+// testimonials, which would be other people's words passed off as its own.
+$ownShop = !tenant_active();
+$metaDesc = $ownShop
+    ? $app_name . ' - the trusted computer and CCTV store in Dwarka, Gujarat. Computers, Laptops, CCTV Cameras, Printers, Accessories & Repairs in Dwarka, Gujarat. ' . count($items) . '+ products online - order on WhatsApp.'
+    : $app_name . ' - ' . ucfirst(shop_trade()) . (shop_place() !== '' ? ' in ' . shop_place() : '') . '. ' . count($items) . '+ products online - order on WhatsApp.';
 
 // ---------- premium homepage sections ----------
 // All computed from data the shop already has - nothing extra to maintain.
@@ -169,7 +175,9 @@ $dealEnds = trim(setting('store_deal_ends', ''));
 $dId = (int)setting('store_deal_item');
 if ($dId && isset($byId[$dId]) && ($dealEnds === '' || strtotime($dealEnds) > time())) $deal = $byId[$dId];
 $bannerLines = trim(setting('store_banners', ''));
-if ($bannerLines === '') {
+if ($bannerLines === '' && !$ownShop) {
+    $bannerLines = e($app_name) . ' 🛍️|Genuine products · Order straight on WhatsApp|🛍️|#4f46e5|#06b6d4|';
+} elseif ($bannerLines === '') {
     $bannerLines = "Dwarka own computer &amp; CCTV shop 🛍️|Genuine products · Warranty · Order straight on WhatsApp|🖥️|#4f46e5|#06b6d4|\n"
         . "CCTV camera installation|HD &amp; IP cameras · free site visit — ask today!|📹|#059669|#10b981|" . seo_service_url('cctv-installation') . "\n"
         . "Laptop &amp; printer repair|Same-day service · genuine parts|🛠️|#d97706|#f59e0b|" . seo_service_url('laptop-repair');
@@ -180,9 +188,13 @@ foreach (explode("\n", $bannerLines) as $ln) {
     if (($pp[0] ?? '') === '') continue;
     $banners[] = ['t' => $pp[0], 's' => $pp[1] ?? '', 'e' => $pp[2] ?? '🛍️', 'c1' => $pp[3] ?? '#4f46e5', 'c2' => $pp[4] ?? '#06b6d4', 'l' => $pp[5] ?? ''];
 }
-$announce = setting('store_announce', '🚚 Fast delivery in Dwarka · ✅ Genuine products · 🛡️ With warranty · 📞 Order straight on WhatsApp');
+$announce = setting('store_announce', $ownShop ? '🚚 Fast delivery in Dwarka · ✅ Genuine products · 🛡️ With warranty · 📞 Order straight on WhatsApp'
+    : '✅ Genuine products · 📞 Order straight on WhatsApp');
 $faqLines = trim(setting('store_faqs', ''));
-if ($faqLines === '') {
+if ($faqLines === '' && !$ownShop) {
+    $faqLines = "How do I order?|Press Add on a product, then Place Order below — enter your name and mobile and the order reaches us on WhatsApp; we confirm it right away.\n"
+        . (shop_city() !== '' ? "Where do you deliver?|In " . shop_city() . " and nearby. WhatsApp us for anywhere else." : '');
+} elseif ($faqLines === '') {
     $faqLines = "How do I order?|Press Add on a product, then Place Order below — enter your name and mobile and the order reaches us on WhatsApp; we confirm it right away.\n"
         . "Where do you deliver?|In Dwarka and nearby. Large orders come with installation.\n"
         . "Is there a warranty?|Yes — every product is genuine, with the company warranty. The bill and warranty come to you on WhatsApp.\n"
@@ -191,7 +203,7 @@ if ($faqLines === '') {
 $faqs = [];
 foreach (explode("\n", $faqLines) as $ln) { $pp = explode('|', $ln, 2); if (trim($pp[0] ?? '') !== '' && trim($pp[1] ?? '') !== '') $faqs[] = [trim($pp[0]), trim($pp[1])]; }
 $testiLines = trim(setting('store_testimonials', ''));
-if ($testiLines === '') {
+if ($testiLines === '' && $ownShop) {
     $testiLines = "Ramesh, Dwarka|CCTV cameras fitted in a single day, and the work was spotless. I can watch live on my phone!\n"
         . "Hiren (hotel)|Had the whole networking and camera setup done for the hotel. Fair price and fast service.\n"
         . "Kiran|The laptop was repaired the same day. The bill and warranty came on WhatsApp too.";
@@ -240,12 +252,12 @@ function pcard($it, $waPct, array $stockMap = [], $showQty = true) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= e($app_name) ?> — Computer &amp; CCTV Store, Dwarka Gujarat | Computers · CCTV cameras · Laptops</title>
+<title><?= $ownShop ? e($app_name) . ' — Computer &amp; CCTV Store, Dwarka Gujarat | Computers · CCTV cameras · Laptops' : e($app_name . ' — ' . ucfirst(shop_trade()) . (shop_place() !== '' ? ', ' . shop_place() : '')) ?></title>
 <meta name="description" content="<?= e($metaDesc) ?>">
-<meta name="keywords" content="computer shop dwarka, cctv camera dwarka, laptop dwarka gujarat, કમ્પ્યુટર દ્વારકા, સીસીટીવી કેમેરા, લેપટોપ, printer, computer repair dwarka, <?= e(implode(', ', array_keys($cats))) ?>">
+<meta name="keywords" content="<?= $ownShop ? 'computer shop dwarka, cctv camera dwarka, laptop dwarka gujarat, કમ્પ્યુટર દ્વારકા, સીસીટીવી કેમેરા, લેપટોપ, printer, computer repair dwarka, ' : e(shop_trade() . ' ' . shop_city() . ', ') ?><?= e(implode(', ', array_keys($cats))) ?>">
 <link rel="canonical" href="<?= e(base_url('') . '/') ?>">
 <meta property="og:type" content="website">
-<meta property="og:title" content="<?= e($app_name) ?> — Online Store, Dwarka">
+<meta property="og:title" content="<?= e($app_name) ?> — Online Store<?= shop_city() !== '' ? ', ' . e(shop_city()) : '' ?>">
 <meta property="og:description" content="<?= e($metaDesc) ?>">
 <meta property="og:url" content="<?= e(base_url('catalog.php')) ?>">
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -721,8 +733,13 @@ if (!isset($catGroups)) {
 <?php endif; ?>
 
 <footer class="sfoot">
+  <?php if ($ownShop): ?>
   <p><strong>🖥️ <?= e($app_name) ?></strong> — Devbhoomi Dwarka, Gujarat</p>
   <p class="muted mt">Computer shop · CCTV camera installation · Laptop · Printer · Repairs — service in Dwarka and nearby</p>
+  <?php else: ?>
+  <p><strong>🛍️ <?= e($app_name) ?></strong><?= shop_place() !== '' ? ' — ' . e(shop_place()) : '' ?></p>
+  <?php if (powered_by_line() !== ''): ?><p class="muted mt" style="font-size:12px"><?= e(powered_by_line()) ?></p><?php endif; ?>
+  <?php endif; ?>
   <p class="mt">
     <?php if ($waShop): ?><a class="btn btn-sm btn-wa" href="https://wa.me/<?= e($waShop) ?>" target="_blank" rel="noopener">📲 WhatsApp us</a><?php endif; ?>
     <a class="btn btn-sm btn-outline" href="referral.php">💰 Refer &amp; Earn</a>

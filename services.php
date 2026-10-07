@@ -17,8 +17,8 @@ if ($slug !== '' && !$sv) { header('HTTP/1.1 404 Not Found'); die('<meta charset
 site_visit_track('service');
 
 $curl = $sv ? seo_service_url($slug) : base_url('services.php');
-$title = $sv ? $sv['title'] : 'Computer, CCTV & IT Services in Dwarka, Gujarat | ' . $app_name;
-$metaDesc = $sv ? $sv['desc'] : 'Computer repair, laptop repair, CCTV installation, networking, printer service, data recovery, AMC and internet connection in Dwarka, Gujarat — all IT services by ' . $app_name . '.';
+$title = $sv ? $sv['title'] : 'Computer, CCTV & IT Services in ' . shop_place() . ' | ' . $app_name;
+$metaDesc = $sv ? $sv['desc'] : 'Computer repair, laptop repair, CCTV installation, networking, printer service, data recovery, AMC and internet connection in ' . shop_place() . ' — all IT services by ' . $app_name . '.';
 ?><!DOCTYPE html>
 <html lang="gu">
 <head>
@@ -39,11 +39,11 @@ $metaDesc = $sv ? $sv['desc'] : 'Computer repair, laptop repair, CCTV installati
 <?php if ($sv): ?>
 <?= seo_jsonld([
     '@context' => 'https://schema.org', '@type' => 'Service',
-    'name' => $sv['name'] . ' — Dwarka', 'serviceType' => $sv['name'],
-    'areaServed' => ['@type' => 'City', 'name' => 'Dwarka'],
+    'name' => $sv['name'] . ' — ' . shop_city(), 'serviceType' => $sv['name'],
+    'areaServed' => ['@type' => 'City', 'name' => shop_city()],
     'provider' => ['@type' => 'ElectronicsStore', 'name' => $app_name, 'telephone' => (string)$co['phone'],
                    'address' => ['@type' => 'PostalAddress', 'streetAddress' => (string)$co['address'],
-                                 'addressLocality' => 'Dwarka', 'addressRegion' => 'Gujarat', 'addressCountry' => 'IN']],
+                                 'addressLocality' => shop_city(), 'addressRegion' => setting('shop_state', tenant_active() ? '' : 'Gujarat'), 'addressCountry' => 'IN']],
 ]) ?>
 <?= seo_faq_jsonld($sv['faqs']) ?>
 <?= seo_breadcrumbs([[$app_name, base_url('catalog.php')], ['Services', base_url('services.php')], [$sv['name']]]) ?>
@@ -56,7 +56,7 @@ $metaDesc = $sv ? $sv['desc'] : 'Computer repair, laptop repair, CCTV installati
 <div class="swrap">
 <?php if ($sv): ?>
   <div class="scard">
-    <h1><?= $sv['emoji'] ?> <?= e($sv['name']) ?> in Dwarka, Gujarat</h1>
+    <h1><?= $sv['emoji'] ?> <?= e($sv['name']) ?> in <?= e(shop_place()) ?></h1>
     <?php foreach ($sv['paras'] as $p): ?><p><?= e($p) ?></p><?php endforeach; ?>
     <div class="chips" style="margin-top:14px">
       <?php foreach ($sv['points'] as $pt): ?><a href="<?= e($curl) ?>" onclick="return false" style="cursor:default">✔ <?= e($pt) ?></a><?php endforeach; ?>
@@ -84,8 +84,8 @@ $metaDesc = $sv ? $sv['desc'] : 'Computer repair, laptop repair, CCTV installati
   </div>
 <?php else: ?>
   <div class="scard">
-    <h1>🛠️ Our Services — <?= e($app_name) ?>, Dwarka</h1>
-    <p>Computers, laptops, CCTV, printers and all networking services in one place in Dwarka, Gujarat. Click any service below for details.</p>
+    <h1>🛠️ Our Services — <?= e($app_name) ?>, <?= e(shop_city()) ?></h1>
+    <p>Computers, laptops, CCTV, printers and all networking services in one place in <?= e(shop_place()) ?>. Click any service below for details.</p>
   </div>
   <div class="pgrid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">
     <?php foreach ($services as $s2 => $d2): ?>

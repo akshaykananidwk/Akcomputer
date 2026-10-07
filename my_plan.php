@@ -13,6 +13,10 @@ $t = prow('SELECT * FROM tenants WHERE id = ?', [tenant()['id']]);   // fresh, n
 $plans = pall('SELECT * FROM plans WHERE is_active = 1 ORDER BY sort_order, id');
 $cur = prow('SELECT * FROM plans WHERE id = ?', [(int)$t['plan_id']]);
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($t['is_demo'])) {
+    flash('This is the demo shop - plans, exports and closing are switched off here.', 'error');
+    redirect('my_plan.php');
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $do = post('do');
     if ($do === 'pay') {

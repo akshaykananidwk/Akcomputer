@@ -127,6 +127,59 @@ function secret_setting_keys() {
 }
 function is_secret_setting($name) { return in_array($name, secret_setting_keys(), true); }
 
+/** The town the shop is in: its setting, else its first location's city;
+ *  the owner's own shop falls back to Dwarka, another shop to nothing. */
+function shop_city() {
+    static $c = null;
+    if ($c === null) {
+        $c = trim((string)setting('shop_city', ''));
+        if ($c === '') { try { $c = trim((string)val('SELECT city FROM locations ORDER BY id LIMIT 1')); } catch (Exception $e) { $c = ''; } }
+        if ($c === '' && !(function_exists('tenant_active') && tenant_active())) $c = 'Dwarka';
+    }
+    return $c;
+}
+/** "Dwarka, Gujarat" - the town and state, for pages and messages. */
+function shop_place() {
+    $state = trim((string)setting('shop_state', function_exists('tenant_active') && tenant_active() ? '' : 'Gujarat'));
+    return trim(shop_city() . ($state !== '' ? ', ' . $state : ''), ', ');
+}
+/** "We deal in" on the bill: the owner's own list, a setting (comma separated),
+ *  or another shop's first categories. At most six words. */
+function bill_deal_in() {
+    $s = trim((string)setting('bill_deal_in', ''));
+    if ($s !== '') return array_slice(array_values(array_filter(array_map('trim', explode(',', $s)))), 0, 6);
+    if (!(function_exists('tenant_active') && tenant_active())) return ['Computers', 'Laptops', 'Accessories', 'CCTV', 'Networking', 'AMC'];
+    try { return array_slice(array_column(all('SELECT name FROM categories ORDER BY id LIMIT 6'), 'name'), 0, 6); } catch (Exception $e) { return []; }
+}
+/** The name in the round stamp on the bill. */
+function bill_stamp_name() {
+    $s = trim((string)setting('bill_stamp_name', ''));
+    if ($s !== '') return mb_strtoupper($s);
+    if (!(function_exists('tenant_active') && tenant_active())) return 'AK COMPUTER';
+    return mb_strtoupper(mb_substr((string)setting('app_name', ''), 0, 18));
+}
+/** The small "Powered by" line under another shop's bills and store - none
+ *  for the owner's own shop, none on a white-label plan that switched it off. */
+function powered_by_line() {
+    if (!(function_exists('tenant_active') && tenant_active())) return '';
+    if (setting('hide_powered_by', '0') === '1' && function_exists('tenant_plan') && !empty(tenant_plan()['white_label'])) return '';
+    return (string)(pval("SELECT value FROM settings WHERE name = 'platform_powered_by'") ?? 'Powered by AK Computer');
+}
+
+/** What the shop is, in a few words, for AI prompts and descriptions. */
+function shop_trade() {
+    $t = trim((string)setting('shop_trade', ''));
+    if ($t !== '') return $t;
+    $type = setting('business_type', function_exists('tenant_active') && tenant_active() ? 'general' : 'computer');
+    if (function_exists('business_packs') || is_file(__DIR__ . '/business_packs.php')) {
+        require_once __DIR__ . '/business_packs.php';
+        if ($type === 'computer') return 'computer & CCTV shop';
+        $p = business_packs()[$type] ?? null;
+        if ($p && $type !== 'general') return strtolower($p[1]);
+    }
+    return 'shop';
+}
+
 function setting($name, $default = '', $poke = null) {
     static $cache = null;
     if ($cache === null) {

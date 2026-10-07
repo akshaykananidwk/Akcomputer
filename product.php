@@ -70,7 +70,7 @@ if (!empty($_SESSION['web_account_id'])) {
 $waPct = $webAcct ? (float)$webAcct['discount_pct'] : 0;
 $dp = dealer_price($it['selling_price'], $waPct);
 $label = trim($it['name'] . ($it['brand'] ? ' - ' . trim($it['brand'] . ' ' . $it['model']) : ''));
-$desc = $it['description'] ?: ($label . ' available at ' . $app_name . ', Dwarka Gujarat. Best price, genuine product, warranty & service. Price Rs ' . money($dp) . ' - order on WhatsApp.');
+$desc = $it['description'] ?: ($label . ' available at ' . $app_name . ', ' . shop_place() . '. Best price, genuine product, warranty & service. Price Rs ' . money($dp) . ' - order on WhatsApp.');
 $webQty = (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$it['id']]);
 $inStock = $it['item_type'] === 'service' || $webQty > 0;
 // The SAME rule the catalogue cards use, so the two pages can never disagree
@@ -84,7 +84,7 @@ $purl = seo_product_url($it);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= e($label) ?> — ₹<?= money($dp) ?> | <?= e($app_name) ?> Dwarka</title>
+<title><?= e($label) ?> — ₹<?= money($dp) ?> | <?= e($app_name) ?> <?= e(shop_city()) ?></title>
 <meta name="description" content="<?= e(mb_substr($desc, 0, 300)) ?>">
 <meta name="keywords" content="<?= e($it['name']) ?>, <?= e($it['brand']) ?>, <?= e($it['cat_name']) ?>, dwarka, gujarat, price, <?= e($app_name) ?>">
 <link rel="canonical" href="<?= e($purl) ?>">
@@ -196,7 +196,7 @@ body { background: var(--bg); }
     <?php if ($it['description']): ?><p class="pdesc"><?= nl2br(e($it['description'])) ?></p><?php endif; ?>
     <div class="facts">
       <?php if ($it['warranty_months'] > 0): ?><div>🛡️ Warranty: <?= (int)$it['warranty_months'] ?> months</div><?php endif; ?>
-      <div>🏪 <?= e($app_name) ?>, Dwarka</div>
+      <div>🏪 <?= e($app_name) ?><?= shop_city() !== '' ? ', ' . e(shop_city()) : '' ?></div>
       <div>🛠️ Installation &amp; service available</div>
       <div>✅ Genuine product</div>
     </div>

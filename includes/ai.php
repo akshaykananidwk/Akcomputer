@@ -149,7 +149,7 @@ function gemini_discover_model($key) {
  *  Returns [['category'=>..,'description'=>..]|null, error|null]. */
 function gemini_item_meta($item, array $categoryNames) {
     $label = trim($item['name'] . ' ' . ($item['brand'] ?? '') . ' ' . ($item['model'] ?? ''));
-    $prompt = "You are cataloguing products for a computer & CCTV shop in Gujarat, India.\n"
+    $prompt = "You are cataloguing products for a " . shop_trade() . " in India.\n"
         . "Product: \"{$label}\"\n"
         . "Existing shop categories: " . ($categoryNames ? implode(', ', $categoryNames) : '(none yet)') . "\n\n"
         . "Reply with ONLY a JSON object, no markdown fences, exactly:\n"
@@ -411,7 +411,7 @@ function ai_categorize_apply(array $items) {
     }
     $list = '';
     foreach ($items as $it) $list .= (int)$it['id'] . '|' . trim((string)$it['name']) . "\n";
-    $prompt = "You are filing products of a computer & CCTV shop into its FIXED category tree.\n"
+    $prompt = "You are filing products of a " . shop_trade() . " into its FIXED category tree.\n"
         . "Category tree (category: sub-categories):\n$taxTxt\n"
         . "For EVERY product below pick the best matching category + sub-category FROM THE TREE ONLY (copy the names exactly). "
         . "If nothing fits, use cat \"Accessories\" sub \"Other Accessories\".\n"

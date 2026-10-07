@@ -340,9 +340,9 @@ function meta_wa_full_sync() {
     // ---- 4. business profile: push OUR info onto the WhatsApp profile ----
     $co = row('SELECT * FROM companies ORDER BY id LIMIT 1') ?: [];
     $want = array_filter([
-        'about' => mb_substr(setting('app_name', 'AK Computer') . ' — Computer · CCTV · Printer · Networking, Dwarka', 0, 139),
-        'address' => mb_substr(trim(($co['address'] ?? '') !== '' ? $co['address'] : 'Dwarka, Gujarat'), 0, 256),
-        'description' => mb_substr(setting('app_name', 'AK Computer') . ' - the trusted computer and CCTV store in Dwarka. All prices online: ' . base_url('') . '/ . On this number "catalog" send it - the whole catalogue inside WhatsApp!', 0, 512),
+        'about' => mb_substr(setting('app_name', 'AK Computer') . ' — ' . ucfirst(shop_trade()) . (shop_city() !== '' ? ', ' . shop_city() : ''), 0, 139),
+        'address' => mb_substr(trim(($co['address'] ?? '') !== '' ? $co['address'] : shop_place()), 0, 256),
+        'description' => mb_substr(setting('app_name', 'AK Computer') . ' - your trusted ' . shop_trade() . (shop_city() !== '' ? ' in ' . shop_city() : '') . '. All prices online: ' . base_url('') . '/ . On this number "catalog" send it - the whole catalogue inside WhatsApp!', 0, 512),
         'email' => trim($co['email'] ?? ''),
         'vertical' => 'RETAIL',
     ]);

@@ -871,9 +871,9 @@ function invoice_pdf_design1($sale, $items) {
     $pdf->text($cxc, $fbTop + 15, 8.3, 'For Support', 'B', $C['navy']);
     $pdf->text($cxc, $fbTop + 29, 10, $sale['c_phone'] ?: '', 'B', $C['navy']);
     // we deal in (right) - labels with tiny device icons
-    $pdf->text($cxc + 92, $fbTop + 15, 8, 'We Deal In:', 'B', $C['navy']);
-    $cats = ['Computers', 'Laptops', 'Accessories', 'CCTV', 'Networking', 'AMC'];
-    $startx = $cxc + 150; $stepx = (($R) - $startx) / (count($cats) - 1);
+    $cats = bill_deal_in();
+    if ($cats) $pdf->text($cxc + 92, $fbTop + 15, 8, 'We Deal In:', 'B', $C['navy']);
+    $startx = $cxc + 150; $stepx = (($R) - $startx) / max(1, count($cats) - 1);
     foreach ($cats as $i => $cat) {
         $cx = $startx + $i * $stepx;
         pdf_icon_device($pdf, $cx, $fbTop + 18, $C['teal_dark']);
@@ -891,7 +891,7 @@ function invoice_pdf_design1($sale, $items) {
     $pdf->circle_stroke($stcx, $stcy, 24, $C['navy'], 1.1);
     $pdf->circle_stroke($stcx, $stcy, 20, $C['navy'], 0.6);
     $stampCity = strtoupper(trim(explode('-', (string)($sale['loc_city'] ?? ''))[0]));
-    $pdf->text_center($stcx, $stcy - 6, 5.2, 'AK COMPUTER', 'B', $C['navy']);
+    $pdf->text_center($stcx, $stcy - 6, 5.2, bill_stamp_name(), 'B', $C['navy']);
     $pdf->text_center($stcx, $stcy + 2, 5.2, 'THANK YOU', '', $C['navy']);
     $pdf->text_center($stcx, $stcy + 11, 5.2, $stampCity, 'B', $C['navy']);
 
@@ -1214,17 +1214,17 @@ function invoice_pdf_design2($sale, $items) {
     $pdf->text(150, $fbTop + 15, 8.3, 'For Support', 'B', [1, 1, 1]);
     $pdf->text(150, $fbTop + 30, 10, (string)($sale['c_phone'] ?? ''), 'B', [1, 1, 1]);
     // We Deal In (right)
-    $pdf->text(330, $fbTop + 13, 7.6, 'We Deal In :', 'B', [1, 1, 1]);
-    $cats = ['Computers', 'Laptops', 'Accessories', 'CCTV', 'Networking', 'AMC'];
-    $sx0 = 330; $sstep = ($R - $sx0) / (count($cats) - 1);
+    $cats = bill_deal_in();
+    if ($cats) $pdf->text(330, $fbTop + 13, 7.6, 'We Deal In :', 'B', [1, 1, 1]);
+    $sx0 = 330; $sstep = ($R - $sx0) / max(1, count($cats) - 1);
     foreach ($cats as $i => $cat) { $cx = $sx0 + $i * $sstep; pdf_icon_device($pdf, $cx, $fbTop + 25, [1, 1, 1]); $pdf->text_center($cx, $fbTop + 39, 6, $cat, '', [1, 1, 1]); }
     // centre stamp (auto-fit "AK COMPUTER" so it never gets clipped by the ring)
     $stcx = 290; $stcy = $fbTop + 21;
     $pdf->circle($stcx, $stcy, 20, [1, 1, 1]);
     $pdf->circle_stroke($stcx, $stcy, 19, $C['purple'], 1); $pdf->circle_stroke($stcx, $stcy, 16.5, $C['purple'], 0.5);
     $innerW = 2 * 16.5 - 5;                 // usable width inside the inner ring
-    $topFs = min(4.6, $innerW * 4.6 / max(1, pdf_text_width('AK COMPUTER', 4.6, true)));
-    $pdf->text_center($stcx, $stcy - 5.5, $topFs, 'AK COMPUTER', 'B', $C['purple']);
+    $topFs = min(4.6, $innerW * 4.6 / max(1, pdf_text_width(bill_stamp_name(), 4.6, true)));
+    $pdf->text_center($stcx, $stcy - 5.5, $topFs, bill_stamp_name(), 'B', $C['purple']);
     $pdf->text_center($stcx, $stcy + 1.5, 4.4, 'THANK YOU', '', $C['purple']);
     $pdf->text_center($stcx, $stcy + 8.5, 4.4, strtoupper(trim(explode('-', (string)($sale['loc_city'] ?? ''))[0])), 'B', $C['purple']);
 

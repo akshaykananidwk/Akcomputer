@@ -92,6 +92,9 @@ foreach (glob(dirname(__DIR__) . '/*.php') as $f) {
         // a new shop signing itself up: owner's address only, closed by
         // default, rate-limited and OTP-checked (see the tenant suite)
         'signup.php',
+        // a reseller's own page: its own login (code + password, throttled)
+        'reseller.php',
+        'demo.php',   // the demo shop's address and login - nothing private
         // Fetched by the phone network while a reminder call is connecting,
         // so no session exists to gate on. Both are guarded instead by the
         // per-call ?t= token - 160 random bits, one call, six hours - which

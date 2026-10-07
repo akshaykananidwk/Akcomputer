@@ -66,7 +66,7 @@ function wa_bot_search($text) {
 function wa_bot_identify_photo($jpegBytes) {
     if (!function_exists('gemini_generate')) return null;
     list($text, $err) = gemini_generate([
-        ['text' => "A customer sent this photo to a computer & CCTV shop in India asking if we sell it.\nReply with ONLY the product type plus brand/model if visible, 2-6 words in English, nothing else.\nExamples: 'CP Plus dome CCTV camera', 'HP laptop charger 65W', 'D-Link WiFi router'."],
+        ['text' => "A customer sent this photo to a " . shop_trade() . " in India asking if we sell it.\nReply with ONLY the product type plus brand/model if visible, 2-6 words in English, nothing else.\nExamples: 'CP Plus dome CCTV camera', 'HP laptop charger 65W', 'D-Link WiFi router'."],
         ['inline_data' => ['mime_type' => 'image/jpeg', 'data' => base64_encode($jpegBytes)]],
     ], 30);
     if ($err || $text === null) return null;
@@ -620,7 +620,7 @@ function wa_bot_ai_reply($text) {
     }
     $catList = '';
     foreach ($cands as $c) $catList .= '- ' . $c['name'] . ' = ₹' . money($c['selling_price']) . ' (' . base_url('product.php?id=' . $c['id']) . ")\n";
-    $prompt = "You are the WhatsApp helper of \"" . setting('app_name', 'AK Computer') . "\", a computer & CCTV shop in Dwarka, Gujarat.\n"
+    $prompt = "You are the WhatsApp helper of \"" . setting('app_name', 'AK Computer') . "\", a " . shop_trade() . (shop_place() !== '' ? " in " . shop_place() : '') . ".\n"
         . "Customer message: \"" . mb_substr($text, 0, 200) . "\"\n"
         . ($catList !== '' ? "Possibly matching products from our stock:\n$catList" : "No matching product found in our stock list.\n")
         . "Store link: " . base_url('catalog.php') . "\n\n"
@@ -720,7 +720,7 @@ function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
     $mo = (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date >= DATE_FORMAT(NOW(), '%Y-%m-01')");
     $cash = function_exists('total_cash_in_hand') ? total_cash_in_hand() : 0;
     $snapshot = "Today's sales: ₹" . money($td['t']) . " ({$td['c']} bills). Month sales: ₹" . money($mo) . ". Cash in hand: ₹" . money($cash) . ".";
-    $prompt = "You are the private WhatsApp assistant of the OWNER of \"" . setting('app_name', 'AK Computer') . "\" (computer shop, Dwarka).\n"
+    $prompt = "You are the private WhatsApp assistant of the OWNER of \"" . setting('app_name', 'AK Computer') . "\" (" . shop_trade() . (shop_city() !== '' ? ', ' . shop_city() : '') . ").\n"
         . "Shop snapshot: $snapshot\n"
         . "Owner's message: \"" . mb_substr($text, 0, 200) . "\"\n\n"
         . "Answer in simple Gujarati, MAXIMUM 3 short sentences, using ONLY the snapshot numbers (never invent figures). "

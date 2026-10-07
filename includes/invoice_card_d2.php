@@ -136,12 +136,12 @@ $trust = [
   <div class="inv2-footer">
     <div><strong>Stay Connected</strong><div class="inv2-social"><span>f</span><span>IG</span><span>W</span><span>YT</span></div></div>
     <?php if ($sale['c_phone']): ?><div style="text-align:center"><strong>For Support</strong><br><?= e($sale['c_phone']) ?></div><?php endif; ?>
-    <div style="text-align:right"><strong>We Deal In :</strong><br>Computers · Laptops · Accessories · CCTV · Networking · AMC</div>
+    <?php if (bill_deal_in()): ?><div style="text-align:right"><strong>We Deal In :</strong><br><?= e(implode(' · ', bill_deal_in())) ?></div><?php endif; ?>
   </div>
   <div class="inv2-sigrow">
     <div class="inv2-sig"><?php $sigFile = !empty($sale['signature']) ? up_dir('signatures') . '/' . basename($sale['signature']) : '';
                 if ($sigFile && is_file($sigFile)): ?><img src="<?= e(base_url(up_rel('signatures') . '/' . $sale['signature'])) ?>" alt="" style="max-height:52px;display:block;margin:0 auto 2px"><?php endif; ?>Receiver's Signature</div>
-    <div class="inv2-stamp">AK COMPUTER<br>★ THANK YOU ★<br><?= e(strtoupper(trim(explode('-', $sale['loc_city'])[0]))) ?></div>
+    <div class="inv2-stamp"><?= e(bill_stamp_name()) ?><br>★ THANK YOU ★<br><?= e(strtoupper(trim(explode('-', $sale['loc_city'])[0]))) ?></div>
     <div class="inv2-sig">For <?= e($sale['company_name']) ?> - Authorised Signatory</div>
   </div>
   <div class="inv2-bottom">This is a computer generated invoice.</div>

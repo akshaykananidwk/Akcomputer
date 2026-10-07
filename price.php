@@ -36,15 +36,15 @@ $catList = $it['category_id']
 
 $faqs = [
     $it['name'] . ' What is the price?' =>
-        $it['name'] . ' worth Rs ' . money($dp) . '  (' . $monthYear . ', ' . $app_name . ', Dwarka). WhatsApp us for wholesale prices.',
+        $it['name'] . ' worth Rs ' . money($dp) . '  (' . $monthYear . ', ' . $app_name . ', ' . shop_city() . '). WhatsApp us for wholesale prices.',
     'Is this product in stock?' =>
-        $inStock ? 'Yes, ' . $app_name . ' in stock in Dwarka right now — available today.' : 'Available to order right now — WhatsApp us and we will get it quickly.',
+        $inStock ? 'Yes, ' . $app_name . ' in stock in ' . shop_city() . ' right now — available today.' : 'Available to order right now — WhatsApp us and we will get it quickly.',
     'Is there a warranty?' =>
         ((int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' months of warranty included.' : 'Warranty is as per the brand official warranty.') . ' Products are 100% genuine.',
     'Is installation or service available?' =>
-        'Yes, ' . $app_name . ' in Dwarka, with both installation and after-sales service.',
+        'Yes, ' . $app_name . ' in ' . shop_city() . ', with both installation and after-sales service.',
 ];
-$metaDesc = $it['name'] . ' price in Dwarka, Gujarat: ₹' . money($dp) . ' (' . $monthYear . ') at ' . $app_name . '. ' .
+$metaDesc = $it['name'] . ' price in ' . shop_place() . ': ₹' . money($dp) . ' (' . $monthYear . ') at ' . $app_name . '. ' .
             ($it['brand'] ? $it['brand'] . ' ' . $it['model'] . '. ' : '') .
             'Genuine product, warranty, installation & WhatsApp ordering. ' . ($it['cat_name'] ? $it['cat_name'] . ' price list inside.' : '');
 ?><!DOCTYPE html>
@@ -52,7 +52,7 @@ $metaDesc = $it['name'] . ' price in Dwarka, Gujarat: ₹' . money($dp) . ' (' .
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= e($it['name']) ?> Price — ₹<?= money($dp) ?> (<?= e($monthYear) ?>) | Dwarka | <?= e($app_name) ?></title>
+<title><?= e($it['name']) ?> Price — ₹<?= money($dp) ?> (<?= e($monthYear) ?>) | <?= e(shop_city()) ?> | <?= e($app_name) ?></title>
 <meta name="description" content="<?= e(mb_substr($metaDesc, 0, 300)) ?>">
 <link rel="canonical" href="<?= e($purl) ?>">
 <meta property="og:type" content="product">
@@ -95,11 +95,11 @@ $metaDesc = $it['name'] . ' price in Dwarka, Gujarat: ₹' . money($dp) . ' (' .
 
 <div class="swrap">
   <div class="scard">
-    <h1><?= e($it['name']) ?> Price in Dwarka, Gujarat</h1>
+    <h1><?= e($it['name']) ?> Price in <?= e(shop_place()) ?></h1>
     <?php if ($it['brand'] || $it['model']): ?><p class="muted"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?><?= $it['cat_name'] ? ' · ' . e($it['cat_name']) : '' ?></p><?php endif; ?>
     <div class="pricebox">
       <div class="amt">₹<?= money($dp) ?></div>
-      <div class="upd">✔ Updated: <?= e($monthYear) ?> · <?= $inStock ? '✅ In stock at ' . e($app_name) . ', Dwarka' : '📦 Available on order' ?></div>
+      <div class="upd">✔ Updated: <?= e($monthYear) ?> · <?= $inStock ? '✅ In stock at ' . e($app_name) . ', ' . e(shop_city()) : '📦 Available on order' ?></div>
       <div class="pbtns">
         <a class="btn btn-block" href="<?= e($prodUrl) ?>" style="background:linear-gradient(100deg,#4f46e5,#2563eb);border:0">🛒 View Product &amp; Order</a>
         <?php if ($waShop): ?>
@@ -107,12 +107,12 @@ $metaDesc = $it['name'] . ' price in Dwarka, Gujarat: ₹' . money($dp) . ' (' .
         <?php endif; ?>
       </div>
     </div>
-    <p style="margin-top:14px"><?= e($it['name']) ?> — <?= $it['brand'] ? e(trim($it['brand'] . ' ' . $it['model'])) . ' — ' : '' ?>at the best price in Dwarka, Gujarat <?= e($app_name) ?> . Products are 100% genuine, <?= (int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' months warranty' : 'Brand warranty' ?> with installation and after-sales support. Prices may change — WhatsApp us for the latest.</p>
+    <p style="margin-top:14px"><?= e($it['name']) ?> — <?= $it['brand'] ? e(trim($it['brand'] . ' ' . $it['model'])) . ' — ' : '' ?>at the best price in <?= e(shop_place()) ?> <?= e($app_name) ?> . Products are 100% genuine, <?= (int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' months warranty' : 'Brand warranty' ?> with installation and after-sales support. Prices may change — WhatsApp us for the latest.</p>
   </div>
 
   <?php if (count($catList) > 1): ?>
   <div class="scard">
-    <h2><?= e(cat_icon($it['cat_name'])) ?> <?= e($it['cat_name']) ?> Price List — Dwarka (<?= e($monthYear) ?>)</h2>
+    <h2><?= e(cat_icon($it['cat_name'])) ?> <?= e($it['cat_name']) ?> Price List — <?= e(shop_city()) ?> (<?= e($monthYear) ?>)</h2>
     <table class="ptable">
       <tr><th><?= e($it['cat_name']) ?></th><th class="num">Price</th></tr>
       <?php foreach ($catList as $r): ?>

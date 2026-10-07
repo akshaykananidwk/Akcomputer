@@ -167,3 +167,22 @@ foreach (['users.php' => "plan_limit_problem('users')", 'sales.php' => "plan_lim
 $mp = file_get_contents(dirname(__DIR__) . '/my_plan.php');
 t_ok('"My plan" is the shop admin\'s only', strpos($mp, 'if (!is_full_admin())') !== false && strpos($mp, "if (!tenant_active()) redirect('platform.php');") !== false);
 t_ok('closing needs the shop\'s address typed exactly', strpos($mp, "strtolower(trim(post('confirm'))) !== strtolower(\$t['slug'])") !== false);
+
+t_group('Shops: each shop speaks as itself');
+t_eq('the owner\'s own shop is still in Dwarka', shop_city() !== '' ? 'set' : 'empty', 'set');
+t_eq('its bill stamp is unchanged', bill_stamp_name(), setting('bill_stamp_name', '') !== '' ? mb_strtoupper(setting('bill_stamp_name')) : 'AK COMPUTER');
+t_eq('...and its "we deal in" list', count(bill_deal_in()), setting('bill_deal_in', '') !== '' ? count(bill_deal_in()) : 6);
+t_eq('the owner\'s own bills carry no "Powered by"', powered_by_line(), '');
+$cat = file_get_contents(dirname(__DIR__) . '/catalog.php');
+t_ok('another shop never shows the owner\'s sample testimonials', strpos($cat, "if (\$testiLines === '' && \$ownShop) {") !== false);
+foreach (['sale_view.php', 'includes/invoice_card_d2.php', 'includes/pdf.php', 'includes/seo.php', 'includes/wa_bot.php', 'includes/ai.php', 'brand.php', 'category.php', 'product.php', 'price.php', 'services.php'] as $f)
+    t_ok("$f has no hard-coded AK COMPUTER / Dwarka text left", !preg_match("/'AK COMPUTER'|>AK COMPUTER<|in Dwarka|Dwarka, Gujarat/", preg_replace('#^\s*(//|\*).*$#m', '', file_get_contents(dirname(__DIR__) . '/' . $f))));
+
+t_group('Shops: resellers and the demo');
+$rp = file_get_contents(dirname(__DIR__) . '/reseller.php');
+t_ok('the reseller page is on the owner\'s address only', strpos($rp, "if (tenant_active()) { http_response_code(404)") !== false);
+t_ok('its login is throttled', strpos($rp, 'login_throttle_blocked($key)') !== false && strpos($rp, 'login_throttle_hit($key)') !== false);
+t_ok('a reseller sees names, plans and dates - never a shop\'s data', !preg_match('/FROM\s+(sales|parties|items|payments)\b/i', $rp));
+$mp2 = file_get_contents(dirname(__DIR__) . '/my_plan.php');
+t_ok('the demo shop cannot pay, export or close', strpos($mp2, "&& !empty(\$t['is_demo'])") !== false);
+t_ok('the demo resets once a day, after 2 am', strpos(file_get_contents(dirname(__DIR__) . '/includes/platform.php'), "(int)date('G') >= 2") !== false);

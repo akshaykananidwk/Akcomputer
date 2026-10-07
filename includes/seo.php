@@ -33,7 +33,7 @@ function seo_service_url($slug) { return base_url('s/' . $slug); }
 function seo_company() {
     static $co = false;
     if ($co === false) { try { $co = row('SELECT * FROM companies WHERE is_active = 1 ORDER BY id LIMIT 1'); } catch (Exception $e) { $co = null; } }
-    return $co ?: ['name' => setting('app_name', 'AK Computer'), 'address' => 'Dwarka, Gujarat', 'phone' => '', 'email' => ''];
+    return $co ?: ['name' => setting('app_name', 'AK Computer'), 'address' => shop_place(), 'phone' => '', 'email' => ''];
 }
 
 /** Website categories (only ones that actually have live products). */
@@ -82,7 +82,7 @@ function seo_localbusiness_jsonld() {
         'telephone' => $co['phone'] ?: ($wa ? '+' . $wa : ''),
         'email' => $co['email'] ?: setting('company_email', ''),
         'address' => ['@type' => 'PostalAddress', 'streetAddress' => (string)$co['address'],
-                      'addressLocality' => 'Dwarka', 'addressRegion' => 'Gujarat', 'addressCountry' => 'IN'],
+                      'addressLocality' => shop_city(), 'addressRegion' => setting('shop_state', tenant_active() ? '' : 'Gujarat'), 'addressCountry' => 'IN'],
         'priceRange' => '₹₹',
         'openingHours' => 'Mo-Su 09:00-21:00',
     ]);
@@ -166,13 +166,13 @@ function seo_footer() {
     foreach (seo_services() as $slug => $sv) {
         $h .= '<a href="' . e(seo_service_url($slug)) . '">' . $sv['emoji'] . ' ' . e($sv['name']) . '</a>';
     }
-    $h .= '</div><div><h3>' . e($app) . ' — Dwarka, Gujarat</h3>';
-    $h .= '<p>📍 ' . e($co['address'] ?: 'Dwarka, Gujarat') . '</p>';
+    $h .= '</div><div><h3>' . e($app) . ' — ' . e(shop_place()) . '</h3>';
+    $h .= '<p>📍 ' . e($co['address'] ?: shop_place()) . '</p>';
     if ($co['phone']) $h .= '<p>📞 <a href="tel:' . e(preg_replace('/\D/', '', $co['phone'])) . '" style="display:inline">' . e($co['phone']) . '</a></p>';
     if ($wa && strlen($wa) >= 12) $h .= '<p>💬 <a href="https://wa.me/' . e($wa) . '" style="display:inline" rel="noopener">WhatsApp Order</a></p>';
-    $h .= '<p style="margin-top:8px">Computer, Laptop, CCTV Camera, Printer — sales, repair &amp; installation in Dwarka, Gujarat. Genuine products with warranty &amp; doorstep service.</p>';
+    if (setting('business_type', tenant_active() ? 'general' : 'computer') === 'computer') $h .= '<p style="margin-top:8px">Computer, Laptop, CCTV Camera, Printer — sales, repair &amp; installation in ' . e(shop_place()) . '. Genuine products with warranty &amp; doorstep service.</p>';
     $h .= '</div></div>';
-    $h .= '<div class="cop">© ' . date('Y') . ' ' . e($app) . ', Dwarka · <a style="display:inline" href="' . e(base_url('') . '/') . '">Online Store</a> · <a style="display:inline" href="' . e(seo_service_url('cctv-installation')) . '">CCTV Installation</a> · <a style="display:inline" href="' . e(seo_service_url('computer-repair')) . '">Computer Repair</a> · <a style="display:inline" href="' . e(base_url('privacy.php')) . '">Privacy Policy</a> · <a style="display:inline" href="' . e(base_url('terms.php')) . '">Terms</a></div>';
+    $h .= '<div class="cop">© ' . date('Y') . ' ' . e($app) . ', ' . e(shop_city()) . ' · <a style="display:inline" href="' . e(base_url('') . '/') . '">Online Store</a> · <a style="display:inline" href="' . e(seo_service_url('cctv-installation')) . '">CCTV Installation</a> · <a style="display:inline" href="' . e(seo_service_url('computer-repair')) . '">Computer Repair</a> · <a style="display:inline" href="' . e(base_url('privacy.php')) . '">Privacy Policy</a> · <a style="display:inline" href="' . e(base_url('terms.php')) . '">Terms</a></div>';
     return $h . '</footer>';
 }
 
@@ -182,11 +182,11 @@ function seo_services() {
     return [
         'cctv-installation' => [
             'name' => 'CCTV Camera Installation', 'emoji' => '📹',
-            'title' => 'CCTV Camera Installation in Dwarka, Gujarat — Best Price | ' . $app,
-            'desc' => 'CCTV camera installation in Dwarka at best price. HD & IP cameras, DVR/NVR setup, mobile viewing, wiring, warranty and quick service. Free site visit — WhatsApp us.',
+            'title' => 'CCTV Camera Installation in ' . shop_place() . ' — Best Price | ' . $app,
+            'desc' => 'CCTV camera installation in ' . shop_city() . ' at best price. HD & IP cameras, DVR/NVR setup, mobile viewing, wiring, warranty and quick service. Free site visit — WhatsApp us.',
             'paras' => [
                 'CCTV camera setup for a home, shop, office, school or factory — we do it all, from the survey and wiring to installation and setting up live view on your phone. Both HD and IP cameras, branded DVR/NVR, and only genuine products.',
-                'Free site visit in Dwarka and nearby. Service and warranty support after installation are our responsibility too. We repair and upgrade older systems as well.',
+                'Free site visit in ' . shop_city() . ' and nearby. Service and warranty support after installation are our responsibility too. We repair and upgrade older systems as well.',
             ],
             'points' => ['HD / IP cameras — 2MP to 8MP', 'DVR / NVR + hard disk setup', 'Live view on your phone from anywhere', 'A complete package with wiring', 'Warranty + after-sales service'],
             'faqs' => [
@@ -195,8 +195,8 @@ function seo_services() {
             ]],
         'computer-repair' => [
             'name' => 'Computer & Desktop Repair', 'emoji' => '🖥️',
-            'title' => 'Computer Repair in Dwarka — Desktop PC Repair & Upgrade | ' . $app,
-            'desc' => 'Computer and desktop repair in Dwarka, Gujarat. Slow PC, no display, virus, hardware upgrade, SSD/RAM, formatting with data safety. Same-day service at ' . $app . '.',
+            'title' => 'Computer Repair in ' . shop_city() . ' — Desktop PC Repair & Upgrade | ' . $app,
+            'desc' => 'Computer and desktop repair in ' . shop_place() . '. Slow PC, no display, virus, hardware upgrade, SSD/RAM, formatting with data safety. Same-day service at ' . $app . '.',
             'paras' => [
                 'Computer not starting? Running slow? No display? — for desktop computer repairs of every kind ' . $app . ' bring it in. Most work is done the same day.',
                 'An SSD or RAM upgrade makes even an old computer as fast as a new one. When formatting, we always save your data first.',
@@ -208,8 +208,8 @@ function seo_services() {
             ]],
         'laptop-repair' => [
             'name' => 'Laptop Repair', 'emoji' => '💻',
-            'title' => 'Laptop Repair in Dwarka, Gujarat — Screen, Battery, Keyboard | ' . $app,
-            'desc' => 'Laptop repair in Dwarka: broken screen replacement, battery, keyboard, hinge, charging port, SSD upgrade, chip-level service. All brands — HP, Dell, Lenovo, Acer, Asus.',
+            'title' => 'Laptop Repair in ' . shop_place() . ' — Screen, Battery, Keyboard | ' . $app,
+            'desc' => 'Laptop repair in ' . shop_city() . ': broken screen replacement, battery, keyboard, hinge, charging port, SSD upgrade, chip-level service. All brands — HP, Dell, Lenovo, Acer, Asus.',
             'paras' => [
                 'Broken laptop screen, dead battery, bad keyboard or not charging? HP, Dell, Lenovo, Acer, Asus — we repair laptops of every brand.',
                 'Genuine quality parts and a guarantee on the work. If a laptop is slow, get an SSD upgrade — the cheapest and most effective fix.',
@@ -220,8 +220,8 @@ function seo_services() {
             ]],
         'printer-repair' => [
             'name' => 'Printer Sales & Repair', 'emoji' => '🖨️',
-            'title' => 'Printer Repair & Sales in Dwarka — Ink Tank, Laser, Cartridge | ' . $app,
-            'desc' => 'Printer repair, sales, ink refilling and cartridge in Dwarka, Gujarat. HP, Canon, Epson service, paper jam, print quality issues — quick turnaround at ' . $app . '.',
+            'title' => 'Printer Repair & Sales in ' . shop_city() . ' — Ink Tank, Laser, Cartridge | ' . $app,
+            'desc' => 'Printer repair, sales, ink refilling and cartridge in ' . shop_place() . '. HP, Canon, Epson service, paper jam, print quality issues — quick turnaround at ' . $app . '.',
             'paras' => [
                 'Printer not printing, paper jamming, or prints coming out faint? HP, Canon, Epson — we repair every printer. Ink refilling and cartridges available too.',
                 'If you want a new printer we will advise you properly for your use (home / shop / office) and give you the best price.',
@@ -232,8 +232,8 @@ function seo_services() {
             ]],
         'networking' => [
             'name' => 'Networking & WiFi Solutions', 'emoji' => '📡',
-            'title' => 'Networking & WiFi Setup in Dwarka — Router, LAN, Office Network | ' . $app,
-            'desc' => 'WiFi router setup, office LAN networking, structured cabling, range extension and network troubleshooting in Dwarka, Gujarat by ' . $app . '.',
+            'title' => 'Networking & WiFi Setup in ' . shop_city() . ' — Router, LAN, Office Network | ' . $app,
+            'desc' => 'WiFi router setup, office LAN networking, structured cabling, range extension and network troubleshooting in ' . shop_place() . ' by ' . $app . '.',
             'paras' => [
                 'WiFi slow at home or the office, or not reaching some rooms? Router setup, range extenders, office LAN wiring — we do all networking work.',
                 'For a shop or office we connect CCTV, computers and printers on one network — sharing and backups become easy.',
@@ -244,8 +244,8 @@ function seo_services() {
             ]],
         'internet-broadband' => [
             'name' => 'Internet / Broadband Connection', 'emoji' => '🌐',
-            'title' => 'Internet & Broadband Connection in Dwarka, Gujarat | ' . $app,
-            'desc' => 'New internet / broadband connection in Dwarka with fast installation, WiFi router and local support by ' . $app . '. Best plans for home and business.',
+            'title' => 'Internet & Broadband Connection in ' . shop_place() . ' | ' . $app,
+            'desc' => 'New internet / broadband connection in ' . shop_city() . ' with fast installation, WiFi router and local support by ' . $app . '. Best plans for home and business.',
             'paras' => [
                 'Need a new internet connection for home or business? We arrange it with the best plan, quick installation and local support.',
                 'Call us for any speed or connection trouble — having a local person come at once is the biggest advantage.',
@@ -256,8 +256,8 @@ function seo_services() {
             ]],
         'data-recovery' => [
             'name' => 'Data Recovery', 'emoji' => '💾',
-            'title' => 'Data Recovery in Dwarka — Hard Disk, Pen Drive, Memory Card | ' . $app,
-            'desc' => 'Data recovery service in Dwarka, Gujarat: deleted files, corrupt hard disk, pen drive and memory card recovery with confidentiality at ' . $app . '.',
+            'title' => 'Data Recovery in ' . shop_city() . ' — Hard Disk, Pen Drive, Memory Card | ' . $app,
+            'desc' => 'Data recovery service in ' . shop_place() . ': deleted files, corrupt hard disk, pen drive and memory card recovery with confidentiality at ' . $app . '.',
             'paras' => [
                 'Data deleted by mistake, a failed hard disk, a pen drive or a memory card — we recover your valuable data wherever it is possible.',
                 'Photos, documents or account files — your data stays 100% private. We check first and only then tell you what is possible and what it costs.',
@@ -268,8 +268,8 @@ function seo_services() {
             ]],
         'amc' => [
             'name' => 'AMC — Annual Maintenance', 'emoji' => '🛡️',
-            'title' => 'Computer & CCTV AMC in Dwarka — Annual Maintenance Contract | ' . $app,
-            'desc' => 'Annual Maintenance Contract (AMC) for computers, CCTV and office IT in Dwarka, Gujarat. Regular servicing, priority support and fixed yearly cost by ' . $app . '.',
+            'title' => 'Computer & CCTV AMC in ' . shop_city() . ' — Annual Maintenance Contract | ' . $app,
+            'desc' => 'Annual Maintenance Contract (AMC) for computers, CCTV and office IT in ' . shop_place() . '. Regular servicing, priority support and fixed yearly cost by ' . $app . '.',
             'paras' => [
                 'Annual maintenance contract (AMC) for the computers and CCTV of an office, shop, school or hospital — regular service, priority support and a fixed cost for the whole year.',
                 'An AMC customer gets service first whatever the trouble — keeping your business running is our responsibility.',
@@ -280,8 +280,8 @@ function seo_services() {
             ]],
         'software-installation' => [
             'name' => 'Software & Windows Installation', 'emoji' => '⚙️',
-            'title' => 'Windows & Software Installation in Dwarka — Format, Setup | ' . $app,
-            'desc' => 'Windows installation, formatting, MS Office, Tally, antivirus and driver setup in Dwarka, Gujarat at ' . $app . '. Data-safe formatting, same-day service.',
+            'title' => 'Windows & Software Installation in ' . shop_city() . ' — Format, Setup | ' . $app,
+            'desc' => 'Windows installation, formatting, MS Office, Tally, antivirus and driver setup in ' . shop_place() . ' at ' . $app . '. Data-safe formatting, same-day service.',
             'paras' => [
                 'Windows installation, formatting, MS Office, Tally, antivirus, printer drivers — we set up all your software properly. We always save your data before formatting.',
                 'Just bought a new computer or laptop? Bring it in for the full setup — we will have it ready to use.',

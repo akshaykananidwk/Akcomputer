@@ -106,7 +106,7 @@ function tenant_pdo($host, $name, $user, $pass) {
  */
 function provision_tenant(array $in) {
     $slug = $in['slug'];
-    if (($p = tenant_slug_problem($slug)) !== '') throw new Exception($p);
+    if (empty($in['is_demo']) && ($p = tenant_slug_problem($slug)) !== '') throw new Exception($p);
     $dom = platform_domain();
     if ($dom === '') throw new Exception('The platform web address is not set yet (Platform → Settings).');
     $plan = prow('SELECT * FROM plans WHERE code = ? AND is_active = 1', [$in['plan_code'] ?? platform_setting('platform_trial_plan', 'pro')])
@@ -215,6 +215,10 @@ function tenants_housekeeping() {
             }
         }
     }
+    // the demo shop starts every day fresh (after 2 am)
+    if (demo_shop() && setting('platform_demo_reset_on', '') !== date('Y-m-d') && (int)date('G') >= 2) {
+        try { demo_make_or_reset(); $done['demo_reset'] = 1; } catch (Exception $e) { log_activity('demo_reset_fail', $e->getMessage()); }
+    }
     foreach (pall("SELECT * FROM tenants WHERE close_requested_at IS NOT NULL AND close_requested_at < DATE_SUB(NOW(), INTERVAL 30 DAY) AND status <> 'closed'") as $t) {
         try {
             if ($t['db_name'] !== '') platform_db()->exec('DROP DATABASE IF EXISTS `' . $t['db_name'] . '`');
@@ -237,6 +241,36 @@ function tenant_remove_files($slug) {
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
     foreach ($it as $f) $f->isDir() ? @rmdir($f->getPathname()) : @unlink($f->getPathname());
     @rmdir($dir);
+}
+
+/**
+ * The demo shop anyone may try: a computer shop with sample items and a
+ * few parties, logged into as demo / demo1234. Made once from the owner's
+ * panel; wiped and made fresh every night, so whatever visitors change is
+ * gone by morning.
+ */
+function demo_shop_in() {
+    return ['slug' => 'demo', 'name' => 'Demo Shop', 'owner_name' => 'Demo', 'owner_mobile' => '', 'username' => 'demo',
+            'pass_hash' => password_hash('demo1234', PASSWORD_DEFAULT), 'business_type' => 'computer', 'with_samples' => 1,
+            'city' => 'Rajkot', 'is_demo' => 1, 'plan_code' => 'premium'];
+}
+function demo_shop() { return prow("SELECT * FROM tenants WHERE is_demo = 1 AND status <> 'closed' ORDER BY id LIMIT 1"); }
+function demo_make_or_reset() {
+    $t = demo_shop();
+    if (!$t) $t = provision_tenant(demo_shop_in());
+    else {
+        $pdo = tenant_pdo_for($t);
+        $pdo->exec('SET FOREIGN_KEY_CHECKS = 0');
+        foreach ($pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) as $tbl) $pdo->exec('DROP TABLE IF EXISTS `' . $tbl . '`');
+        $pdo->exec('SET FOREIGN_KEY_CHECKS = 1');
+        tenant_remove_files($t['slug']);
+        $t = tenant_install($t['id'], $t['db_host'], $t['db_name'], $t['db_user'], (string)vault_decrypt((string)$t['db_pass_enc']), demo_shop_in());
+    }
+    $pdo = tenant_pdo_for($t);
+    foreach ([['Ramesh Traders', '9800000101', 'customer'], ['Shree Hari Electronics', '9800000102', 'supplier'], ['Walk-in Customer', '', 'customer']] as [$n, $m, $ty])
+        $pdo->prepare('INSERT INTO parties (name, mobile, type, is_active) VALUES (?,?,?,1)')->execute([$n, $m, $ty]);
+    set_setting('platform_demo_reset_on', date('Y-m-d'));
+    return $t;
 }
 
 /** Bring every shop's database up to the current code (after an update). */
