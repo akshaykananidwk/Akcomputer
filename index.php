@@ -198,6 +198,8 @@ $dashCtx = [
 $sActions = dash_actions($dashCtx);
 // staff birthdays - the day before and on the day, for the owner only
 $sBirthdays = is_full_admin() ? staff_birthdays_soon() : [];
+// a new shop's first visit goes through the four setup steps once; after that a reminder until they finish
+if (is_full_admin() && setting('setup_wizard_done', '1') === '0' && empty($_SESSION['_setup_seen'])) { $_SESSION['_setup_seen'] = 1; redirect('setup.php'); }
 $sAlerts  = dash_alerts($dashCtx);
 $sSummary = $ctxKpis ? dash_summary($dashCtx) : '';
 
@@ -282,6 +284,9 @@ if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dash
 <div class="flash flash-<?= $expGone ? 'error' : 'warn' ?>">💊 <?= $expGone ? "<b>$expGone</b> batch" . ($expGone === 1 ? '' : 'es') . ' already expired, ' : '' ?><?= count($expB) - $expGone ?> expiring within 30 days
   (<?= e(implode(', ', array_map(fn($b) => $b['item_name'] . ' ' . dmy($b['expiry_date']), array_slice($expB, 0, 3)))) ?><?= count($expB) > 3 ? ' …' : '' ?>).
   <a href="batches.php">See batches →</a></div>
+<?php endif; ?>
+<?php if (is_full_admin() && setting('setup_wizard_done', '1') === '0'): ?>
+<div class="flash flash-info">🚀 A few details are still missing from your bills. <a href="setup.php">Finish setting up →</a></div>
 <?php endif; ?>
 <?php foreach ($sBirthdays as $bd): ?>
 <div class="flash flash-<?= $bd['days'] ? 'info' : 'success' ?>">🎂 <?= $bd['days'] ? 'Tomorrow (' . e(dmy($bd['date'])) . ') is' : '<b>Today</b> is' ?>
