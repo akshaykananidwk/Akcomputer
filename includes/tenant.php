@@ -34,8 +34,8 @@ function platform_host() {
 /** The platform (owner's) database - always config.php's, whatever shop is being served. */
 function platform_db() {
     static $pdo = null;
+    if (!tenant_active()) return db();       // on the owner's own address they are one and the same
     if ($pdo === null) {
-        if (!tenant_active()) return db();   // on the owner's own address they are one and the same
         $pdo = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false]);
@@ -91,9 +91,9 @@ function tenant_boot() {
     if ($host === '' || ($host === platform_host() && PHP_SAPI !== 'cli')) { tenant_bind_session(''); return; }
     $t = tenant_find_by_host($host);
     if (!$t) { tenant_bind_session(''); return; }   // an alias of the owner's own site
-    if (in_array($t['status'], ['provisioning', 'closed'], true) || ($t['status'] === 'suspended' && !tenant_allow_when_locked())) {
-        tenant_closed_page($t);
-    }
+    // (a suspended shop is let through here: its staff can still log in
+    // and pay from "My plan" - tenant_plan_guard() decides the rest)
+    if (in_array($t['status'], ['provisioning', 'closed'], true)) tenant_closed_page($t);
     $t['_db_pass'] = function_exists('vault_decrypt') ? (string)vault_decrypt((string)$t['db_pass_enc']) : '';
     $GLOBALS['_tenant'] = $t;
     tenant_bind_session($t['slug']);

@@ -70,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if (post('password') === '') { flash('Password required for new user.', 'error'); redirect('users.php?action=new'); }
         $pwdErr = password_policy_check(post('password'));
         if ($pwdErr) { flash($pwdErr, 'error'); redirect('users.php?action=new'); }
+        if (($lim = plan_limit_problem('users')) !== '') { flash($lim, 'error'); redirect('users.php'); }
         q('INSERT INTO users (name, username, mobile, role_id, location_id, permissions, is_active, password, password_changed_at) VALUES (?,?,?,?,?,?,?,?,NOW())',
           array_merge($data, [password_hash(post('password'), PASSWORD_DEFAULT)]));
         $newId = insert_id();

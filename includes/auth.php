@@ -113,6 +113,8 @@ function is_full_admin() {
 function can($perm) {
     $u = current_user();
     if (!$u) return false;
+    // another shop's plan may not open this part at all (includes/plan.php)
+    if (function_exists('perm_plan_ok') && !perm_plan_ok($perm)) return false;
     if (in_array('*', $u['perms'], true)) return true;
     return in_array($perm, $u['perms'], true);
 }

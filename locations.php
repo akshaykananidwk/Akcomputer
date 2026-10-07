@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         q('UPDATE locations SET name=?, code=?, city=?, type=?, address=?, phone=?, is_active=? WHERE id=?', array_merge($data, [$id]));
         flash('Location updated.');
     } else {
+        if (($lim = plan_limit_problem('locations')) !== '') { flash($lim, 'error'); redirect('locations.php'); }
         q('INSERT INTO locations (name, code, city, type, address, phone, is_active) VALUES (?,?,?,?,?,?,?)', $data);
         flash('Location added.');
     }

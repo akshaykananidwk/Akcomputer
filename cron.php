@@ -41,4 +41,6 @@ if (!tenant_active() && !$only) {
     require_once __DIR__ . '/includes/platform.php';
     $n = tenants_cron_fanout();
     if ($n) echo "Woke $n other shop(s).\n";
+    $hk = tenants_housekeeping();
+    if ($hk && array_sum($hk)) echo 'Shops: ' . json_encode($hk) . "\n";
 }

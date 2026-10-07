@@ -54,6 +54,9 @@ require_once __DIR__ . '/scaling.php';      // will this still work when the sho
 
 csrf_check();
 
+require_once __DIR__ . '/plan.php';
+tenant_plan_guard();   // another shop: its plan's parts only, and paid up
+
 function base_url($path = '') {
     // Another shop's own address: every link it makes points back at itself
     // (same scheme and folder as the owner's BASE_URL, its own host).

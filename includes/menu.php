@@ -14,7 +14,7 @@
 function nav_menu() {
 // Menu: link => [href, icon, label, perm]
 // group => [id, icon, label, items[]] ; item = [href, label, perm, plus_href, plus_perm]
-return [
+return plan_filter_menu([
     ['link', 'index.php', 'home', 'Dashboard', 'dashboard.view'],
     ['group', 'parties', 'users', 'Parties', [
         ['parties.php', 'All Parties', 'parties.view', 'parties.php?action=new', 'parties.add'],
@@ -122,5 +122,18 @@ return [
             : [['platform.php', '🌐 Shops on this software', '*', null, null]]),
     ]],
     ['link', 'settings.php', 'gear', 'Settings', 'settings.view'],
-];
+]);
+}
+
+/** Another shop sees only what its plan opens. */
+function plan_filter_menu(array $menu) {
+    if (!function_exists('tenant_active') || !tenant_active() || !function_exists('script_feature')) return $menu;
+    $ok = function ($href) { $f = script_feature(strtok((string)$href, '?')); return $f === '' || plan_allows($f); };
+    $out = [];
+    foreach ($menu as $m) {
+        if ($m[0] === 'link') { if ($ok($m[1])) $out[] = $m; continue; }
+        $m[4] = array_values(array_filter($m[4], fn($it) => $ok($it[0])));
+        if ($m[4]) $out[] = $m;
+    }
+    return $out;
 }

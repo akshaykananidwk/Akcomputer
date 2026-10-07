@@ -325,6 +325,10 @@ function wa_http($method, $url, array $json = null) {
  */
 function send_whatsapp($mobile, $message, $media_url = '', array $buttons = [], $footer = '') {
     require_once __DIR__ . '/wa_meta.php';
+    // another shop's plan may cap its WhatsApp messages a month
+    if (function_exists('plan_limit_problem') && ($lim = plan_limit_problem('wa')) !== '') {
+        $GLOBALS['_wa_last_error'] = $lim; wa_mark_send(false, $lim); return false;
+    }
     $order = wa_providers();
     $errs = [];
     $sent = false;

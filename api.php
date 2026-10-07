@@ -409,6 +409,7 @@ if ($r === 'sales') {
                            'serials' => $serials, 'warranty_months' => (int)$item['warranty_months']];
         }
         $total = $subtotal;
+        if (($lim = plan_limit_problem('bills')) !== '') api_json(['error' => $lim], 402);
         $pdo = db();
         $pdo->beginTransaction();
         try {

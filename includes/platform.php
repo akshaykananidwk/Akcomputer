@@ -6,33 +6,7 @@
 require_once __DIR__ . '/seed.php';
 require_once __DIR__ . '/dbmigrate.php';
 require_once __DIR__ . '/business_packs.php';
-
-/**
- * What a plan can switch on, and the screens each one is. A screen not
- * named here (login, dashboard, settings, my account...) is open on every
- * plan. "*" in a plan opens everything.
- */
-function platform_features() {
-    return [
-        'billing'      => ['🧾 Billing', ['sales', 'sale_view', 'sale_pdf', 'estimates', 'sales_return', 'challans', 'pay', 'day_close']],
-        'parties'      => ['👥 Parties', ['parties', 'customer', 'cheques']],
-        'items'        => ['📦 Items', ['items', 'item_view', 'items_import', 'barcode', 'barcode_labels', 'price']],
-        'payments'     => ['💰 Payments & cash', ['payments', 'cash_bank', 'bank_accounts', 'payment_methods', 'collection', 'my_collections']],
-        'expenses'     => ['💸 Expenses', ['expenses']],
-        'reports_basic'=> ['📊 Basic reports', ['reports', 'report_pdf', 'report_xlsx']],
-        'stock'        => ['🏬 Stock & godown', ['stock', 'handover', 'transfers', 'my_stock', 'stock_audit', 'batches', 'serial_fix']],
-        'purchase'     => ['🛒 Purchase', ['purchases', 'purchase_view', 'purchase_return', 'purchase_scan', 'purchase_intel']],
-        'whatsapp'     => ['💬 WhatsApp & campaigns', ['wa_inbox', 'campaigns']],
-        'repairs'      => ['🛠️ Repairs, tasks, AMC', ['repairs', 'tasks', 'warranty', 'amc', 'my_jobs', 'service_report', 'net_connections', 'sites']],
-        'reports'      => ['📈 Advanced reports & AI', ['market', 'forecast', 'report_schedules', 'cost_analytics', 'scaling', 'assistant', 'ai_categorize', 'ai_enrich']],
-        'crm'          => ['🤝 Leads & CRM', ['leads', 'tickets', 'follow_ups', 'reminders', 'feedback']],
-        'accounting'   => ['📒 Accounting', ['accounts', 'journal', 'bank_reconcile', 'tally_export']],
-        'online_store' => ['🌐 Online store', ['web_orders', 'reviews', 'referrals', 'web_customers']],
-        'voice'        => ['📞 Calls (IVR)', ['voice_calls', 'voice_setup', 'voice_words']],
-        'api'          => ['🔗 API & webhooks', ['webhooks']],
-        'locations'    => ['📍 More than one location', ['locations']],
-    ];
-}
+require_once __DIR__ . '/platform_features.php';
 
 /** Platform settings live in the owner's own settings table. */
 function platform_setting($name, $default = '') {
@@ -212,6 +186,57 @@ function tenants_cron_fanout() {
     foreach ($hs as $ch) { curl_multi_remove_handle($mh, $ch); curl_close($ch); }
     curl_multi_close($mh);
     return count($hs);
+}
+
+/**
+ * Once an hour, from the owner's cron: shops past their grace days are
+ * suspended; a shop whose plan ends in 3 days (or ended today) gets one
+ * WhatsApp reminder that day; a shop that asked to close 30 days ago is
+ * removed - database, its MySQL login and its files.
+ */
+function tenants_housekeeping() {
+    $last = (string)setting('platform_housekeeping_at', '');
+    if ($last !== '' && strtotime($last) > time() - 3600) return [];
+    set_setting('platform_housekeeping_at', date('Y-m-d H:i:s'));
+    require_once __DIR__ . '/plan.php';
+    $done = ['suspended' => 0, 'reminded' => 0, 'removed' => 0];
+    foreach (pall("SELECT * FROM tenants WHERE status IN ('trial','active','suspended')") as $t) {
+        $ex = tenant_expiry($t);
+        if ($ex['state'] === 'locked' && $t['status'] !== 'suspended') {
+            pq("UPDATE tenants SET status = 'suspended' WHERE id = ?", [$t['id']]); $done['suspended']++;
+        }
+        if (in_array($ex['days'], [3, 0], true) && $t['owner_mobile'] !== '' && empty($t['is_demo'])) {
+            $key = 'plt_remind_' . $t['id'];
+            if (setting($key, '') !== date('Y-m-d')) {
+                set_setting($key, date('Y-m-d'));
+                $msg = "🙏 *{$t['name']}*\nYour " . ($t['paid_until'] ? 'plan' : 'free trial') . ' ' . ($ex['days'] ? 'ends on *' . dmy($ex['until']) . '*' : 'ends *today*')
+                     . ".\nRenew in a minute: https://{$t['domain']}/my_plan.php";
+                if (send_whatsapp($t['owner_mobile'], $msg)) $done['reminded']++;
+            }
+        }
+    }
+    foreach (pall("SELECT * FROM tenants WHERE close_requested_at IS NOT NULL AND close_requested_at < DATE_SUB(NOW(), INTERVAL 30 DAY) AND status <> 'closed'") as $t) {
+        try {
+            if ($t['db_name'] !== '') platform_db()->exec('DROP DATABASE IF EXISTS `' . $t['db_name'] . '`');
+            if ($t['db_user'] !== '' && $t['db_user'] !== DB_USER) platform_db()->exec("DROP USER IF EXISTS '" . $t['db_user'] . "'@'localhost'");
+        } catch (Exception $e) { log_activity('tenant_remove_fail', $t['slug'] . ': ' . $e->getMessage()); continue; }
+        tenant_remove_files($t['slug']);
+        pq("UPDATE tenants SET status = 'closed', db_pass_enc = NULL, notes = CONCAT(COALESCE(notes,''), ' | removed ', NOW()) WHERE id = ?", [$t['id']]);
+        log_activity('tenant_removed', $t['slug']);
+        $done['removed']++;
+    }
+    return $done;
+}
+
+/** Delete a shop's own uploads folder (never anything outside uploads/t/<slug>). */
+function tenant_remove_files($slug) {
+    $slug = preg_replace('/[^a-z0-9]/', '', (string)$slug);
+    if ($slug === '') return;
+    $dir = dirname(__DIR__) . '/uploads/t/' . $slug;
+    if (!is_dir($dir)) return;
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+    foreach ($it as $f) $f->isDir() ? @rmdir($f->getPathname()) : @unlink($f->getPathname());
+    @rmdir($dir);
 }
 
 /** Bring every shop's database up to the current code (after an update). */

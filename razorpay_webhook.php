@@ -29,6 +29,12 @@ $event = $data['event'] ?? '';
 if ($event !== 'payment_link.paid') exit('ignored (event: ' . $event . ')');
 
 $linkId = $data['payload']['payment_link']['entity']['id'] ?? '';
+// A shop paying for its plan (the owner's own Razorpay, the owner's address)
+$refId = (string)($data['payload']['payment_link']['entity']['reference_id'] ?? '');
+if (strncmp($refId, 'PLT-', 4) === 0 && !tenant_active()) {
+    exit(platform_payment_paid($refId, (string)($data['payload']['payment']['entity']['id'] ?? ''),
+                               (float)($data['payload']['payment']['entity']['amount'] ?? 0)));
+}
 $payId = $data['payload']['payment']['entity']['id'] ?? '';
 $payAmountPaise = (float)($data['payload']['payment']['entity']['amount'] ?? 0);
 if (!$linkId || !$payId) exit('malformed payload');

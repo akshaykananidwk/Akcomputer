@@ -145,6 +145,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         }
     }
 
+    // another shop's plan may cap its bills a month
+    if (($lim = plan_limit_problem('bills')) !== '') { flash($lim, 'error'); redirect('sales.php?action=new'); }
+
     $pdo = db();
     $pdo->beginTransaction();
     try {
