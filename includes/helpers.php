@@ -1755,6 +1755,7 @@ function sale_park_payload() {
             'location_id' => (int)(post('line_loc', [])[$i] ?? 0),
             'cost_price' => (float)(post('line_cost', [])[$i] ?? 0),
             'custom_data' => null,
+            'staff_id' => (int)(post('line_staff', [])[$i] ?? 0),
         ];
     }
     $sale = [];

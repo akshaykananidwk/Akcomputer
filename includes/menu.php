@@ -36,6 +36,8 @@ return plan_filter_menu([
     ]],
     ['group', 'sale', 'receipt', 'Sale', [
         ['sales.php', 'Sale Invoices', 'sales.view', 'sales.php?action=new', 'sales.add'],
+        ...(function_exists('biz_on') && biz_on('biz_tables') ? [['tables.php', '🍽️ Tables & kitchen', 'sales.add', null, null]] : []),
+        ...(function_exists('biz_on') && biz_on('biz_appointments') ? [['appointments.php', '📅 Appointments', 'sales.view', 'appointments.php?action=new', 'sales.add']] : []),
         ['assistant.php', '🧑‍💼 What the customer wants (Sales Assistant)', 'items.view', null, null],
         ['estimates.php', 'Estimate / Quotation', 'estimates.view', 'estimates.php?action=new', 'estimates.add'],
         ['sales_return.php', 'Sale Return', 'sales_return.view', 'sales_return.php?action=new', 'sales_return.add'],

@@ -14,6 +14,8 @@ function tenant_plan() {
 
 /** Does the shop's plan open this feature (a platform_features() code)? */
 function plan_allows($feature) {
+    // a service business keeps no stock: the stock screens are simply not there
+    if ($feature === 'stock' && function_exists('setting') && setting('biz_no_stock', '0') === '1') return false;
     if (!tenant_active()) return true;
     $p = tenant_plan();
     if (!$p) return false;

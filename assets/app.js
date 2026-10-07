@@ -525,6 +525,11 @@ var Bill = {
       '<div class="muted i-stockinfo"></div>' +
       '<div class="i-lastprice" style="color:var(--ok);font-weight:600;font-size:13px"></div>' +
       (this.cfg.mode === 'sale' ? '<div><label>Description</label><input type="text" class="i-desc" name="description[]" placeholder="Optional note for this item"></div>' : '') +
+      // a salon: who did this service (kept on the bill line, for their commission)
+      (this.cfg.mode === 'sale' && this.cfg.biz && this.cfg.biz.staff ?
+      '<div class="i-staff-wrap" style="display:none"><label>Done by</label><select name="line_staff[]" class="i-staff"><option value="">—</option>' +
+      this.cfg.biz.staff.map(function (u) { return '<option value="' + u.id + '">' + String(u.name).replace(/</g, '&lt;') + '</option>'; }).join('') +
+      '</select></div>' : '') +
       (this.cfg.mode === 'sale' && cfFields ? '<div class="cf-section"><h4>Custom Fields</h4>' + cfFields + '</div>' : '');
     wrap.appendChild(div);
 
@@ -703,7 +708,7 @@ var Bill = {
       // the supplier, so the question is "which of ours goes back" - the same
       // list and the same tick-boxes as selling one.
       if (this.cfg.mode === 'purchase' && !this.cfg.pickStock) {
-        extra.innerHTML = '<label class="mt">Serial numbers (one per line, count = qty) — 🔫 barcode gun works: scan, scan, scan</label>' +
+        extra.innerHTML = '<label class="mt">' + ((this.cfg.biz || {}).serialLabel === 'IMEI' ? 'IMEI numbers (15 digits each' : 'Serial numbers (') + 'one per line, count = qty) — 🔫 barcode gun works: scan, scan, scan</label>' +
           '<textarea name="serials[]" rows="2" placeholder="SN001\nSN002"></textarea>' +
           (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline pu-cam" style="margin-top:6px">📷 Scan serials with the phone camera</button>' : '');
         div.dataset.hasSerialBox = '1';
@@ -747,7 +752,7 @@ var Bill = {
             extra.innerHTML =
               '<div class="serial-pick mt">' +
               '<label>' + (isRet ? 'Which serial came back?'
-                          : (self.cfg.pickStock ? 'Which serial is going back to the supplier?' : 'Select Serial No.')) +
+                          : (self.cfg.pickStock ? 'Which serial is going back to the supplier?' : 'Select ' + ((self.cfg.biz || {}).serialLabel || 'Serial No.'))) +
               ' <span class="sp-count badge badge-warn">0 / ' + (parseFloat(div.querySelector('.i-qty').value) || 1) + ' entered</span></label>' +
               '<div class="sp-scan"><input type="text" class="sp-inp" placeholder="Type / scan serial no.">' +
               '<button type="button" class="btn btn-sm sp-add">Add</button>' +
@@ -840,7 +845,93 @@ var Bill = {
         extra.innerHTML = '<input type="hidden" name="serials[]" value="">';
       }
     }
+    this.bizTools(div, it);
     this.rowTotal(div);
+  },
+
+  // ---- the kind of business (includes/biz.php sends cfg.biz) ----------------
+  // Small helpers under a picked item, only where the shop switched them on:
+  //   weight    - loose goods in kg / ltr: 250g, 500g, 1kg chips and grams
+  //   measure   - sq ft / ft items: length x width (or x pieces) becomes qty
+  //   shade     - the note box asks for the shade / colour code
+  //   jewel     - weight, purity, making %: today's rate becomes the price
+  //   boxes     - "boxes" for an item packed N to a box
+  //   slabs     - a lower price from a quantity up, applied as qty changes
+  //   staff     - who did a service (salon); its <select> sits in addRow
+  // Every one only fills the ordinary qty / price / description boxes, so the
+  // bill is saved and checked exactly as any other bill.
+  bizTools: function (div, it) {
+    var b = this.cfg.biz || {}, self = this;
+    var old = div.querySelector('.i-biz'); if (old) old.remove();
+    var unit = String(it.unit || '').toLowerCase().replace(/\s+/g, '');
+    var box = document.createElement('div');
+    box.className = 'i-biz';
+    var qty = div.querySelector('.i-qty'), price = div.querySelector('.i-price'), desc = div.querySelector('.i-desc');
+    var setQty = function (v) { qty.value = Math.round(v * 1000) / 1000; qty.dispatchEvent(new Event('input')); };
+    var html = '';
+    if (b.weight && /^(kg|g|gm|gram|grams|ltr|l|litre|ml)$/.test(unit)) {
+      var liquid = /^(ltr|l|litre|ml)$/.test(unit), small = /^(g|gm|gram|grams|ml)$/.test(unit);
+      var chips = liquid ? [[200, '200ml'], [500, '500ml'], [1000, '1L'], [2000, '2L'], [5000, '5L']]
+                         : [[100, '100g'], [250, '250g'], [500, '500g'], [1000, '1kg'], [2000, '2kg'], [5000, '5kg']];
+      html += '<div class="biz-line">⚖️ ' + chips.map(function (c) { return '<button type="button" class="chip biz-w" data-g="' + c[0] + '">' + c[1] + '</button>'; }).join('') +
+              ' <input type="number" class="biz-g" min="0" step="any" placeholder="' + (liquid ? 'ml' : 'grams') + '" style="width:80px"></div>';
+      box.dataset.small = small ? '1' : '';
+    }
+    if (b.measure && /^(sqft|sq\.?ft|sqm|ft|rft|mtr|m|meter|metre)$/.test(unit)) {
+      var area = /^(sqft|sq\.?ft|sqm)$/.test(unit);
+      html += '<div class="biz-line">📐 <input type="number" class="biz-l" min="0" step="any" placeholder="length" style="width:76px"> × ' +
+              '<input type="number" class="biz-wd" min="0" step="any" placeholder="' + (area ? 'width' : 'pieces') + '" style="width:76px"> = <b class="biz-m">0</b> ' + it.unit + '</div>';
+    }
+    if (b.jewel && /^(g|gm|gram|grams)$/.test(unit)) {
+      var opts = Object.keys(b.jewel).map(function (k) { return '<option value="' + k + '">' + k + (b.jewel[k] ? ' ₹' + b.jewel[k] + '/g' : ' (set rate)') + '</option>'; }).join('');
+      html += '<div class="biz-line">💍 <input type="number" class="biz-jw" min="0" step="0.001" placeholder="weight g" style="width:86px"> ' +
+              '<select class="biz-jp">' + opts + '</select> making <input type="number" class="biz-jm" min="0" step="any" value="12" style="width:56px">%</div>';
+    }
+    if ((b.boxes || b.slabs) && (it.box_qty > 0 || (it.slabs || []).length)) {
+      if (it.box_qty > 0) html += '<div class="biz-line">📦 <input type="number" class="biz-box" min="0" step="1" placeholder="boxes" style="width:76px"> boxes × ' + it.box_qty + '</div>';
+      if ((it.slabs || []).length) html += '<div class="biz-line muted" style="font-size:12px">Price breaks: ' +
+        it.slabs.map(function (sl) { return sl[0] + '+ → ₹' + sl[1]; }).join(' · ') + '</div>';
+      div.dataset.basePrice = price.value; div.dataset.slabs = JSON.stringify(it.slabs || []);
+    }
+    if (b.shade && desc) desc.placeholder = 'Shade / colour code';
+    var st = div.querySelector('.i-staff-wrap');
+    if (st) st.style.display = it.item_type === 'service' ? '' : 'none';
+    if (!html) return;
+    box.innerHTML = html;
+    div.querySelector('.i-extra').after(box);
+    box.querySelectorAll('.biz-w').forEach(function (btn) {
+      btn.addEventListener('click', function () { var g = +btn.dataset.g; setQty(box.dataset.small ? g : g / 1000); });
+    });
+    var gIn = box.querySelector('.biz-g');
+    if (gIn) gIn.addEventListener('input', function () { var g = parseFloat(gIn.value) || 0; setQty(box.dataset.small ? g : g / 1000); });
+    var L = box.querySelector('.biz-l'), W = box.querySelector('.biz-wd');
+    if (L) [L, W].forEach(function (el) { el.addEventListener('input', function () {
+      var v = (parseFloat(L.value) || 0) * (parseFloat(W.value) || 0);
+      box.querySelector('.biz-m').textContent = Math.round(v * 100) / 100; setQty(v);
+    }); });
+    var jw = box.querySelector('.biz-jw');
+    if (jw) {
+      var jcalc = function () {
+        var w = parseFloat(jw.value) || 0, pur = box.querySelector('.biz-jp').value, mk = parseFloat(box.querySelector('.biz-jm').value) || 0;
+        var rate = b.jewel[pur] || 0;
+        setQty(w);
+        price.value = Math.round(rate * (1 + mk / 100) * 100) / 100; price.dispatchEvent(new Event('input'));
+        if (desc) { desc.value = pur + ' · ' + w + ' g · rate ₹' + rate + '/g · making ' + mk + '%'; desc.dispatchEvent(new Event('input')); }
+      };
+      box.querySelectorAll('.biz-jw, .biz-jp, .biz-jm').forEach(function (el) { el.addEventListener('input', jcalc); el.addEventListener('change', jcalc); });
+    }
+    var bx = box.querySelector('.biz-box');
+    if (bx) bx.addEventListener('input', function () { setQty((parseFloat(bx.value) || 0) * it.box_qty); });
+    if (div.dataset.slabs && div.dataset.slabs !== '[]' && !div.dataset.slabWired) {
+      div.dataset.slabWired = '1';
+      price.addEventListener('input', function (e) { if (e.isTrusted) div.dataset.priceManual = '1'; });
+      qty.addEventListener('input', function () {
+        if (div.dataset.priceManual) return;     // a price typed by hand is never overwritten
+        var q = parseFloat(qty.value) || 0, p = parseFloat(div.dataset.basePrice) || 0;
+        JSON.parse(div.dataset.slabs).forEach(function (sl) { if (q + 1e-9 >= sl[0]) p = sl[1]; });
+        price.value = p; self.rowTotal(div);
+      });
+    }
   },
 
   repriceAll: function () {

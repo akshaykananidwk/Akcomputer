@@ -277,6 +277,12 @@ if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dash
     if ($waUnread): ?>
 <div class="flash flash-info">💬 <?= $waUnread ?> new WhatsApp message<?= $waUnread === 1 ? '' : 's' ?>. <a href="wa_inbox.php">Open the inbox →</a></div>
 <?php endif; endif; ?>
+<?php if (biz_on('biz_expiry') && can('batches.view') && ($expB = biz_expiring_batches(30))):
+    $expGone = count(array_filter($expB, fn($b) => (int)$b['days_left'] < 0)); ?>
+<div class="flash flash-<?= $expGone ? 'error' : 'warn' ?>">💊 <?= $expGone ? "<b>$expGone</b> batch" . ($expGone === 1 ? '' : 'es') . ' already expired, ' : '' ?><?= count($expB) - $expGone ?> expiring within 30 days
+  (<?= e(implode(', ', array_map(fn($b) => $b['item_name'] . ' ' . dmy($b['expiry_date']), array_slice($expB, 0, 3)))) ?><?= count($expB) > 3 ? ' …' : '' ?>).
+  <a href="batches.php">See batches →</a></div>
+<?php endif; ?>
 <?php foreach ($sBirthdays as $bd): ?>
 <div class="flash flash-<?= $bd['days'] ? 'info' : 'success' ?>">🎂 <?= $bd['days'] ? 'Tomorrow (' . e(dmy($bd['date'])) . ') is' : '<b>Today</b> is' ?>
   <b><?= e($bd['name']) ?></b>'s birthday<?= $bd['age'] > 0 && $bd['age'] < 100 ? ' — turning ' . (int)$bd['age'] : '' ?>.

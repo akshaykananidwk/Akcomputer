@@ -68,7 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                    'price' => $price, 'tax_rate' => $tr, 'total' => $gross - $ld, 'n' => $n,
                    'ld_type' => $ldType, 'ld_val' => $ldVal, 'ld' => $ld, 'loc' => (int)($locSel[$i] ?? 0),
                    'cost' => max(0, (float)($costSel[$i] ?? 0)),
-                   'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
+                   'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i),
+                   'staff' => (int)(post('line_staff', [])[$i] ?? 0)];   // salon: who did this service
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=new'); }
 
@@ -164,6 +165,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
            $bankAccId, $pmId, payment_status($total, $paid), post('notes'), $u['id'], share_token(),
            trim((string)post('delivery_address')) ?: null, $tradeVal]);
         $sale_id = insert_id();
+        // a medical store: the doctor's prescription, kept with the bill
+        if (biz_on('biz_prescription') && !empty($_FILES['prescription']['tmp_name']) && $_FILES['prescription']['error'] === UPLOAD_ERR_OK
+            && $_FILES['prescription']['size'] <= 8 * 1024 * 1024) {
+            $pext = strtolower(pathinfo($_FILES['prescription']['name'], PATHINFO_EXTENSION));
+            if (in_array($pext, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true)) {
+                $pname = 'rx_' . $sale_id . '_' . bin2hex(random_bytes(6)) . '.' . $pext;
+                $rxDir = up_dir('prescriptions');
+                if (!is_file("$rxDir/.htaccess")) @file_put_contents("$rxDir/.htaccess", "Require all denied\n");   // read only through sale_view.php
+                if (move_uploaded_file($_FILES['prescription']['tmp_name'], "$rxDir/$pname")) {
+                    try { q('UPDATE sales SET prescription = ? WHERE id = ?', [$pname, $sale_id]); } catch (Exception $e) { /* before v88 */ }
+                }
+            }
+        }
         // one series per firm per financial year, counted from 1 - see
         // doc_next_no() in includes/helpers.php
         $invoice_no = doc_next_no($company['id'], post('sale_date', today()), $company['invoice_prefix']);
@@ -210,6 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                   [$sale_id, $r['item_id'], $r['qty'], $r['free'], $r['price'], $costPrice, $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
                    $r['description'], $r['custom_data']]);
             }
+            if (!empty($r['staff'])) { try { q('UPDATE sale_items SET staff_id = ? WHERE id = ?', [$r['staff'], insert_id()]); } catch (Exception $e) { /* before v88 */ } }
 
             if ($item['item_type'] === 'service') { continue; } // service: no stock effect
             // A kit is never stocked itself - selling one takes its PARTS off
@@ -263,6 +278,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             if ($earned > 0) loyalty_add($party_id, $earned, 'Earned on bill ' . $invoice_no, 'sale', $sale_id);
         }
         if ((int)post('park_id')) q('DELETE FROM parked_bills WHERE id = ?', [(int)post('park_id')]);
+        if ((int)post('appt_id')) q("UPDATE appointments SET status = 'done', sale_id = ? WHERE id = ? AND sale_id IS NULL", [$sale_id, (int)post('appt_id')]);
         $pdo->commit();
         log_activity('sale_add', "$invoice_no total $total");
         fire_webhook('sale.created', ['sale_id' => $sale_id, 'invoice_no' => $invoice_no, 'total' => $total, 'paid' => $paid, 'customer_name' => post('customer_name')]);
@@ -309,7 +325,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'park') {
        VALUES (?,?,?,?,?,?,?)',
       [mb_substr($label, 0, 120), post('customer_name'), round($amount, 2), count($payload['items']),
        json_encode($payload, JSON_UNESCAPED_UNICODE), (int)post('location_id') ?: $u['location_id'], $u['id']]);
+    $parkedId = insert_id();
     log_activity('sale_park', $label . ' ₹' . money($amount));
+    if ((int)post('table')) redirect('tables.php?kot=' . $parkedId);   // a restaurant order: print the kitchen slip
     flash('Bill parked — "Parked bills" you can reopen it from there.');
     redirect('sales.php?action=new');
 }
@@ -452,7 +470,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
                    'price' => $price, 'tax_rate' => $tr, 'total' => $gross - $ld, 'n' => $n,
                    'ld_type' => $ldType, 'ld_val' => $ldVal, 'ld' => $ld, 'loc' => (int)($locSel[$i] ?? 0),
                    'cost' => max(0, (float)($costSel[$i] ?? 0)),
-                   'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i)];
+                   'description' => trim((string)($descriptions[$i] ?? '')), 'custom_data' => sale_item_custom_data($activeCF, $i),
+                   'staff' => (int)(post('line_staff', [])[$i] ?? 0)];   // salon: who did this service
     }
     if (!$rows || !$company) { flash('Add at least one item.', 'error'); redirect('sales.php?action=edit&id=' . $sid); }
 
@@ -554,6 +573,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
                   [$sid, $r['item_id'], $r['qty'], $r['free'], $r['price'], $costPrice, $r['tax_rate'], $r['total'], $r['ld_type'], $r['ld_val'], $r['ld'], $serials ? implode(',', $serials) : null,
                    $r['description'], $r['custom_data']]);
             }
+            if (!empty($r['staff'])) { try { q('UPDATE sale_items SET staff_id = ? WHERE id = ?', [$r['staff'], insert_id()]); } catch (Exception $e) { /* before v88 */ } }
 
             if ($item['item_type'] === 'service') { continue; }
             if (is_kit($r['item_id'])) {
@@ -676,6 +696,20 @@ if ($action === 'new' || $action === 'edit') {
             $preSale = $src;
             flash('Bill ' . $src['invoice_no'] . ' is a copy — check it and save.', 'info');
         }
+    } elseif ((int)get('appt') && biz_on('biz_appointments')) {
+        // a salon appointment that is done: its service, its staff, its customer
+        $ap = row('SELECT a.*, i.name, i.selling_price, i.tax_rate, i.item_type, i.serial_tracked FROM appointments a
+                   JOIN items i ON i.id = a.item_id WHERE a.id = ? AND a.sale_id IS NULL', [(int)get('appt')]);
+        if ($ap) {
+            $preSale = ['company_id' => $companies[0]['id'] ?? 0, 'location_id' => $u['location_id'], 'price_type' => 'retail',
+                        'credit_days' => 0, 'due_date' => '', 'party_id' => (int)$ap['party_id'], 'customer_name' => $ap['customer_name'],
+                        'customer_mobile' => $ap['customer_mobile'], 'sale_date' => today(), 'discount_type' => 'amount',
+                        'discount' => 0, 'discount_pct' => 0, 'notes' => $ap['notes']];
+            $preItems = [['item_id' => $ap['item_id'], 'name' => $ap['name'], 'qty' => 1, 'price' => $ap['selling_price'], 'tax_rate' => $ap['tax_rate'],
+                          'serial_tracked' => $ap['serial_tracked'], 'item_type' => $ap['item_type'], 'serials' => null, 'custom_data' => null,
+                          'staff_id' => (int)$ap['staff_id']]];
+            $apptId = (int)$ap['id'];
+        }
     } elseif ((int)get('park')) {
         $pk = row('SELECT * FROM parked_bills WHERE id = ?', [(int)get('park')]);
         if ($pk) {
@@ -732,11 +766,14 @@ if ($action === 'new' || $action === 'edit') {
     <?php elseif ($est): ?><div class="flash flash-info">Converting <?= e($est['estimate_no']) ?> — serial-tracked items will need their serial re-selected.</div><?php endif; ?>
     <?php if ($isEdit && array_filter($editItems, fn($it) => $it['serials'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers will need to be re-selected.</div><?php endif; ?>
     <?php if ($isEdit && !is_full_admin() && strtotime($editSale['created_at']) < time() - 86400): ?><div class="flash flash-info">⏳ This bill is more than 24 hours old — saving will not apply the change directly, it goes for admin approval.</div><?php endif; ?>
-    <form method="post" id="billForm" class="bf">
+    <form method="post" id="billForm" class="bf"<?= biz_on('biz_prescription') ? ' enctype="multipart/form-data"' : '' ?>>
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">
       <?php if ($isEdit): ?><input type="hidden" name="id" value="<?= $editSale['id'] ?>"><?php endif; ?>
       <?php if ($parkId): ?><input type="hidden" name="park_id" value="<?= $parkId ?>"><?php endif; ?>
+      <?php if (!empty($apptId)): ?><input type="hidden" name="appt_id" value="<?= $apptId ?>"><?php endif; ?>
+      <?php if ($tableNo = biz_on('biz_tables') ? (int)get('table') : 0): ?><input type="hidden" name="table" value="<?= $tableNo ?>"><input type="hidden" name="park_label" value="Table <?= $tableNo ?>">
+      <div class="flash flash-info" style="margin:0 0 8px">🍽️ <b>Table <?= $tableNo ?></b> — add the order and press <b>Send to kitchen</b>; make the bill when they are done.</div><?php endif; ?>
       <?php if ($est && $est['id']): ?><input type="hidden" name="estimate_id" value="<?= $est['id'] ?>"><?php endif; ?>
       <?php if ($chal): ?><input type="hidden" name="challan_id" value="<?= $chal['id'] ?>"><?php endif; ?>
 
@@ -991,6 +1028,10 @@ if ($action === 'new' || $action === 'edit') {
         <div class="bf-card">
           <div class="bf-t"><span class="bf-ico">📝</span>Notes</div>
           <input type="text" name="notes" value="<?= e($preSale['notes'] ?? '') ?>" placeholder="Anything worth writing on the bill">
+          <?php if (biz_on('biz_prescription') && !$isEdit): ?>
+          <label class="mt" style="display:block">📄 Doctor's prescription <span class="muted" style="font-weight:normal">(photo or PDF, optional)</span></label>
+          <input type="file" name="prescription" accept="image/*,application/pdf" capture="environment">
+          <?php endif; ?>
         </div>
         <div class="bf-sum">
           <div class="bf-t"><span class="bf-ico">🧮</span>Bill Summary</div>
@@ -1024,8 +1065,12 @@ if ($action === 'new' || $action === 'edit') {
         <?php else: ?>
         <button class="btn btn-outline" type="submit" name="save_new" value="1">🗂️ Save &amp; New</button>
         <button class="btn" type="submit">💾 Save</button>
+        <?php if (!empty($tableNo)): ?>
+        <button class="btn btn-park" type="submit" name="do" value="park" title="Keep the order on the table and print the kitchen slip">🍳 Send to kitchen</button>
+        <?php else: ?>
         <button class="btn btn-park" type="submit" name="do" value="park"
                 title="Park the bill until the customer comes back">⏸️ Park it</button>
+        <?php endif; ?>
         <?php endif; ?>
       </div>
     </form>
@@ -1033,6 +1078,7 @@ if ($action === 'new' || $action === 'edit') {
       Bill.init({mode: 'sale', serials: true, freeQty: true, lineDisc: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1,
         locations: <?= json_encode(locked_location_id() || count($locations) < 2 ? [] : array_map(fn($l) => ['id' => (int)$l['id'], 'name' => $l['name']], $locations)) ?>,
         showPurchasePrice: <?= json_encode(setting('show_purchase_price_billing') === '1' && can('items.cost')) ?>,
+        biz: <?= json_encode(biz_billing_cfg(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>,
         customFields: <?= json_encode(array_map(fn($f) => ['id' => $f['id'], 'label' => $f['label']], $customFields)) ?><?= $isEdit ? ', editSaleId: ' . (int)$editSale['id'] : '' ?>});
       // --- ₹2,000 રોકડા + ₹3,000 UPI -------------------------------------
       function splitToggle() {
@@ -1160,6 +1206,7 @@ if ($action === 'new' || $action === 'edit') {
             'isService' => ($x['item_type'] ?? '') === 'service' ? 1 : 0,
             'cost' => (float)($x['cost_price'] ?? 0),
             'customData' => $x['custom_data'] ? json_decode($x['custom_data'], true) : [],
+            'staff' => (int)($x['staff_id'] ?? 0),
         ], $preItems)) ?>;
         document.getElementById('company_id').value = '<?= (int)$preSale['company_id'] ?>';
         document.getElementById('location_id').value = '<?= (int)$preSale['location_id'] ?>';
@@ -1196,6 +1243,8 @@ if ($action === 'new' || $action === 'edit') {
           var lsel = div.querySelector('.i-loc'); if (lsel && it.loc) lsel.value = it.loc;
           var cw = div.querySelector('.i-cost-wrap');
           if (cw && it.isService) { cw.style.display = ''; div.querySelector('.i-cost').value = it.cost || 0; }
+          var sw = div.querySelector('.i-staff-wrap');
+          if (sw && (it.isService || it.staff)) { sw.style.display = ''; sw.querySelector('select').value = it.staff || ''; }
           var ldi = div.querySelector('.i-ldisc'); if (ldi) ldi.value = it.ldiscVal || 0;
           var ldts = div.querySelector('.i-ldisct'); if (ldts) ldts.value = it.ldiscType || 'amount';
           div.querySelectorAll('.i-cf').forEach(function (cf) {

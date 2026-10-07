@@ -23,6 +23,15 @@ if (!$public) {
         die('Access denied.');
     }
 }
+// the doctor's prescription is health data: only staff who may see this bill, never by a public link
+if (get('rx') && !$public && !empty($sale['prescription'])) {
+    $f = up_dir('prescriptions') . '/' . basename($sale['prescription']);
+    if (!is_file($f)) die('Not found.');
+    $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
+    header('Content-Type: ' . (['pdf' => 'application/pdf', 'png' => 'image/png', 'webp' => 'image/webp'][$ext] ?? 'image/jpeg'));
+    header('X-Content-Type-Options: nosniff'); header('Cache-Control: private, no-store');
+    readfile($f); exit;
+}
 
 $items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit, i.hsn FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ? AND si.qty > 0", [$id]);
 
@@ -510,6 +519,7 @@ if ($planPub): ?>
   </div>
   <div class="inv-bottom-strip">This is a computer generated invoice.<?= powered_by_line() !== '' ? ' · ' . e(powered_by_line()) : '' ?></div>
   <p class="muted mt" style="font-size:11px">Billed by: <?= e($sale['staff_name']) ?><?= $sale['notes'] ? ' | ' . e($sale['notes']) : '' ?></p>
+  <?php if (!empty($sale['prescription']) && !$public): ?><p class="no-print"><a class="btn btn-sm btn-outline" target="_blank" href="sale_view.php?id=<?= (int)$sale['id'] ?>&amp;rx=1">📄 Prescription</a></p><?php endif; ?>
 </div>
 <?php endif; ?>
 <?php include __DIR__ . '/includes/footer.php'; ?>

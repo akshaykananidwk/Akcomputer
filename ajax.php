@@ -60,6 +60,9 @@ if ($a === 'item_search' && can('items.view')) {
     // the purchase rate, otherwise every line they save lands as ₹0.
     $costOk = can('items.cost') || (get('mode') === 'purchase' && can('purchases.add'));
     if (!$costOk) foreach ($items as &$_i) { $_i['purchase_price'] = 0; } unset($_i);
+    // a wholesale shop: pieces in a box and quantity price-breaks (includes/biz.php)
+    $bx = biz_item_extras(array_column($items, 'id'));
+    if ($bx) foreach ($items as &$_i) { if (isset($bx[(int)$_i['id']])) { $_i['box_qty'] = $bx[(int)$_i['id']]['box'] ?? 0; $_i['slabs'] = $bx[(int)$_i['id']]['slabs'] ?? []; } } unset($_i);
     // Price history for THIS customer: when a party is selected on the bill,
     // each suggestion also carries the price they were charged last time
     // ("this customer Last આ Priceે આપેલું") so haggling has a reference point.

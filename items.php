@@ -83,6 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         // photo-upload work log: feeds Reports > Photo Upload Log (daily
         // counts + minutes-per-photo per staff member)
+        if ($made = biz_item_save_extras($id)) flash("$made size/colour items made — each keeps its own stock.");
         if ($photoUploaded) log_activity('item_photo', $id . '|' . post('name'));
         log_activity('item_save', post('name'));
         redirect('items.php');
@@ -177,6 +178,22 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Barcode</label><input type="text" name="barcode" value="<?= e($it['barcode'] ?? '') ?>"></div>
           <div><label>Photo (for website)</label><input type="file" name="photo" accept="image/*"></div>
         </div>
+        <?php if (biz_on('biz_box_units') || biz_on('biz_slabs')): ?>
+        <div class="form-row cols-2">
+          <?php if (biz_on('biz_box_units')): ?><div><label>Pieces in one box</label><input type="number" step="any" min="0" name="box_qty" value="<?= e($it['box_qty'] ?? '0') ?>"></div><?php endif; ?>
+          <?php if (biz_on('biz_slabs')): $sl = $it ? biz_item_extras([$it['id']])[$it['id']]['slabs'] ?? [] : []; ?>
+          <div><label>Price breaks <span class="muted">(from qty : price — e.g. 10:95, 50:90)</span></label>
+            <input type="text" name="slabs" value="<?= e(implode(', ', array_map(fn($x) => +$x[0] . ':' . +$x[1], $sl))) ?>" placeholder="10:95, 50:90"></div><?php endif; ?>
+        </div>
+        <?php endif; ?>
+        <?php if (biz_on('biz_variants') && empty($it['parent_id'])):
+          $kids = $it ? all('SELECT id, variant FROM items WHERE parent_id = ? ORDER BY id', [$it['id']]) : []; ?>
+        <div class="form-row cols-2">
+          <div><label>Sizes <span class="muted">(comma separated)</span></label><input type="text" name="variant_sizes" placeholder="S, M, L, XL"></div>
+          <div><label>Colours</label><input type="text" name="variant_colours" placeholder="Red, Blue, Black"></div>
+        </div>
+        <p class="muted" style="margin-top:-6px">Each size × colour becomes its own item with its own stock<?= $kids ? ' — already made: ' . e(implode(', ', array_column($kids, 'variant'))) : '' ?>.</p>
+        <?php endif; ?>
         <div class="field"><label>Description (shows on the website; AI Auto-Fill can write this)</label>
           <textarea name="description" rows="3"><?= e($it['description'] ?? '') ?></textarea></div>
         <div class="form-row cols-3">

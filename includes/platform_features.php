@@ -6,7 +6,7 @@
  */
 function platform_features() {
     return [
-        'billing'      => ['🧾 Billing', ['sales', 'sale_view', 'sale_pdf', 'estimates', 'sales_return', 'challans', 'pay', 'day_close']],
+        'billing'      => ['🧾 Billing', ['sales', 'sale_view', 'sale_pdf', 'estimates', 'sales_return', 'challans', 'pay', 'day_close', 'tables', 'appointments']],
         'parties'      => ['👥 Parties', ['parties', 'customer', 'cheques']],
         'items'        => ['📦 Items', ['items', 'item_view', 'items_import', 'barcode', 'barcode_labels', 'price']],
         'payments'     => ['💰 Payments & cash', ['payments', 'cash_bank', 'bank_accounts', 'payment_methods', 'collection', 'my_collections']],

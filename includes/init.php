@@ -55,6 +55,7 @@ require_once __DIR__ . '/scaling.php';      // will this still work when the sho
 csrf_check();
 
 require_once __DIR__ . '/plan.php';
+require_once __DIR__ . '/biz.php';   // the kind of business: IMEI, weight, tables, appointments...
 tenant_plan_guard();   // another shop: its plan's parts only, and paid up
 
 function base_url($path = '') {

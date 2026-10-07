@@ -72,6 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
             if ($item['serial_tracked']) {
                 $sns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $r['serials']))));
                 if (count($sns) != $r['qty']) throw new Exception("Enter {$r['qty']} serial number(s) for {$item['name']} (one per line).");
+                if ($bad = biz_bad_imeis($sns)) throw new Exception('Not a real IMEI for ' . $item['name'] . ': ' . implode(', ', $bad) . ' — an IMEI is 15 digits (dial *#06# on the phone).');
                 foreach ($sns as $sn) {
                     // Advance billing reconciliation: this serial may already be
                     // SOLD (sale entered before the vendor's bill arrived). Link
@@ -267,6 +268,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
                     throw new Exception("Enter {$r['qty']} serial number(s) for {$item['name']} (one per line)"
                         . ($allow ? " — $allow of them were saved without a serial and may stay blank, so at least " . max(0, (int)round($r['qty']) - $allow) . ' are needed' : '') . '.');
                 $untracked[(int)$r['item_id']] = $allow - $short;   // the same item twice on one bill shares it
+                if ($bad = biz_bad_imeis($sns)) throw new Exception('Not a real IMEI for ' . $item['name'] . ': ' . implode(', ', $bad) . ' — an IMEI is 15 digits (dial *#06# on the phone).');
                 // A serial that already moved on must stay on the bill.
                 $movedForItem = $movedSerials[(int)$r['item_id']] ?? [];
                 $missing = array_diff($movedForItem, $sns);
@@ -462,7 +464,8 @@ if ($action === 'new' || $action === 'edit') {
       <button type="button" class="btn btn-sm" onclick="quickParty()">Add</button>
     </div>
     <script>
-      Bill.init({mode: 'purchase', serials: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1});
+      Bill.init({mode: 'purchase', serials: true, locSel: 'location_id', gst: document.querySelector('#company_id option:checked').dataset.gst == 1,
+                 biz: <?= json_encode(biz_billing_cfg(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>});
       pmChange(); // show the bank picker when the bill's saved mode is a bank one
       document.getElementById('company_id').addEventListener('change', function () {
         Bill.cfg.gst = this.options[this.selectedIndex].dataset.gst == 1;
