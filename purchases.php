@@ -379,7 +379,7 @@ if ($action === 'new' || $action === 'edit') {
             <select name="company_id" id="company_id"><?php foreach ($companies as $c): ?><option value="<?= $c['id'] ?>" data-gst="<?= $c['is_gst'] ?>"><?= e($c['name']) ?><?= $c['is_gst'] ? ' (GST)' : '' ?></option><?php endforeach; ?></select></div>
           <div><label>Supplier bill no.</label><input type="text" name="bill_no" id="bill_no" value="<?= $isEdit ? e($editPurchase['bill_no']) : '' ?>">
             <?php if ($isEdit && !empty($editPurchase['bill_photo'])): ?>
-            <p class="muted mt"><a href="uploads/purchase_scans/<?= e($editPurchase['bill_photo']) ?>" target="_blank">📎 View scanned bill photo</a></p>
+            <p class="muted mt"><a href="<?= e(up_rel('purchase_scans')) ?>/<?= e($editPurchase['bill_photo']) ?>" target="_blank">📎 View scanned bill photo</a></p>
             <?php endif; ?>
           </div>
           <div><label>Date</label><input type="date" name="purchase_date" id="purchase_date" value="<?= $isEdit ? e($editPurchase['purchase_date']) : today() ?>"></div>

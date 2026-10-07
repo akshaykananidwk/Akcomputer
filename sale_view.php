@@ -65,7 +65,7 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signatu
         flash('The signature did not come through — please try again.', 'error');
         redirect('sale_view.php?id=' . $id);
     }
-    $dir = __DIR__ . '/uploads/signatures';
+    $dir = up_dir('signatures');
     if (!is_dir($dir)) mkdir($dir, 0755, true);
     $name = 'sig_' . $id . '_' . substr(md5(microtime()), 0, 6) . '.png';
     file_put_contents($dir . '/' . $name, $png);
@@ -76,7 +76,7 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signatu
     redirect('sale_view.php?id=' . $id);
 }
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signature_clear' && can('sales.edit')) {
-    $f = __DIR__ . '/uploads/signatures/' . basename((string)$sale['signature']);
+    $f = up_dir('signatures') . '/' . basename((string)$sale['signature']);
     if ($sale['signature'] && is_file($f)) unlink($f);
     q('UPDATE sales SET signature = NULL WHERE id = ?', [$id]);
     flash('Signature cleared.');
@@ -310,8 +310,8 @@ if ($planPub): ?>
 <?php if (!$public && can('sales.edit')): ?>
 <div class="card no-print">
   <h3>✍️ Customer signature</h3>
-  <?php if (!empty($sale['signature']) && is_file(__DIR__ . '/uploads/signatures/' . basename($sale['signature']))): ?>
-    <img src="<?= e(base_url('uploads/signatures/' . $sale['signature'])) ?>" alt="signature"
+  <?php if (!empty($sale['signature']) && is_file(up_dir('signatures') . '/' . basename($sale['signature']))): ?>
+    <img src="<?= e(base_url(up_rel('signatures') . '/' . $sale['signature'])) ?>" alt="signature"
          style="max-width:320px;border:1px solid var(--line);border-radius:8px;background:#fff">
     <form method="post" onsubmit="return confirm('Clear the signature?')" style="margin-top:8px">
       <?= csrf_field() ?><input type="hidden" name="do" value="signature_clear">
@@ -495,8 +495,8 @@ if ($planPub): ?>
   <?php if ($sale['c_terms']): ?><p class="muted mt" style="font-size:11.5px"><strong>Terms & Conditions:</strong><br><?= nl2br(e($sale['c_terms'])) ?></p><?php endif; ?>
 
   <div class="inv-sig-row2">
-    <div class="inv-sig-line"><?php $sigFile = !empty($sale['signature']) ? __DIR__ . '/uploads/signatures/' . basename($sale['signature']) : '';
-                if ($sigFile && is_file($sigFile)): ?><img src="<?= e(base_url('uploads/signatures/' . $sale['signature'])) ?>" alt="" style="max-height:52px;display:block;margin:0 auto 2px"><?php endif; ?>Receiver's Signature</div>
+    <div class="inv-sig-line"><?php $sigFile = !empty($sale['signature']) ? up_dir('signatures') . '/' . basename($sale['signature']) : '';
+                if ($sigFile && is_file($sigFile)): ?><img src="<?= e(base_url(up_rel('signatures') . '/' . $sale['signature'])) ?>" alt="" style="max-height:52px;display:block;margin:0 auto 2px"><?php endif; ?>Receiver's Signature</div>
     <div class="inv-stamp"><div class="inv-stamp-text">AK COMPUTER<br>* THANK YOU *<br><?= e(strtoupper($sale['loc_city'])) ?></div></div>
     <div class="inv-sig-line">For <?= e($sale['company_name']) ?><br>Authorised Signatory</div>
   </div>

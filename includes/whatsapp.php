@@ -514,11 +514,11 @@ function sale_whatsapp_send($saleId, $mobile = null) {
     // A real PDF document, not a picture: WhatsApp only treats it as a
     // document if the URL itself ends in .pdf, which is why the bytes are
     // written to a static file instead of linking to sale_pdf.php.
-    $pdfDir = __DIR__ . '/../uploads/invoices';
+    $pdfDir = up_dir('invoices');
     if (!is_dir($pdfDir)) mkdir($pdfDir, 0755, true);
     $pdfName = preg_replace('/[^A-Za-z0-9\-]/', '_', $sale['invoice_no']) . '_' . substr($sale['share_token'], 0, 10) . '.pdf';
     file_put_contents($pdfDir . '/' . $pdfName, invoice_pdf($sale, $items));
-    $pdfUrl = base_url('uploads/invoices/' . $pdfName);
+    $pdfUrl = base_url(up_rel('invoices') . '/' . $pdfName);
 
     $due = $sale['total'] - $sale['paid'];
     $payLink = $due > 0.009 ? invoice_pay_url($sale) : null;

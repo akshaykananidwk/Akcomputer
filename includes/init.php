@@ -26,6 +26,8 @@ session_start();
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/money.php'; // the money rules, before anything that uses them
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/tenant.php';  // which shop's database this request is for
+tenant_boot();                          // before anything reads a single row
 require_once __DIR__ . '/errors.php'; // capture + alert (needs setting()/tg from helpers)
 require_once __DIR__ . '/security.php';
 require_once __DIR__ . '/auth.php';
@@ -53,6 +55,15 @@ require_once __DIR__ . '/scaling.php';      // will this still work when the sho
 csrf_check();
 
 function base_url($path = '') {
+    // Another shop's own address: every link it makes points back at itself
+    // (same scheme and folder as the owner's BASE_URL, its own host).
+    if (tenant_active()) {
+        $scheme = defined('BASE_URL') && BASE_URL ? (parse_url(BASE_URL, PHP_URL_SCHEME) ?: 'https')
+                : ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http');
+        $host = PHP_SAPI === 'cli' || empty($_SERVER['HTTP_HOST']) ? tenant()['domain'] : $_SERVER['HTTP_HOST'];
+        $dir = defined('BASE_URL') && BASE_URL ? rtrim((string)parse_url(BASE_URL, PHP_URL_PATH), '/') : '';
+        return $scheme . '://' . $host . $dir . ($path ? '/' . ltrim($path, '/') : '');
+    }
     $base = defined('BASE_URL') && BASE_URL ? BASE_URL : (
         (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http') . '://' .
         ($_SERVER['HTTP_HOST'] ?? 'localhost') . rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/\\')

@@ -13,7 +13,7 @@
 // swallowed silently inside try/catch - WhatsApp, Razorpay, AI, cron.
 
 function error_log_path() {
-    $dir = dirname(__DIR__) . '/uploads/logs';
+    $dir = function_exists('up_dir') ? up_dir('logs') : dirname(__DIR__) . '/uploads/logs';
     if (!is_dir($dir)) @mkdir($dir, 0755, true);
     return $dir . '/error.log';
 }

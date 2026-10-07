@@ -43,7 +43,7 @@ function dash_n(array $stock, $list) {
  *  The directory is denied to the web by its own .htaccess.
  */
 function dash_cache_dir() {
-    $dir = __DIR__ . '/../uploads/cache';
+    $dir = up_dir('cache');
     if (!is_dir($dir)) {
         @mkdir($dir, 0755, true);
         @file_put_contents($dir . '/.htaccess', "Require all denied\nDeny from all\n");

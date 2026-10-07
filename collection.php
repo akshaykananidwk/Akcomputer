@@ -252,7 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (post('do') === 'send_bulk') {
         require_once __DIR__ . '/includes/billimage.php';
         $shop = setting('app_name', 'AK Computer');
-        $imgDir = __DIR__ . '/uploads/reminders';
+        $imgDir = up_dir('reminders');
         if (!is_dir($imgDir)) mkdir($imgDir, 0755, true);
         $queue = coll_queue(500, true);
         $byId = [];
@@ -267,7 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             file_put_contents($imgDir . '/' . $img, reminder_image_jpg($shop, $c['overdue']));
             wa_context(['kind' => 'reminder']);
             $msg = wa_template('aging_reminder', ['amount' => money($c['overdue']), 'shop' => $shop, 'customer' => $c['name']]);
-            if (send_whatsapp($c['mobile'], $msg, base_url('uploads/reminders/' . $img), wa_customer_buttons($c['mobile'], 'due'))) {
+            if (send_whatsapp($c['mobile'], $msg, base_url(up_rel('reminders') . '/' . $img), wa_customer_buttons($c['mobile'], 'due'))) {
                 $sent++;
                 coll_log($c['id'], 'reminder', ['channel' => 'whatsapp', 'amount' => $c['overdue'],
                                                'note' => '₹' . money($c['overdue']) . ' reminder', 'status' => 'done']);

@@ -39,8 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!empty($_FILES['photo']['tmp_name'])) {
             $ext = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
             if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) {
-                if (!is_dir(__DIR__ . '/uploads')) mkdir(__DIR__ . '/uploads', 0755, true);
-                $photo = 'uploads/item_' . time() . '_' . rand(100, 999) . '.' . $ext;
+                up_dir();
+                $photo = up_rel() . '/item_' . time() . '_' . rand(100, 999) . '.' . $ext;
                 move_uploaded_file($_FILES['photo']['tmp_name'], __DIR__ . '/' . $photo);
                 $photoUploaded = true;
             }

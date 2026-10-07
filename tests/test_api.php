@@ -916,7 +916,7 @@ t_ok('and it says so when nothing matches', strpos($set, 'setFindNone') !== fals
 // asks. Each of these is a real reading, not a decoration.
 foreach ([
     'whatsapp'   => 'meta_wa_configured() || wa_thirdparty_configured()',
-    'backup'     => "glob(__DIR__ . '/uploads/backups/backup_*')",
+    'backup'     => "glob(up_dir('backups') . '/backup_*')",
     'ai'         => 'ai_limits();',
     'accounting' => "setting('period_lock_date', '')",
     'security'   => "setting('auto_logout_minutes', 0)",

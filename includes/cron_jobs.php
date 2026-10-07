@@ -401,7 +401,7 @@ function cron_job_estimate_followup() {
 function cron_job_auto_backup() {
     $today = today();
     set_setting('auto_backup_last', $today);
-    $bkDir = dirname(__DIR__) . '/uploads/backups';
+    $bkDir = up_dir('backups');
     if (!is_dir($bkDir)) mkdir($bkDir, 0755, true);
 
     // The dump carries EVERYTHING - customers, prices, password hashes and

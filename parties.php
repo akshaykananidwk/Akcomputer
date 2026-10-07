@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'statement_wa') {
         $ent[] = ['date' => $r['d'], 'desc' => 'Purchase Return ' . $r['return_no'], 'dr' => $r['amt'], 'cr' => 0];
     usort($ent, fn($a, $b) => strcmp($a['date'], $b['date']));
     $bytes = party_statement_pdf($sp, $ent, (float)$sp['opening_balance']);
-    $dir = __DIR__ . '/uploads/statements';
+    $dir = up_dir('statements');
     if (!is_dir($dir)) mkdir($dir, 0755, true);
     $fn = 'statement_' . $spid . '_' . substr(md5(microtime()), 0, 8) . '.pdf';
     file_put_contents($dir . '/' . $fn, $bytes);
@@ -71,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'statement_wa') {
     $msg = "🙏 *" . setting('app_name', 'AK Computer') . "*\n\n" . $sp['name'] . ", your account statement is in this PDF.\n"
          . ($balNow > 0.009 ? "Amount due: *Rs " . money($balNow) . "*" : ($balNow < -0.009 ? "Your credit: Rs " . money(abs($balNow)) : "Account settled ✔"))
          . "\n\nThank you! 🙏";
-    if (send_whatsapp($sp['mobile'], $msg, base_url('uploads/statements/' . $fn))) {
+    if (send_whatsapp($sp['mobile'], $msg, base_url(up_rel('statements') . '/' . $fn))) {
         log_activity('party_statement_wa', $sp['name']);
         flash('Statement (PDF) sent on WhatsApp to: ' . $sp['mobile']);
     } else {

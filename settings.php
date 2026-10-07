@@ -354,12 +354,12 @@ if (get('do') === 'backup' || post('do') === 'backup') {
         $key = hash_pbkdf2('sha256', $passphrase, $salt, 100000, 32, true);
         $cipher = openssl_encrypt($sql, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
         header('Content-Type: application/octet-stream');
-        header('Content-Disposition: attachment; filename="backup_' . DB_NAME . '_' . date('Ymd_His') . '.sql.enc"');
+        header('Content-Disposition: attachment; filename="backup_' . db_name() . '_' . date('Ymd_His') . '.sql.enc"');
         echo "AKENC1" . $salt . $iv . $cipher;
         log_activity('backup_download', 'encrypted');
     } else {
         header('Content-Type: application/sql');
-        header('Content-Disposition: attachment; filename="backup_' . DB_NAME . '_' . date('Ymd_His') . '.sql"');
+        header('Content-Disposition: attachment; filename="backup_' . db_name() . '_' . date('Ymd_His') . '.sql"');
         echo $sql;
         log_activity('backup_download', 'plain');
     }
@@ -538,7 +538,7 @@ if ($cat === '' || !isset($categories[$cat])) {
     $waOn    = meta_wa_configured() || wa_thirdparty_configured();
     $waMode  = $waOn ? wa_provider_mode() : '';
     $bkNewest = 0;
-    foreach (glob(__DIR__ . '/uploads/backups/backup_*') ?: [] as $f)
+    foreach (glob(up_dir('backups') . '/backup_*') ?: [] as $f)
         if (($m = filemtime($f)) > $bkNewest) $bkNewest = $m;
     $bkDays  = $bkNewest ? floor((time() - $bkNewest) / 86400) : -1;
     $aiOn    = ai_limits();
@@ -1591,14 +1591,14 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
 // CSRF token on this page is the one that was here before; only the
 // presentation changed, onto the reusable .sect / .fact / .f-grid pieces so
 // the rest of Settings can follow.
-$bkDir   = __DIR__ . '/uploads/backups';
+$bkDir   = up_dir('backups');
 $bkFiles = is_dir($bkDir) ? glob($bkDir . '/backup_*') : [];
 usort($bkFiles, fn($a, $b) => filemtime($b) <=> filemtime($a));
 $bkLast  = $bkFiles ? filemtime($bkFiles[0]) : 0;
 $bkAgeH  = $bkLast ? (int)floor((time() - $bkLast) / 3600) : -1;
 $bkOn    = setting('auto_backup_enabled', '1') === '1';
 $bkLock  = trim((string)setting('backup_passphrase', '')) !== '';
-$elog    = __DIR__ . '/uploads/logs/error.log';
+$elog    = up_dir('logs') . '/error.log';
 $eSize   = is_file($elog) ? filesize($elog) : 0;
 $eLast   = [];
 if ($eSize > 0) { $lines = @file($elog, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []; $eLast = array_slice($lines, -8); }

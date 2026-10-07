@@ -63,7 +63,7 @@ function sc_never_trim() {
 /** Every table with its real size, split into data, indexes and dead space. */
 function sc_tables($limit = 40) {
     $limit = (int)$limit;
-    $db = defined('DB_NAME') ? DB_NAME : (string)val('SELECT DATABASE()');
+    $db = function_exists('db_name') ? db_name() : (string)val('SELECT DATABASE()');
     return all("SELECT table_name name, COALESCE(table_rows,0) rows_est,
                        ROUND(data_length/1048576, 2) data_mb,
                        ROUND(index_length/1048576, 2) idx_mb,
@@ -75,7 +75,7 @@ function sc_tables($limit = 40) {
 }
 
 function sc_db_size() {
-    $db = defined('DB_NAME') ? DB_NAME : (string)val('SELECT DATABASE()');
+    $db = function_exists('db_name') ? db_name() : (string)val('SELECT DATABASE()');
     $r = row("SELECT ROUND(SUM(data_length)/1048576,2) data_mb, ROUND(SUM(index_length)/1048576,2) idx_mb,
                      ROUND(SUM(data_free)/1048576,2) free_mb, COUNT(*) tables
               FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE'", [$db]);
@@ -86,7 +86,7 @@ function sc_db_size() {
 
 /** The date column a table actually records time on, or '' if it has none. */
 function sc_date_column($table) {
-    $db = defined('DB_NAME') ? DB_NAME : (string)val('SELECT DATABASE()');
+    $db = function_exists('db_name') ? db_name() : (string)val('SELECT DATABASE()');
     $cols = array_column(all("SELECT column_name c FROM information_schema.columns
                               WHERE table_schema = ? AND table_name = ?
                                 AND data_type IN ('datetime','timestamp','date')", [$db, $table]), 'c');
@@ -131,7 +131,7 @@ function sc_growth($limit = 15) {
  *  the narrow one serves, the wider one serves too. A UNIQUE index is never
  *  reported, because it is enforcing a rule, not speeding up a read. */
 function sc_redundant_indexes() {
-    $db = defined('DB_NAME') ? DB_NAME : (string)val('SELECT DATABASE()');
+    $db = function_exists('db_name') ? db_name() : (string)val('SELECT DATABASE()');
     $rows = all("SELECT table_name t, index_name i, non_unique nu,
                         GROUP_CONCAT(column_name ORDER BY seq_in_index) cols
                  FROM information_schema.statistics WHERE table_schema = ?
@@ -229,7 +229,7 @@ function sc_fragmentation() {
  *  unlike a delete this changes no data at all - but it locks the table while
  *  it runs, so the screen warns about doing it in shop hours. */
 function sc_optimize($table) {
-    $db = defined('DB_NAME') ? DB_NAME : (string)val('SELECT DATABASE()');
+    $db = function_exists('db_name') ? db_name() : (string)val('SELECT DATABASE()');
     $exists = (int)val("SELECT COUNT(*) FROM information_schema.tables
                         WHERE table_schema = ? AND table_name = ? AND table_type = 'BASE TABLE'", [$db, $table]);
     if (!$exists) return ['ok' => false, 'why' => 'There is no such table.'];

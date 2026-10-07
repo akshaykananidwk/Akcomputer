@@ -411,7 +411,7 @@ function voice_audio_plan($partyName, $amount, $lang, $promiseDate = null, $cach
 // interpret and never any say over what the number is.
 
 function voice_tts_enabled() { return (int)setting('voice_tts', 1) === 1 && setting('gemini_api_key', '') !== ''; }
-function voice_tts_dir() { return dirname(__DIR__) . '/uploads/voice/tts'; }
+function voice_tts_dir() { return up_dir('voice/tts'); }
 
 /** How many sentences were generated this month, and the cap. */
 function voice_tts_usage() {
@@ -441,7 +441,7 @@ function voice_tts_audio($text, $lang, $cachedOnly = false, $timeout = 45) {
     $name = voice_tts_file($text, $lang);
     $dir = voice_tts_dir();
     if (is_file($dir . '/' . $name) && filesize($dir . '/' . $name) > 1000) {
-        return ['ok' => true, 'file' => $name, 'url' => voice_public_url('uploads/voice/tts/' . $name),
+        return ['ok' => true, 'file' => $name, 'url' => voice_public_url(up_rel('voice/tts') . '/' . $name),
                 'error' => '', 'cached' => true];
     }
 
@@ -462,7 +462,7 @@ function voice_tts_audio($text, $lang, $cachedOnly = false, $timeout = 45) {
 
     voice_tts_count_up();
     log_activity('voice_tts', $lang . ' ' . strlen($wav) . ' bytes · ' . mb_substr($text, 0, 80));
-    return ['ok' => true, 'file' => $name, 'url' => voice_public_url('uploads/voice/tts/' . $name),
+    return ['ok' => true, 'file' => $name, 'url' => voice_public_url(up_rel('voice/tts') . '/' . $name),
             'error' => '', 'cached' => false];
 }
 
@@ -1139,7 +1139,7 @@ function voice_answer_xml($call) {
     $xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n";
     $xml .= voice_record_session_xml($call);
     $xml .= $call['audio_file']
-        ? voice_xml_play(voice_public_url('uploads/voice/tts/' . $call['audio_file']))
+        ? voice_xml_play(voice_public_url(up_rel('voice/tts') . '/' . $call['audio_file']))
         : voice_xml_speak($call['script'] ?: voice_script($party['name'] ?? '', (float)$call['amount'], 'en'));
 
     // A conversation, when the shop has switched it on: ask how they are,

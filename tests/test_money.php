@@ -371,10 +371,10 @@ t_ok('only a real PNG data URL is accepted',
 t_ok('...and it must actually start like a PNG', strpos($svSrc, 'substr($png, 0, 8) !== "\x89PNG\r\n\x1a\n"') !== false);
 t_ok('...and be signature-sized, not a photo album', strpos($svSrc, 'strlen($png) > 400000') !== false);
 t_ok('the picture is kept as a file, not in the sales row',
-     strpos($svSrc, "uploads/signatures") !== false && strpos($svSrc, "UPDATE sales SET signature = ?") !== false);
+     strpos($svSrc, "up_dir('signatures')") !== false && strpos($svSrc, "UPDATE sales SET signature = ?") !== false);
 t_ok('replacing a signature does not leave the old file behind',
      strpos($svSrc, 'if (!empty($sale[\'signature\']) && is_file($dir') !== false);
-t_ok('...and it prints on the bill', strpos($svSrc, "uploads/signatures/' . \$sale['signature']") !== false);
+t_ok('...and it prints on the bill', strpos($svSrc, "up_rel('signatures') . '/' . \$sale['signature']") !== false);
 t_ok('a customer opening the public bill link cannot sign for themselves',
      strpos($svSrc, "if (!\$public && \$_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signature'") !== false);
 

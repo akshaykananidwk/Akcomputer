@@ -139,8 +139,8 @@ $trust = [
     <div style="text-align:right"><strong>We Deal In :</strong><br>Computers · Laptops · Accessories · CCTV · Networking · AMC</div>
   </div>
   <div class="inv2-sigrow">
-    <div class="inv2-sig"><?php $sigFile = !empty($sale['signature']) ? dirname(__DIR__) . '/uploads/signatures/' . basename($sale['signature']) : '';
-                if ($sigFile && is_file($sigFile)): ?><img src="<?= e(base_url('uploads/signatures/' . $sale['signature'])) ?>" alt="" style="max-height:52px;display:block;margin:0 auto 2px"><?php endif; ?>Receiver's Signature</div>
+    <div class="inv2-sig"><?php $sigFile = !empty($sale['signature']) ? up_dir('signatures') . '/' . basename($sale['signature']) : '';
+                if ($sigFile && is_file($sigFile)): ?><img src="<?= e(base_url(up_rel('signatures') . '/' . $sale['signature'])) ?>" alt="" style="max-height:52px;display:block;margin:0 auto 2px"><?php endif; ?>Receiver's Signature</div>
     <div class="inv2-stamp">AK COMPUTER<br>★ THANK YOU ★<br><?= e(strtoupper(trim(explode('-', $sale['loc_city'])[0]))) ?></div>
     <div class="inv2-sig">For <?= e($sale['company_name']) ?> - Authorised Signatory</div>
   </div>

@@ -4,9 +4,12 @@
 function db() {
     static $pdo = null;
     if ($pdo === null) {
+        // the shop this request belongs to (includes/tenant.php) - config.php's
+        // own database unless another shop's address was asked for
+        [$h, $n, $u, $p] = function_exists('db_conf') ? db_conf() : [DB_HOST, DB_NAME, DB_USER, DB_PASS];
         $pdo = new PDO(
-            'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
-            DB_USER, DB_PASS,
+            'mysql:host=' . $h . ';dbname=' . $n . ';charset=utf8mb4',
+            $u, $p,
             [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,

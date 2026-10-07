@@ -172,8 +172,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'upload_photo') {
     if (!empty($_FILES['photo']['tmp_name']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
         $ext = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
         if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
-            if (!is_dir(__DIR__ . '/uploads/repair_photos')) mkdir(__DIR__ . '/uploads/repair_photos', 0755, true);
-            $path = 'uploads/repair_photos/repair_' . $rid . '_' . time() . '_' . rand(100, 999) . '.' . $ext;
+            up_dir('repair_photos');
+            $path = up_rel('repair_photos') . '/repair_' . $rid . '_' . time() . '_' . rand(100, 999) . '.' . $ext;
             move_uploaded_file($_FILES['photo']['tmp_name'], __DIR__ . '/' . $path);
             q('INSERT INTO repair_photos (repair_id, type, path, uploaded_by) VALUES (?,?,?,?)', [$rid, $type, $path, $u['id']]);
             flash(ucfirst($type) . ' photo added.');

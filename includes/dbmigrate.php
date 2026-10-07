@@ -11,8 +11,8 @@ function dbmigrate_split_sql($sql) {
     return array_values(array_filter(array_map('trim', $stmts)));
 }
 
-function dbmigrate_run_file($label, $sql, &$log) {
-    $pdo = db();
+function dbmigrate_run_file($label, $sql, &$log, PDO $pdo = null) {
+    $pdo = $pdo ?: db();
     $applied = 0; $already = 0; $failed = 0;
     foreach (dbmigrate_split_sql($sql) as $stmt) {
         if ($stmt === '') continue;
@@ -32,20 +32,31 @@ function dbmigrate_run_file($label, $sql, &$log) {
     return [$applied, $already, $failed];
 }
 
-/** Re-runs install/schema.sql + every install/upgrade_v*.sql against the current DB. */
-function run_all_migrations() {
+/** Every migration file, in order: schema.sql then upgrade_v2, v3 ... */
+function dbmigrate_files() {
     $installDir = __DIR__ . '/../install';
-    $log = [];
-    $totals = ['applied' => 0, 'already' => 0, 'failed' => 0];
     $files = ['schema.sql' => file_get_contents($installDir . '/schema.sql')];
     $upgradeFiles = glob($installDir . '/upgrade_v*.sql');
     natsort($upgradeFiles);
     foreach ($upgradeFiles as $f) $files[basename($f)] = file_get_contents($f);
+    return $files;
+}
 
-    foreach ($files as $label => $sql) {
-        list($a, $al, $f) = dbmigrate_run_file($label, $sql, $log);
+/** Run every migration against one database connection (a shop's, at sign-up
+ *  or after an update). Returns ['totals' => .., 'log' => ..]. */
+function dbmigrate_on(PDO $pdo) {
+    $log = [];
+    $totals = ['applied' => 0, 'already' => 0, 'failed' => 0];
+    foreach (dbmigrate_files() as $label => $sql) {
+        list($a, $al, $f) = dbmigrate_run_file($label, $sql, $log, $pdo);
         $totals['applied'] += $a; $totals['already'] += $al; $totals['failed'] += $f;
     }
+    return ['totals' => $totals, 'log' => $log];
+}
+
+/** Re-runs install/schema.sql + every install/upgrade_v*.sql against the current DB. */
+function run_all_migrations() {
+    ['totals' => $totals, 'log' => $log] = dbmigrate_on(db());
     set_setting('db_last_migrated', date('Y-m-d H:i:s'));
     // encrypt any API keys still sitting in the settings table as plaintext
     $enc = function_exists('secrets_encrypt_existing') ? secrets_encrypt_existing() : 0;

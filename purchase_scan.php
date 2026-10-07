@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'scan') {
         flash('File is too large (max 15MB).', 'error');
         redirect('purchase_scan.php');
     }
-    $dir = __DIR__ . '/uploads/purchase_scans';
+    $dir = up_dir('purchase_scans');
     if (!is_dir($dir)) mkdir($dir, 0755, true);
     $scanFile = uniqid('scan_') . '.' . $ext;
     move_uploaded_file($_FILES['bill_photo']['tmp_name'], $dir . '/' . $scanFile);
@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'scan') {
     }
 }
 if ($doc === null && $scanFile !== null) {
-    $dir = __DIR__ . '/uploads/purchase_scans';
+    $dir = up_dir('purchase_scans');
     $text = ocr_extract_text($dir . '/' . $scanFile);
     if ($text === null) {
         flash('Could not read this bill. Try a clearer, well-lit photo or a text-based PDF. '

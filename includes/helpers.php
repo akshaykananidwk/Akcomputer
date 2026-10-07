@@ -787,7 +787,7 @@ function upi_uri($vpa, $payee, $amount, $note) {
 /** Fetch (and cache) a QR PNG for arbitrary data via a public QR API. Returns a local file path or null. */
 function qr_png_path($data) {
     if (!$data) return null;
-    $dir = dirname(__DIR__) . '/uploads/qrcache';
+    $dir = up_dir('qrcache');
     if (!is_dir($dir)) @mkdir($dir, 0755, true);
     $path = $dir . '/' . md5($data) . '.png';
     if (is_file($path) && filesize($path) > 0) return $path;
@@ -810,7 +810,7 @@ function invoice_qr_web_path($sale, $amount = null) {
     if (!$bank || !$bank['upi_id']) return null;
     $p = qr_png_path(upi_uri($bank['upi_id'], $bank['account_name'], $amount ?? $sale['total'], $sale['invoice_no']));
     if (!$p) return null;
-    return 'uploads/qrcache/' . basename($p);
+    return up_rel('qrcache') . '/' . basename($p);
 }
 
 /** The customer's own pay link for one bill.
@@ -2012,14 +2012,14 @@ function collection_reminder_send($mobile, $amount, $pname = '') {
     if ($mobile === '' || $amount <= 0.009) return false;
 
     $shop = setting('app_name', 'AK Computer');
-    $dir = dirname(__DIR__) . '/uploads/reminders';
+    $dir = up_dir('reminders');
     if (!is_dir($dir)) mkdir($dir, 0755, true);
     $name = 'reminder_' . preg_replace('/\D/', '', $mobile) . '_' . substr(md5(microtime() . $pname), 0, 6) . '.jpg';
     file_put_contents($dir . '/' . $name, reminder_image_jpg($shop, $amount));
 
     wa_context(['kind' => 'reminder']);
     $msg = wa_template('aging_reminder', ['amount' => money($amount), 'shop' => $shop, 'customer' => $pname]);
-    return send_whatsapp($mobile, $msg, base_url('uploads/reminders/' . $name));
+    return send_whatsapp($mobile, $msg, base_url(up_rel('reminders') . '/' . $name));
 }
 
 // ---------- Misc ----------

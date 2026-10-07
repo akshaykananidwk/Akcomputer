@@ -109,8 +109,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'run') {
             } elseif (!$jpeg) {
                 $r['notes'][] = 'no photo — generated image was unusable';
             } else {
-                if (!is_dir(__DIR__ . '/uploads')) mkdir(__DIR__ . '/uploads', 0755, true);
-                $path = 'uploads/item_ai_' . $it['id'] . '_' . time() . '.jpg';
+                up_dir();
+                $path = up_rel() . '/item_ai_' . $it['id'] . '_' . time() . '.jpg';
                 file_put_contents(__DIR__ . '/' . $path, $jpeg);
                 q('UPDATE items SET photo = ? WHERE id = ?', [$path, $it['id']]);
                 $r['notes'][] = 'photo ✔ (AI-drawn)';
@@ -135,8 +135,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'run') {
                     $geminiCalls++;
                     if (strpos($v, 'err:') === 0) { $fatal = substr($v, 4); break; }
                     if ($v === 'yes') {
-                        if (!is_dir(__DIR__ . '/uploads')) mkdir(__DIR__ . '/uploads', 0755, true);
-                        $path = 'uploads/item_ai_' . $it['id'] . '_' . time() . '.jpg';
+                        up_dir();
+                        $path = up_rel() . '/item_ai_' . $it['id'] . '_' . time() . '.jpg';
                         file_put_contents(__DIR__ . '/' . $path, $jpeg);
                         q('UPDATE items SET photo = ? WHERE id = ?', [$path, $it['id']]);
                         $r['notes'][] = 'photo ✔ (verified)';

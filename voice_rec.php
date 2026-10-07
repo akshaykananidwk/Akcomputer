@@ -34,7 +34,7 @@ $full = get('full') === '1';
 $src = $call ? (string)($full ? $call['full_rec_url'] : $call['recording_url']) : '';
 if (!$call || $src === '') { http_response_code(404); die('No recording for this call.'); }
 
-$dir = __DIR__ . '/uploads/voice/rec';
+$dir = up_dir('voice/rec');
 if (!is_dir($dir)) mkdir($dir, 0755, true);
 // Apache must refuse this folder directly; everything here is served by the
 // page above, after a permission check.
