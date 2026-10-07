@@ -1765,3 +1765,13 @@ body:has(.bf) .fab-center { display: none; }
 }
 .bottomnav a.nav-get.active, .bottomnav a.nav-get:hover { color: var(--ok); }
 .bottomnav a.nav-give.active, .bottomnav a.nav-give:hover { color: var(--bad); }
+
+/* My Account → Display: bigger text, and colours that do not rely on telling
+   red from green (blue = good, orange = bad), in light and dark alike. */
+html.t-large body { zoom: 1.12; }
+html.t-xl body { zoom: 1.25; }
+:root.cb-safe { --ok: #2563eb; --bad: #ea580c; }
+:root.cb-safe .badge-ok, :root.cb-safe .flash-success { background: #dbeafe; color: #1e3a8a; }
+:root.cb-safe .badge-bad, :root.cb-safe .flash-error { background: #ffedd5; color: #9a3412; }
+:root.cb-safe .badge-ok::before { content: '✓ '; }
+:root.cb-safe .badge-bad::before { content: '! '; }

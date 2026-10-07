@@ -295,6 +295,8 @@ if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dash
 <?php endforeach; ?>
 
 <?php if ($seeMoney && $sBals): ?>
+<div style="display:flex;justify-content:flex-end;margin:0 0 6px"><button type="button" class="btn btn-sm btn-outline"
+  data-say="<?= e(say_text('dash', $todaySales['t'], $todaySales['c'], $sBals['receivable'], $sBals['payable'])) ?>">🔊 Read aloud</button></div>
 <div class="hm-money">
   <a class="hm-card hm-get" href="<?= $partiesLink ? 'parties.php?bal=get' : 'reports.php?r=aging' ?>">
     <span class="hm-ico"><?= icon('arrow-down', 24) ?></span>

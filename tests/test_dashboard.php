@@ -270,7 +270,7 @@ $sum = dash_summary([
 t_ok('it names the sales figure', strpos($sum, '42,500') !== false);
 t_ok('it names the collection shortfall', strpos($sum, '32,000') !== false);
 t_ok('it counts the products about to run out', strpos($sum, '3 products') !== false);
-t_ok('it names the money stuck in dead stock', strpos($sum, '180,000') !== false);
+t_ok('it names the money stuck in dead stock', strpos($sum, '1,80,000') !== false);
 $quietSum = dash_summary(['kpis' => ['sales' => 0.0, 'bills' => 0, 'profit' => 0.0, 'margin_pct' => 0.0], 'prev' => null]);
 t_ok('a day with no sales says so plainly', strpos($quietSum, 'No sales') !== false);
 

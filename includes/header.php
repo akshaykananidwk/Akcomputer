@@ -39,8 +39,10 @@ function nav_visible_items($items) {
 // is only emitted for an explicit light/dark choice made via the avatar
 // menu toggle, so it can override the OS setting in either direction.
 $_theme = $u ? user_pref($u['id'], 'theme', 'auto') : 'auto';
+$_ui = ui_prefs();
+$_uiClass = trim(($_ui['text'] !== 'normal' ? 't-' . $_ui['text'] : '') . ($_ui['cbsafe'] ? ' cb-safe' : ''));
 ?><!DOCTYPE html>
-<html lang="en"<?= $_theme !== 'auto' ? ' data-theme="' . e($_theme) . '"' : '' ?>>
+<html lang="<?= e(in_array($_ui['lang'], ['gu', 'hi'], true) ? $_ui['lang'] : 'en') ?>"<?= $_theme !== 'auto' ? ' data-theme="' . e($_theme) . '"' : '' ?><?= $_uiClass ? ' class="' . e($_uiClass) . '"' : '' ?>>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -81,6 +83,7 @@ $_theme = $u ? user_pref($u['id'], 'theme', 'auto') : 'auto';
       <div class="avatar-panel" id="avatarPanel">
         <div class="avatar-panel-name"><?= e($u['name']) ?><span><?= e($u['role_name']) ?> · <?= e($u['location_name']) ?></span></div>
         <a href="my_account.php"><?= icon('gear', 16) ?> My Account</a>
+        <a href="my_account.php?tab=display">🌐 <span>Display &amp; language</span></a>
         <button type="button" id="themeToggleBtn" data-theme="<?= e($_theme) ?>"><?= icon('moon', 16) ?> <span id="themeToggleLabel"><?= $_theme === 'dark' ? 'Light Mode' : ($_theme === 'light' ? 'Auto Theme' : 'Dark Mode') ?></span></button>
         <a href="logout.php" onclick="return confirm('Logout?')"><?= icon('log-out', 16) ?> Logout</a>
       </div>
@@ -164,7 +167,7 @@ $_theme = $u ? user_pref($u['id'], 'theme', 'auto') : 'auto';
   </div>
 </div>
 <?php endif; ?>
-<script>var CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;</script>
+<script>var CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;<?php if ($_ui['lang'] !== 'en' && ($_dict = i18n_dict($_ui['lang']))): ?> var I18N = <?= json_encode($_dict, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;<?php endif; ?></script>
 <script src="assets/app.js?v=<?= asset_v('app.js') ?>"></script>
 <?php unset($_navMenu, $_navItems, $_navQuick, $_nm, $_ni, $_nq, $_navOpen); ?>
 <main class="content<?= $u ? '' : ' content-full' ?>">

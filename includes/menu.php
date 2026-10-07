@@ -14,7 +14,7 @@
 function nav_menu() {
 // Menu: link => [href, icon, label, perm]
 // group => [id, icon, label, items[]] ; item = [href, label, perm, plus_href, plus_perm]
-return plan_filter_menu([
+return simple_filter_menu(plan_filter_menu([
     ['link', 'index.php', 'home', 'Dashboard', 'dashboard.view'],
     ['group', 'parties', 'users', 'Parties', [
         ['parties.php', 'All Parties', 'parties.view', 'parties.php?action=new', 'parties.add'],
@@ -124,10 +124,24 @@ return plan_filter_menu([
             : [['platform.php', '🌐 Shops on this software', '*', null, null]]),
     ]],
     ['link', 'settings.php', 'gear', 'Settings', 'settings.view'],
-]);
+]));
 }
 
 /** Another shop sees only what its plan opens. */
+/** Simple menu (My Account → Display): only the everyday screens, for someone who finds the full list too much. */
+function simple_filter_menu(array $menu) {
+    if (!function_exists('ui_prefs') || !ui_prefs()['simple']) return $menu;
+    $keep = ['index.php', 'sales.php', 'parties.php', 'payments.php', 'items.php', 'stock.php', 'expenses.php', 'cash_bank.php',
+             'purchases.php', 'reports.php', 'tables.php', 'appointments.php', 'repairs.php', 'help.php'];
+    $out = [];
+    foreach ($menu as $m) {
+        if ($m[0] === 'link') { if (in_array(strtok($m[1], '?'), $keep, true)) $out[] = $m; continue; }
+        $m[4] = array_values(array_filter($m[4], fn($it) => in_array(strtok($it[0], '?'), $keep, true)));
+        if ($m[4]) $out[] = $m;
+    }
+    return $out;
+}
+
 function plan_filter_menu(array $menu) {
     if (!function_exists('tenant_active') || !tenant_active() || !function_exists('script_feature')) return $menu;
     $ok = function ($href) { $f = script_feature(strtok((string)$href, '?')); return $f === '' || plan_allows($f); };

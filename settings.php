@@ -274,6 +274,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_invoice') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'bill_design') {
     require_perm('settings.edit');
     set_setting('invoice_design', post('invoice_design') === '2' ? '2' : '1');
+    set_setting('bill_lang', in_array(post('bill_lang'), ['gu', 'hi'], true) ? post('bill_lang') : 'en');
     log_activity('settings_bill_design', post('invoice_design'));
     flash('Bill design changed ✔ — open any bill to see it.');
     redirect('settings.php?cat=invoice');
@@ -1231,6 +1232,10 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
       <span><strong><?= e($d[0]) ?></strong><br><span class="muted" style="font-size:12.5px"><?= e($d[1]) ?></span></span>
     </label>
     <?php endforeach; ?>
+    <div class="field" style="max-width:320px"><label>Words on the bill</label>
+      <select name="bill_lang"><?php foreach (['en' => 'English', 'gu' => 'ગુજરાતી (Gujarati)', 'hi' => 'हिन्दी (Hindi)'] as $k => $l): ?>
+        <option value="<?= $k ?>" <?= setting('bill_lang', 'en') === $k ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?></select>
+      <small class="muted">Total, Paid, Qty… on the bill page and its print. The WhatsApp PDF stays in English.</small></div>
     <button class="btn" type="submit">Save Design</button>
   </form>
 </div>

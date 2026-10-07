@@ -511,8 +511,15 @@ function pdf_item_sublines($it, $size, $maxWidth) {
  * being wrong by twenty points and starting a new page costs a sheet of paper,
  * being wrong the other way loses the customer's QR code.
  */
+/** "Rupees ... Only" under the totals box; returns where the block now ends. */
+function pdf_amount_words(&$pdf, $x, $w, $y, $total) {
+    foreach (array_slice(pdf_wrap(amount_in_words($total), 7.5, false, $w), 0, 2) as $i => $ln)
+        $pdf->text($x, $y + 11 + $i * 9, 7.5, $ln, '', [0.35, 0.38, 0.45]);
+    return $y + 22;
+}
+
 function pdf_footer_height($sale, $hasGst, $bank, $qrId, $extra = 0) {
-    $totals = 126                                   // subtotal, discount, TOTAL, PAID, balance
+    $totals = 126 + 22                              // subtotal, discount, TOTAL, PAID, balance + the amount in words
         + ($hasGst ? 48 : 0)                        // CGST + SGST
         + (!empty($sale['shipping']) && $sale['shipping'] > 0 ? 24 : 0)
         + (!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009 ? 24 : 0)
@@ -790,6 +797,7 @@ function invoice_pdf_design1($sale, $items) {
     // outer border around totals box
     $pdf->rrect_stroke($totX, $ry, $totW, $rowY - $ry, 3, [0.83, 0.86, 0.9], 0.8);
     $totalsBottom = $rowY;
+    $totalsBottom = pdf_amount_words($pdf, $totX, $totW, $rowY, $sale['total']);
 
     // -- pay via bank transfer (left) --
     $ly = $blockTop;
@@ -1125,6 +1133,7 @@ function invoice_pdf_design2($sale, $items) {
     $rowY += 26;
     $pdf->rrect_stroke($totX, $ry, $totW, $rowY - $ry, 3, [0.82, 0.78, 0.92], 0.8);
     $totalsBottom = $rowY;
+    $totalsBottom = pdf_amount_words($pdf, $totX, $totW, $rowY, $sale['total']);
 
     // bank card (left)
     $ly = $blockTop;

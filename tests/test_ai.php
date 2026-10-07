@@ -212,7 +212,7 @@ $bad = bs_check(['lines' => [
     ['desc' => 'Hard Disk', 'model' => 'WD10', 'qty' => 72, 'rate' => 3200, 'amount' => 38400, 'tax_pct' => 18],
 ], 'subtotal' => 38400, 'tax' => 6912, 'discount' => 0, 'total' => 45312]);
 t_ok('a misread quantity is caught by qty x rate', $bad['bad_lines'] === 1);
-t_ok('...and the row says what does not match', strpos($bad['lines'][0]['problems'][0], '230,400') !== false);
+t_ok('...and the row says what does not match', strpos($bad['lines'][0]['problems'][0], '2,30,400') !== false);
 t_ok('...and the row is not marked usable', !$bad['lines'][0]['ok']);
 
 $calc = bs_check(['lines' => [

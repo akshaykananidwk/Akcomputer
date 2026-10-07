@@ -25,6 +25,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'change_password') {
     redirect('my_account.php');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'display') {
+    set_user_pref($u['id'], 'ui_lang', in_array(post('ui_lang'), ['gu', 'hi'], true) ? post('ui_lang') : 'en');
+    set_user_pref($u['id'], 'ui_text', in_array(post('ui_text'), ['large', 'xl'], true) ? post('ui_text') : 'normal');
+    set_user_pref($u['id'], 'ui_cbsafe', post('ui_cbsafe') ? '1' : '0');
+    set_user_pref($u['id'], 'ui_simple', post('ui_simple') ? '1' : '0');
+    flash('Saved.');
+    redirect('my_account.php?tab=display');
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'setup_2fa_start') {
     $secret = totp_generate_secret();
     $_SESSION['pending_totp_secret'] = $secret;
@@ -95,6 +104,7 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="page-actions" style="flex-wrap:wrap">
   <a class="btn btn-sm <?= $tab === 'overview' ? '' : 'btn-outline' ?>" href="my_account.php?tab=overview">Overview</a>
+  <a class="btn btn-sm <?= $tab === 'display' ? '' : 'btn-outline' ?>" href="my_account.php?tab=display">Display &amp; language</a>
   <a class="btn btn-sm <?= $tab === 'password' ? '' : 'btn-outline' ?>" href="my_account.php?tab=password">Change Password</a>
   <a class="btn btn-sm <?= $tab === '2fa' ? '' : 'btn-outline' ?>" href="my_account.php?tab=2fa">Two-Factor Auth</a>
   <a class="btn btn-sm <?= $tab === 'sessions' ? '' : 'btn-outline' ?>" href="my_account.php?tab=sessions">Active Sessions</a>
@@ -109,6 +119,20 @@ include __DIR__ . '/includes/header.php';
   <p class="mt">Password last changed: <?= $u['password_changed_at'] ? dmyt($u['password_changed_at']) : 'never (still your original password)' ?></p>
   <p>Two-factor authentication: <?= $u['totp_enabled'] ? '<span class="badge badge-ok">on</span>' : '<span class="badge badge-bad">off</span>' ?></p>
 </div>
+
+<?php elseif ($tab === 'display'): $ui = ui_prefs(); ?>
+<form method="post" class="card" style="max-width:560px"><?= csrf_field() ?><input type="hidden" name="do" value="display">
+  <div class="field"><label>Language</label>
+    <select name="ui_lang"><?php foreach (['en' => 'English', 'gu' => 'ગુજરાતી (Gujarati)', 'hi' => 'हिन्दी (Hindi)'] as $k => $l): ?>
+      <option value="<?= $k ?>" <?= $ui['lang'] === $k ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?></select>
+    <small class="muted">Menus and buttons change; names, amounts and bills stay as they are.</small></div>
+  <div class="field"><label>Text size</label>
+    <select name="ui_text"><?php foreach (['normal' => 'Normal', 'large' => 'Large', 'xl' => 'Extra large'] as $k => $l): ?>
+      <option value="<?= $k ?>" <?= $ui['text'] === $k ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?></select></div>
+  <label class="check-inline"><input type="checkbox" name="ui_cbsafe" value="1" <?= $ui['cbsafe'] ? 'checked' : '' ?>> Colour-blind safe colours <span class="muted">(blue for good, orange for bad)</span></label><br>
+  <label class="check-inline"><input type="checkbox" name="ui_simple" value="1" <?= $ui['simple'] ? 'checked' : '' ?>> Simple menu <span class="muted">(only billing, payments, parties, items, expenses, reports)</span></label>
+  <div class="mt"><button class="btn" type="submit">Save</button></div>
+</form>
 
 <?php elseif ($tab === 'password'): ?>
 <div class="card">

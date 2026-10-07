@@ -363,7 +363,7 @@ if ($planPub): ?>
 <?php endif; ?>
 
 <?php if (setting('invoice_design', '1') === '2'): include __DIR__ . '/includes/invoice_card_d2.php'; else: ?>
-<div class="inv-paper card inv-bill">
+<div class="no-tr inv-paper card inv-bill">
   <div class="inv-topbar"></div>
   <div class="inv-head2">
     <div class="inv-firm2">
@@ -378,12 +378,12 @@ if ($planPub): ?>
     <div class="inv-box2">
       <div class="inv-box-title"><?= $sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE' ?></div>
       <div class="inv-box-rule"></div>
-      <div class="inv-box-row"><span>Invoice No.</span><span>: <?= e($sale['invoice_no']) ?></span></div>
-      <div class="inv-box-row"><span>Date</span><span>: <?= dmy($sale['sale_date']) ?></span></div>
+      <div class="inv-box-row"><span><?= e(bl('Invoice No.')) ?></span><span>: <?= e($sale['invoice_no']) ?></span></div>
+      <div class="inv-box-row"><span><?= e(bl('Date')) ?></span><span>: <?= dmy($sale['sale_date']) ?></span></div>
       <?php if (setting('add_time_transactions', '1') === '1' && $sale['created_at']): ?>
-      <div class="inv-box-row"><span>Time</span><span>: <?= date('h:i A', strtotime($sale['created_at'])) ?></span></div>
+      <div class="inv-box-row"><span><?= e(bl('Time')) ?></span><span>: <?= date('h:i A', strtotime($sale['created_at'])) ?></span></div>
       <?php endif; ?>
-      <?php if ($sale['due_date']): ?><div class="inv-box-row"><span>Due</span><span>: <?= dmy($sale['due_date']) ?></span></div><?php endif; ?>
+      <?php if ($sale['due_date']): ?><div class="inv-box-row"><span><?= e(bl('Due')) ?></span><span>: <?= dmy($sale['due_date']) ?></span></div><?php endif; ?>
       <div class="inv-seal">THANK YOU<br>FOR YOUR<br>BUSINESS</div>
     </div>
   </div>
@@ -399,7 +399,7 @@ if ($planPub): ?>
   </div>
   <div class="table-wrap" style="box-shadow:none">
     <table class="inv-table inv-table2">
-      <thead><tr><th>#</th><th>Item Description</th><?php if ($sale['is_gst']): ?><th>HSN</th><?php endif; ?><th class="num">Qty</th><th class="num">Rate</th><?php if ($sale['is_gst']): ?><th class="num">GST%</th><?php endif; ?><th class="num">Amount</th></tr></thead>
+      <thead><tr><th>#</th><th><?= e(bl('Item Description')) ?></th><?php if ($sale['is_gst']): ?><th>HSN</th><?php endif; ?><th class="num"><?= e(bl('Qty')) ?></th><th class="num"><?= e(bl('Rate')) ?></th><?php if ($sale['is_gst']): ?><th class="num">GST%</th><?php endif; ?><th class="num"><?= e(bl('Amount')) ?></th></tr></thead>
       <tbody>
       <?php foreach ($items as $n => $it): ?>
         <tr>
@@ -448,7 +448,7 @@ if ($planPub): ?>
       <?php endif; ?>
     </div>
     <div class="inv-totals-block">
-      <div class="inv-t-line"><span>Subtotal</span><span>Rs <?= money($sale['subtotal']) ?></span></div>
+      <div class="inv-t-line"><span><?= e(bl('Subtotal')) ?></span><span>Rs <?= money($sale['subtotal']) ?></span></div>
       <?php if ($sale['discount'] > 0):
           $dLabel = (!empty($sale['discount_type']) && $sale['discount_type'] === 'percent' && $sale['discount_pct'] > 0)
               ? 'Discount (' . rtrim(rtrim(number_format($sale['discount_pct'], 2), '0'), '.') . '%)' : 'Discount'; ?>
@@ -459,24 +459,25 @@ if ($planPub): ?>
       <div class="inv-t-line"><span>SGST</span><span>Rs <?= money($sale['tax_amount'] / 2) ?></span></div>
       <?php endif; ?>
       <?php if ($sale['shipping'] > 0): ?>
-      <div class="inv-t-line"><span>Shipping</span><span>Rs <?= money($sale['shipping']) ?></span></div>
+      <div class="inv-t-line"><span><?= e(bl('Shipping')) ?></span><span>Rs <?= money($sale['shipping']) ?></span></div>
       <?php endif; ?>
       <?php if (!empty($sale['loyalty_points_used']) && $sale['loyalty_points_used'] > 0): ?>
       <div class="inv-t-line"><span>⭐ Points Discount</span><span>- Rs <?= money($sale['loyalty_discount']) ?></span></div>
       <?php endif; ?>
       <?php if (!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009): ?>
-      <div class="inv-t-line"><span>Adjustment</span><span><?= $sale['adjustment'] > 0 ? '' : '- ' ?>Rs <?= money(abs($sale['adjustment'])) ?></span></div>
+      <div class="inv-t-line"><span><?= e(bl('Adjustment')) ?></span><span><?= $sale['adjustment'] > 0 ? '' : '- ' ?>Rs <?= money(abs($sale['adjustment'])) ?></span></div>
       <?php endif; ?>
       <?php if (!empty($sale['round_off']) && abs($sale['round_off']) > 0.004): ?>
-      <div class="inv-t-line"><span>Round Off</span><span><?= $sale['round_off'] > 0 ? '' : '- ' ?>Rs <?= money(abs($sale['round_off'])) ?></span></div>
+      <div class="inv-t-line"><span><?= e(bl('Round Off')) ?></span><span><?= $sale['round_off'] > 0 ? '' : '- ' ?>Rs <?= money(abs($sale['round_off'])) ?></span></div>
       <?php endif; ?>
-      <div class="inv-total-bar"><span>TOTAL</span><span>Rs <?= money($sale['total']) ?></span></div>
-      <div class="inv-t-line"><span>Paid (<?= e(strtoupper($sale['payment_mode'])) ?>)</span><span>Rs <?= money($sale['paid']) ?></span></div>
+      <div class="inv-total-bar"><span><?= e(bl('TOTAL')) ?></span><span>Rs <?= money($sale['total']) ?></span></div>
+      <div class="inv-t-line"><span><?= e(bl('Paid')) ?> (<?= e(strtoupper($sale['payment_mode'])) ?>)</span><span>Rs <?= money($sale['paid']) ?></span></div>
       <?php if ($due > 0.009): ?>
-      <div class="inv-balance-bar"><span>BALANCE DUE</span><span>Rs <?= money($due) ?></span></div>
+      <div class="inv-balance-bar"><span><?= e(bl('BALANCE DUE')) ?></span><span>Rs <?= money($due) ?></span></div>
       <?php else: ?>
-      <div class="inv-paid-bar">PAID IN FULL</div>
+      <div class="inv-paid-bar"><?= e(bl('PAID IN FULL')) ?></div>
       <?php endif; ?>
+      <div class="inv-words" style="font-size:11px;color:#555;margin-top:4px"><?= e(amount_in_words($sale['total'])) ?></div>
     </div>
   </div>
 
@@ -507,7 +508,7 @@ if ($planPub): ?>
     <div class="inv-sig-line"><?php $sigFile = !empty($sale['signature']) ? up_dir('signatures') . '/' . basename($sale['signature']) : '';
                 if ($sigFile && is_file($sigFile)): ?><img src="<?= e(base_url(up_rel('signatures') . '/' . $sale['signature'])) ?>" alt="" style="max-height:52px;display:block;margin:0 auto 2px"><?php endif; ?>Receiver's Signature</div>
     <div class="inv-stamp"><div class="inv-stamp-text"><?= e(bill_stamp_name()) ?><br>* THANK YOU *<br><?= e(strtoupper($sale['loc_city'])) ?></div></div>
-    <div class="inv-sig-line">For <?= e($sale['company_name']) ?><br>Authorised Signatory</div>
+    <div class="inv-sig-line">For <?= e($sale['company_name']) ?><br><?= e(bl('Authorised Signatory')) ?></div>
   </div>
   <div class="inv-footer-bar">
     <div>
@@ -519,6 +520,7 @@ if ($planPub): ?>
   </div>
   <div class="inv-bottom-strip">This is a computer generated invoice.<?= powered_by_line() !== '' ? ' · ' . e(powered_by_line()) : '' ?></div>
   <p class="muted mt" style="font-size:11px">Billed by: <?= e($sale['staff_name']) ?><?= $sale['notes'] ? ' | ' . e($sale['notes']) : '' ?></p>
+  <?php if (!$public): ?><p class="no-print"><button type="button" class="btn btn-sm btn-outline" data-say="<?= e(say_text('bill', $sale['invoice_no'], $sale['total'], $sale['paid'], max(0, $due))) ?>">🔊 Read aloud</button></p><?php endif; ?>
   <?php if (!empty($sale['prescription']) && !$public): ?><p class="no-print"><a class="btn btn-sm btn-outline" target="_blank" href="sale_view.php?id=<?= (int)$sale['id'] ?>&amp;rx=1">📄 Prescription</a></p><?php endif; ?>
 </div>
 <?php endif; ?>

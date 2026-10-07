@@ -1602,3 +1602,48 @@ var Tables = {
 if (document.readyState === 'loading')
   document.addEventListener('DOMContentLoaded', function () { Tables.cards(); });
 else Tables.cards();
+
+
+// ----- Gujarati / Hindi screens (My Account → Display). Only whole phrases
+// that are in the dictionary change, and only words on the screen - never
+// what is typed in a box, and never a bill (.no-tr) - so names, numbers and
+// what the customer receives stay exactly as they were. -----
+(function () {
+  if (typeof I18N !== 'object' || !I18N) return;
+  var RE = /^(\s*[^A-Za-z(]*?\s*)([A-Za-z(][^]*?)(\s*)$/;
+  var tr = function (txt) {
+    var m = RE.exec(txt); if (!m) return null;
+    var hit = I18N[m[2]]; return hit ? m[1] + hit + m[3] : null;
+  };
+  var skip = function (el) { return !el || el.closest('script,style,textarea,.no-tr,[contenteditable]'); };
+  var run = function (root) {
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), n, todo = [];
+    while ((n = w.nextNode())) { if (n.nodeValue.trim() && !skip(n.parentElement)) todo.push(n); }
+    todo.forEach(function (t) { var x = tr(t.nodeValue); if (x !== null) t.nodeValue = x; });
+    (root.querySelectorAll ? root.querySelectorAll('[placeholder],[title]') : []).forEach(function (el) {
+      if (el.closest('.no-tr')) return;
+      ['placeholder', 'title'].forEach(function (a) { var v = el.getAttribute(a), x = v && tr(v); if (x) el.setAttribute(a, x); });
+    });
+  };
+  run(document.body);
+  document.addEventListener('DOMContentLoaded', function () { run(document.body); });
+  new MutationObserver(function (ms) {
+    ms.forEach(function (m) { m.addedNodes.forEach(function (nd) {
+      if (nd.nodeType === 1 && !skip(nd)) run(nd);
+      else if (nd.nodeType === 3 && !skip(nd.parentElement)) { var x = tr(nd.nodeValue); if (x !== null) nd.nodeValue = x; }
+    }); });
+  }).observe(document.body, { childList: true, subtree: true });
+})();
+
+
+// ----- 🔊 read aloud: any button with data-say speaks its sentence, in the
+// screen's language when the phone has that voice (else Indian English) -----
+document.addEventListener('click', function (ev) {
+  var b = ev.target.closest('[data-say]');
+  if (!b || !('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  var u = new SpeechSynthesisUtterance(b.dataset.say), want = ({ gu: 'gu-IN', hi: 'hi-IN' })[document.documentElement.lang] || 'en-IN';
+  var v = speechSynthesis.getVoices().filter(function (x) { return x.lang.replace('_', '-') === want; })[0];
+  u.lang = want; if (v) u.voice = v; u.rate = 0.95;
+  speechSynthesis.speak(u);
+});

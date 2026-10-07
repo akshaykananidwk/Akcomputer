@@ -8,7 +8,13 @@ function redirect($url) { header('Location: ' . $url); exit; }
 function post($key, $default = '') { return isset($_POST[$key]) ? (is_string($_POST[$key]) ? trim($_POST[$key]) : $_POST[$key]) : $default; }
 function get($key, $default = '') { return isset($_GET[$key]) ? (is_string($_GET[$key]) ? trim($_GET[$key]) : $_GET[$key]) : $default; }
 
-function money($n) { return number_format((float)$n, 2); }
+/** An amount for the screen, in the Indian way: 12,34,567.00 (lakh and crore commas). Display only. */
+function money($n) {
+    $n = round((float)$n, 2);
+    [$int, $dec] = explode('.', number_format(abs($n), 2, '.', ''));
+    if (strlen($int) > 3) $int = preg_replace('/\B(?=(\d{2})+$)/', ',', substr($int, 0, -3)) . ',' . substr($int, -3);
+    return ($n < 0 ? '-' : '') . $int . '.' . $dec;
+}
 
 function today() { return date('Y-m-d'); }
 

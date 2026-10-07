@@ -15,7 +15,7 @@ $trust = [
     ['🚚', 'FAST & SAFE', '#ff7a1a'],
 ];
 ?>
-<div class="inv-paper card inv2-bill">
+<div class="no-tr inv-paper card inv2-bill">
   <!-- header -->
   <div class="inv2-head">
     <div class="inv2-head-left">
@@ -59,7 +59,7 @@ $trust = [
   <!-- items -->
   <div class="table-wrap" style="box-shadow:none">
     <table class="inv-table inv2-table">
-      <thead><tr><th>#</th><th>Item Description</th><?php if ($sale['is_gst']): ?><th>HSN</th><?php endif; ?><th class="num" style="text-align:center">Qty</th><th class="num">Rate</th><?php if ($sale['is_gst']): ?><th class="num">GST%</th><?php endif; ?><th class="num">Amount</th></tr></thead>
+      <thead><tr><th>#</th><th><?= e(bl('Item Description')) ?></th><?php if ($sale['is_gst']): ?><th>HSN</th><?php endif; ?><th class="num" style="text-align:center">Qty</th><th class="num"><?= e(bl('Rate')) ?></th><?php if ($sale['is_gst']): ?><th class="num">GST%</th><?php endif; ?><th class="num"><?= e(bl('Amount')) ?></th></tr></thead>
       <tbody>
       <?php foreach ($items as $n => $it): ?>
         <tr>
@@ -117,11 +117,12 @@ $trust = [
       <?php if ($sale['shipping'] > 0): ?><div class="inv2-t"><span>SHIPPING</span><span>Rs <?= money($sale['shipping']) ?></span></div><?php endif; ?>
       <?php if (!empty($sale['adjustment']) && abs($sale['adjustment']) > 0.009): ?><div class="inv2-t"><span>ADJUSTMENT</span><span><?= $sale['adjustment'] > 0 ? '' : '- ' ?>Rs <?= money(abs($sale['adjustment'])) ?></span></div><?php endif; ?>
       <?php if (!empty($sale['round_off']) && abs($sale['round_off']) > 0.004): ?><div class="inv2-t"><span>ROUND OFF</span><span><?= $sale['round_off'] > 0 ? '' : '- ' ?>Rs <?= money(abs($sale['round_off'])) ?></span></div><?php endif; ?>
-      <div class="inv2-total-bar"><span>TOTAL</span><span>Rs <?= money($sale['total']) ?></span></div>
+      <div class="inv2-total-bar"><span><?= e(bl('TOTAL')) ?></span><span>Rs <?= money($sale['total']) ?></span></div>
       <div class="inv2-t"><span>PAID (<?= e(strtoupper($sale['payment_mode'])) ?>)</span><span>Rs <?= money($sale['paid']) ?></span></div>
       <?php if ($due > 0.009): ?>
-      <div class="inv2-balance-bar"><span>BALANCE DUE</span><span>Rs <?= money($due) ?></span></div>
-      <?php else: ?><div class="inv2-paid-bar">PAID IN FULL</div><?php endif; ?>
+      <div class="inv2-balance-bar"><span><?= e(bl('BALANCE DUE')) ?></span><span>Rs <?= money($due) ?></span></div>
+      <?php else: ?><div class="inv2-paid-bar"><?= e(bl('PAID IN FULL')) ?></div><?php endif; ?>
+      <div style="font-size:11px;color:#555;margin-top:4px"><?= e(amount_in_words($sale['total'])) ?></div>
     </div>
   </div>
 
