@@ -457,7 +457,7 @@ include __DIR__ . '/includes/header.php';
           : days_between($j['received_date']); ?>
     <tr>
       <td><strong><?= e($j['job_no']) ?></strong><br><span class="muted"><?= dmy($j['received_date']) ?></span></td>
-      <td><?= e($j['customer_name']) ?><br><span class="muted"><?= e($j['customer_mobile']) ?></span></td>
+      <td><?= e($j['customer_name']) ?><br><span class="muted"><?= e(show_mobile($j['customer_mobile'])) ?></span></td>
       <td><?= e($j['device_type']) ?> <?= e($j['brand_model']) ?><br><span class="muted"><?= e($j['serial_no']) ?></span></td>
       <td><?= status_badge($j['status']) ?></td>
       <td><?= e($j['tech_name'] ?: '-') ?></td>

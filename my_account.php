@@ -77,6 +77,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'revoke_session') {
     redirect('my_account.php?tab=sessions');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'passkey_del') {
+    q('DELETE FROM webauthn_creds WHERE id = ? AND user_id = ?', [(int)post('id'), $u['id']]);
+    log_activity('passkey_remove', '#' . (int)post('id'));
+    redirect('my_account.php?tab=passkey');
+}
+
+// lost the phone? every other device signed out at once
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'revoke_all') {
+    q('UPDATE user_sessions SET revoked = 1 WHERE user_id = ? AND session_token <> ?', [$u['id'], session_id()]);
+    q('UPDATE api_tokens SET revoked = 1 WHERE user_id = ?', [$u['id']]);   // the phone app's logins too
+    log_activity('logout_everywhere', '');
+    flash('Every other phone and computer is logged out now. Change your password too if a phone was lost.');
+    redirect('my_account.php?tab=sessions');
+}
+
 // ---------- API tokens (Bearer tokens for api.php - external/mobile access) ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'create_api_token') {
     $label = trim(post('label')) ?: 'Untitled token';
@@ -107,6 +122,7 @@ include __DIR__ . '/includes/header.php';
   <a class="btn btn-sm <?= $tab === 'display' ? '' : 'btn-outline' ?>" href="my_account.php?tab=display">Display &amp; language</a>
   <a class="btn btn-sm <?= $tab === 'password' ? '' : 'btn-outline' ?>" href="my_account.php?tab=password">Change Password</a>
   <a class="btn btn-sm <?= $tab === '2fa' ? '' : 'btn-outline' ?>" href="my_account.php?tab=2fa">Two-Factor Auth</a>
+  <a class="btn btn-sm <?= $tab === 'passkey' ? '' : 'btn-outline' ?>" href="my_account.php?tab=passkey">👆 Fingerprint</a>
   <a class="btn btn-sm <?= $tab === 'sessions' ? '' : 'btn-outline' ?>" href="my_account.php?tab=sessions">Active Sessions</a>
   <a class="btn btn-sm <?= $tab === 'history' ? '' : 'btn-outline' ?>" href="my_account.php?tab=history">Login History</a>
   <a class="btn btn-sm <?= $tab === 'api' ? '' : 'btn-outline' ?>" href="my_account.php?tab=api">API Tokens</a>
@@ -193,12 +209,34 @@ include __DIR__ . '/includes/header.php';
   <?php endif; ?>
 </div>
 
+<?php elseif ($tab === 'passkey'):
+    $keys = []; try { $keys = all('SELECT * FROM webauthn_creds WHERE user_id = ? ORDER BY id DESC', [$u['id']]); } catch (Exception $e) {} ?>
+<div class="card" style="max-width:560px">
+  <h2>👆 Fingerprint / face login</h2>
+  <p class="muted">Log in with your phone's fingerprint or face instead of typing the password. Your finger or face never leaves the phone.</p>
+  <?php foreach ($keys as $k): ?><div class="list-row" style="cursor:default"><div class="list-row-main"><strong><?= e($k['name']) ?></strong><br><small class="muted">added <?= dmy($k['created_at']) ?><?= $k['last_used'] ? ' · last used ' . dmyt($k['last_used']) : '' ?></small></div>
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="do" value="passkey_del"><input type="hidden" name="id" value="<?= (int)$k['id'] ?>"><button class="btn btn-sm btn-outline btn-danger" onclick="return confirm('Remove this fingerprint login?')">Remove</button></form></div><?php endforeach; ?>
+  <div style="display:flex;gap:6px;margin-top:10px"><input type="text" id="pkName" value="My phone" maxlength="80" style="max-width:200px"><button type="button" class="btn" id="pkAdd">➕ Add this phone</button></div>
+  <p id="pkMsg" class="muted"></p>
+</div>
+<script src="assets/passkey.js?v=<?= asset_v('passkey.js') ?>"></script>
+<script>
+document.getElementById('pkAdd').addEventListener('click', function () {
+  var m = document.getElementById('pkMsg');
+  if (!Passkey.supported()) { m.textContent = 'This browser cannot do fingerprint login.'; return; }
+  Passkey.register(document.getElementById('pkName').value, CSRF_TOKEN).then(function (r) { if (r.ok) location.reload(); else m.textContent = r.msg; })
+    .catch(function (e) { m.textContent = e.message || 'Cancelled.'; });
+});
+</script>
+
 <?php elseif ($tab === 'sessions'):
     $sessions = all('SELECT * FROM user_sessions WHERE user_id = ? AND revoked = 0 ORDER BY last_seen_at DESC', [$u['id']]);
     $curToken = session_id(); ?>
 <div class="card">
   <h2>💻 Active Sessions</h2>
   <p class="muted mb">Every device currently signed in to your account. Revoked devices are signed out within about a minute.</p>
+  <form method="post" class="mb" onsubmit="return confirm('Log out every other phone and computer?')"><?= csrf_field() ?><input type="hidden" name="do" value="revoke_all">
+    <button class="btn btn-danger btn-sm" type="submit">📵 Phone lost? Log out everywhere else</button></form>
   <?php foreach ($sessions as $s): ?>
   <div class="list-row" style="cursor:default">
     <div class="list-row-main">

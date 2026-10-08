@@ -207,6 +207,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_login_limits')
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_ip_whitelist') {
     require_perm('settings.edit');
     set_setting('ip_whitelist', trim(post('ip_whitelist')));
+    set_setting('ip_whitelist_staff_only', post('ip_whitelist_staff_only') ? '1' : '0');
+    set_setting('new_device_alert', post('new_device_alert') ? '1' : '0');
+    set_setting('auto_logout_minutes', (string)max(0, min(720, (int)post('auto_logout_minutes'))));
+    set_setting('big_edit_amount', (string)max(0, (int)post('big_edit_amount')));
     log_activity('settings_save', 'ip whitelist');
     flash('IP restriction saved.');
     redirect('settings.php?cat=security');
@@ -378,6 +382,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_backup_auto') 
     require_perm('settings.edit');
     set_setting('backup_passphrase', post('backup_passphrase'));
     set_setting('backup_telegram', post('backup_telegram') ? '1' : '0');
+    if (post('gdrive_client_id') !== null && is_full_admin()) {
+        set_setting('gdrive_client_id', trim((string)post('gdrive_client_id')));
+        if (trim((string)post('gdrive_client_secret')) !== '') set_setting('gdrive_client_secret', trim((string)post('gdrive_client_secret')));
+    }
     set_setting('error_alerts', post('error_alerts') ? '1' : '0');
     log_activity('settings_save', 'auto backup + error alerts');
     flash(post('backup_passphrase') !== ''
@@ -1600,6 +1608,11 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save_ip_whitelist">
     <div class="field"><textarea name="ip_whitelist" rows="4" placeholder="103.21.58.10&#10;192.168.1.0/24"><?= e(setting('ip_whitelist', '')) ?></textarea></div>
+    <p class="muted" style="font-size:12.5px">Your shop WiFi's address right now: <b><?= e(client_ip()) ?></b> — add it above to let staff log in only from the shop.</p>
+    <label class="check-inline"><input type="checkbox" name="ip_whitelist_staff_only" value="1" <?= setting('ip_whitelist_staff_only') === '1' ? 'checked' : '' ?>> Only for staff — the owner (admin) can log in from anywhere</label><br>
+    <label class="check-inline"><input type="checkbox" name="new_device_alert" value="1" <?= setting('new_device_alert', '1') === '1' ? 'checked' : '' ?>> Tell me on WhatsApp when someone logs in from a new phone or computer</label>
+    <div class="field" style="max-width:300px"><label>Staff need my one-time code to change a bill of ₹ or more (0 = off)</label><input type="number" name="big_edit_amount" min="0" step="1000" value="<?= (int)setting('big_edit_amount', '0') ?>"></div>
+    <div class="field" style="max-width:300px"><label>Log out after this many idle minutes (0 = never)</label><input type="number" name="auto_logout_minutes" min="0" max="720" value="<?= (int)setting('auto_logout_minutes', '0') ?>"></div>
     <button class="btn btn-sm" type="submit">Save</button>
   </form>
 </div>
@@ -1787,6 +1800,20 @@ $elParse = function ($ln) {
     🗄 <?= count($bkFiles) ?> backup file(s) on the server · newest <?= e(date('d-m-Y H:i', $bkLast)) ?>
     · <?= round(filesize($bkFiles[0]) / 1048576, 2) ?> MB
     · <?= strpos($bkFiles[0], '.enc') !== false ? '🔐 locked' : '📦 not locked' ?></p>
+  <?php endif; ?>
+  <?php if (is_full_admin()): require_once __DIR__ . '/includes/gdrive.php'; ?>
+  <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+  <h4 style="margin:0 0 6px">☁️ Google Drive copy</h4>
+  <p class="muted" style="font-size:12.5px">The locked daily backup is copied to your own Google Drive. Make an "OAuth client (Web)" in Google Cloud Console with this redirect address:
+    <code style="word-break:break-all"><?= e(gdrive_redirect_uri()) ?></code></p>
+  <form method="post" action="settings.php"><?= csrf_field() ?><input type="hidden" name="do" value="save_backup_auto">
+    <input type="hidden" name="backup_passphrase" value="<?= e(setting('backup_passphrase')) ?>"><input type="hidden" name="backup_telegram" value="<?= setting('backup_telegram', '1') === '1' ? '1' : '' ?>"><input type="hidden" name="error_alerts" value="<?= setting('error_alerts', '1') === '1' ? '1' : '' ?>">
+    <div class="f-grid"><div><label>Client ID</label><input type="text" name="gdrive_client_id" value="<?= e(setting('gdrive_client_id', '')) ?>"></div>
+      <div><label>Client secret <span class="f-hint"><?= setting('gdrive_client_secret', '') !== '' ? '(saved — blank keeps it)' : '' ?></span></label><input type="password" name="gdrive_client_secret" autocomplete="off"></div></div>
+    <div class="page-actions" style="margin:10px 0 0;gap:6px"><button class="btn btn-outline" type="submit">Save</button>
+      <?php if (setting('gdrive_client_id', '') !== ''): ?><a class="btn" href="gdrive.php?go=1"><?= gdrive_connected() ? '🔄 Connect again' : '🔗 Connect Google Drive' ?></a><?php endif; ?></div>
+  </form>
+  <p class="muted" style="font-size:12px"><?= gdrive_connected() ? '✅ Connected' . (setting('gdrive_last', '') ? ' · last copy ' . e(setting('gdrive_last')) : ' · nothing copied yet') : 'Not connected.' ?><?= gdrive_connected() && setting('backup_passphrase', '') === '' ? ' ⚠️ Set a passphrase above — only locked backups are sent.' : '' ?></p>
   <?php endif; ?>
 </div>
 

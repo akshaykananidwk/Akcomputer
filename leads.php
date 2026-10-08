@@ -116,7 +116,7 @@ if ($action === 'view') {
     ?>
     <div class="card">
       <h2><?= e($l['lead_no']) ?> <?= status_badge($l['status']) ?></h2>
-      <p><strong><?= e($l['name']) ?></strong> · <?= e($l['mobile']) ?> <?= $l['email'] ? '· ' . e($l['email']) : '' ?></p>
+      <p><strong><?= e($l['name']) ?></strong> · <?= e(show_mobile($l['mobile'])) ?> <?= $l['email'] ? '· ' . e($l['email']) : '' ?></p>
       <p class="muted">Source: <?= e($l['source'] ?: '-') ?> · Assigned: <?= e($l['staff_name'] ?: 'Unassigned') ?></p>
       <?php if ($l['interest']): ?><p class="mt"><strong>Interested in:</strong> <?= e($l['interest']) ?></p><?php endif; ?>
       <?php if ($l['notes']): ?><p class="mt"><strong>Notes:</strong><br><?= nl2br(e($l['notes'])) ?></p><?php endif; ?>
@@ -184,7 +184,7 @@ include __DIR__ . '/includes/header.php';
   <?php foreach ($leads as $l): ?>
     <tr>
       <td><strong><?= e($l['lead_no']) ?></strong></td>
-      <td><?= e($l['name']) ?><br><span class="muted"><?= e($l['mobile']) ?></span></td>
+      <td><?= e($l['name']) ?><br><span class="muted"><?= e(show_mobile($l['mobile'])) ?></span></td>
       <td><?= e($l['interest']) ?></td>
       <td><?= e($l['source']) ?></td>
       <td><?= status_badge($l['status']) ?></td>

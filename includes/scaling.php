@@ -45,6 +45,7 @@ function sc_log_tables() {
         'cron_runs'          => ['⏱ Cron history', 'started_at', 60],
         'wa_bot_log'         => ['🤖 Bot records', 'created_at', 90],
         'api_usage'          => ['💸 AI usage', 'created_at', 730],
+        'recycle_bin'        => ['🗑️ Recycle bin', 'created_at', 30],   // deleted records are kept 30 days, then gone
     ];
 }
 

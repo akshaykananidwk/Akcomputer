@@ -1100,7 +1100,7 @@ if ($cq): ?>
       <?php foreach ($cq as $c): ?>
         <tr>
           <td data-l="Customer"><a href="parties.php?action=ledger&id=<?= (int)$c['id'] ?>"><?= e($c['name']) ?></a>
-            <?php if (!empty($c['mobile'])): ?><br><span class="mini"><?= e($c['mobile']) ?></span><?php endif; ?></td>
+            <?php if (!empty($c['mobile'])): ?><br><span class="mini"><?= e(show_mobile($c['mobile'])) ?></span><?php endif; ?></td>
           <td class="num money-out" data-l="Overdue">₹<?= money($c['overdue']) ?></td>
           <td class="num" data-l="Days"><span class="badge badge-bad"><?= (int)($c['days'] ?? 0) ?>d</span></td>
           <td class="act">

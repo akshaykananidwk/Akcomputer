@@ -108,7 +108,7 @@ include __DIR__ . '/includes/header.php';
     </span>
   </div>
   <p class="muted" style="margin:0 0 10px">
-    <?php if ($p['mobile']): ?><a href="tel:<?= e($p['mobile']) ?>">📞 <?= e($p['mobile']) ?></a> · <?php endif; ?>
+    <?php if ($p['mobile']): ?>📞 <?= mobile_link($p['mobile']) ?> · <?php endif; ?>
     <?= e(trim(($p['city'] ?? '') . ' ' . ($p['address'] ?? ''))) ?: 'No address' ?>
     · customer <?= $c['since'] ? dmy($c['since']) . ' from' : '—' ?>
     · <?= e($p['type']) ?>

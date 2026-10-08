@@ -138,6 +138,7 @@ return simple_filter_menu(plan_filter_menu([
             ? [['my_plan.php', '💳 My plan & usage', '*', null, null]]
             : [['platform.php', '🌐 Shops on this software', '*', null, null]]),
     ]],
+    ['link', 'recycle.php', 'archive', 'Recycle bin', 'settings.edit'],
     ['link', 'settings.php', 'gear', 'Settings', 'settings.view'],
     ['link', 'help.php', 'book', 'Help', null],
 ]));

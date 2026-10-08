@@ -73,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'statement_wa') {
          . "\n\nThank you! 🙏";
     if (send_whatsapp($sp['mobile'], $msg, base_url(up_rel('statements') . '/' . $fn))) {
         log_activity('party_statement_wa', $sp['name']);
-        flash('Statement (PDF) sent on WhatsApp to: ' . $sp['mobile']);
+        flash('Statement (PDF) sent on WhatsApp to: ' . show_mobile($sp['mobile']));
     } else {
         flash('WhatsApp send failed. ' . whatsapp_last_error(), 'error');
     }
@@ -209,7 +209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'collection_reminder
         flash('Nothing is owed by this party — no reminder was sent.', 'error');
     } elseif (collection_reminder_send($mobile, $due, $p['name'])) {
         log_activity('aging_reminder_whatsapp', $p['name'] . ' ' . $mobile . ' ₹' . money($due) . ' (ledger)');
-        flash('₹' . money($due) . ' reminder ' . $mobile . ' sent on WhatsApp.');
+        flash('₹' . money($due) . ' reminder ' . show_mobile($mobile) . ' sent on WhatsApp.');
     } else {
         flash('WhatsApp was not sent. ' . whatsapp_last_error(), 'error');
     }
@@ -269,7 +269,7 @@ if ($action === 'ledger' && $id) {
         <h2 style="margin:0"><?= e($p['name']) ?></h2>
         <span>
           <?php if ($p['mobile']): ?>
-          <form method="post" style="display:inline" onsubmit="return confirm('Full statement (PDF) <?= e($p['mobile']) ?> Send on WhatsApp to')">
+          <form method="post" style="display:inline" onsubmit="return confirm('Full statement (PDF) <?= e(show_mobile($p['mobile'])) ?> Send on WhatsApp to')">
             <?= csrf_field() ?><input type="hidden" name="do" value="statement_wa"><input type="hidden" name="id" value="<?= $p['id'] ?>">
             <button class="btn btn-sm btn-wa" type="submit">📲 Statement WhatsApp</button>
           </form>
@@ -284,7 +284,7 @@ if ($action === 'ledger' && $id) {
           $remDue = can('payments.view')
               ? money_chase_due(party_balance_side($p['id'], 'in'), party_balance($p['id'])) : 0.0;
           if ($p['mobile'] && $remDue > 0.009): ?>
-          <form method="post" style="display:inline" onsubmit="return confirm('₹<?= money($remDue) ?> payment reminder <?= e($p['mobile']) ?> Send it to')">
+          <form method="post" style="display:inline" onsubmit="return confirm('₹<?= money($remDue) ?> payment reminder <?= e(show_mobile($p['mobile'])) ?> Send it to')">
             <?= csrf_field() ?><input type="hidden" name="do" value="collection_reminder"><input type="hidden" name="id" value="<?= $p['id'] ?>">
             <button class="btn btn-sm btn-wa" type="submit">🔔 Reminder Rs <?= money($remDue) ?></button>
           </form>
@@ -300,7 +300,7 @@ if ($action === 'ledger' && $id) {
           <?php if (can('parties.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Delete this party? If it has transactions, it will just be made inactive.')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
         </span>
       </div>
-      <p class="muted">Credit: <?= (int)$p['credit_days'] ?> days · <?= e($p['mobile']) ?> <?= $p['gstin'] ? '| GSTIN: ' . e($p['gstin']) : '' ?><?= setting('loyalty_enabled') === '1' ? ' | ⭐ ' . (int)$p['loyalty_points'] . ' points' : '' ?></p>
+      <p class="muted">Credit: <?= (int)$p['credit_days'] ?> days · <?= e(show_mobile($p['mobile'])) ?> <?= $p['gstin'] ? '| GSTIN: ' . e($p['gstin']) : '' ?><?= setting('loyalty_enabled') === '1' ? ' | ⭐ ' . (int)$p['loyalty_points'] . ' points' : '' ?></p>
       <?php
       // three things about this party that are easy to forget and expensive
       // to forget: money of theirs we are holding, how far past their limit

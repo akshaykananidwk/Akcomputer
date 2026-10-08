@@ -449,7 +449,11 @@ function cron_job_auto_backup() {
             if ($r['ok'] ?? false) $tgSent++;
         }
     }
-    return basename($bkFile) . ' (' . round(filesize($bkFile) / 1024) . ' KB), Telegram: ' . $mode . ' → ' . $tgSent . ' admin(s)';
+    // ☁️ and a copy in the owner's Google Drive, when connected (encrypted only)
+    $drive = '';
+    require_once __DIR__ . '/gdrive.php';
+    if (gdrive_connected()) { [$okD, $msgD] = gdrive_upload($bkFile); $drive = ', Drive: ' . $msgD; }
+    return basename($bkFile) . ' (' . round(filesize($bkFile) / 1024) . ' KB), Telegram: ' . $mode . ' → ' . $tgSent . ' admin(s)' . $drive;
 }
 
 /** Weekly data-health auto-run; owner hears about it only when wrong. */

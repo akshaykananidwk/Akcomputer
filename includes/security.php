@@ -106,6 +106,13 @@ function client_user_agent() {
 }
 
 // ---------- IP allowlist (empty = no restriction, the safe default) ----------
+/** May this person log in from here? With "staff only" on, the owner (admin) may log in from anywhere. */
+function ip_allowed_for(array $user, $ip) {
+    if (ip_allowed($ip)) return true;
+    if (setting('ip_whitelist_staff_only') !== '1') return false;
+    $perms = json_decode((string)val('SELECT permissions FROM roles WHERE id = ?', [$user['role_id']]), true) ?: [];
+    return in_array('*', $perms, true);
+}
 function ip_allowed($ip) {
     $list = trim(setting('ip_whitelist', ''));
     if ($list === '') return true;
@@ -203,6 +210,7 @@ function password_policy_check($password) {
  *  session as an active device the user can see/revoke later. */
 function establish_session($userId) {
     session_regenerate_id(true);
+    device_check($userId);
     $_SESSION['user_id'] = $userId;
     $_SESSION['last_activity'] = time();
     q('INSERT INTO user_sessions (user_id, session_token, ip_address, user_agent) VALUES (?,?,?,?)',
@@ -229,4 +237,33 @@ function session_security_ok() {
         }
     }
     return true;
+}
+
+
+// ---------- A login from a phone or computer never seen before ----------
+/** Each browser keeps a random id for a year; the first login on a new one
+ *  tells the owner (Settings → Security). A person's very first device is
+ *  just remembered. Only the id's hash is stored. */
+function device_check($userId) {
+    try {
+        $id = (string)($_COOKIE['akdev'] ?? '');
+        if (!preg_match('/^[a-f0-9]{32}$/', $id)) {
+            $id = bin2hex(random_bytes(16));
+            if (!headers_sent() && PHP_SAPI !== 'cli') setcookie('akdev', $id, ['expires' => time() + 365 * 86400, 'path' => '/', 'httponly' => true, 'samesite' => 'Lax', 'secure' => !empty($_SERVER['HTTPS'])]);
+        }
+        $h = hash('sha256', $id);
+        if (val('SELECT id FROM known_devices WHERE user_id = ? AND device_hash = ?', [$userId, $h])) {
+            q('UPDATE known_devices SET last_seen = NOW() WHERE user_id = ? AND device_hash = ?', [$userId, $h]);
+            return false;
+        }
+        $hadOne = (bool)val('SELECT id FROM known_devices WHERE user_id = ? LIMIT 1', [$userId]);
+        q('INSERT INTO known_devices (user_id, device_hash, label, last_seen) VALUES (?,?,?,NOW())', [$userId, $h, client_user_agent()]);
+        if ($hadOne && setting('new_device_alert', '1') === '1' && function_exists('owner_alert')) {
+            $name = (string)val('SELECT name FROM users WHERE id = ?', [$userId]);
+            $ua = client_user_agent();
+            $what = preg_match('/Android|iPhone|iPad/i', $ua, $m) ? $m[0] : (preg_match('/Windows|Mac OS|Linux/i', $ua, $m) ? $m[0] : 'a new device');
+            owner_alert("🔐 New device login: $name on $what, " . date('d-m h:i A') . ' (IP ' . client_ip() . "). If this was not them, open Staff Users → Log out everywhere.");
+        }
+        return $hadOne;
+    } catch (Throwable $e) { return false; }   // before v89, or anything odd: never block a login
 }

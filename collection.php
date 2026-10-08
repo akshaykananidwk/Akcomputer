@@ -156,7 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <thead><tr><th>Customer</th><th>Mobile</th><th class="num">Will be told</th></tr></thead>
             <tbody>
             <?php $tot = 0; foreach ($picked as $c): $tot += $c['due']; ?>
-              <tr><td><?= e($c['name']) ?></td><td><?= e($c['mobile']) ?></td>
+              <tr><td><?= e($c['name']) ?></td><td><?= e(show_mobile($c['mobile'])) ?></td>
                   <td class="num">₹<?= money($c['due']) ?></td></tr>
             <?php endforeach; ?>
             </tbody>
@@ -233,7 +233,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <thead><tr><th>Customer</th><th>Mobile</th><th class="num">Due Rs </th><th class="num">days</th></tr></thead>
             <tbody>
             <?php foreach ($picked as $c): ?>
-            <tr><td><?= e($c['name']) ?></td><td><?= e($c['mobile']) ?></td>
+            <tr><td><?= e($c['name']) ?></td><td><?= e(show_mobile($c['mobile'])) ?></td>
                 <td class="num">₹<?= money($c['overdue']) ?></td><td class="num"><?= (int)$c['days'] ?>d</td></tr>
             <?php endforeach; ?>
             </tbody>
@@ -470,7 +470,7 @@ include __DIR__ . '/includes/header.php';
             <br><span class="muted" style="font-size:11px"><?= (int)$c['priority']['score'] ?>/100</span></span></td>
         <td>
           <a href="customer.php?id=<?= (int)$c['id'] ?>"><strong><?= e($c['name']) ?></strong></a>
-          <?php if ($c['mobile']): ?><br><a class="muted" style="font-size:12px" href="tel:<?= e($c['mobile']) ?>"><?= e($c['mobile']) ?></a><?php endif; ?>
+          <?php if ($c['mobile']): ?><br><span class="muted" style="font-size:12px"><?= mobile_link($c['mobile']) ?></span><?php endif; ?>
           <br><span class="muted" style="font-size:11px"><?= e(implode(' · ', $c['priority']['why'])) ?></span>
         </td>
         <td class="num">₹<?= money($c['overdue']) ?>
@@ -493,7 +493,7 @@ include __DIR__ . '/includes/header.php';
         </td>
         <td style="white-space:nowrap">
           <a class="btn btn-sm btn-outline" href="parties.php?action=ledger&id=<?= (int)$c['id'] ?>" title="Ledger">📒</a>
-          <?php if ($c['mobile']): ?><a class="btn btn-sm btn-outline" href="tel:<?= e($c['mobile']) ?>" title="Call from this phone">📱</a><?php endif; ?>
+          <?php if ($c['mobile'] && can('parties.contact')): ?><a class="btn btn-sm btn-outline" href="tel:<?= e($c['mobile']) ?>" title="Call from this phone">📱</a><?php endif; ?>
           <?php if (can('payments.add')): ?>
             <?php if ($vg['ok']): ?>
               <a class="btn btn-sm btn-success" href="collection.php?call=<?= (int)$c['id'] ?>" title="Automatic reminder call">Remind Now 📞</a>

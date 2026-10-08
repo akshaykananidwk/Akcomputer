@@ -62,7 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $user = row('SELECT * FROM users WHERE username = ? AND is_active = 1', [$username]);
             if ($user && password_verify(post('password'), $user['password'])) {
-                if (!ip_allowed(client_ip())) {
+                if (!ip_allowed_for($user, client_ip())) {
                     $err = 'Login is not allowed from this network. Contact an admin.';
                     record_login_history($user['id'], $username, false, 'ip_blocked');
                 } else {
@@ -129,7 +129,22 @@ include __DIR__ . '/includes/header.php';
         <div class="field"><label>Password</label><input type="password" name="password" required></div>
         <button class="btn btn-block" type="submit">Login</button>
       </form>
+      <button type="button" class="btn btn-block btn-outline mt" id="pkLogin" style="display:none">👆 Log in with fingerprint / face</button>
+      <div id="pkMsg" class="muted" style="text-align:center;font-size:13px"></div>
       <p class="mt" style="text-align:center"><a href="forgot_password.php">Forgot password?</a></p>
+      <script src="assets/passkey.js?v=<?= asset_v('passkey.js') ?>"></script>
+      <script>
+      (function () {
+        var b = document.getElementById('pkLogin'); if (!Passkey.supported()) return; b.style.display = '';
+        b.addEventListener('click', function () {
+          var u = document.querySelector('input[name=username]').value.trim(), m = document.getElementById('pkMsg');
+          if (!u) { m.textContent = 'Type your username first.'; return; }
+          m.textContent = '…';
+          Passkey.login(u, <?= json_encode(csrf_token()) ?>).then(function (r) { if (r.ok) location.href = r.go; else m.textContent = r.msg; })
+            .catch(function (e) { m.textContent = e.message || 'Cancelled.'; });
+        });
+      })();
+      </script>
     <?php endif; ?>
   </div>
 </div>

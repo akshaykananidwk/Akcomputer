@@ -11,23 +11,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') redirect($back);
 
 $u = $_SESSION['undo'] ?? null;
 $ok = $u && hash_equals($u['t'], (string)post('t')) && time() - $u['at'] <= 600 && (int)$u['uid'] === (int)current_user()['id'];
-$allowed = ['items', 'parked_bills', 'follow_ups', 'reminders', 'reminder_recipients'];
-if ($ok) foreach (array_keys($u['sets']) as $t) if (!in_array($t, $allowed, true)) $ok = false;
 if (!$ok) { flash('This can no longer be undone.', 'error'); redirect($back); }
 
-$pdo = db();
-$pdo->beginTransaction();
-try {
-    foreach ($u['sets'] as $table => $rows) foreach ($rows as $r) {
-        $cols = array_keys($r);
-        q("INSERT INTO `$table` (`" . implode('`,`', $cols) . '`) VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')', array_values($r));
-    }
-    $pdo->commit();
+if (($why = recycle_restore($u['sets'])) === '') {
     unset($_SESSION['undo']);
+    try { q('UPDATE recycle_bin SET restored_at = NOW() WHERE restored_at IS NULL AND label = ? AND user_id = ? ORDER BY id DESC LIMIT 1', [mb_substr($u['label'], 0, 120), $u['uid']]); } catch (Exception $e) {}
     log_activity('undo', $u['label']);
     flash('Brought back ✔');
-} catch (Exception $e) {
-    $pdo->rollBack();
-    flash(plain_error($e), 'error');
-}
+} else flash($why, 'error');
 redirect($back);

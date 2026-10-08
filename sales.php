@@ -313,6 +313,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     }
 }
 
+// ---------- 🔐 ask the owner for a one-time code to change a big or old bill ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'edit_code') {
+    require_perm('sales.edit');
+    header('Content-Type: application/json');
+    $sale = row('SELECT id, invoice_no, total FROM sales WHERE id = ?', [(int)post('id')]);
+    if (!$sale || !api_rate_ok('editcode:' . $u['id'], 3, 600)) { echo json_encode(['ok' => false, 'msg' => 'Please wait a few minutes.']); exit; }
+    $code = (string)random_int(100000, 999999);
+    $_SESSION['edit_code'] = ['sale' => (int)$sale['id'], 'hash' => password_hash($code, PASSWORD_DEFAULT), 'until' => time() + 900, 'tries' => 0];
+    owner_alert('🔐 ' . $u['name'] . ' wants to change bill ' . $sale['invoice_no'] . ' (₹' . money($sale['total']) . "). Code: *$code* (15 min). Share it only if you agree.");
+    log_activity('edit_code_asked', $sale['invoice_no']);
+    echo json_encode(['ok' => true, 'msg' => 'Code sent to the owner. Type it below when they tell you.']);
+    exit;
+}
+
 // ---------- park a half-made bill / throw a parked one away ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'park') {
     require_perm('sales.add');
@@ -404,13 +418,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     // after that the submitted edit is parked for the admin, who approves it
     // on approvals.php (the exact form data is replayed there). The admin
     // (is_full_admin) always edits directly - including that replay.
-    if (!is_full_admin() && strtotime($sale['created_at']) < time() - 86400) {
+    // 🔐 a big bill (Settings → Security) is changed by staff only with the
+    // owner's one-time code; without it the change waits for approval too
+    $bigEdit = (float)setting('big_edit_amount', '0');
+    $codeOk = !is_full_admin() && edit_code_ok($sid, post('owner_code'));
+    $needCode = !is_full_admin() && $bigEdit > 0 && (float)$sale['total'] >= $bigEdit && !$codeOk;
+    if ($needCode || (!is_full_admin() && !$codeOk && strtotime($sale['created_at']) < time() - 86400)) {
         try {
             q('INSERT INTO edit_requests (doc_type, doc_id, payload, requested_by) VALUES (?,?,?,?)',
               ['sale', $sid, json_encode($_POST, JSON_UNESCAPED_UNICODE), $u['id']]);
             log_activity('edit_request', 'sale ' . $sale['invoice_no']);
             try { tg_notify_admins('✏️ Bill edit approval\n' . $u['name'] . ' wants to change ' . $sale['invoice_no'] . "\n" . base_url('approvals.php')); } catch (Exception $e) { /* optional */ }
-            flash('This bill is more than 24 hours old, so your change has been sent for admin approval. It will apply automatically once approved.', 'info');
+            flash($needCode ? 'This is a big bill, so without the owner\'s code your change has been sent for approval. It applies once approved.'
+                            : 'This bill is more than 24 hours old, so your change has been sent for admin approval. It will apply automatically once approved.', 'info');
         } catch (Exception $e) {
             flash('Edit request could not be saved - run Settings → Migrate first.', 'error');
         }
@@ -1072,6 +1092,11 @@ if ($action === 'new' || $action === 'edit') {
       <div class="bf-bar">
         <?php if ($isEdit): ?>
         <a class="btn btn-outline" href="sale_view.php?id=<?= $editSale['id'] ?>">Cancel</a>
+        <?php if (!is_full_admin() && (((float)setting('big_edit_amount', '0') > 0 && (float)$editSale['total'] >= (float)setting('big_edit_amount', '0')) || strtotime($editSale['created_at']) < time() - 86400)): ?>
+        <span style="display:inline-flex;gap:4px;align-items:center" title="Without the owner's code the change waits for approval">
+          <input type="text" name="owner_code" inputmode="numeric" maxlength="6" placeholder="Owner's code" style="width:110px">
+          <button type="button" class="btn btn-outline btn-sm" onclick="var b=this;var f=new FormData();f.append('csrf',CSRF_TOKEN);f.append('do','edit_code');f.append('id','<?= (int)$editSale['id'] ?>');fetch('sales.php',{method:'POST',body:f}).then(function(r){return r.json()}).then(function(d){b.textContent=d.ok?'✔ Sent':'Wait';alert(d.msg)})">🔐 Ask owner</button></span>
+        <?php endif; ?>
         <button class="btn" type="submit">💾 Update Bill</button>
         <?php else: ?>
         <button class="btn btn-outline" type="submit" name="save_new" value="1">🗂️ Save &amp; New</button>
@@ -1774,7 +1799,7 @@ if ($parked): ?>
         <td data-l="Customer"><?= $s['party_id']
               ? '<a href="parties.php?action=ledger&id=' . (int)$s['party_id'] . '">' . e($s['customer_name'] ?: 'Walk-in') . '</a>'
               : e($s['customer_name'] ?: 'Walk-in') ?></td>
-        <td data-l="Phone"><?= $s['customer_mobile'] ? '<a href="tel:' . e($s['customer_mobile']) . '">' . e($s['customer_mobile']) . '</a>' : '<span class="muted">—</span>' ?></td>
+        <td data-l="Phone"><?= $s['customer_mobile'] ? mobile_link($s['customer_mobile']) : '<span class="muted">—</span>' ?></td>
         <td data-l="Firm" class="muted"><?= e($s['company_name']) ?></td>
         <!-- one element, so that in card mode the amount and what is left on
              it stay together on the right instead of drifting apart -->

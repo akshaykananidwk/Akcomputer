@@ -95,7 +95,28 @@ function flash($msg, $type = 'success', $undo = null) {
 function undo_keep($label, array $sets) {
     $tok = bin2hex(random_bytes(8));
     $_SESSION['undo'] = ['t' => $tok, 'at' => time(), 'label' => $label, 'sets' => $sets, 'uid' => current_user()['id'] ?? 0];
+    // ...and in the recycle bin for 30 days, for the owner (recycle.php)
+    try { q('INSERT INTO recycle_bin (label, sets, user_id) VALUES (?,?,?)', [mb_substr($label, 0, 120), json_encode($sets, JSON_UNESCAPED_UNICODE), current_user()['id'] ?? null]); } catch (Exception $e) { /* before v89 */ }
     return $tok;
+}
+
+/** The tables a deleted record may come back into - only ones that carry no money. */
+function recycle_tables() { return ['items', 'parked_bills', 'follow_ups', 'reminders', 'reminder_recipients']; }
+
+/** Put deleted rows back exactly (same ids), all or nothing. Returns '' or what went wrong. */
+function recycle_restore(array $sets) {
+    foreach (array_keys($sets) as $t) if (!in_array($t, recycle_tables(), true)) return 'This cannot be brought back.';
+    $pdo = db(); $own = !$pdo->inTransaction();
+    $own ? $pdo->beginTransaction() : $pdo->exec('SAVEPOINT recycle_restore');
+    try {
+        foreach ($sets as $table => $rows) foreach ($rows as $r) {
+            $cols = array_keys($r);
+            foreach ($cols as $c) if (!preg_match('/^\w+$/', $c)) throw new Exception('This cannot be brought back.');
+            q("INSERT INTO `$table` (`" . implode('`,`', $cols) . '`) VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')', array_values($r));
+        }
+        $own ? $pdo->commit() : $pdo->exec('RELEASE SAVEPOINT recycle_restore');
+        return '';
+    } catch (Exception $e) { $own ? $pdo->rollBack() : $pdo->exec('ROLLBACK TO SAVEPOINT recycle_restore'); return plain_error($e); }
 }
 function get_flashes() {
     $f = $_SESSION['flash'] ?? [];
@@ -2304,4 +2325,30 @@ function consent_record($partyId, $kind, $given, $source) {
         q('INSERT INTO consent_log (party_id, kind, given, source, by_user) VALUES (?,?,?,?,?)',
           [(int)$partyId, $kind === 'collection' ? 'collection' : 'marketing', $given ? 1 : 0, mb_substr((string)$source, 0, 40), $u['id'] ?? null]);
     } catch (Exception $e) { /* before v89 */ }
+}
+
+/** A customer's mobile for the screen: in full for staff who may see contacts
+ *  (permission "parties.contact"), otherwise 98•••••210. */
+function show_mobile($m) {
+    $m = (string)$m;
+    if ($m === '' || (function_exists('can') && can('parties.contact'))) return $m;
+    $d = preg_replace('/\D/', '', $m);
+    return strlen($d) < 6 ? '•••' : substr($d, 0, 2) . str_repeat('•', max(1, strlen($d) - 5)) . substr($d, -3);
+}
+/** A tel: link when the number may be seen, else just the masked number. */
+function mobile_link($m, $label = null) {
+    if ((string)$m === '') return '';
+    return can('parties.contact') ? '<a href="tel:' . e($m) . '">' . ($label ?? e($m)) . '</a>' : e(show_mobile($m));
+}
+
+
+/** Did the owner's one-time code come with this bill change? (one bill, 15 minutes, 5 tries, used once) */
+function edit_code_ok($saleId, $code) {
+    $c = $_SESSION['edit_code'] ?? null;
+    if (!$c || (int)$c['sale'] !== (int)$saleId || time() > $c['until'] || $c['tries'] >= 5 || !preg_match('/^\d{6}$/', (string)$code)) return false;
+    $_SESSION['edit_code']['tries']++;
+    if (!password_verify((string)$code, $c['hash'])) return false;
+    unset($_SESSION['edit_code']);
+    log_activity('edit_code_used', 'sale ' . (int)$saleId);
+    return true;
 }
