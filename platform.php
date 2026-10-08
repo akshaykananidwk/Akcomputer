@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$pending) throw new Exception('The sign-up details for this shop are missing.');
             tenant_install($tid, post('db_host') ?: 'localhost', post('db_name'), post('db_user'), (string)$_POST['db_pass'], $pending);
             flash($t['name'] . ' is set up and open.');
-        } catch (Exception $e) { flash('Could not set it up: ' . $e->getMessage(), 'error'); }
+        } catch (Exception $e) { flash('Could not set it up: ' . plain_error($e), 'error'); }
     }
     if ($t && $do === 'reply_ticket') {
         pq("UPDATE platform_tickets SET reply = ?, status = ? WHERE id = ? AND tenant_id = ?",
@@ -97,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if ($do === 'demo') {
         try { $d = demo_make_or_reset(); flash('The demo shop is ready at ' . $d['domain'] . ' (demo / demo1234). It starts fresh every night.'); }
-        catch (Exception $e) { flash('Could not make the demo shop: ' . $e->getMessage(), 'error'); }
+        catch (Exception $e) { flash('Could not make the demo shop: ' . plain_error($e), 'error'); }
         redirect($back('settings'));
     }
     if ($do === 'reseller_password' && strlen((string)post('password')) >= 8) {

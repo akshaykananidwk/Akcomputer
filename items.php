@@ -107,8 +107,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash("This item is linked to $inSales sale bills and $inPurch purchase bills — it has been made INACTIVE instead of deleted (the old bills stay safe). To bring it back, use Show Inactive, edit it and set it active.", 'error');
             log_activity('item_delete_blocked', "#$iid sales=$inSales purch=$inPurch -> deactivated");
         } else {
+            $undo = undo_keep('item', ['items' => all('SELECT * FROM items WHERE id = ?', [$iid])]);
             q('DELETE FROM items WHERE id = ?', [$iid]);
-            flash('Item deleted.');
+            flash('Item deleted.', 'success', $undo);
             log_activity('item_delete', "#$iid");
         }
         redirect('items.php' . (get('show') === 'all' ? '?show=all' : ''));

@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         redirect('journal.php');
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error: ' . $ex->getMessage(), 'error');
+        flash('Error: ' . plain_error($ex), 'error');
         redirect('journal.php?action=new');
     }
 }

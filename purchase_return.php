@@ -125,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         redirect('purchase_return.php');
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error: ' . $ex->getMessage(), 'error');
+        flash('Error: ' . plain_error($ex), 'error');
         redirect('purchase_return.php?action=new');
     }
 }

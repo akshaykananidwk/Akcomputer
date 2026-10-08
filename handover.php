@@ -77,7 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         redirect('handover.php?action=view&id=' . $hid);
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error: ' . $ex->getMessage(), 'error');
+        flash('Error: ' . plain_error($ex), 'error');
         redirect('handover.php?action=new');
     }
 }

@@ -288,12 +288,32 @@ if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dash
 <?php if (is_full_admin() && setting('setup_wizard_done', '1') === '0'): ?>
 <div class="flash flash-info">🚀 A few details are still missing from your bills. <a href="setup.php">Finish setting up →</a></div>
 <?php endif; ?>
+<?php // ✅ today's checklist: ticks itself from what was actually done today
+if (can('sales.add')):
+    $tdy = today();
+    $chk = [
+        ['🧾', 'First bill of the day', (int)$todaySales['c'] > 0, 'sales.php?action=new'],
+        ['💰', 'Money received written down', can('payments.view') && (int)val("SELECT COUNT(*) FROM payments WHERE direction = 'in' AND pay_date = ?", [$tdy]) > 0, 'payments.php?action=new'],
+        ['📞', 'Today\'s follow-ups done', (int)val("SELECT COUNT(*) FROM follow_ups WHERE status = 'pending' AND due_date <= ?", [$tdy]) === 0, 'follow_ups.php'],
+        ['🌙', 'Day closed (cash counted)', can('dayclose.view') && (bool)val('SELECT COUNT(*) FROM day_closes WHERE close_date = ?', [$tdy]), 'day_close.php'],
+    ];
+    $chkDone = count(array_filter($chk, fn($c) => $c[2])); ?>
+<details class="card" style="padding:10px 14px" <?= $chkDone < count($chk) && (int)date('G') >= 18 ? 'open' : '' ?>>
+  <summary style="cursor:pointer;font-weight:600">✅ Today's checklist — <?= $chkDone ?>/<?= count($chk) ?> done</summary>
+  <div style="display:grid;gap:6px;margin-top:8px">
+  <?php foreach ($chk as [$ico, $label, $done, $href]): ?>
+    <a href="<?= $href ?>" style="display:flex;gap:8px;align-items:center;color:inherit;<?= $done ? 'opacity:.6' : '' ?>"><span><?= $done ? '☑️' : '⬜' ?></span><span><?= $ico ?> <?= $done ? '<s>' . e($label) . '</s>' : e($label) ?></span></a>
+  <?php endforeach; ?>
+  </div>
+</details>
+<?php endif; ?>
 <?php foreach ($sBirthdays as $bd): ?>
 <div class="flash flash-<?= $bd['days'] ? 'info' : 'success' ?>">🎂 <?= $bd['days'] ? 'Tomorrow (' . e(dmy($bd['date'])) . ') is' : '<b>Today</b> is' ?>
   <b><?= e($bd['name']) ?></b>'s birthday<?= $bd['age'] > 0 && $bd['age'] < 100 ? ' — turning ' . (int)$bd['age'] : '' ?>.
   <a href="users.php?action=edit&amp;id=<?= (int)$bd['id'] ?>">Open →</a></div>
 <?php endforeach; ?>
 
+<?php if (setting('setup_wizard_done', '1') !== '1' || strtotime((string)(current_user()['created_at'] ?? '2000-01-01')) > time() - 14 * 86400): ?><span data-tour-auto hidden></span><?php endif; ?>
 <?php if ($seeMoney && $sBals): ?>
 <div style="display:flex;justify-content:flex-end;margin:0 0 6px"><button type="button" class="btn btn-sm btn-outline"
   data-say="<?= e(say_text('dash', $todaySales['t'], $todaySales['c'], $sBals['receivable'], $sBals['payable'])) ?>">🔊 Read aloud</button></div>

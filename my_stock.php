@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'return') {
         flash('Return created. Shop manager will accept it with OTP.');
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error: ' . $ex->getMessage(), 'error');
+        flash('Error: ' . plain_error($ex), 'error');
     }
     redirect('my_stock.php');
 }

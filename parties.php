@@ -185,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'charge_interest' &&
                 '(' . count($info['bills']) . ' bill, ' . (0 + $info['rate']) . '% per year)');
             flash($sid ? '₹' . money($info['amount']) . ' interest bill created.' : 'The bill was not created.', $sid ? 'success' : 'error');
         } catch (Exception $e) {
-            flash('Error: ' . $e->getMessage(), 'error');
+            flash('Error: ' . plain_error($e), 'error');
         }
     }
     redirect('parties.php?action=ledger&id=' . $pid);

@@ -145,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         redirect('payments.php');
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error: ' . $ex->getMessage(), 'error');
+        flash('Error: ' . plain_error($ex), 'error');
         redirect('payments.php?action=new&dir=' . $dir);
     }
 }
@@ -186,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'backfill_alloc') {
             : 'Everything is already in order — no unlinked payment is left.');
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error: ' . $ex->getMessage(), 'error');
+        flash('Error: ' . plain_error($ex), 'error');
     }
     redirect('payments.php');
 }
@@ -238,7 +238,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
             flash('Payment entry deleted - any bill(s) it was linked to have had their paid amount reversed.');
         } catch (Exception $ex) {
             $pdo->rollBack();
-            flash('Error deleting payment: ' . $ex->getMessage(), 'error');
+            flash('Error deleting payment: ' . plain_error($ex), 'error');
         }
     }
     redirect('payments.php');
@@ -341,7 +341,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         redirect('payments.php?action=view&id=' . $pid);
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error updating payment: ' . $ex->getMessage(), 'error');
+        flash('Error updating payment: ' . plain_error($ex), 'error');
         redirect('payments.php?action=edit&id=' . $pid);
     }
 }
@@ -419,7 +419,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_contra') {
         redirect('parties.php?action=ledger&id=' . $party_id);
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error: ' . $ex->getMessage(), 'error');
+        flash('Error: ' . plain_error($ex), 'error');
         redirect('payments.php?action=contra&party=' . $party_id);
     }
 }

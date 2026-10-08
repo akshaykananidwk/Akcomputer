@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'complete') {
         flash('Task completed. Material used deducted from your stock.');
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error: ' . $ex->getMessage(), 'error');
+        flash('Error: ' . plain_error($ex), 'error');
     }
     redirect('tasks.php?action=view&id=' . $t['id']);
 }

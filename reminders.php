@@ -96,9 +96,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'done') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('reminders.delete');
     $rid = (int)post('id');
+    $undo = undo_keep('reminder', ['reminders' => all('SELECT * FROM reminders WHERE id = ?', [$rid]),
+                                   'reminder_recipients' => all('SELECT * FROM reminder_recipients WHERE reminder_id = ?', [$rid])]);
     q('DELETE FROM reminder_recipients WHERE reminder_id = ?', [$rid]);
     q('DELETE FROM reminders WHERE id = ?', [$rid]);
-    flash('Reminder deleted.');
+    flash('Reminder deleted.', 'success', $undo);
     redirect('reminders.php');
 }
 

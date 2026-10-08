@@ -180,5 +180,6 @@ $_uiClass = trim(($_ui['text'] !== 'normal' ? 't-' . $_ui['text'] : '') . ($_ui[
 </div>
 <?php endif; ?>
 <?php foreach (get_flashes() as $f): ?>
-  <div class="flash flash-<?= e($f['type']) ?>"><?= e($f['msg']) ?></div>
+  <div class="flash flash-<?= e($f['type']) ?>"><?= e($f['msg']) ?><?php if (!empty($f['undo'])): ?>
+    <form method="post" action="undo.php" style="display:inline;margin-left:8px"><?= csrf_field() ?><input type="hidden" name="t" value="<?= e($f['undo']) ?>"><button class="btn btn-sm btn-outline" type="submit">↩ Undo</button></form><?php endif; ?></div>
 <?php endforeach; ?>

@@ -82,8 +82,20 @@ function days_between($from, $to = null) {
 }
 
 // ---------- Flash messages ----------
-function flash($msg, $type = 'success') {
-    $_SESSION['flash'][] = ['msg' => $msg, 'type' => $type];
+function flash($msg, $type = 'success', $undo = null) {
+    $_SESSION['flash'][] = ['msg' => $msg, 'type' => $type, 'undo' => $undo];
+}
+
+/**
+ * ↩ Undo for a delete that touches no money: the deleted rows are kept in the
+ * session for ten minutes and put back exactly (same ids) by undo.php. Only
+ * the tables listed in undo.php can come back this way.
+ * $sets = [table => [row, row...]]. Returns the token for flash().
+ */
+function undo_keep($label, array $sets) {
+    $tok = bin2hex(random_bytes(8));
+    $_SESSION['undo'] = ['t' => $tok, 'at' => time(), 'label' => $label, 'sets' => $sets, 'uid' => current_user()['id'] ?? 0];
+    return $tok;
 }
 function get_flashes() {
     $f = $_SESSION['flash'] ?? [];
@@ -2242,4 +2254,31 @@ function api_usage_log($service, $provider = '', $in = 0, $out = 0) {
         q('INSERT INTO api_usage (service, provider, units_in, units_out) VALUES (?,?,?,?)',
           [mb_substr($service, 0, 20), mb_substr($provider, 0, 60), (int)$in, (int)$out]);
     } catch (Exception $e) { /* metering must never block work */ }
+}
+
+/**
+ * What went wrong, in words a shop person understands. Our own messages
+ * ("Not enough stock...") pass through as they are; a database error is
+ * turned into what it means and what to do. The full error still goes to
+ * the error log, so nothing is hidden from whoever fixes it.
+ */
+function plain_error(Throwable $e) {
+    $m = $e->getMessage();
+    if (!($e instanceof PDOException) && strpos($m, 'SQLSTATE') === false) return $m;
+    error_log('plain_error: ' . $m);
+    $map = [
+        'Duplicate entry'          => 'This is already there — the same name or number exists. Use a different one.',
+        'foreign key constraint'   => 'This is used somewhere else (a bill, a payment…), so it cannot be removed. You can mark it inactive instead.',
+        'Lock wait timeout'        => 'Someone else was saving at the same moment. Nothing was lost — please press Save again.',
+        'Deadlock'                 => 'Someone else was saving at the same moment. Nothing was lost — please press Save again.',
+        'Data too long'            => 'Some text is too long. Please shorten it and save again.',
+        'Out of range'             => 'A number is too big. Please check the amounts and quantities.',
+        'Incorrect date'           => 'A date is not right. Please pick it again from the calendar.',
+        'cannot be null'           => 'Something required is empty. Please fill every box marked *.',
+        "doesn't exist"            => 'This part needs an update. Ask the admin to open Settings → Update → Migrate.',
+        'Unknown column'           => 'This part needs an update. Ask the admin to open Settings → Update → Migrate.',
+        'gone away'                => 'The connection dropped for a moment. Nothing was saved — please try again.',
+    ];
+    foreach ($map as $needle => $say) if (stripos($m, $needle) !== false) return $say;
+    return 'It could not be saved. Nothing was changed — please try again, and tell the admin if it keeps happening.';
 }

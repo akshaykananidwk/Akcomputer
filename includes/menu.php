@@ -124,6 +124,7 @@ return simple_filter_menu(plan_filter_menu([
             : [['platform.php', '🌐 Shops on this software', '*', null, null]]),
     ]],
     ['link', 'settings.php', 'gear', 'Settings', 'settings.view'],
+    ['link', 'help.php', 'book', 'Help', null],
 ]));
 }
 

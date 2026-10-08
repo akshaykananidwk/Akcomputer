@@ -33,6 +33,7 @@ function ai_features() {
         'categorize' => ['🏷️ Auto Categories', 'suggests the category for a new item'],
         'enrich' => ['✨ Item Auto-Fill', 'finds the item details and a photo'],
         'wa_bot' => ['💬 WhatsApp Bot', 'answers a customer message'],
+        'help' => ['❓ Help answers', 'answers "how do I…" questions about this software (no shop data is sent)'],
     ];
 }
 

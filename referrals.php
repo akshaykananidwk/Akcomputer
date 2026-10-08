@@ -49,7 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'payout') {
         flash('Paid ₹' . money($due) . ' to ' . $r['name'] . ' — booked as a Referral Commission expense.');
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error: ' . $ex->getMessage(), 'error');
+        flash('Error: ' . plain_error($ex), 'error');
     }
     redirect('referrals.php');
 }

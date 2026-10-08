@@ -245,6 +245,17 @@ var Bill = {
     var addPanelBtn = document.getElementById('addItemsBtn');
     if (addPanelBtn) {
       addPanelBtn.addEventListener('click', function () { self.openAddPanel(); });
+      var favs = document.getElementById('aipFavs');
+      if (favs) favs.addEventListener('click', function (ev) {
+        var b = ev.target.closest('[data-fav]'); if (!b) return;
+        var panel = document.getElementById('addItemPanel');
+        var div = document.querySelector('.bill-row[data-n="' + panel.dataset.activeN + '"]');
+        if (!div) return;
+        if (div.querySelector('.i-id').value) { self.closeAddPanel(false); div = self.openAddPanel(); }
+        fetch('ajax.php?a=item_search&q=' + encodeURIComponent(b.dataset.name) + '&loc=' + (self.cfg.locSel ? document.getElementById(self.cfg.locSel).value : '') + '&mode=' + (self.cfg.mode || ''))
+          .then(function (r) { return r.json(); })
+          .then(function (items) { var it = items.filter(function (x) { return String(x.id) === b.dataset.fav; })[0]; if (it) self.pickItem(div, it); });
+      });
       var closeBtn = document.getElementById('aipClose');
       if (closeBtn) closeBtn.addEventListener('click', function () { self.closeAddPanel(true); });
       var saveBtn = document.getElementById('aipSave');
@@ -483,6 +494,7 @@ var Bill = {
       '  <div style="display:flex;gap:4px">' +
       '  <input type="text" class="i-search" placeholder="Type item name..." autocomplete="off" style="flex:1">' +
       (('BarcodeDetector' in window) ? '  <button type="button" class="btn btn-sm btn-outline i-scanbtn" title="Scan barcode with camera" style="flex-shrink:0">📷</button>' : '') +
+      ((window.SpeechRecognition || window.webkitSpeechRecognition) ? '  <button type="button" class="btn btn-sm btn-outline i-micbtn" title="Say the item (e.g. 2 tempered glass)" style="flex-shrink:0">🎤</button>' : '') +
       '  </div>' +
       '  <input type="hidden" name="item_id[]" class="i-id">' +
       // This row's stable id travels alongside item_id[] so the server can pair
@@ -547,6 +559,8 @@ var Bill = {
     this.attachSearch(div);
     var scanBtn = div.querySelector('.i-scanbtn');
     if (scanBtn) scanBtn.addEventListener('click', function () { self.scanBarcode(div.querySelector('.i-search')); });
+    var micBtn = div.querySelector('.i-micbtn');
+    if (micBtn) micBtn.addEventListener('click', function () { self.voiceItem(div, micBtn); });
     return div;
   },
 
@@ -571,6 +585,14 @@ var Bill = {
               (partySel && partySel.value > 0 ? '&party=' + partySel.value : ''))
           .then(function (r) { return r.json(); })
           .then(function (items) {
+            // spoken ("2 tempered glass"): take the best match and the quantity said
+            if (div.dataset.voicePick && items.length) {
+              var vq = parseFloat(div.dataset.voiceQty) || 0;
+              delete div.dataset.voicePick; delete div.dataset.voiceQty;
+              self.pickItem(div, items[0]);
+              if (vq > 0) { var qi = div.querySelector('.i-qty'); qi.value = vq; qi.dispatchEvent(new Event('input')); }
+              return;
+            }
             // barcode scan: exact barcode match -> auto-pick instantly
             if (items.length === 1 && items[0].barcode && items[0].barcode === qy) {
               self.pickItem(div, items[0]);
@@ -860,6 +882,35 @@ var Bill = {
   //   staff     - who did a service (salon); its <select> sits in addRow
   // Every one only fills the ordinary qty / price / description boxes, so the
   // bill is saved and checked exactly as any other bill.
+  // 🎤 voice billing: "2 tempered glass" / "બે ટેમ્પર્ડ ગ્લાસ" -> search, best match, quantity.
+  // Only fills the line; the person still sees it and presses Save.
+  voiceItem: function (div, btn) {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) return;
+    var r = new SR(), L = document.documentElement.lang;
+    r.lang = L === 'gu' ? 'gu-IN' : (L === 'hi' ? 'hi-IN' : 'en-IN'); r.interimResults = false; r.maxAlternatives = 1;
+    btn.textContent = '🔴';
+    r.onend = function () { btn.textContent = '🎤'; };
+    r.onresult = function (ev) {
+      var p = Bill.voiceParse(ev.results[0][0].transcript), inp = div.querySelector('.i-search');
+      if (!p.text) return;
+      div.dataset.voicePick = '1'; div.dataset.voiceQty = p.qty || '';
+      inp.value = p.text; inp.dispatchEvent(new Event('input'));
+    };
+    r.start();
+  },
+  voiceParse: function (said) {
+    var t = String(said || '').trim().toLowerCase()
+      .replace(/[૦-૯]/g, function (d) { return '૦૧૨૩૪૫૬૭૮૯'.indexOf(d); })
+      .replace(/[०-९]/g, function (d) { return '०१२३४५६७८९'.indexOf(d); });
+    var words = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+      'એક': 1, 'બે': 2, 'ત્રણ': 3, 'ચાર': 4, 'પાંચ': 5, 'છ': 6, 'સાત': 7, 'આઠ': 8, 'નવ': 9, 'દસ': 10,
+      'एक': 1, 'दो': 2, 'तीन': 3, 'चार': 4, 'पांच': 5, 'पाँच': 5, 'छह': 6, 'छः': 6, 'सात': 7, 'आठ': 8, 'नौ': 9, 'दस': 10 };
+    var m = /^(\d+(?:\.\d+)?)\s+(.+)$/.exec(t), qty = 0, text = t;
+    if (m) { qty = parseFloat(m[1]); text = m[2]; }
+    else { var first = t.split(/\s+/)[0]; if (words[first]) { qty = words[first]; text = t.slice(first.length).trim(); } }
+    return { qty: qty, text: text.replace(/\b(pieces?|pcs|nos?|નંગ|पीस)\b/g, '').trim() };
+  },
+
   bizTools: function (div, it) {
     var b = this.cfg.biz || {}, self = this;
     var old = div.querySelector('.i-biz'); if (old) old.remove();
@@ -1646,4 +1697,68 @@ document.addEventListener('click', function (ev) {
   var v = speechSynthesis.getVoices().filter(function (x) { return x.lang.replace('_', '-') === want; })[0];
   u.lang = want; if (v) u.voice = v; u.rate = 0.95;
   speechSynthesis.speak(u);
+});
+
+
+// ----- ⌨️ shortcut keys (Help lists them). Alt+letter goes somewhere; on a
+// bill F2 adds an item and Ctrl+S saves; "?" shows the list. Never while
+// typing in a box, except Ctrl+S which is meant for exactly that. -----
+document.addEventListener('keydown', function (ev) {
+  var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName) || ev.target.isContentEditable;
+  var go = { KeyN: 'sales.php?action=new', KeyP: 'payments.php?action=new', KeyE: 'expenses.php?action=new', KeyI: 'items.php', KeyH: 'index.php' };
+  if (ev.altKey && !ev.ctrlKey && !ev.metaKey && go[ev.code]) { ev.preventDefault(); location.href = go[ev.code]; return; }
+  var bill = document.getElementById('billForm');
+  if (bill && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') {
+    ev.preventDefault();
+    var save = bill.querySelector('button[type=submit]:not([name]):not([value])'); if (save) save.click();
+    return;
+  }
+  if (bill && ev.key === 'F2') { ev.preventDefault(); var add = document.getElementById('addItemsBtn'); if (add) add.click(); return; }
+  if (!typing && ev.key === '?') {
+    ev.preventDefault();
+    var old = document.getElementById('keysHelp'); if (old) { old.remove(); return; }
+    var d = document.createElement('div'); d.id = 'keysHelp';
+    d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+    d.innerHTML = '<div style="background:var(--card);color:var(--text);border-radius:12px;padding:18px 22px;max-width:340px;width:90%;line-height:1.9">' +
+      '<b>⌨️ Shortcut keys</b><br>Alt+N new bill · Alt+P payment in<br>Alt+E expense · Alt+I items · Alt+H dashboard<br>Ctrl+K search · F2 add item · Ctrl+S save bill<br>Esc close</div>';
+    d.addEventListener('click', function () { d.remove(); });
+    document.body.appendChild(d);
+  }
+  if (ev.key === 'Escape') { var k = document.getElementById('keysHelp'); if (k) k.remove(); }
+});
+
+// ----- 🧭 first-visit tour of the dashboard: a few bubbles pointing at the
+// things a new person needs. Shown once per device, or again from Help. -----
+function startTour() {
+  var L = document.documentElement.lang, T = function (en, gu, hi) { return L === 'gu' ? gu : (L === 'hi' ? hi : en); };
+  var steps = [
+    ['#menuBtn', T('Every screen is in this menu.', 'બધી સ્ક્રીન આ મેનુમાં છે.', 'हर स्क्रीन इस मेनू में है.')],
+    ['.bottomnav', T('Your everyday screens are down here.', 'રોજની સ્ક્રીન અહીં નીચે છે.', 'रोज़ की स्क्रीन यहाँ नीचे हैं.')],
+    ['.hm-money', T('What customers owe you, and what you owe — tap to see who.', 'ગ્રાહકો પાસેથી લેવાના અને તમારે આપવાના — કોણ, તે જોવા દબાવો.', 'ग्राहकों से लेने और आपको देने हैं — कौन, यह देखने के लिए दबाएँ.')],
+    ['#bellBtn', T('Reminders: low stock, overdue bills.', 'યાદ: ઓછો સ્ટોક, મુદત વીતેલા બિલ.', 'याद: कम स्टॉक, समय निकले बिल.')],
+    ['#avatarBtn', T('Your account: language, text size, dark mode.', 'તમારું ખાતું: ભાષા, અક્ષરનું કદ, ડાર્ક મોડ.', 'आपका खाता: भाषा, अक्षर का आकार, डार्क मोड.')],
+  ].filter(function (st) { var el = document.querySelector(st[0]); return el && el.offsetParent !== null; });
+  var i = 0, box = document.createElement('div'), ring = document.createElement('div');
+  ring.style.cssText = 'position:fixed;border:3px solid #f59e0b;border-radius:10px;z-index:9998;pointer-events:none;box-shadow:0 0 0 9999px rgba(0,0,0,.4);transition:all .2s';
+  box.style.cssText = 'position:fixed;z-index:9999;background:var(--card);color:var(--text);border-radius:10px;padding:12px 14px;max-width:280px;box-shadow:0 6px 24px rgba(0,0,0,.3);font-size:15px';
+  var end = function () { ring.remove(); box.remove(); try { localStorage.setItem('tourDone', '1'); } catch (e) {} };
+  var show = function () {
+    if (i >= steps.length) return end();
+    var r = document.querySelector(steps[i][0]).getBoundingClientRect();
+    ring.style.left = (r.left - 4) + 'px'; ring.style.top = (r.top - 4) + 'px'; ring.style.width = (r.width + 8) + 'px'; ring.style.height = (r.height + 8) + 'px';
+    box.innerHTML = '<div>' + steps[i][1] + '</div><div style="display:flex;justify-content:space-between;margin-top:10px;gap:8px">' +
+      '<button type="button" class="btn btn-sm btn-outline" data-t="skip">' + T('Skip', 'છોડો', 'छोड़ें') + '</button>' +
+      '<button type="button" class="btn btn-sm" data-t="next">' + (i === steps.length - 1 ? T('Done', 'પૂરું', 'हो गया') : T('Next', 'આગળ', 'आगे') + ' (' + (i + 1) + '/' + steps.length + ')') + '</button></div>';
+    var top = r.bottom + 12; if (top + 140 > innerHeight) top = Math.max(8, r.top - 150);
+    box.style.top = top + 'px'; box.style.left = Math.max(8, Math.min(innerWidth - 296, r.left)) + 'px';
+  };
+  box.addEventListener('click', function (ev) { var t = ev.target.dataset.t; if (t === 'skip') end(); else if (t === 'next') { i++; show(); } });
+  if (!steps.length) return;
+  document.body.appendChild(ring); document.body.appendChild(box); show();
+}
+document.addEventListener('DOMContentLoaded', function () {
+  // only on the dashboard: asked for from Help, or a new person's first visit on this device
+  if (!document.querySelector('.hm-money, [data-tour-auto]')) return;
+  var seen = '1'; try { seen = localStorage.getItem('tourDone'); } catch (e) {}
+  if (/[?&]tour=1/.test(location.search) || (!seen && document.querySelector('[data-tour-auto]'))) setTimeout(startTour, 400);
 });

@@ -306,7 +306,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
                 $keep = insert_id();
             }
         } catch (Throwable $e) { /* keeping the draft must never hide the real error */ }
-        flash('Error: ' . $ex->getMessage() . ($keep ? ' — the bill is not lost, it is still below. Correct it and save again.' : ''), 'error');
+        flash('Error: ' . plain_error($ex) . ($keep ? ' — the bill is not lost, it is still below. Correct it and save again.' : ''), 'error');
         redirect('sales.php?action=new' . ($keep ? '&park=' . $keep : ''));
     }
 }
@@ -333,8 +333,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'park') {
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'park_delete') {
     require_perm('sales.add');
+    $undo = undo_keep('parked bill', ['parked_bills' => all('SELECT * FROM parked_bills WHERE id = ?', [(int)post('id')])]);
     q('DELETE FROM parked_bills WHERE id = ?', [(int)post('id')]);
-    flash('Parked bill deleted.');
+    flash('Parked bill deleted.', 'success', $undo);
     redirect('sales.php');
 }
 
@@ -657,7 +658,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         redirect('sale_view.php?id=' . $sid);
     } catch (Exception $ex) {
         $pdo->rollBack();
-        flash('Error: ' . $ex->getMessage(), 'error');
+        flash('Error: ' . plain_error($ex), 'error');
         redirect('sales.php?action=edit&id=' . $sid);
     }
 }
@@ -904,6 +905,14 @@ if ($action === 'new' || $action === 'edit') {
           <h2>Add Items to Sale</h2>
         </div>
         <div class="aip-body" id="aipBody">
+          <?php // ⭐ the items this shop sells most - one tap instead of typing
+          $favs = all("SELECT i.id, i.name FROM sale_items si JOIN sales s ON s.id = si.sale_id AND s.is_cancelled = 0 AND s.sale_date >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
+                       JOIN items i ON i.id = si.item_id AND i.is_active = 1 GROUP BY i.id, i.name ORDER BY COUNT(*) DESC LIMIT 10");
+          if ($favs): ?>
+          <div class="aip-favs" id="aipFavs" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px">
+            <?php foreach ($favs as $f): ?><button type="button" class="chip" data-fav="<?= (int)$f['id'] ?>" data-name="<?= e($f['name']) ?>">⭐ <?= e(mb_strimwidth($f['name'], 0, 26, '…')) ?></button><?php endforeach; ?>
+          </div>
+          <?php endif; ?>
           <div class="aip-totals" id="aipTotalsBox">
             <h4>Totals &amp; Taxes</h4>
             <div class="t-line"><span>Subtotal (Rate x Qty)</span><span>₹ <span class="aip-sub">0.00</span></span></div>

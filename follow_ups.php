@@ -36,8 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'set_status') {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('followups.delete');
+    $undo = undo_keep('follow-up', ['follow_ups' => all('SELECT * FROM follow_ups WHERE id = ?', [(int)post('id')])]);
     q('DELETE FROM follow_ups WHERE id = ?', [(int)post('id')]);
-    flash('Follow-up deleted.');
+    flash('Follow-up deleted.', 'success', $undo);
     redirect('follow_ups.php');
 }
 

@@ -31,7 +31,7 @@ function plan_allows($feature) {
  */
 function perm_feature($perm) {
     static $map = [
-        'sales' => 'billing', 'estimates' => 'billing', 'sales_return' => 'billing', 'challans' => 'billing',
+        'sales' => 'billing', 'dayclose' => 'billing', 'estimates' => 'billing', 'sales_return' => 'billing', 'challans' => 'billing',
         'parties' => 'parties', 'cheques' => 'parties', 'items' => 'items',
         'payments' => 'payments', 'cashbank' => 'payments', 'expenses' => 'expenses',
         'stock' => 'stock', 'handover' => 'stock', 'stock_audit' => 'stock', 'batches' => 'stock',
