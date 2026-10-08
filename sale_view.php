@@ -376,7 +376,7 @@ if ($planPub): ?>
       <?php if ($sale['is_gst'] && $sale['gstin']): ?><div class="inv-contact">GSTIN: <?= e($sale['gstin']) ?></div><?php endif; ?>
     </div>
     <div class="inv-box2">
-      <div class="inv-box-title"><?= $sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE' ?></div>
+      <div class="inv-box-title"><?= biz_on('gst_composition') ? 'BILL OF SUPPLY' : ($sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE') ?></div>
       <div class="inv-box-rule"></div>
       <div class="inv-box-row"><span><?= e(bl('Invoice No.')) ?></span><span>: <?= e($sale['invoice_no']) ?></span></div>
       <div class="inv-box-row"><span><?= e(bl('Date')) ?></span><span>: <?= dmy($sale['sale_date']) ?></span></div>
@@ -387,6 +387,7 @@ if ($planPub): ?>
       <div class="inv-seal">THANK YOU<br>FOR YOUR<br>BUSINESS</div>
     </div>
   </div>
+  <?php if (biz_on('gst_composition')): ?><div style="font-size:11px;margin-top:8px">Composition taxable person, not eligible to collect tax on supplies.</div><?php endif; ?>
   <div class="mb" style="margin-top:26px">
     <div class="inv-billto-pill">BILL TO:</div>
     <div class="inv-billto-name"><?= e($sale['customer_name'] ?: $sale['party_name'] ?: 'Walk-in Customer') ?></div>

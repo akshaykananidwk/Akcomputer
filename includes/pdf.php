@@ -599,7 +599,7 @@ function invoice_pdf_design1($sale, $items) {
     // navy invoice-details box
     $pdf->rrect($boxX, $boxY, $boxW, $boxH, 12, $C['navy']);
     $bx = $boxX + 18; $by = $boxY + 30;
-    $pdf->text($bx, $by, 20, $sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE', 'B', [1, 1, 1]);
+    $pdf->text($bx, $by, 20, biz_on('gst_composition') ? 'BILL OF SUPPLY' : ($sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE'), 'B', [1, 1, 1]);
     $pdf->rect($bx, $by + 7, 42, 2.6, $C['orange']);
     $by += 27;
     $labelX = $bx; $valX = $bx + 78;

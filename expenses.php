@@ -49,6 +49,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
            $bankId, $pmId, post('notes'), $u['location_id'], $u['id']]);
         log_activity('expense_add', post('category') . ' ' . $amt);
         flash('Expense saved.');
+        // 🎯 the month's budget for this kind of spending (Books → Budget)
+        require_once __DIR__ . '/includes/books.php';
+        foreach (budget_status(substr(post('exp_date', today()), 0, 7)) as $b) {
+            if ($b['category'] !== post('category') || $b['spent'] <= $b['budget']) continue;
+            flash('🎯 ' . $b['category'] . ' is now ₹' . money($b['spent'] - $b['budget']) . ' over this month\'s budget of ₹' . money($b['budget']) . '.', 'error');
+            if ($b['spent'] - $amt <= $b['budget']) owner_alert('🎯 ' . $b['category'] . ' crossed its monthly budget: ₹' . money($b['spent']) . ' of ₹' . money($b['budget']));
+        }
     }
     redirect('expenses.php');
 }

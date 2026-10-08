@@ -26,7 +26,7 @@ $trust = [
       <?php $email = setting('company_email', setting('app_email', '')); if ($email): ?><div class="inv2-contact">✉ <?= e($email) ?></div><?php endif; ?>
     </div>
     <div class="inv2-head-right">
-      <div class="inv2-title"><?= $sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE' ?></div>
+      <div class="inv2-title"><?= biz_on('gst_composition') ? 'BILL OF SUPPLY' : ($sale['is_gst'] ? 'TAX INVOICE' : 'INVOICE') ?></div>
       <div class="inv2-info">
         <div class="inv2-info-row"><span class="ib" style="background:#6d28d9">🧾</span><span class="il">Invoice No.</span><span class="iv">: <?= e($sale['invoice_no']) ?></span></div>
         <div class="inv2-info-row"><span class="ib" style="background:#ff7a1a">📅</span><span class="il">Date</span><span class="iv">: <?= dmy($sale['sale_date']) ?></span></div>

@@ -65,6 +65,8 @@ return simple_filter_menu(plan_filter_menu([
         ['payment_methods.php', 'Payment Methods', 'settings.view', 'payment_methods.php', 'settings.edit'],
     ]],
     ['group', 'accounting', 'book', 'Accounting', [
+        ['books.php', '📒 Books: year, budget, loans, assets, partners', 'books.view', null, null],
+        ['gst_returns.php', '🧮 GST returns (GSTR-1, 3B, e-invoice, e-way)', 'reports.gst', null, null],
         ['accounts.php', 'Chart of Accounts', 'accounting.view', 'accounts.php', 'accounting.edit'],
         ['journal.php', 'Journal Entries', 'accounting.view', 'journal.php?action=new', 'accounting.edit'],
         ['bank_reconcile.php', 'Bank Reconciliation', 'accounting.view', null, null],

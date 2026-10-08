@@ -18,7 +18,7 @@ function platform_features() {
         'repairs'      => ['🛠️ Repairs, tasks, AMC', ['repairs', 'tasks', 'warranty', 'amc', 'my_jobs', 'service_report', 'net_connections', 'sites']],
         'reports'      => ['📈 Advanced reports & AI', ['market', 'forecast', 'report_schedules', 'cost_analytics', 'scaling', 'assistant', 'ai_categorize', 'ai_enrich']],
         'crm'          => ['🤝 Leads & CRM', ['leads', 'tickets', 'follow_ups', 'reminders', 'feedback']],
-        'accounting'   => ['📒 Accounting', ['accounts', 'journal', 'bank_reconcile', 'tally_export']],
+        'accounting'   => ['📒 Accounting', ['accounts', 'journal', 'bank_reconcile', 'tally_export', 'books', 'gst_returns']],
         'online_store' => ['🌐 Online store', ['web_orders', 'reviews', 'referrals', 'web_customers']],
         'voice'        => ['📞 Calls (IVR)', ['voice_calls', 'voice_setup', 'voice_words']],
         'api'          => ['🔗 API & webhooks', ['webhooks']],

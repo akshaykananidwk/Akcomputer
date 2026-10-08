@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         if ($rowSerials) $qty = count($rowSerials);
         if (!$iid || $qty <= 0) continue;
         $price = (float)($prices[$i] ?? 0);
-        $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
+        $tr = $company['is_gst'] && !biz_on('gst_composition') ? (float)($taxes[$i] ?? 0) : 0;   // a composition dealer may not charge GST
         // Per-item discount: a fixed rupee amount for the whole line, or a
         // percent of qty x rate - clamped so the line never goes negative.
         // The stored line total is NET of this discount (GST applies after).
@@ -461,7 +461,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         if ($rowSerials) $qty = count($rowSerials);
         if (!$iid || $qty <= 0) continue;
         $price = (float)($prices[$i] ?? 0);
-        $tr = $company['is_gst'] ? (float)($taxes[$i] ?? 0) : 0;
+        $tr = $company['is_gst'] && !biz_on('gst_composition') ? (float)($taxes[$i] ?? 0) : 0;   // a composition dealer may not charge GST
         // Per-item discount: a fixed rupee amount for the whole line, or a
         // percent of qty x rate - clamped so the line never goes negative.
         // The stored line total is NET of this discount (GST applies after).
