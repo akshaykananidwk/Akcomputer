@@ -127,6 +127,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         log_activity('payment_add', "P-$pid party={$party['name']} $dir $amount");
         fire_webhook('payment.recorded', ['payment_id' => $pid, 'party' => $party['name'], 'direction' => $dir, 'amount' => $amount]);
         if ($dir === 'in') big_payment_alert($amount, $party['name']);
+        // a UPI credit from the inbox (upi.php) is now in the books
+        if ((int)post('upi_id')) { try { q("UPDATE upi_inbox SET status = 'recorded', payment_id = ?, party_id = ? WHERE id = ? AND status = 'new'", [$pid, $party['id'], (int)post('upi_id')]); } catch (Exception $e) {} }
 
         // WhatsApp receipt to party (payment-in only)
         if ($dir === 'in' && post('send_wa') && $party['mobile']) {
@@ -509,18 +511,19 @@ if ($action === 'new') {
           <div><label>Date</label><input type="date" name="pay_date" value="<?= today() ?>"></div>
           <div><label>Mode</label>
             <select name="mode" id="pay_mode" onchange="pmChange()">
-              <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>"><?= e($pm['name']) ?></option><?php endforeach; ?>
+              <?php foreach ($pms as $pm): if ($pm['code'] === 'credit') continue; ?><option value="<?= e($pm['code']) ?>" data-type="<?= e($pm['type']) ?>" <?= get('mode') === $pm['code'] ? 'selected' : '' ?>><?= e($pm['name']) ?></option><?php endforeach; ?>
             </select></div>
         </div>
+        <?php if ((int)get('upi')): ?><input type="hidden" name="upi_id" value="<?= (int)get('upi') ?>"><?php endif; ?>
         <div class="form-row cols-3">
           <div><label><?= $dir === 'in' ? 'Received amount (₹) *' : 'Paid amount (₹) *' ?></label>
-            <input type="number" step="any" min="0" name="amount" id="pay_amount" required></div>
+            <input type="number" step="any" min="0" name="amount" id="pay_amount" required value="<?= get('amount') !== '' && is_numeric(get('amount')) ? +get('amount') : '' ?>"></div>
           <div><label>Discount (Rs)</label>
             <input type="number" step="any" min="0" name="discount" id="pay_discount" value="0">
             <p class="muted mt" style="font-size:.8em">To write off the remainder — not counted in cash or bank. E.g. bill Rs 7,040, received Rs 7,000 → discount Rs 40</p></div>
           <div id="bankAccBox" style="display:none"><label>Bank Account</label>
             <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>"><?= e($b['account_name']) ?> - <?= e($b['bank_name']) ?></option><?php endforeach; ?></select></div>
-          <div><label>Notes</label><input type="text" name="notes"></div>
+          <div><label>Notes</label><input type="text" name="notes" value="<?= e(mb_substr((string)get('notes'), 0, 200)) ?>"></div>
         </div>
         <!-- what the bank / UPI took off this payment: a real cost, recorded
              as an expense so the year's total is visible -->

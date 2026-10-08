@@ -45,6 +45,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'scan') {
         log_activity('purchase_scan_ai', count($doc['lines']) . ' line(s), ' . $doc['bad_lines'] . ' flagged');
     }
 }
+// a bill that came by e-mail (mail_bills.php) is read the same way as an upload
+if ($scanFile === null && preg_match('/^mail_\w+\.(pdf|jpe?g|png|webp)$/', (string)get('mail')) && is_file(up_dir('purchase_scans') . '/' . get('mail'))) {
+    $scanFile = get('mail');
+    list($doc, $aiWhy) = bs_extract(up_dir('purchase_scans') . '/' . $scanFile);
+    if ($doc) { $doc = bs_check($doc); $review = bs_review_rows($doc); }
+}
 if ($doc === null && $scanFile !== null) {
     $dir = up_dir('purchase_scans');
     $text = ocr_extract_text($dir . '/' . $scanFile);

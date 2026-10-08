@@ -1818,3 +1818,6 @@ document.addEventListener('DOMContentLoaded', function () {
   var seen = '1'; try { seen = localStorage.getItem('tourDone'); } catch (e) {}
   if (/[?&]tour=1/.test(location.search) || (!seen && document.querySelector('[data-tour-auto]'))) setTimeout(startTour, 400);
 });
+
+// installable as an app (manifest.php gives each shop its own name and logo)
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(function () {});

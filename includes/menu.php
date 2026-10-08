@@ -28,6 +28,7 @@ return simple_filter_menu(plan_filter_menu([
     ['group', 'items', 'box', 'Items', [
         ['items.php', 'All Items', 'items.view', 'items.php?action=new', 'items.add'],
         ['items_import.php', 'Import Excel/CSV', 'items.add', null, null],
+        ['tally_import.php', '📥 Import from Tally', 'parties.add', null, null],
         ['stock.php', 'Stock Levels', 'stock.view', null, null],
         ['barcode_labels.php', 'Barcode Label Printing', 'items.view', null, null],
         ['ai_enrich.php', 'AI Auto-Fill (Photo/Desc)', 'items.edit', null, null],
@@ -51,6 +52,7 @@ return simple_filter_menu(plan_filter_menu([
     ['group', 'purchase', 'box', 'Purchase', [
         ['purchases.php', 'Purchase Bills', 'purchases.view', 'purchases.php?action=new', 'purchases.add'],
         ['purchase_orders.php', '📝 Purchase orders (to suppliers)', 'purchases.view', 'purchase_orders.php?action=new', 'purchases.add'],
+        ['mail_bills.php', '📧 Bills by e-mail', 'purchases.add', null, null],
         ['purchase_intel.php', '🛒 What to buy (Purchase Intelligence)', 'purchases.view', null, null],
         ['purchase_scan.php', 'Scan Bill (OCR)', 'purchases.add', null, null],
         ['purchase_return.php', 'Purchase Return', 'purchase_return.view', 'purchase_return.php?action=new', 'purchase_return.add'],
@@ -58,6 +60,8 @@ return simple_filter_menu(plan_filter_menu([
     ['link', 'expenses.php', 'wallet', 'Expenses', 'expenses.view'],
     ['group', 'cashbank', 'card', 'Cash & Bank', [
         ['cash_bank.php', 'Cash & Bank Overview', null, null, null],
+        ['upi.php', '📲 UPI received (from the shop phone)', 'payments.add', null, null],
+        ['bank_import.php', '🏦 Bank statement import', 'accounting.view', null, null],
         ['day_close.php', '🌙 Day closing', 'dayclose.view', null, null],
         ['cheques.php', '🧾 Cheque register', 'cheques.view', null, null],
         ['my_collections.php', '🏃 Today collections (mobile)', 'payments.view', null, null],
@@ -139,6 +143,7 @@ return simple_filter_menu(plan_filter_menu([
             : [['platform.php', '🌐 Shops on this software', '*', null, null]]),
     ]],
     ['link', 'recycle.php', 'archive', 'Recycle bin', 'settings.edit'],
+    ['link', 'connections.php', 'link', 'Connections (Sheets, UPI, courier…)', 'settings.edit'],
     ['link', 'settings.php', 'gear', 'Settings', 'settings.view'],
     ['link', 'help.php', 'book', 'Help', null],
 ]));
