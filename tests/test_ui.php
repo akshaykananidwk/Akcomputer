@@ -42,3 +42,14 @@ t_eq('...every time', help_search('how to send bill on whatsapp'), $h);
 t_ok('Gujarati words find it too', ($g = help_search('ખર્ચ કેવી રીતે')) && strpos($g[0][1], 'Expenses') !== false);
 [$ans, $src] = help_answer('how do I add staff login', 'gu');
 t_ok('a clear match is answered from the guide, in Gujarati, without AI', $src === 'faq' && preg_match('/[\x{0A80}-\x{0AFF}]/u', $ans));
+
+t_group('Hardware: the small receipt');
+require_once dirname(__DIR__) . '/includes/receipt.php';
+$rp = t_party('Receipt Test'); $rs = t_sale($rp, 123456.5, 100000);
+$lines = receipt_lines($rs, 32);
+t_ok('every line fits 58 mm paper (32 characters)', $lines && max(array_map('strlen', $lines)) <= 32);
+t_ok('plain letters only, so any printer can print it', !array_filter($lines, fn($l) => preg_match('/[^\x20-\x7E]/', $l)));
+t_ok('the total and the balance are on it', (bool)array_filter($lines, fn($l) => strpos($l, 'TOTAL') === 0 && strpos($l, '1,23,456.50') !== false)
+     && (bool)array_filter($lines, fn($l) => strpos($l, 'Balance due') === 0 && strpos($l, '23,456.50') !== false));
+t_ok('words are not cut in half', !array_filter(explode(' ', amount_in_words(123456.5)), fn($w) => !array_filter($lines, fn($l) => preg_match('/\\b' . $w . '\\b/', $l))));
+t_ok('80 mm paper takes 48', max(array_map('strlen', receipt_lines($rs, 48))) <= 48);

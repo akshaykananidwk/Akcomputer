@@ -275,6 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'bill_design') {
     require_perm('settings.edit');
     set_setting('invoice_design', post('invoice_design') === '2' ? '2' : '1');
     set_setting('bill_lang', in_array(post('bill_lang'), ['gu', 'hi'], true) ? post('bill_lang') : 'en');
+    set_setting('receipt_paper', post('receipt_paper') === '80' ? '80' : '58');
     log_activity('settings_bill_design', post('invoice_design'));
     flash('Bill design changed ✔ — open any bill to see it.');
     redirect('settings.php?cat=invoice');
@@ -1236,6 +1237,9 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
       <select name="bill_lang"><?php foreach (['en' => 'English', 'gu' => 'ગુજરાતી (Gujarati)', 'hi' => 'हिन्दी (Hindi)'] as $k => $l): ?>
         <option value="<?= $k ?>" <?= setting('bill_lang', 'en') === $k ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?></select>
       <small class="muted">Total, Paid, Qty… on the bill page and its print. The WhatsApp PDF stays in English.</small></div>
+    <div class="field" style="max-width:320px"><label>Small receipt printer paper</label>
+      <select name="receipt_paper"><option value="58">58 mm (2 inch)</option><option value="80" <?= setting('receipt_paper', '58') === '80' ? 'selected' : '' ?>>80 mm (3 inch)</option></select>
+      <small class="muted">For 🧾 Small receipt and Bluetooth printers. A4 bills keep using the design above.</small></div>
     <button class="btn" type="submit">Save Design</button>
   </form>
 </div>

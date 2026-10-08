@@ -283,6 +283,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         log_activity('sale_add', "$invoice_no total $total");
         fire_webhook('sale.created', ['sale_id' => $sale_id, 'invoice_no' => $invoice_no, 'total' => $total, 'paid' => $paid, 'customer_name' => post('customer_name')]);
         flash("Bill $invoice_no saved.");
+        if (post('from_pos')) redirect('pos.php?done=' . $sale_id);   // the counter screen goes straight on to the next customer
         redirect(post('save_new') ? 'sales.php?action=new' : 'sale_view.php?id=' . $sale_id);
     } catch (Exception $ex) {
         $pdo->rollBack();
@@ -1154,7 +1155,7 @@ if ($action === 'new' || $action === 'edit') {
       // barcode scan shortcut next to "+ Add Items" - opens a fresh item
       // row already in the panel and starts the camera scan immediately
       var scanItemBtn = document.getElementById('scanItemBtn');
-      if (scanItemBtn && 'BarcodeDetector' in window) {
+      if (scanItemBtn && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         scanItemBtn.style.display = '';
         scanItemBtn.addEventListener('click', function () {
           var div = Bill.openAddPanel();

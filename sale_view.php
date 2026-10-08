@@ -520,7 +520,8 @@ if ($planPub): ?>
   </div>
   <div class="inv-bottom-strip">This is a computer generated invoice.<?= powered_by_line() !== '' ? ' · ' . e(powered_by_line()) : '' ?></div>
   <p class="muted mt" style="font-size:11px">Billed by: <?= e($sale['staff_name']) ?><?= $sale['notes'] ? ' | ' . e($sale['notes']) : '' ?></p>
-  <?php if (!$public): ?><p class="no-print"><button type="button" class="btn btn-sm btn-outline" data-say="<?= e(say_text('bill', $sale['invoice_no'], $sale['total'], $sale['paid'], max(0, $due))) ?>">🔊 Read aloud</button></p><?php endif; ?>
+  <?php if (!$public): ?><p class="no-print"><button type="button" class="btn btn-sm btn-outline" data-say="<?= e(say_text('bill', $sale['invoice_no'], $sale['total'], $sale['paid'], max(0, $due))) ?>">🔊 Read aloud</button>
+    <a class="btn btn-sm btn-outline" href="receipt.php?id=<?= (int)$sale['id'] ?>">🧾 Small receipt / Bluetooth</a></p><?php endif; ?>
   <?php if (!empty($sale['prescription']) && !$public): ?><p class="no-print"><a class="btn btn-sm btn-outline" target="_blank" href="sale_view.php?id=<?= (int)$sale['id'] ?>&amp;rx=1">📄 Prescription</a></p><?php endif; ?>
 </div>
 <?php endif; ?>

@@ -493,7 +493,7 @@ var Bill = {
       '  <label>Item Name</label>' +
       '  <div style="display:flex;gap:4px">' +
       '  <input type="text" class="i-search" placeholder="Type item name..." autocomplete="off" style="flex:1">' +
-      (('BarcodeDetector' in window) ? '  <button type="button" class="btn btn-sm btn-outline i-scanbtn" title="Scan barcode with camera" style="flex-shrink:0">📷</button>' : '') +
+      ((navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? '  <button type="button" class="btn btn-sm btn-outline i-scanbtn" title="Scan barcode with camera" style="flex-shrink:0">📷</button>' : '') +
       ((window.SpeechRecognition || window.webkitSpeechRecognition) ? '  <button type="button" class="btn btn-sm btn-outline i-micbtn" title="Say the item (e.g. 2 tempered glass)" style="flex-shrink:0">🎤</button>' : '') +
       '  </div>' +
       '  <input type="hidden" name="item_id[]" class="i-id">' +
@@ -640,6 +640,28 @@ var Bill = {
   // onCode (add to bill / textarea), the overlay stays open so a whole
   // stack of boxes can be scanned one after another; the same code within
   // 2.5s is ignored (camera seeing the same label across frames).
+  // The phone's own barcode reader where it has one (Android Chrome); on an
+  // iPhone, which has none, the ZXing library is loaded once and used the
+  // same way - so the 📷 button works on every phone.
+  barcodeDetector: function () {
+    if ('BarcodeDetector' in window) return new BarcodeDetector();
+    var canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', { willReadFrequently: true }), reader = null;
+    var ready = window.ZXing ? Promise.resolve() : new Promise(function (ok, bad) {
+      var sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+      sc.onload = ok; sc.onerror = bad; document.head.appendChild(sc);
+    });
+    return { detect: function (video) {
+      return ready.then(function () {
+        if (!video.videoWidth) return [];
+        if (!reader) reader = new ZXing.MultiFormatReader();
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        try { return [{ rawValue: reader.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(canvas)))).getText() }]; }
+        catch (e) { return []; }
+      });
+    } };
+  },
+
   scanBarcode: function (inp, onCode) {
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:#000;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center';
@@ -672,7 +694,7 @@ var Bill = {
       stream = s;
       video.srcObject = s;
       video.play();
-      var detector = new BarcodeDetector();
+      var detector = Bill.barcodeDetector();
       function tick() {
         if (stopped) return;
         detector.detect(video).then(function (codes) {
@@ -732,7 +754,7 @@ var Bill = {
       if (this.cfg.mode === 'purchase' && !this.cfg.pickStock) {
         extra.innerHTML = '<label class="mt">' + ((this.cfg.biz || {}).serialLabel === 'IMEI' ? 'IMEI numbers (15 digits each' : 'Serial numbers (') + 'one per line, count = qty) — 🔫 barcode gun works: scan, scan, scan</label>' +
           '<textarea name="serials[]" rows="2" placeholder="SN001\nSN002"></textarea>' +
-          (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline pu-cam" style="margin-top:6px">📷 Scan serials with the phone camera</button>' : '');
+          ((navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? '<button type="button" class="btn btn-sm btn-outline pu-cam" style="margin-top:6px">📷 Scan serials with the phone camera</button>' : '');
         div.dataset.hasSerialBox = '1';
         this.wireSerialQtySync(div);
         var puCam = extra.querySelector('.pu-cam');
@@ -778,7 +800,7 @@ var Bill = {
               ' <span class="sp-count badge badge-warn">0 / ' + (parseFloat(div.querySelector('.i-qty').value) || 1) + ' entered</span></label>' +
               '<div class="sp-scan"><input type="text" class="sp-inp" placeholder="Type / scan serial no.">' +
               '<button type="button" class="btn btn-sm sp-add">Add</button>' +
-              (('BarcodeDetector' in window) ? '<button type="button" class="btn btn-sm btn-outline sp-cam" title="Scan with the phone camera">📷</button>' : '') + '</div>' +
+              ((navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ? '<button type="button" class="btn btn-sm btn-outline sp-cam" title="Scan with the phone camera">📷</button>' : '') + '</div>' +
               '<div class="sp-list">' + (boxes || '<span class="muted">' +
                 (isRet ? 'No sold serial was found for this item — you can type one below'
                        : (self.cfg.pickStock ? 'No serial of this item is in stock at this location'
@@ -911,6 +933,33 @@ var Bill = {
     return { qty: qty, text: text.replace(/\b(pieces?|pcs|nos?|નંગ|पीस)\b/g, '').trim() };
   },
 
+  // ⚖️ Read a weighing scale on a USB / serial cable (Chrome or Edge on a
+  // computer). Most counter scales send their reading as text, e.g.
+  // "ST,GS,  1.250kg" - the last steady number is taken, in kg.
+  _scalePort: null,
+  readScale: function () {
+    var self = this;
+    var open = self._scalePort ? Promise.resolve(self._scalePort)
+      : navigator.serial.requestPort().then(function (p) { return p.open({ baudRate: +(localStorage.getItem('scaleBaud') || 9600) }).then(function () { return (self._scalePort = p); }); });
+    return open.then(function (port) {
+      var reader = port.readable.getReader(), dec = new TextDecoder(), buf = '', until = Date.now() + 2500;
+      var pump = function () {
+        return reader.read().then(function (r) {
+          if (r.value) buf += dec.decode(r.value);
+          var nums = buf.match(/(\d+(?:\.\d+)?)\s*(kg|g)?/gi) || [];
+          if ((nums.length >= 2 || r.done || Date.now() > until) && nums.length) {
+            reader.cancel().catch(function () {}); reader.releaseLock();
+            var m = /(\d+(?:\.\d+)?)\s*(kg|g)?/i.exec(nums[nums.length - 1]);
+            var v = parseFloat(m[1]); return (m[2] || '').toLowerCase() === 'g' ? v / 1000 : v;
+          }
+          if (Date.now() > until) { reader.releaseLock(); throw new Error('no reading from the scale'); }
+          return pump();
+        });
+      };
+      return pump();
+    });
+  },
+
   bizTools: function (div, it) {
     var b = this.cfg.biz || {}, self = this;
     var old = div.querySelector('.i-biz'); if (old) old.remove();
@@ -925,7 +974,8 @@ var Bill = {
       var chips = liquid ? [[200, '200ml'], [500, '500ml'], [1000, '1L'], [2000, '2L'], [5000, '5L']]
                          : [[100, '100g'], [250, '250g'], [500, '500g'], [1000, '1kg'], [2000, '2kg'], [5000, '5kg']];
       html += '<div class="biz-line">⚖️ ' + chips.map(function (c) { return '<button type="button" class="chip biz-w" data-g="' + c[0] + '">' + c[1] + '</button>'; }).join('') +
-              ' <input type="number" class="biz-g" min="0" step="any" placeholder="' + (liquid ? 'ml' : 'grams') + '" style="width:80px"></div>';
+              ' <input type="number" class="biz-g" min="0" step="any" placeholder="' + (liquid ? 'ml' : 'grams') + '" style="width:80px">' +
+              (('serial' in navigator) && !liquid ? ' <button type="button" class="chip biz-scale" title="Read the weighing scale">⚖️ Scale</button>' : '') + '</div>';
       box.dataset.small = small ? '1' : '';
     }
     if (b.measure && /^(sqft|sq\.?ft|sqm|ft|rft|mtr|m|meter|metre)$/.test(unit)) {
@@ -952,6 +1002,12 @@ var Bill = {
     div.querySelector('.i-extra').after(box);
     box.querySelectorAll('.biz-w').forEach(function (btn) {
       btn.addEventListener('click', function () { var g = +btn.dataset.g; setQty(box.dataset.small ? g : g / 1000); });
+    });
+    var sc = box.querySelector('.biz-scale');
+    if (sc) sc.addEventListener('click', function () {
+      sc.textContent = '⏳';
+      Bill.readScale().then(function (kg) { sc.textContent = '⚖️ Scale'; if (kg > 0) setQty(box.dataset.small ? kg * 1000 : kg); })
+        .catch(function (e) { sc.textContent = '⚖️ Scale'; alert('Could not read the scale: ' + (e.message || e)); });
     });
     var gIn = box.querySelector('.biz-g');
     if (gIn) gIn.addEventListener('input', function () { var g = parseFloat(gIn.value) || 0; setQty(box.dataset.small ? g : g / 1000); });

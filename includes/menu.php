@@ -36,6 +36,7 @@ return simple_filter_menu(plan_filter_menu([
     ]],
     ['group', 'sale', 'receipt', 'Sale', [
         ['sales.php', 'Sale Invoices', 'sales.view', 'sales.php?action=new', 'sales.add'],
+        ['pos.php', '🖐️ Counter (tablet)', 'sales.add', null, null],
         ...(function_exists('biz_on') && biz_on('biz_tables') ? [['tables.php', '🍽️ Tables & kitchen', 'sales.add', null, null]] : []),
         ...(function_exists('biz_on') && biz_on('biz_appointments') ? [['appointments.php', '📅 Appointments', 'sales.view', 'appointments.php?action=new', 'sales.add']] : []),
         ['assistant.php', '🧑‍💼 What the customer wants (Sales Assistant)', 'items.view', null, null],
@@ -133,7 +134,7 @@ return simple_filter_menu(plan_filter_menu([
 function simple_filter_menu(array $menu) {
     if (!function_exists('ui_prefs') || !ui_prefs()['simple']) return $menu;
     $keep = ['index.php', 'sales.php', 'parties.php', 'payments.php', 'items.php', 'stock.php', 'expenses.php', 'cash_bank.php',
-             'purchases.php', 'reports.php', 'tables.php', 'appointments.php', 'repairs.php', 'help.php'];
+             'purchases.php', 'reports.php', 'tables.php', 'appointments.php', 'repairs.php', 'help.php', 'pos.php'];
     $out = [];
     foreach ($menu as $m) {
         if ($m[0] === 'link') { if (in_array(strtok($m[1], '?'), $keep, true)) $out[] = $m; continue; }
