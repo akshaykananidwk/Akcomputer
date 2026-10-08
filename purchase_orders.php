@@ -54,8 +54,8 @@ if (get('action') === 'new'):
 <script>
 var ITEMS = {}; document.querySelectorAll('#poItems option').forEach(function (o) { ITEMS[o.value] = [o.dataset.id, o.dataset.p]; });
 function poLine() {
-  var d = document.createElement('div'); d.style.cssText = 'display:grid;grid-template-columns:2fr 80px 100px;gap:6px;margin:6px 0';
-  d.innerHTML = '<input list="poItems" placeholder="Item" required><input type="number" name="qty[]" min="0" step="any" value="1" placeholder="Qty"><input type="number" name="price[]" min="0" step="any" placeholder="Rate"><input type="hidden" name="item_id[]">';
+  var d = document.createElement('div'); d.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) 64px 84px;gap:6px;margin:6px 0';
+  d.innerHTML = '<input list="poItems" placeholder="Item" required style="min-width:0;width:100%"><input type="number" name="qty[]" min="0" step="any" value="1" placeholder="Qty" style="min-width:0;width:100%"><input type="number" name="price[]" min="0" step="any" placeholder="Rate" style="min-width:0;width:100%"><input type="hidden" name="item_id[]">';
   var n = d.children[0], h = d.children[3], pr = d.children[2];
   n.addEventListener('change', function () { var x = ITEMS[n.value]; h.value = x ? x[0] : ''; if (x && !pr.value) pr.value = x[1]; n.setCustomValidity(x ? '' : 'Pick an item from the list'); });
   document.getElementById('poLines').appendChild(d);
