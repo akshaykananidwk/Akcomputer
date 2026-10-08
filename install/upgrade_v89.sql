@@ -218,3 +218,6 @@ SELECT 'CA / Accountant (view only)',
 
 -- staff attendance & payroll comes with Pro (Premium already has everything)
 UPDATE plans SET features = JSON_ARRAY_APPEND(features, '$', 'hr') WHERE code = 'pro' AND features NOT LIKE '%"hr"%' AND features NOT LIKE '%"*"%';
+
+-- the counter's feedback tablet writes its stars here too
+ALTER TABLE feedback MODIFY ref_type ENUM('repair','task','kiosk') NOT NULL;

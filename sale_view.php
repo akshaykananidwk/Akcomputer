@@ -521,7 +521,15 @@ if ($planPub): ?>
   <div class="inv-bottom-strip">This is a computer generated invoice.<?= powered_by_line() !== '' ? ' · ' . e(powered_by_line()) : '' ?></div>
   <p class="muted mt" style="font-size:11px">Billed by: <?= e($sale['staff_name']) ?><?= $sale['notes'] ? ' | ' . e($sale['notes']) : '' ?></p>
   <?php if (!$public): ?><p class="no-print"><button type="button" class="btn btn-sm btn-outline" data-say="<?= e(say_text('bill', $sale['invoice_no'], $sale['total'], $sale['paid'], max(0, $due))) ?>">🔊 Read aloud</button>
-    <a class="btn btn-sm btn-outline" href="receipt.php?id=<?= (int)$sale['id'] ?>">🧾 Small receipt / Bluetooth</a></p><?php endif; ?>
+    <a class="btn btn-sm btn-outline" href="receipt.php?id=<?= (int)$sale['id'] ?>">🧾 Small receipt / Bluetooth</a></p>
+  <?php if (can('deliveries.assign') && !$sale['is_cancelled']):
+      try { $dlv = row('SELECT d.status, us.name FROM deliveries d LEFT JOIN users us ON us.id = d.assigned_to WHERE d.sale_id = ? ORDER BY d.id DESC LIMIT 1', [$sale['id']]); } catch (Exception $e) { $dlv = null; } ?>
+  <form method="post" action="delivery.php" class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0"><?= csrf_field() ?><input type="hidden" name="do" value="assign"><input type="hidden" name="sale_id" value="<?= (int)$sale['id'] ?>">
+    🚚 <?= $dlv ? 'Delivery: <b>' . e($dlv['status']) . '</b>' . ($dlv['name'] ? ' (' . e($dlv['name']) . ')' : '') . ' · ' : '' ?>
+    <select name="assigned_to"><?php foreach (all('SELECT id, name FROM users WHERE is_active = 1 ORDER BY name') as $dl): ?><option value="<?= (int)$dl['id'] ?>"><?= e($dl['name']) ?></option><?php endforeach; ?></select>
+    <input type="text" name="address" placeholder="Address" value="<?= e($sale['delivery_address'] ?? '') ?>" style="max-width:220px">
+    <button class="btn btn-sm btn-outline" type="submit"><?= $dlv ? 'Send again' : 'Send for delivery' ?></button></form>
+  <?php endif; endif; ?>
   <?php if (!empty($sale['prescription']) && !$public): ?><p class="no-print"><a class="btn btn-sm btn-outline" target="_blank" href="sale_view.php?id=<?= (int)$sale['id'] ?>&amp;rx=1">📄 Prescription</a></p><?php endif; ?>
 </div>
 <?php endif; ?>

@@ -37,6 +37,10 @@ return simple_filter_menu(plan_filter_menu([
     ['group', 'sale', 'receipt', 'Sale', [
         ['sales.php', 'Sale Invoices', 'sales.view', 'sales.php?action=new', 'sales.add'],
         ['pos.php', '🖐️ Counter (tablet)', 'sales.add', null, null],
+        ['delivery.php', '🚚 Deliveries', null, null, null],
+        ['tokens.php', '🎟️ Queue tokens', 'sales.view', null, null],
+        ['kiosk.php', '⭐ Feedback tablet', 'sales.add', null, null],
+        ['register.php?qr=1', '📲 Customer sign-up QR', 'parties.add', null, null],
         ...(function_exists('biz_on') && biz_on('biz_tables') ? [['tables.php', '🍽️ Tables & kitchen', 'sales.add', null, null]] : []),
         ...(function_exists('biz_on') && biz_on('biz_appointments') ? [['appointments.php', '📅 Appointments', 'sales.view', 'appointments.php?action=new', 'sales.add']] : []),
         ['assistant.php', '🧑‍💼 What the customer wants (Sales Assistant)', 'items.view', null, null],
@@ -46,6 +50,7 @@ return simple_filter_menu(plan_filter_menu([
     ]],
     ['group', 'purchase', 'box', 'Purchase', [
         ['purchases.php', 'Purchase Bills', 'purchases.view', 'purchases.php?action=new', 'purchases.add'],
+        ['purchase_orders.php', '📝 Purchase orders (to suppliers)', 'purchases.view', 'purchase_orders.php?action=new', 'purchases.add'],
         ['purchase_intel.php', '🛒 What to buy (Purchase Intelligence)', 'purchases.view', null, null],
         ['purchase_scan.php', 'Scan Bill (OCR)', 'purchases.add', null, null],
         ['purchase_return.php', 'Purchase Return', 'purchase_return.view', 'purchase_return.php?action=new', 'purchase_return.add'],

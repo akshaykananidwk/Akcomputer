@@ -48,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $v = post('value') === '1' ? 1 : 0;
         q('UPDATE parties SET collection_opt_out = ? WHERE id = ?', [$v, $pid]);
         log_activity('collection_opt_out', "party=$pid value=$v");
+        consent_record($pid, 'collection', !$v, 'staff (customer page)');
         flash($v ? 'No collection messages will go to this customer now.' : 'Messages can go to this customer now.');
         redirect($back);
     }
@@ -68,6 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $v = post('value') === '1' ? 1 : 0;
         q('UPDATE parties SET marketing_opt_out = ? WHERE id = ?', [$v, $pid]);
         log_activity('marketing_opt_out', "party=$pid value=$v");
+        consent_record($pid, 'marketing', !$v, 'staff (customer page)');
         flash($v ? 'No advertising or offer messages will go to this customer now.' : 'Offer messages can go to this customer now.');
         redirect($back);
     }
@@ -397,6 +399,12 @@ include __DIR__ . '/includes/header.php';
       <?= $mkt ? '📣 Turn offer messages back on' : '🚫 Turn off offer messages' ?>
     </button>
   </form>
+  <?php try { $clog = all('SELECT c.*, us.name by_name FROM consent_log c LEFT JOIN users us ON us.id = c.by_user WHERE c.party_id = ? ORDER BY c.id DESC LIMIT 10', [$id]); } catch (Exception $e) { $clog = []; }
+  if ($clog): ?>
+  <details class="mt"><summary style="cursor:pointer;font-size:13px">📜 Who said yes / no, and when</summary>
+    <?php foreach ($clog as $cl): ?><div style="font-size:12.5px"><?= dmyt($cl['created_at']) ?> — <?= e($cl['kind']) ?>: <b><?= $cl['given'] ? 'yes' : 'no' ?></b> · <?= e($cl['source']) ?><?= $cl['by_name'] ? ' · ' . e($cl['by_name']) : '' ?></div><?php endforeach; ?>
+  </details>
+  <?php endif; ?>
   <hr>
   <?php $dnd = (int)($p['voice_dnd'] ?? 0); ?>
   <p class="muted mb" style="font-size:13px">

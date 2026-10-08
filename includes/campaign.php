@@ -390,9 +390,13 @@ function cam_optout($mobile, $on = true) {
     $digits = preg_replace('/\D+/', '', (string)$mobile);
     if (strlen($digits) < 10) return 0;
     $last10 = substr($digits, -10);
-    return q("UPDATE parties SET marketing_opt_out = ?
+    $n = q("UPDATE parties SET marketing_opt_out = ?
               WHERE mobile <> '' AND RIGHT(REPLACE(REPLACE(mobile,'+',''),' ',''), 10) = ?",
              [$on ? 1 : 0, $last10])->rowCount();
+    if ($n && function_exists('consent_record'))
+        foreach (all("SELECT id FROM parties WHERE mobile <> '' AND RIGHT(REPLACE(REPLACE(mobile,'+',''),' ',''), 10) = ?", [$last10]) as $pp)
+            consent_record($pp['id'], 'marketing', !$on, 'WhatsApp reply');
+    return $n;
 }
 
 /** Does this incoming message mean "stop"? Kept deliberately narrow: a

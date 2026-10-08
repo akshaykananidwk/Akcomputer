@@ -95,6 +95,8 @@ foreach (glob(dirname(__DIR__) . '/*.php') as $f) {
         // a reseller's own page: its own login (code + password, throttled)
         'reseller.php',
         'demo.php',   // the demo shop's address and login - nothing private
+        'supplier.php',   // a supplier's page: the link is signed for that one supplier (portal_ok)
+        'register.php',   // a customer writes their own name and number; rate-limited, adds nothing else
         // Fetched by the phone network while a reminder call is connecting,
         // so no session exists to gate on. Both are guarded instead by the
         // per-call ?t= token - 160 random bits, one call, six hours - which
@@ -110,6 +112,11 @@ t_ok('no staff page is missing require_perm/require_login', empty($ungated), imp
 // something of its own. pay.php's gate is the bill's share token, and it must
 // stay that way - a public page that stopped checking would hand any passer-by
 // somebody else's bill.
+t_group('the supplier page gates on its signed link');
+$supPage = file_get_contents(dirname(__DIR__) . '/supplier.php');
+t_ok('it checks the signature before anything', strpos($supPage, "portal_ok('supplier', \$pid, get('s'))") !== false && strpos($supPage, 'portal_ok') < strpos($supPage, 'FROM parties'));
+t_ok('a link for one supplier does not open another', portal_ok('supplier', 5, portal_sig('supplier', 5)) && !portal_ok('supplier', 6, portal_sig('supplier', 5)) && !portal_ok('supplier', 5, 'guess'));
+
 t_group('the customer pay page gates on its token');
 $payPage = file_get_contents(dirname(__DIR__) . '/pay.php');
 t_ok('it compares the share token', strpos($payPage, "hash_equals(\$sale['share_token'], \$token)") !== false);

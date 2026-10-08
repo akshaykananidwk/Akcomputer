@@ -141,7 +141,8 @@ const SECRET_PREFIX = 'enc:v1:';
 function secret_setting_keys() {
     return ['meta_wa_token', 'razorpay_key_secret', 'razorpay_webhook_secret', 'gemini_api_key',
             'gemini_api_key_paid', 'wa_api_key', 'tg_bot_token', 'ocr_api_key', 'google_cse_key',
-            'smtp_pass', 'wa_session_id', 'backup_passphrase', 'vobiz_auth_token', 'vobiz_webhook_secret', 'cpanel_token'];
+            'smtp_pass', 'wa_session_id', 'backup_passphrase', 'vobiz_auth_token', 'vobiz_webhook_secret', 'cpanel_token',
+            'portal_secret', 'gdrive_client_secret', 'gdrive_refresh_token', 'shiprocket_password', 'shiprocket_token', 'imap_pass', 'upi_hook_secret', 'feeds_token'];
 }
 function is_secret_setting($name) { return in_array($name, secret_setting_keys(), true); }
 
@@ -2281,4 +2282,26 @@ function plain_error(Throwable $e) {
     ];
     foreach ($map as $needle => $say) if (stripos($m, $needle) !== false) return $say;
     return 'It could not be saved. Nothing was changed — please try again, and tell the admin if it keeps happening.';
+}
+
+
+/** A key only this shop knows, made once, kept encrypted - signs the links handed to suppliers etc. */
+function portal_secret() {
+    $k = (string)setting('portal_secret', '');
+    if ($k === '') { $k = bin2hex(random_bytes(24)); set_setting('portal_secret', $k); }
+    return $k;
+}
+/** The signature on a link for one thing ("supplier", 12). A changed id or a guessed link fails. */
+function portal_sig($kind, $id) { return substr(hash_hmac('sha256', $kind . ':' . $id, portal_secret()), 0, 24); }
+function portal_ok($kind, $id, $sig) { return is_string($sig) && hash_equals(portal_sig($kind, $id), $sig); }
+/** The supplier's own page: their bills, what was paid, purchase orders. */
+function supplier_portal_url($partyId) { return base_url('supplier.php?p=' . (int)$partyId . '&s=' . portal_sig('supplier', (int)$partyId)); }
+
+/** Write down a customer's yes/no to messages, with where it came from - so "who agreed, when, how" can always be shown. */
+function consent_record($partyId, $kind, $given, $source) {
+    try {
+        $u = current_user();
+        q('INSERT INTO consent_log (party_id, kind, given, source, by_user) VALUES (?,?,?,?,?)',
+          [(int)$partyId, $kind === 'collection' ? 'collection' : 'marketing', $given ? 1 : 0, mb_substr((string)$source, 0, 40), $u['id'] ?? null]);
+    } catch (Exception $e) { /* before v89 */ }
 }
