@@ -5,13 +5,14 @@
 var BT_SERVICES = [0x18f0, 0xff00, 0xffe0, 0xfee7, 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '49535343-fe7d-4ae5-8fa9-9fafd205e455'];
 var _btChar = null;
 
-function btBytes(text) {
+function btBytes(text, drawer) {
   var clean = String(text).replace(/₹/g, 'Rs').replace(/[^\x0A\x20-\x7E]/g, '');
   var body = Array.from(clean, function (ch) { return ch.charCodeAt(0); });
-  return new Uint8Array([0x1B, 0x40].concat(body, [0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x01]));   // init ... feed, cut
+  var kick = drawer ? [0x1B, 0x70, 0x00, 0x19, 0xFA] : [];                                     // ESC p: pulse the cash drawer
+  return new Uint8Array([0x1B, 0x40].concat(body, [0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x01], kick));   // init ... feed, cut
 }
 
-function btPrint(text, say) {
+function btPrint(text, say, drawer) {
   say = say || function () {};
   if (!navigator.bluetooth) { say('This phone/browser has no Bluetooth printing — use 🖨️ Print.'); return Promise.resolve(false); }
   var getChar = _btChar ? Promise.resolve(_btChar) :
@@ -28,7 +29,7 @@ function btPrint(text, say) {
         return (_btChar = c);
       });
   return getChar.then(function (c) {
-    var data = btBytes(text), i = 0;
+    var data = btBytes(text, drawer), i = 0;
     say('Printing…');
     var next = function () {
       if (i >= data.length) { say('Printed ✔'); return true; }

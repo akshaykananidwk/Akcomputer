@@ -22,6 +22,13 @@ if ($u) {
         if ($_overdue) $_notifItems[] = ['label' => $_overdue . ' bill(s) overdue', 'href' => 'payments.php'];
     }
 }
+if ($u) {
+    try {
+        $_chatNew = (int)val('SELECT COUNT(*) FROM chat_messages WHERE from_user <> ? AND (to_user IS NULL OR to_user = ?) AND id > COALESCE((SELECT last_id FROM chat_reads WHERE user_id = ?), 0)',
+                             [$u['id'], $u['id'], $u['id']]);
+        if ($_chatNew) $_notifItems[] = ['label' => $_chatNew . ' new staff chat message' . ($_chatNew === 1 ? '' : 's'), 'href' => 'chat.php'];
+    } catch (Exception $e) { /* before v89 */ }
+}
 $_notifCount = count($_notifItems);
 
 $_navCur = basename($_SERVER['SCRIPT_NAME']);

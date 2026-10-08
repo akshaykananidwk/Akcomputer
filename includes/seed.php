@@ -6,16 +6,20 @@
 // Plain PDO on purpose: the installer runs before anything else is loaded.
 
 function shop_seed(PDO $pdo, $appName, $adminName, $adminUser, $adminMobile, $passHash, $city = '') {
-    if ((int)$pdo->query('SELECT COUNT(*) FROM roles')->fetchColumn()) return false;   // already seeded
+    // already seeded = it has a user. (Not "has a role": a migration may add a
+    // ready-made role such as the CA's before the first seed runs.)
+    if ((int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn()) return false;
+    if ((int)$pdo->query("SELECT COUNT(*) FROM roles WHERE name = 'Admin'")->fetchColumn()) goto seeded_roles;
     $allPerm = json_encode(['*']);
     $mk = function ($arr) { return json_encode($arr); };
     $ins = $pdo->prepare('INSERT INTO roles (name, permissions, is_system) VALUES (?, ?, ?)');
     $ins->execute(['Admin', $allPerm, 1]);
-    $ins->execute(['Manager', $mk(['dashboard.view','sales.view','sales.add','sales.edit','sales.all','estimates.view','estimates.add','estimates.all','sales_return.view','sales_return.add','purchases.view','purchases.add','purchases.all','purchase_return.view','purchase_return.add','items.view','items.add','items.edit','parties.view','parties.add','parties.edit','stock.view','stock.adjust','handover.view','handover.add','handover.accept','handover.all','tasks.view','tasks.add','tasks.edit','tasks.all','repairs.view','repairs.add','repairs.edit','warranty.view','warranty.add','warranty.edit','payments.view','payments.add','expenses.view','expenses.add','challans.view','challans.add','challans.edit','weborders.view','weborders.edit','reports.view','reports.profit','reports.gst']), 1]);
-    $ins->execute(['Sales Staff', $mk(['dashboard.view','sales.view','sales.add','estimates.view','estimates.add','sales_return.view','sales_return.add','items.view','parties.view','parties.add','stock.view','repairs.view','repairs.add','warranty.view','warranty.add','payments.view','payments.add']), 1]);
-    $ins->execute(['Purchase Staff', $mk(['dashboard.view','purchases.view','purchases.add','purchase_return.view','purchase_return.add','items.view','items.add','parties.view','parties.add','stock.view']), 1]);
-    $ins->execute(['Accounts', $mk(['dashboard.view','sales.view','sales.all','purchases.view','purchases.all','payments.view','payments.add','payments.delete','expenses.view','expenses.add','expenses.delete','parties.view','reports.view','reports.gst']), 1]);
+    $ins->execute(['Manager', $mk(['dashboard.view','sales.view','sales.add','sales.edit','sales.all','estimates.view','estimates.add','estimates.all','sales_return.view','sales_return.add','purchases.view','purchases.add','purchases.all','purchase_return.view','purchase_return.add','items.view','items.add','items.edit','parties.view','parties.contact','parties.add','parties.edit','stock.view','stock.adjust','handover.view','handover.add','handover.accept','handover.all','tasks.view','tasks.add','tasks.edit','tasks.all','repairs.view','repairs.add','repairs.edit','warranty.view','warranty.add','warranty.edit','payments.view','payments.add','expenses.view','expenses.add','challans.view','challans.add','challans.edit','weborders.view','weborders.edit','reports.view','reports.profit','reports.gst']), 1]);
+    $ins->execute(['Sales Staff', $mk(['dashboard.view','sales.view','sales.add','estimates.view','estimates.add','sales_return.view','sales_return.add','items.view','parties.view','parties.contact','parties.add','stock.view','repairs.view','repairs.add','warranty.view','warranty.add','payments.view','payments.add']), 1]);
+    $ins->execute(['Purchase Staff', $mk(['dashboard.view','purchases.view','purchases.add','purchase_return.view','purchase_return.add','items.view','items.add','parties.view','parties.contact','parties.add','stock.view']), 1]);
+    $ins->execute(['Accounts', $mk(['dashboard.view','sales.view','sales.all','purchases.view','purchases.all','payments.view','payments.add','payments.delete','expenses.view','expenses.add','expenses.delete','parties.view','parties.contact','reports.view','reports.gst']), 1]);
     $ins->execute(['Field Staff', $mk(['dashboard.view','tasks.view','tasks.edit','handover.view','handover.add']), 1]);
+    seeded_roles:
 
     $pdo->prepare("INSERT INTO locations (name, code, city, type, address) VALUES ('Main Shop', 'MAIN', ?, 'shop', '')")->execute([$city]);
     $locId = (int)$pdo->lastInsertId();

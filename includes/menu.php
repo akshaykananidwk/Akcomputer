@@ -111,6 +111,13 @@ return simple_filter_menu(plan_filter_menu([
         ['my_account.php?tab=api', 'API Tokens', null, null, null],
         ['webhooks.php', 'Webhooks', 'webhooks.view', 'webhooks.php', 'webhooks.add'],
     ]],
+    ['group', 'team', 'users', 'Team', [
+        ['attendance.php', '🕘 Attendance', null, null, null],
+        ['leaves.php', '🏖️ Leave', null, null, null],
+        ['chat.php', '💬 Staff chat', null, null, null],
+        ['payroll.php', '💵 Payroll', 'hr.payroll', null, null],
+        ['team.php', '👥 Shifts, performance, documents', 'hr.view', null, null],
+    ]],
     ['group', 'admin', 'briefcase', 'Staff & Company', [
         ['users.php', 'Staff Users', 'users.view', 'users.php?action=new', 'users.add'],
         ['approvals.php', 'Bill Edit Approvals', '*', null, null],
@@ -134,7 +141,7 @@ return simple_filter_menu(plan_filter_menu([
 function simple_filter_menu(array $menu) {
     if (!function_exists('ui_prefs') || !ui_prefs()['simple']) return $menu;
     $keep = ['index.php', 'sales.php', 'parties.php', 'payments.php', 'items.php', 'stock.php', 'expenses.php', 'cash_bank.php',
-             'purchases.php', 'reports.php', 'tables.php', 'appointments.php', 'repairs.php', 'help.php', 'pos.php'];
+             'purchases.php', 'reports.php', 'tables.php', 'appointments.php', 'repairs.php', 'help.php', 'pos.php', 'attendance.php', 'leaves.php', 'chat.php'];
     $out = [];
     foreach ($menu as $m) {
         if ($m[0] === 'link') { if (in_array(strtok($m[1], '?'), $keep, true)) $out[] = $m; continue; }

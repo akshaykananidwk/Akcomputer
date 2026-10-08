@@ -55,8 +55,9 @@ require_once __DIR__ . '/scaling.php';      // will this still work when the sho
 csrf_check();
 
 require_once __DIR__ . '/plan.php';
-require_once __DIR__ . '/biz.php';
-require_once __DIR__ . '/i18n.php';  // Gujarati / Hindi screens, text size, simple menu   // the kind of business: IMEI, weight, tables, appointments...
+require_once __DIR__ . '/biz.php';   // the kind of business: IMEI, weight, tables, appointments...
+require_once __DIR__ . '/i18n.php';  // Gujarati / Hindi screens, text size, simple menu
+require_once __DIR__ . '/hr.php';    // attendance, leave, salary; owner alerts
 tenant_plan_guard();   // another shop: its plan's parts only, and paid up
 
 function base_url($path = '') {

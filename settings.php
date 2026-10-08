@@ -276,6 +276,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'bill_design') {
     set_setting('invoice_design', post('invoice_design') === '2' ? '2' : '1');
     set_setting('bill_lang', in_array(post('bill_lang'), ['gu', 'hi'], true) ? post('bill_lang') : 'en');
     set_setting('receipt_paper', post('receipt_paper') === '80' ? '80' : '58');
+    set_setting('drawer_kick', post('drawer_kick') ? '1' : '0');
+    set_setting('big_payment_alert', (string)max(0, (int)post('big_payment_alert')));
+    set_setting('att_need_selfie', post('att_need_selfie') ? '1' : '0');
     log_activity('settings_bill_design', post('invoice_design'));
     flash('Bill design changed ✔ — open any bill to see it.');
     redirect('settings.php?cat=invoice');
@@ -1240,6 +1243,10 @@ if ($metaNum !== '' && $gwNum !== '' && substr($metaNum, -10) !== substr($gwNum,
     <div class="field" style="max-width:320px"><label>Small receipt printer paper</label>
       <select name="receipt_paper"><option value="58">58 mm (2 inch)</option><option value="80" <?= setting('receipt_paper', '58') === '80' ? 'selected' : '' ?>>80 mm (3 inch)</option></select>
       <small class="muted">For 🧾 Small receipt and Bluetooth printers. A4 bills keep using the design above.</small></div>
+    <label class="check-inline"><input type="checkbox" name="drawer_kick" value="1" <?= setting('drawer_kick') === '1' ? 'checked' : '' ?>> Open the cash drawer when a receipt prints on the Bluetooth printer <span class="muted">(drawer plugged into the printer)</span></label>
+    <div class="field" style="max-width:320px"><label>Tell me at once when a payment is at least ₹ <span class="muted">(WhatsApp + Telegram — shows on a smartwatch too; 0 = off)</span></label>
+      <input type="number" name="big_payment_alert" min="0" step="500" value="<?= (int)setting('big_payment_alert', '0') ?>"></div>
+    <label class="check-inline"><input type="checkbox" name="att_need_selfie" value="1" <?= setting('att_need_selfie', '1') === '1' ? 'checked' : '' ?>> Attendance needs a selfie</label>
     <button class="btn" type="submit">Save Design</button>
   </form>
 </div>

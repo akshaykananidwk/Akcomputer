@@ -29,7 +29,7 @@ pre { font: 12px/1.35 'Courier New', monospace; margin: 8px auto; width: <?= $mm
 <script>
 document.getElementById('btPrint').addEventListener('click', function () {
   var msg = document.getElementById('btMsg');
-  btPrint(document.getElementById('rcpt').textContent, function (t) { msg.textContent = t; });
+  btPrint(document.getElementById('rcpt').textContent, function (t) { msg.textContent = t; }, <?= json_encode(setting('drawer_kick') === '1') ?>);
 });
 </script>
 </body></html>

@@ -39,7 +39,7 @@ function perm_feature($perm) {
         'repairs' => 'repairs', 'tasks' => 'repairs', 'warranty' => 'repairs', 'amc' => 'repairs', 'sites' => 'repairs', 'netconn' => 'repairs',
         'report_schedules' => 'reports', 'leads' => 'crm', 'tickets' => 'crm', 'followups' => 'crm', 'reminders' => 'crm',
         'accounting' => 'accounting', 'weborders' => 'online_store', 'webcustomers' => 'online_store', 'referrals' => 'online_store',
-        'webhooks' => 'api', 'locations' => 'locations',
+        'webhooks' => 'api', 'locations' => 'locations', 'hr' => 'hr', 'deliveries' => 'billing', 'books' => 'accounting',
     ];
     return $map[strtok((string)$perm, '.')] ?? '';
 }

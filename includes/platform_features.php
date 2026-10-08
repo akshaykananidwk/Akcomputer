@@ -23,6 +23,7 @@ function platform_features() {
         'voice'        => ['📞 Calls (IVR)', ['voice_calls', 'voice_setup', 'voice_words']],
         'api'          => ['🔗 API & webhooks', ['webhooks']],
         'locations'    => ['📍 More than one location', ['locations']],
+        'hr'           => ['👥 Staff attendance & payroll', ['attendance', 'leaves', 'payroll', 'team']],
     ];
 }
 

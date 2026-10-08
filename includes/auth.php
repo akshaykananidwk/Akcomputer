@@ -17,7 +17,7 @@ function permission_catalog() {
         'purchases' => ['view', 'add', 'edit', 'delete', 'all'],
         'purchase_return' => ['view', 'add', 'delete'],
         'items' => ['view', 'add', 'edit', 'delete', 'cost'],
-        'parties' => ['view', 'add', 'edit', 'delete'],
+        'parties' => ['view', 'add', 'edit', 'delete', 'contact'],   // contact = see the full mobile number
         'stock' => ['view', 'adjust'],
         'handover' => ['view', 'add', 'accept', 'all'],
         'tasks' => ['view', 'add', 'edit', 'all'],
@@ -54,6 +54,11 @@ function permission_catalog() {
         'locations' => ['view', 'add', 'edit', 'delete'],
         'companies' => ['view', 'add', 'edit', 'delete'],
         'settings' => ['view', 'edit'],
+        // the team: everyone sees their own attendance/leave/payslip; these are for seeing and managing everyone's
+        'hr' => ['view', 'edit', 'payroll'],
+        'deliveries' => ['view', 'assign'],
+        // loans, assets, budgets, partners' share, GST returns and closing the year
+        'books' => ['view', 'edit'],
     ];
 }
 
@@ -76,6 +81,7 @@ function permission_labels() {
         'webhooks' => 'Webhooks',
         'users' => 'Staff Users', 'roles' => 'Roles', 'locations' => 'Locations',
         'companies' => 'Companies / Firms', 'settings' => 'Settings',
+        'hr' => 'Staff: attendance, leave, payroll', 'deliveries' => 'Deliveries', 'books' => 'Books: loans, assets, budget, partners, GST returns',
     ];
 }
 

@@ -126,6 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
         $pdo->commit();
         log_activity('payment_add', "P-$pid party={$party['name']} $dir $amount");
         fire_webhook('payment.recorded', ['payment_id' => $pid, 'party' => $party['name'], 'direction' => $dir, 'amount' => $amount]);
+        if ($dir === 'in') big_payment_alert($amount, $party['name']);
 
         // WhatsApp receipt to party (payment-in only)
         if ($dir === 'in' && post('send_wa') && $party['mobile']) {
