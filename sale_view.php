@@ -7,7 +7,7 @@ require_once __DIR__ . '/includes/voice_bridge.php';   // voice_bridge_button()
 $id = (int)get('id');
 $token = get('token');
 $sale = $id ? row('SELECT s.*, c.name company_name, c.gstin, c.is_gst, c.address c_address, c.phone c_phone, c.terms c_terms, c.logo c_logo,
-                   l.name loc_name, l.city loc_city, u2.name staff_name, p.name party_name, p.gstin party_gstin, p.address party_address
+                   l.name loc_name, l.city loc_city, u2.name staff_name, p.name party_name, p.gstin party_gstin, p.address party_address, p.email party_email
                    FROM sales s
                    JOIN companies c ON c.id = s.company_id
                    JOIN locations l ON l.id = s.location_id
@@ -93,6 +93,17 @@ if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'signatu
 }
 
 // ---------- WhatsApp send ----------
+// 📧 the bill as a PDF by e-mail; a new address is kept on the party for next time
+if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'email_bill') {
+    $to = mb_strtolower(trim((string)post('to')));
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) { flash('Write a correct e-mail address.', 'error'); redirect('sale_view.php?id=' . $id); }
+    if (!api_rate_ok('billmail:' . current_user()['id'], 30, 3600)) { flash('Too many e-mails just now. Wait a little.', 'error'); redirect('sale_view.php?id=' . $id); }
+    $ok = sale_email_send($id, $to);
+    if ($ok && $sale['party_id'] && empty($sale['party_email'])) { try { q("UPDATE parties SET email = ? WHERE id = ? AND (email IS NULL OR email = '')", [$to, $sale['party_id']]); } catch (Exception $e) {} }
+    log_activity('bill_email', $sale['invoice_no'] . ' -> ' . $to . ($ok ? '' : ' FAILED'));
+    flash($ok ? "Bill sent to $to." : 'The e-mail did not go: ' . mail_last_error(), $ok ? 'success' : 'error');
+    redirect('sale_view.php?id=' . $id);
+}
 if (!$public && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'whatsapp') {
     // one rule, two callers: this button and the phone app (api.php?r=whatsapp)
     $res = sale_whatsapp_send($id, post('mobile'));
@@ -521,9 +532,11 @@ if ($planPub): ?>
   </div>
   <div class="inv-bottom-strip">This is a computer generated invoice.<?= powered_by_line() !== '' ? ' · ' . e(powered_by_line()) : '' ?></div>
   <p class="muted mt" style="font-size:11px">Billed by: <?= e($sale['staff_name']) ?><?= $sale['notes'] ? ' | ' . e($sale['notes']) : '' ?></p>
-  <?php if (!$public): ?><p class="no-print"><button type="button" class="btn btn-sm btn-outline" data-say="<?= e(say_text('bill', $sale['invoice_no'], $sale['total'], $sale['paid'], max(0, $due))) ?>">🔊 Read aloud</button>
+  <?php if (!$public): ?><div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0"><button type="button" class="btn btn-sm btn-outline" data-say="<?= e(say_text('bill', $sale['invoice_no'], $sale['total'], $sale['paid'], max(0, $due))) ?>">🔊 Read aloud</button>
     <a class="btn btn-sm btn-outline" href="receipt.php?id=<?= (int)$sale['id'] ?>">🧾 Small receipt / Bluetooth</a>
-    <?php if (setting('shiprocket_email', '') !== '' && !$sale['is_cancelled']): ?><a class="btn btn-sm btn-outline" href="shipping.php?sale=<?= (int)$sale['id'] ?>">📦 Ship by courier</a><?php endif; ?></p>
+    <form method="post" style="display:inline-flex;gap:4px" class="no-print"><?= csrf_field() ?><input type="hidden" name="do" value="email_bill">
+      <input type="email" name="to" placeholder="customer@email" value="<?= e($sale['party_email'] ?? '') ?>" style="max-width:190px;padding:4px 8px" required><button class="btn btn-sm btn-outline">📧 E-mail bill</button></form>
+    <?php if (setting('shiprocket_email', '') !== '' && !$sale['is_cancelled']): ?><a class="btn btn-sm btn-outline" href="shipping.php?sale=<?= (int)$sale['id'] ?>">📦 Ship by courier</a><?php endif; ?></div>
   <?php if (can('deliveries.assign') && !$sale['is_cancelled']):
       try { $dlv = row('SELECT d.status, us.name FROM deliveries d LEFT JOIN users us ON us.id = d.assigned_to WHERE d.sale_id = ? ORDER BY d.id DESC LIMIT 1', [$sale['id']]); } catch (Exception $e) { $dlv = null; } ?>
   <form method="post" action="delivery.php" class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0"><?= csrf_field() ?><input type="hidden" name="do" value="assign"><input type="hidden" name="sale_id" value="<?= (int)$sale['id'] ?>">

@@ -55,7 +55,7 @@ if ($r === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $usr = row('SELECT u.*, r.name role_name, r.permissions role_permissions, l.name location_name
                 FROM users u JOIN roles r ON r.id = u.role_id JOIN locations l ON l.id = u.location_id
-                WHERE u.username = ? AND u.is_active = 1', [$username]);
+                WHERE (u.username = ? OR (u.email IS NOT NULL AND u.email = ?)) AND u.is_active = 1', [$username, mb_strtolower($username)]);
     if (!$usr || !password_verify($password, $usr['password'])) {
         if (function_exists('login_throttle_hit')) login_throttle_hit($username);
         api_json(['error' => 'The username or password is wrong'], 401);

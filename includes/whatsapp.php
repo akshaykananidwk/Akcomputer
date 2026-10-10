@@ -543,3 +543,21 @@ function sale_whatsapp_send($saleId, $mobile = null) {
     return ['ok' => false, 'error' => whatsapp_last_error() ?: 'WhatsApp send failed',
             'mobile' => $mobile, 'pdf' => $pdfUrl];
 }
+
+
+/** The same bill by e-mail: PDF attached, what is still due, the pay link.
+ *  Lives next to sale_whatsapp_send() so both say the same thing. */
+function sale_email_send($saleId, $to) {
+    require_once __DIR__ . '/pdf.php';
+    $sale = row('SELECT s.*, c.name company_name, c.gstin, c.is_gst, c.address c_address, c.phone c_phone, c.terms c_terms, l.name loc_name, l.city loc_city, p.name party_name, p.gstin party_gstin
+                 FROM sales s JOIN companies c ON c.id = s.company_id JOIN locations l ON l.id = s.location_id LEFT JOIN parties p ON p.id = s.party_id WHERE s.id = ?', [(int)$saleId]);
+    if (!$sale) return false;
+    $items = all("SELECT si.*, COALESCE(i.name, '(deleted item)') name, i.unit FROM sale_items si LEFT JOIN items i ON i.id = si.item_id WHERE si.sale_id = ? AND si.qty > 0", [$sale['id']]);
+    $due = (float)$sale['total'] - (float)$sale['paid'];
+    $pay = $due > 0.009 ? invoice_pay_url($sale) : null;
+    return send_mail($to, 'Bill ' . $sale['invoice_no'] . ' from ' . setting('app_name', ''), mail_html('Your bill ' . $sale['invoice_no'],
+        '<p>Thank you for shopping with us. Your bill is attached.</p><p>Total: <b>₹' . money($sale['total']) . '</b>'
+        . ($due > 0.009 ? '<br>Still to pay: <b>₹' . money($due) . '</b>' : '<br>Paid in full ✔') . '</p>'
+        . ($pay ? '<p><a href="' . e($pay) . '">Pay online</a></p>' : '')),
+        '', [[preg_replace('/[^\w\-]/', '_', $sale['invoice_no']) . '.pdf', invoice_pdf($sale, $items), 'application/pdf']]);
+}

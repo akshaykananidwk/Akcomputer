@@ -586,6 +586,7 @@ if ($cat === '' || !isset($categories[$cat])) {
     <h1>⚙️ Settings</h1>
     <div class="pg-sub">Manage your billing, business, security and system preferences.</div>
     <?php if (can('settings.edit')): require_once __DIR__ . '/includes/business_packs.php'; ?><div class="pg-sub"><a href="business.php">🏷️ Type of business: <b><?= e(business_label(biz_type())) ?></b> — change →</a></div><?php endif; ?>
+    <?php if (can('settings.edit')): ?><div class="pg-sub"><a href="connections.php">🔗 Connections: e-mail sending, Google Sheets, UPI, courier →</a></div><?php endif; ?>
   </div>
 </div>
 

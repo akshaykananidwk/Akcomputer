@@ -39,8 +39,12 @@ if ($open && $_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
         if ($needOtp) {
             $code = (string)random_int(100000, 999999);
             $_SESSION['signup_otp'] = ['hash' => password_hash($code, PASSWORD_DEFAULT), 'until' => time() + 600, 'tries' => 0];
-            if (!send_otp_whatsapp($in['owner_mobile'], $code, 'your new shop')) $err = 'The OTP could not be sent on WhatsApp. Please check the number.';
-            else $step = 'otp';
+            // the same code on WhatsApp and, when given, by e-mail - either one is enough
+            $sentWa = send_otp_whatsapp($in['owner_mobile'], $code, 'your new shop');
+            $sentMail = $in['owner_email'] !== '' && send_mail($in['owner_email'], 'Your code: ' . $code, mail_html('Your sign-up code',
+                '<p>Your code to start <b>' . e($in['name']) . '</b> is:</p><p style="font-size:28px;font-weight:bold;letter-spacing:4px">' . $code . '</p><p style="color:#64748b;font-size:13px">It works for 10 minutes. If you did not ask for it, ignore this e-mail.</p>'));
+            if (!$sentWa && !$sentMail) $err = 'The code could not be sent on WhatsApp' . ($in['owner_email'] !== '' ? ' or e-mail' : '') . '. Please check the number' . ($in['owner_email'] !== '' ? ' and e-mail' : ' or add an e-mail') . '.';
+            else { $step = 'otp'; $_SESSION['signup_sent'] = trim(($sentWa ? 'WhatsApp ' . $in['owner_mobile'] : '') . ($sentWa && $sentMail ? ' and ' : '') . ($sentMail ? 'e-mail ' . $in['owner_email'] : '')); }
         } else {
             $step = 'make';
         }
@@ -58,8 +62,16 @@ if ($step === 'make') {
     try {
         $in['username'] = $in['owner_mobile'];
         $done = provision_tenant($in);
-        unset($_SESSION['signup'], $_SESSION['signup_otp']);
+        unset($_SESSION['signup'], $_SESSION['signup_otp'], $_SESSION['signup_sent']);
         log_activity('shop_signup', $done['slug'] . ' (' . $done['name'] . ')');
+        if ($in['owner_email'] !== '') {
+            $loginUrl = ((defined('BASE_URL') && BASE_URL ? (parse_url(BASE_URL, PHP_URL_SCHEME) ?: 'https') : 'https') . '://' . $done['domain'] . '/login.php');
+            send_mail($in['owner_email'], 'Your shop software is ready — ' . $done['name'], mail_html('Welcome! Your software is ready',
+                '<p>Namaste ' . e($in['owner_name']) . ',</p><p><b>' . e($done['name']) . '</b> is ready.</p>'
+                . '<p><a href="' . e($loginUrl) . '" style="display:inline-block;background:#1a56db;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none">Open your software</a></p>'
+                . '<p>Address: <a href="' . e($loginUrl) . '">' . e($done['domain']) . '</a><br>Login: <b>' . e($in['owner_mobile']) . '</b> or <b>' . e($in['owner_email']) . '</b><br>Password: the one you chose.'
+                . ($done['trial_ends'] ? '<br>Free till: <b>' . dmy($done['trial_ends']) . '</b>' : '') . '</p><p>Forgot the password? Use "Forgot password" on the login page — a link comes to this e-mail.</p>'));
+        }
         try { tg_notify_admins("🎉 New shop signed up: {$done['name']}\n{$done['owner_name']} +91{$done['owner_mobile']}\n" . business_label($done['business_type']) . "\nhttps://{$done['domain']}"); } catch (Exception $e) {}
         $step = 'done';
     } catch (Exception $e) {
@@ -101,11 +113,11 @@ include __DIR__ . '/includes/header.php';
     <h3 style="margin-top:0">✅ Your shop is ready</h3>
     <p><strong><?= e($done['name']) ?></strong> — your own address:</p>
     <p><a class="btn btn-block" href="<?= e($scheme . '://' . $done['domain'] . '/login.php') ?>"><?= e($done['domain']) ?> →</a></p>
-    <p class="muted">Log in with your mobile number <strong><?= e($done['owner_mobile']) ?></strong> and the password you chose.
+    <p class="muted">Log in with your mobile number <strong><?= e($done['owner_mobile']) ?></strong><?= $done['owner_email'] ?? '' ? ' or e-mail <strong>' . e($done['owner_email']) . '</strong>' : '' ?> and the password you chose.
       Free trial till <strong><?= e(dmy($done['trial_ends'])) ?></strong>.</p>
   <?php elseif ($step === 'otp'): ?>
     <?php if ($err): ?><div class="flash flash-error"><?= e($err) ?></div><?php endif; ?>
-    <p>We sent a 6-digit OTP on WhatsApp to <strong>+91 <?= e($in['owner_mobile'] ?? '') ?></strong>.</p>
+    <p>We sent a 6-digit code to <strong><?= e($_SESSION['signup_sent'] ?? ('WhatsApp ' . ($in['owner_mobile'] ?? ''))) ?></strong>.</p>
     <form method="post">
       <?= csrf_field() ?><input type="hidden" name="do" value="verify">
       <div class="field"><label>OTP</label><input type="text" name="otp" inputmode="numeric" maxlength="6" required autofocus></div>

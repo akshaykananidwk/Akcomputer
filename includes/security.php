@@ -213,6 +213,7 @@ function establish_session($userId) {
     device_check($userId);
     $_SESSION['user_id'] = $userId;
     $_SESSION['last_activity'] = time();
+    $_SESSION['pwd_fp'] = pwd_fingerprint((string)val('SELECT password FROM users WHERE id = ?', [$userId]));   // see current_user()
     q('INSERT INTO user_sessions (user_id, session_token, ip_address, user_agent) VALUES (?,?,?,?)',
       [$userId, session_id(), client_ip(), client_user_agent()]);
     $_SESSION['session_row_id'] = insert_id();
@@ -267,3 +268,8 @@ function device_check($userId) {
         return $hadOne;
     } catch (Throwable $e) { return false; }   // before v89, or anything odd: never block a login
 }
+
+
+/** A short fingerprint of the stored password hash. Every password change makes a new
+ *  hash, so a login made before the change no longer matches and is ended. */
+function pwd_fingerprint($hash) { return substr(hash('sha256', 'pwd|' . (string)$hash), 0, 16); }

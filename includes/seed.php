@@ -5,7 +5,7 @@
 // so the two can never start differently.
 // Plain PDO on purpose: the installer runs before anything else is loaded.
 
-function shop_seed(PDO $pdo, $appName, $adminName, $adminUser, $adminMobile, $passHash, $city = '') {
+function shop_seed(PDO $pdo, $appName, $adminName, $adminUser, $adminMobile, $passHash, $city = '', $adminEmail = '') {
     // already seeded = it has a user. (Not "has a role": a migration may add a
     // ready-made role such as the CA's before the first seed runs.)
     if ((int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn()) return false;
@@ -40,5 +40,9 @@ function shop_seed(PDO $pdo, $appName, $adminName, $adminUser, $adminMobile, $pa
     $adminRole = (int)$pdo->query("SELECT id FROM roles WHERE name = 'Admin'")->fetchColumn();
     $pdo->prepare('INSERT INTO users (name, username, mobile, password, role_id, location_id) VALUES (?, ?, ?, ?, ?, ?)')
         ->execute([$adminName, $adminUser, $adminMobile, $passHash, $adminRole, $locId]);
+    // the owner can log in with their e-mail and get reset links there (v90)
+    if (filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) {
+        try { $pdo->prepare('UPDATE users SET email = ? WHERE id = ?')->execute([mb_strtolower($adminEmail), (int)$pdo->lastInsertId()]); } catch (Exception $e) {}
+    }
     return true;
 }

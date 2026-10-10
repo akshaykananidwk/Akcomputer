@@ -20,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'change_password') {
         redirect('my_account.php?tab=password');
     }
     q('UPDATE users SET password = ?, password_changed_at = NOW() WHERE id = ?', [password_hash(post('new_password'), PASSWORD_DEFAULT), $u['id']]);
+    $_SESSION['pwd_fp'] = pwd_fingerprint((string)val('SELECT password FROM users WHERE id = ?', [$u['id']]));   // this login made the change, so it stays
     log_activity('user_password_change');
     flash('Password updated.');
     redirect('my_account.php');
@@ -32,6 +33,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'display') {
     set_user_pref($u['id'], 'ui_simple', post('ui_simple') ? '1' : '0');
     flash('Saved.');
     redirect('my_account.php?tab=display');
+}
+
+// your own e-mail (to log in with, and for "Forgot password") - needs your password
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'change_email') {
+    $email = mb_strtolower(trim((string)post('email')));
+    if (!password_verify((string)($_POST['current_password'] ?? ''), $u['password'])) flash('Your current password is not right.', 'error');
+    elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) flash('That e-mail address does not look right.', 'error');
+    elseif ($email !== '' && val('SELECT id FROM users WHERE email = ? AND id <> ?', [$email, $u['id']])) flash('Another login already uses this e-mail.', 'error');
+    else {
+        $old = (string)($u['email'] ?? '');
+        q('UPDATE users SET email = ? WHERE id = ?', [$email ?: null, $u['id']]);
+        log_activity('user_email_change', $old . ' -> ' . $email);
+        if ($old !== '' && $old !== $email) send_mail($old, 'Your login e-mail was changed', mail_html('Your login e-mail was changed', '<p>The e-mail on login <b>' . e($u['username']) . '</b> is now ' . e($email ?: '(none)') . '. If this was not you, tell the shop owner at once.</p>'));
+        if ($email !== '' && $email !== $old) {
+            $ok = send_mail($email, 'Your e-mail is set — ' . setting('app_name', 'Shop'), mail_html('This e-mail is now on your login', '<p>You can log in with <b>' . e($email) . '</b> and get password-reset links here.</p>'));
+            flash($ok ? 'E-mail saved — a confirmation was sent to it.' : 'E-mail saved, but the confirmation could not be sent (' . mail_last_error() . '). Ask the owner to set up e-mail sending.', $ok ? 'success' : 'error');
+        } else flash('E-mail saved.');
+    }
+    redirect('my_account.php');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'setup_2fa_start') {
@@ -135,6 +155,12 @@ include __DIR__ . '/includes/header.php';
   <p class="mt">Password last changed: <?= $u['password_changed_at'] ? dmyt($u['password_changed_at']) : 'never (still your original password)' ?></p>
   <p>Two-factor authentication: <?= $u['totp_enabled'] ? '<span class="badge badge-ok">on</span>' : '<span class="badge badge-bad">off</span>' ?></p>
 </div>
+<form method="post" class="card" style="max-width:520px"><?= csrf_field() ?><input type="hidden" name="do" value="change_email">
+  <h3 style="margin-top:0">📧 Your e-mail</h3>
+  <p class="muted" style="margin-top:0">Log in with it, and get a link here if you forget your password.</p>
+  <div class="field"><label>E-mail</label><input type="email" name="email" maxlength="120" value="<?= e($u['email'] ?? '') ?>"></div>
+  <div class="field"><label>Your current password</label><input type="password" name="current_password" required autocomplete="current-password"></div>
+  <button class="btn btn-sm" type="submit">Save e-mail</button></form>
 
 <?php elseif ($tab === 'display'): $ui = ui_prefs(); ?>
 <form method="post" class="card" style="max-width:560px"><?= csrf_field() ?><input type="hidden" name="do" value="display">

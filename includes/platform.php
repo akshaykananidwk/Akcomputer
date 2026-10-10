@@ -146,7 +146,7 @@ function provision_tenant(array $in) {
 function tenant_install($tid, $h, $n, $u, $pw, array $in) {
     $pdo = tenant_pdo($h, $n, $u, $pw);
     $mig = dbmigrate_on($pdo);
-    shop_seed($pdo, $in['name'], $in['owner_name'] ?: 'Owner', $in['username'] ?: 'admin', $in['owner_mobile'] ?? '', $in['pass_hash'], $in['city'] ?? '');
+    shop_seed($pdo, $in['name'], $in['owner_name'] ?: 'Owner', $in['username'] ?: 'admin', $in['owner_mobile'] ?? '', $in['pass_hash'], $in['city'] ?? '', $in['owner_email'] ?? '');
     business_pack_apply($pdo, $in['business_type'] ?? 'general', !empty($in['with_samples']));
     // once more now that the first rows exist: migrations that widen a
     // role's permissions only find the roles on this second pass

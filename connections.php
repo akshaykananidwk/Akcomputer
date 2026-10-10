@@ -6,6 +6,18 @@ require_perm('settings.edit');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $do = post('do');
+    if ($do === 'smtp') {
+        foreach (['smtp_host', 'smtp_user', 'smtp_from', 'smtp_from_name'] as $k) set_setting($k, trim((string)post($k)));
+        set_setting('smtp_port', (string)(in_array((int)post('smtp_port'), [25, 465, 587, 2525], true) ? (int)post('smtp_port') : 587));
+        if (post('smtp_pass') !== '') set_setting('smtp_pass', (string)post('smtp_pass'));
+        flash('E-mail settings saved.');
+    }
+    if ($do === 'smtp_test') {
+        $to = trim((string)post('test_to')) ?: (string)(current_user()['email'] ?? '');
+        $ok = send_mail($to, 'Test e-mail from ' . setting('app_name', 'the shop'), mail_html('E-mail works ✔', '<p>If you can read this, password-reset links and welcome mails will reach people.</p>'));
+        flash($ok ? "Test e-mail sent to $to — check the inbox (and spam)." : 'It did not go: ' . mail_last_error(), $ok ? 'success' : 'error');
+        redirect('connections.php#smtp');
+    }
     if ($do === 'feeds_new') { set_setting('feeds_token', bin2hex(random_bytes(20))); flash('New links made — the old ones stop working.'); }
     if ($do === 'upi_new') { set_setting('upi_hook_secret', bin2hex(random_bytes(20))); flash('New phone link made — put it in the SMS app again.'); }
     if ($do === 'mail') {
@@ -28,6 +40,27 @@ include __DIR__ . '/includes/header.php';
 ?>
 <a class="settings-back" href="settings.php">← Settings</a>
 <div class="page-head"><h1>🔗 Connections</h1></div>
+
+<?php $mc = mail_conf(); $ownSmtp = setting('smtp_host', '') !== ''; ?>
+<div class="card" id="smtp"><h3 style="margin-top:0">✉️ E-mail sending</h3>
+  <p class="muted">Used for "Forgot password" links, welcome e-mails, new shop sign-ups and bills by e-mail.
+  <?= tenant_active() && !$ownSmtp ? ($mc['host'] !== '' ? ' Right now the platform\'s e-mail server is used — fill this only to send from your own address.' : '') : '' ?>
+  For Gmail: server <code>smtp.gmail.com</code>, port <code>587</code>, your Gmail and an <b>app password</b> (Google account → Security → 2-step → App passwords). On cPanel hosting: make a mailbox (e.g. no-reply@yourdomain) and use <code>mail.yourdomain</code>, port <code>465</code>.</p>
+  <form method="post" class="form-row cols-3"><?= csrf_field() ?><input type="hidden" name="do" value="smtp">
+    <div><label>SMTP server</label><input name="smtp_host" value="<?= e(setting('smtp_host', '')) ?>" placeholder="smtp.gmail.com"></div>
+    <div><label>Port</label><select name="smtp_port"><?php foreach ([587 => '587 (TLS)', 465 => '465 (SSL)', 25 => '25', 2525 => '2525'] as $pv => $pl): ?><option value="<?= $pv ?>" <?= (int)setting('smtp_port', '587') === $pv ? 'selected' : '' ?>><?= $pl ?></option><?php endforeach; ?></select></div>
+    <div><label>Login (e-mail)</label><input name="smtp_user" value="<?= e(setting('smtp_user', '')) ?>" autocomplete="off"></div>
+    <div><label>Password <span class="muted"><?= setting('smtp_pass', '') !== '' ? '(saved — blank keeps it)' : '' ?></span></label><input type="password" name="smtp_pass" autocomplete="new-password"></div>
+    <div><label>From address</label><input name="smtp_from" value="<?= e(setting('smtp_from', '')) ?>" placeholder="same as login"></div>
+    <div><label>From name</label><input name="smtp_from_name" value="<?= e(setting('smtp_from_name', '')) ?>" placeholder="<?= e(setting('app_name', '')) ?>"></div>
+    <div><button class="btn btn-sm">Save</button></div></form>
+  <form method="post" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><?= csrf_field() ?><input type="hidden" name="do" value="smtp_test">
+    <input type="email" name="test_to" placeholder="send a test to…" value="<?= e(current_user()['email'] ?? '') ?>" style="max-width:260px" required><button class="btn btn-sm btn-outline">📨 Send test e-mail</button></form>
+  <?php try { $ml = all('SELECT * FROM mail_log ORDER BY id DESC LIMIT 5'); } catch (Exception $e) { $ml = []; } if ($ml): ?>
+  <details class="mt"><summary style="cursor:pointer;font-size:13px">Last e-mails</summary>
+    <?php foreach ($ml as $m): ?><div style="font-size:12.5px"><?= $m['ok'] ? '✅' : '❌' ?> <?= dmyt($m['created_at']) ?> · <?= e($m['to_addr']) ?> · <?= e($m['subject']) ?><?= $m['ok'] ? '' : ' — ' . e($m['error']) ?></div><?php endforeach; ?></details>
+  <?php endif; ?>
+</div>
 
 <div class="card" id="sheets"><h3 style="margin-top:0">📊 Google Sheets &amp; 📅 Google Calendar</h3>
   <?php if ($feed === ''): ?><p class="muted">Make secret links to see sales, stock and dues live in a Google Sheet, and deliveries, AMC, EMIs, cheques and appointments in Google Calendar. No phone numbers or addresses are in them.</p>

@@ -58,6 +58,7 @@ require_once __DIR__ . '/plan.php';
 require_once __DIR__ . '/biz.php';   // the kind of business: IMEI, weight, tables, appointments...
 require_once __DIR__ . '/i18n.php';  // Gujarati / Hindi screens, text size, simple menu
 require_once __DIR__ . '/hr.php';    // attendance, leave, salary; owner alerts
+require_once __DIR__ . '/mailer.php'; // e-mail: SMTP or the server's mail()
 tenant_plan_guard();   // another shop: its plan's parts only, and paid up
 
 function base_url($path = '') {

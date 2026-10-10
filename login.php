@@ -60,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $err = 'Too many failed attempts. Try again in a few minutes.';
             record_login_history(null, $username, false, 'throttled');
         } else {
-            $user = row('SELECT * FROM users WHERE username = ? AND is_active = 1', [$username]);
+            $user = login_find_user($username);   // username, or the e-mail on the account
             if ($user && password_verify(post('password'), $user['password'])) {
                 if (!ip_allowed_for($user, client_ip())) {
                     $err = 'Login is not allowed from this network. Contact an admin.';
@@ -125,7 +125,7 @@ include __DIR__ . '/includes/header.php';
     <?php else: ?>
       <form method="post">
         <?= csrf_field() ?>
-        <div class="field"><label>Username</label><input type="text" name="username" required autofocus autocapitalize="none"></div>
+        <div class="field"><label>Username or e-mail</label><input type="text" name="username" required autofocus autocapitalize="none" autocomplete="username"></div>
         <div class="field"><label>Password</label><input type="password" name="password" required></div>
         <button class="btn btn-block" type="submit">Login</button>
       </form>

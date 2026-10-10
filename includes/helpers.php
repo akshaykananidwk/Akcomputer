@@ -2353,3 +2353,29 @@ function edit_code_ok($saleId, $code) {
     log_activity('edit_code_used', 'sale ' . (int)$saleId);
     return true;
 }
+
+
+/** The login someone typed: their username, or the e-mail saved on their account. */
+function login_find_user($typed) {
+    $t = trim((string)$typed);
+    if ($t === '') return null;
+    $u = row('SELECT * FROM users WHERE username = ? AND is_active = 1', [$t]);
+    if (!$u && strpos($t, '@') !== false) {
+        try { $u = row('SELECT * FROM users WHERE email = ? AND is_active = 1', [mb_strtolower($t)]); } catch (Exception $e) { $u = null; }   // before v90
+    }
+    return $u ?: null;
+}
+
+/** Make a password-reset link for one login: 30 minutes, used once; only its hash is kept. */
+function password_reset_link($userId) {
+    $tok = bin2hex(random_bytes(32));
+    q('UPDATE password_resets SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL', [(int)$userId]);   // only the newest link works
+    q('INSERT INTO password_resets (user_id, token_hash, expires_at, ip) VALUES (?,?,DATE_ADD(NOW(), INTERVAL 30 MINUTE),?)', [(int)$userId, hash('sha256', $tok), client_ip()]);
+    return base_url('reset_password.php?t=' . $tok);
+}
+/** The login a reset link belongs to, while it is still valid. */
+function password_reset_user($tok) {
+    if (!preg_match('/^[a-f0-9]{64}$/', (string)$tok)) return null;
+    return row('SELECT r.id reset_id, u.* FROM password_resets r JOIN users u ON u.id = r.user_id AND u.is_active = 1
+                WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > NOW()', [hash('sha256', $tok)]);
+}

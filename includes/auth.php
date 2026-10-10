@@ -99,6 +99,12 @@ function current_user() {
                      JOIN roles r ON r.id = u.role_id
                      JOIN locations l ON l.id = u.location_id
                      WHERE u.id = ? AND u.is_active = 1', [$_SESSION['user_id']]);
+        // the password was changed after this login (reset link, OTP, the admin): this login ends now
+        if ($user && isset($_SESSION['pwd_fp']) && !hash_equals($_SESSION['pwd_fp'], pwd_fingerprint($user['password']))) {
+            $_SESSION = [];
+            $user = null;
+            return null;
+        }
         if ($user) {
             $perms = json_decode($user['role_permissions'] ?: '[]', true) ?: [];
             $extra = json_decode($user['permissions'] ?: '[]', true) ?: [];

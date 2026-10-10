@@ -50,6 +50,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         flash('Only the admin can give someone the Admin role.', 'error');
         redirect('users.php');
     }
+    // the e-mail: used to log in and to get a password-reset link - one account each
+    $email = mb_strtolower(trim((string)post('email')));
+    if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) { flash('That e-mail address does not look right.', 'error'); redirect('users.php?action=' . ($id ? "edit&id=$id" : 'new')); }
+    if ($email !== '' && val('SELECT id FROM users WHERE email = ? AND id <> ?', [$email, $id])) { flash('Another login already uses this e-mail.', 'error'); redirect('users.php?action=' . ($id ? "edit&id=$id" : 'new')); }
     $extra = array_values((array)post('extra_perms', []));
     $data = [post('name'), post('username'), post('mobile'), (int)post('role_id'), (int)post('location_id'),
              json_encode($extra), post('is_active') ? 1 : 0];
@@ -62,8 +66,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
           array_merge($data, [$id]));
         try { q('UPDATE users SET location_locked = ? WHERE id = ?', [post('location_locked') ? 1 : 0, $id]); } catch (Exception $e) {}
         try { q('UPDATE users SET dob = ? WHERE id = ?', [user_dob_value(post('dob')), $id]); } catch (Exception $e) { /* pre-v86 */ }
+        try { q('UPDATE users SET email = ? WHERE id = ?', [$email ?: null, $id]); } catch (Exception $e) { /* pre-v90 */ }
         if (post('password') !== '') {
             q('UPDATE users SET password=?, password_changed_at=NOW() WHERE id=?', [password_hash(post('password'), PASSWORD_DEFAULT), $id]);
+            if ($id === (int)current_user()['id']) $_SESSION['pwd_fp'] = pwd_fingerprint((string)val('SELECT password FROM users WHERE id = ?', [$id]));   // your own change keeps you logged in
         }
         flash('User updated.');
     } else {
@@ -76,6 +82,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $newId = insert_id();
         try { q('UPDATE users SET location_locked = ? WHERE id = ?', [post('location_locked') ? 1 : 0, $newId]); } catch (Exception $e) {}
         try { q('UPDATE users SET dob = ? WHERE id = ?', [user_dob_value(post('dob')), $newId]); } catch (Exception $e) { /* pre-v86 */ }
+        try { q('UPDATE users SET email = ? WHERE id = ?', [$email ?: null, $newId]); } catch (Exception $e) { /* pre-v90 */ }
+        if ($email !== '' && post('send_welcome')) {
+            send_mail($email, 'Your login for ' . setting('app_name', 'the shop'), mail_html('Your login is ready',
+                '<p>Hello ' . e(post('name')) . ',</p><p>You can now log in at <a href="' . e(base_url('login.php')) . '">' . e(base_url('login.php')) . '</a></p>'
+                . '<p>Username: <b>' . e(post('username')) . '</b> (or this e-mail)<br>Password: the one the owner gives you. If you forget it, use "Forgot password" — a link comes to this e-mail.</p>'));
+        }
         flash('User created.');
     }
     log_activity('user_save', post('username'));
@@ -165,6 +177,8 @@ if ($action === 'new' || $action === 'edit') {
         </div>
         <div class="form-row cols-3">
           <div><label>Mobile (WhatsApp, for OTP) *</label><input type="tel" name="mobile" value="<?= e($usr['mobile'] ?? '') ?>" required></div>
+          <div><label>E-mail <span class="muted" style="font-weight:normal">(log in with it; password-reset link comes here)</span></label><input type="email" name="email" maxlength="120" value="<?= e($usr['email'] ?? '') ?>" autocomplete="off">
+            <?php if (empty($usr)): ?><label class="check-inline" style="font-weight:normal"><input type="checkbox" name="send_welcome" value="1" checked> E-mail them the login details</label><?php endif; ?></div>
           <div><label>Role (department)</label>
             <select name="role_id">
               <?php foreach ($roles as $ro): ?><option value="<?= $ro['id'] ?>" <?= ($usr['role_id'] ?? '') == $ro['id'] ? 'selected' : '' ?>><?= e($ro['name']) ?></option><?php endforeach; ?>
