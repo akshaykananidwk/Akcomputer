@@ -1276,3 +1276,11 @@ $_SESSION = $_SESSION_BAK;
 t_ok('a big expense from staff waits for approval, not in the books', $e2['pending'] && !val('SELECT id FROM expenses WHERE amount = 5000 AND client_uuid IS NOT NULL AND created_by = ? AND exp_date = ?', [$staff['id'], today()]));
 set_setting('expense_approval_above', $old);
 $_POST = [];
+
+t_group('App API — one app finds any shop, and only by its code');
+$fs = substr($apiSrc, strpos($apiSrc, "if (\$r === 'findshop'"), 1600);
+t_ok('the shop lookup is rate-limited', strpos($fs, "api_rate_ok('findshop:'") !== false);
+t_ok('...it looks up a code or an address only - never an owner\'s mobile or e-mail',
+     strpos($fs, 'owner_mobile') === false && strpos($fs, 'owner_email') === false);
+t_ok('...a closed or half-made shop is not handed out', strpos($fs, "['provisioning', 'closed']") !== false);
+t_ok('the app logs in by username OR e-mail', strpos($apiSrc, "u.username = ? OR (u.email IS NOT NULL AND u.email = ?)") !== false);

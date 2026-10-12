@@ -164,16 +164,21 @@ var App = {
     var self = this;
     this.el('top').hidden = true;
     this.el('tabs').hidden = true;
-    DB.meta('server', '').then(function (srv) {
+    // the MAIN address (where shop codes are looked up), not the last shop's
+    Promise.all([DB.meta('mainserver', ''), DB.meta('shopcode', '')]).then(function (a) {
+      var srv = a[0], code = a[1];
       var server = srv || self.SERVER;
       self.el('main').innerHTML =
         '<div class="logo">AK Computer</div>' +
         '<p class="center muted" style="margin:0 0 20px">Your shop, in your pocket</p>' +
         '<div class="card">' +
-        '<label>Username</label><input type="text" id="l_user" autocapitalize="off" autocorrect="off" autocomplete="username">' +
+        '<label>Shop code <span style="font-weight:400">(leave empty for AK Computer)</span></label>' +
+        '<input type="text" id="l_shopcode" autocapitalize="off" autocorrect="off" placeholder="e.g. rammobile" value="' + self.esc(code) + '">' +
+        '<label>Username or e-mail</label><input type="text" id="l_user" autocapitalize="off" autocorrect="off" autocomplete="username">' +
         '<label>Password</label><input type="password" id="l_pass" autocomplete="current-password">' +
         '<div class="err" id="l_err"></div>' +
         '<button class="btn" id="l_go">Log in</button>' +
+        '<p class="center" style="margin:12px 0 0;font-size:14px"><a href="#" id="l_forgot">Forgot password?</a></p>' +
         '</div>' +
         '<button class="btn sec" id="l_shop">🛒 Browse products &amp; prices</button>' +
         '<p class="center muted" style="font-size:13px;margin-top:16px">' +
@@ -187,6 +192,13 @@ var App = {
       self.el('l_pass').addEventListener('keydown', function (e) { if (e.key === 'Enter') self.doLogin(); });
       self.el('l_user').addEventListener('keydown', function (e) { if (e.key === 'Enter') self.el('l_pass').focus(); });
       self.el('l_shop').addEventListener('click', function () { Shop.enter(); });
+      self.el('l_forgot').addEventListener('click', function (e) {
+        e.preventDefault();
+        // the website's own page: a reset link by e-mail or an OTP on WhatsApp.
+        // It opens in the phone's browser - nothing here is logged in yet.
+        self.shopServer().then(function (srv) { window.location.href = srv + '/forgot_password.php'; })
+          .catch(function (er) { self.el('l_err').textContent = er.message; });
+      });
       self.el('l_adv').addEventListener('click', function (e) {
         e.preventDefault();
         self.el('l_advbox').hidden = !self.el('l_advbox').hidden;
@@ -195,19 +207,51 @@ var App = {
     });
   },
 
+  /** Where this shop lives. Empty code = the main shop (or the address typed
+   *  under "Server:"); a code is looked up on the main address, which knows
+   *  every shop on the software. A full address is used as it is. */
+  shopServer: function () {
+    var main = ((this.el('l_srv') && this.el('l_srv').value) || '').trim().replace(/\/+$/, '') || this.SERVER;
+    var code = ((this.el('l_shopcode') && this.el('l_shopcode').value) || '').trim();
+    if (!code) return Promise.resolve(main);
+    if (/^https?:\/\//i.test(code)) return Promise.resolve(code.replace(/\/+$/, ''));
+    if (!navigator.onLine) return Promise.reject(new Error('You need a network to log in the first time'));
+    return Sync.fetchJson(main + '/api.php?r=findshop&code=' + encodeURIComponent(code), {}, 15000).then(function (res) {
+      if (!res.ok || !res.data || !res.data.url) throw new Error((res.data && res.data.error) || 'Could not find that shop');
+      return res.data.url;
+    });
+  },
+
   doLogin: function () {
     var self = this;
-    var srv = (this.el('l_srv').value || '').trim() || this.SERVER;
     var usr = this.el('l_user').value.trim();
     var pwd = this.el('l_pass').value;
     var err = this.el('l_err');
     err.textContent = '';
-    if (!usr) { err.textContent = 'Enter your username'; this.el('l_user').focus(); return; }
+    if (!usr) { err.textContent = 'Enter your username or e-mail'; this.el('l_user').focus(); return; }
     if (!pwd) { err.textContent = 'Enter your password'; this.el('l_pass').focus(); return; }
     if (!navigator.onLine) { err.textContent = 'You need a network to log in the first time'; return; }
     var btn = this.el('l_go');
     btn.disabled = true; btn.textContent = 'Checking…';
-    Sync.login(srv, usr, pwd, 'Android').then(function (d) {
+    var code = this.el('l_shopcode').value.trim();
+    var newSrv;
+    this.shopServer().then(function (srv) {
+      newSrv = srv;
+      return Promise.all([DB.meta('server', ''), DB.all('outbox')]);
+    }).then(function (a) {
+      var old = a[0], waiting = a[1].length;
+      // ONE shop per phone at a time. Bills written for one shop must never
+      // be sent to another, and one shop's items must not show in another's.
+      if (old && old !== newSrv) {
+        if (waiting) throw new Error(waiting + ' entries on this phone are still waiting for the other shop (' +
+                                     old.replace(/^https?:\/\//, '') + '). Log in to that shop and sync them first.');
+        return DB.clearAll();
+      }
+    }).then(function () {
+      return Sync.login(newSrv, usr, pwd, 'Android');
+    }).then(function (d) {
+      DB.setMeta('shopcode', code);
+      DB.setMeta('mainserver', (self.el('l_srv').value || '').trim().replace(/\/+$/, ''));
       self.user = d.user;
       btn.textContent = 'Getting your data…';
       // masters first - the app is usable the moment they land - then the
@@ -919,7 +963,10 @@ var App = {
       self.el('s_out').addEventListener('click', function () {
         Sync.status().then(function (s) {
           if (s.pending && !confirm(s.pending + ' entries have not been sent yet. Logging out will lose them. Continue?')) return;
-          DB.clearAll().then(function () { self.user = null; self.go('login'); });
+          // the shop code stays: the same people log back in to the same shop
+          DB.meta('shopcode', '').then(function (code) {
+            return DB.clearAll().then(function () { return DB.setMeta('shopcode', code); });
+          }).then(function () { self.user = null; self.go('login'); });
         });
       });
     });

@@ -80,6 +80,29 @@ if ($r === 'login' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ---------------------------------------------------------------------------
+// WHICH SHOP? One app serves every shop on this software. A shop's staff type
+// its code (the name in its web address, e.g. "rammobile") and the app asks
+// the main address where that shop lives. Only a code or an address is looked
+// up - never an owner's mobile or e-mail, which would let anyone find out who
+// has a shop here.
+// ---------------------------------------------------------------------------
+if ($r === 'findshop' && $method === 'GET') {
+    if (!api_rate_ok('findshop:' . client_ip(), 30, 300)) api_json(['error' => 'Too many tries - wait a few minutes'], 429);
+    $code = strtolower(trim((string)get('code')));
+    $code = preg_replace('#^https?://#', '', $code);
+    $code = trim(preg_replace('#[/:?].*$#', '', $code));
+    if ($code === '' || !preg_match('/^[a-z0-9.-]{2,120}$/', $code)) api_json(['error' => 'Type the shop code'], 422);
+    $t = null;
+    try { $t = prow('SELECT slug, name, domain, custom_domain, status FROM tenants WHERE slug = ? OR domain = ? OR custom_domain = ? LIMIT 1', [$code, $code, $code]); }
+    catch (Exception $e) { /* before v87: no other shops */ }
+    if (!$t || in_array($t['status'], ['provisioning', 'closed'], true)) api_json(['error' => 'No shop with the code "' . $code . '". Check the spelling, or ask the shop owner.'], 404);
+    // the same scheme (and, on a test machine, port) the main address uses
+    $b = parse_url(defined('BASE_URL') && BASE_URL ? BASE_URL : 'https://localhost');
+    $port = !empty($b['port']) ? ':' . $b['port'] : '';
+    api_json(['url' => ($b['scheme'] ?? 'https') . '://' . ($t['custom_domain'] ?: $t['domain']) . $port, 'name' => $t['name']]);
+}
+
+// ---------------------------------------------------------------------------
 // THE CUSTOMER'S SIDE OF THE APP.
 //
 // The same app, handed to a customer or a dealer instead of to staff. They
