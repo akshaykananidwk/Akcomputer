@@ -40,7 +40,7 @@ ok('wrong password says so', (await p.locator('#l_err').textContent()).length > 
 await p.fill('#l_pass', 'Test@1234');
 await p.click('#l_go');
 await p.waitForTimeout(4000);
-ok('logged in, home screen', await p.locator('#h_new').count() > 0);
+ok('logged in, home screen', await p.locator('[data-act="newbill"]').count() > 0);
 
 const counts = await p.evaluate(async () => ({
   items: await DB.count('items'), parties: await DB.count('parties'),

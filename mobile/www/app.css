@@ -133,3 +133,11 @@ input:focus, select:focus { outline: 2px solid var(--brand); outline-offset: 1px
 .stk-in  { color: var(--ok); }
 .stk-out { color: var(--bad); }
 .stk-svc { color: var(--brand); }
+
+/* the home screen's jobs: a grid of big buttons, the first one widest */
+.acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.act { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 6px; border-radius: 14px;
+       border: 1px solid var(--line); background: var(--card); color: var(--ink, inherit); font-weight: 700; font-size: 14px; }
+.act span { font-size: 24px; line-height: 1; }
+.act.main { grid-column: 1 / -1; flex-direction: row; justify-content: center; background: var(--brand); color: #fff; border-color: var(--brand); font-size: 17px; }
+.act:active { transform: scale(.98); }

@@ -115,6 +115,9 @@ var Sync = {
           DB.setMeta('companies', d.companies || []),
           DB.setMeta('modes', d.payment_modes || []),
           DB.setMeta('shop', d.shop || 'AK Computer'),
+          DB.setMeta('round_off', d.round_off == null ? 1 : d.round_off),
+          DB.setMeta('composition', d.composition || 0),
+          DB.setMeta('expense_categories', d.expense_categories || []),
           // the SERVER's clock, never the phone's: a phone an hour slow would
           // ask for the same window for ever and miss everything in between
           DB.setMeta('since', d.server_time),
@@ -168,7 +171,8 @@ var Sync = {
     });
   },
 
-  KINDS: { payment: 'payments', sale: 'sales', whatsapp: 'whatsapp', reminder: 'reminder', order: 'worder' },
+  KINDS: { payment: 'payments', payout: 'payments', sale: 'sales', purchase: 'purchases', expense: 'expenses',
+           whatsapp: 'whatsapp', reminder: 'reminder', order: 'worder' },
 
   pushOne: function (row) {
     var self = this;

@@ -13,6 +13,12 @@ var App = {
 
   // --- small helpers --------------------------------------------------------
   el: function (id) { return document.getElementById(id); },
+  /** What this login may do - the same permission names the website uses.
+   *  Only decides which buttons show; the server checks again on every save. */
+  can: function (p) {
+    var perms = (this.user && this.user.perms) || [];
+    return perms.indexOf('*') >= 0 || perms.indexOf(p) >= 0;
+  },
   money: function (n) {
     n = Math.round((parseFloat(n) || 0) * 100) / 100;
     return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -227,7 +233,7 @@ var App = {
         var got = a[5].filter(function (p) { return p.pay_date === today && p.direction === 'in'; })
                       .reduce(function (s, p) { return s + (parseFloat(p.amount) || 0); }, 0)
                 + unsent.filter(function (d) { return d.date === today; })
-                        .reduce(function (s, d) { return s + (d.kind === 'payment' ? (d.amount || 0) : (d.paid || 0)); }, 0);
+                        .reduce(function (s, d) { return s + (d.kind === 'payment' ? (d.amount || 0) : (d.kind === 'sale' ? (d.paid || 0) : 0)); }, 0);
         self.el('main').innerHTML =
           '<div class="card">' +
           '<div class="muted">Today\'s sales</div>' +
@@ -235,16 +241,7 @@ var App = {
           '<div class="stat"><span>Bills</span><strong>' + sales.length + '</strong></div>' +
           '<div class="stat"><span>Received today</span><strong>₹' + self.money(got) + '</strong></div>' +
           '</div>' +
-          '<button class="btn" id="h_new">🧾 New bill</button>' +
-          '<button class="btn sec" id="h_pay">₹ Record money received</button>' +
-          '<div class="row" style="margin-top:8px">' +
-          '<button class="btn sec" id="h_dues">📋 Dues</button>' +
-          '<button class="btn sec" id="h_stock">📦 Stock</button>' +
-          '</div>' +
-          '<div class="row" style="margin-top:8px">' +
-          '<button class="btn sec" id="h_rep">📊 Reports</button>' +
-          '<button class="btn sec" id="h_all">☰ Everything</button>' +
-          '</div>' +
+          self.actions() +
           '<div class="card" style="margin-top:12px">' +
           '<div class="stat"><span>Waiting to send</span><strong>' +
             (st.pending ? '<span class="pill wait">' + st.pending + '</span>' : '<span class="pill done">0</span>') + '</strong></div>' +
@@ -254,13 +251,32 @@ var App = {
           '</div>' +
           '<p class="center muted" style="font-size:13px">' + self.esc((self.user && self.user.name) || '') +
             ' · ' + self.esc((self.user && self.user.location) || '') + '</p>';
-        self.el('h_new').addEventListener('click', function () { self.go('newbill'); });
-        self.el('h_pay').addEventListener('click', function () { self.go('collect'); });
-        self.el('h_dues').addEventListener('click', function () { self.go('dues'); });
-        self.el('h_stock').addEventListener('click', function () { self.go('stock'); });
-        self.el('h_rep').addEventListener('click', function () { self.go('reports'); });
-        self.el('h_all').addEventListener('click', function () { self.go('all'); });
+        self.el('main').querySelectorAll('[data-act]').forEach(function (b) {
+          b.addEventListener('click', function () { self.go(b.dataset.act); });
+        });
       });
+  },
+
+  /** The day's jobs, as big buttons - only the ones this login may do, the
+   *  same permissions the website's menu follows. Every one works offline. */
+  ACTIONS: [
+    ['newbill', '🧾', 'New bill', 'sales.add'],
+    ['collect', '₹', 'Money received', 'payments.add'],
+    ['purchase', '📥', 'Purchase bill', 'purchases.add'],
+    ['payout', '💸', 'Money paid', 'payments.add'],
+    ['expense', '🧾', 'Expense', 'expenses.add'],
+    ['dues', '📋', 'Dues', 'payments.view'],
+    ['stock', '📦', 'Stock', 'items.view'],
+    ['reports', '📊', 'Reports', 'sales.view'],
+    ['all', '☰', 'Everything', null]
+  ],
+
+  actions: function () {
+    var self = this;
+    var list = this.ACTIONS.filter(function (a) { return !a[3] || self.can(a[3]); });
+    return '<div class="acts">' + list.map(function (a, i) {
+      return '<button class="act' + (i === 0 ? ' main' : '') + '" data-act="' + a[0] + '"><span>' + a[1] + '</span>' + a[2] + '</button>';
+    }).join('') + '</div>';
   },
 
   ago: function (iso) {
@@ -296,6 +312,7 @@ var App = {
     if (m) this.bill.mobile = m.value.trim();
     if (p) this.bill.paid = parseFloat(p.value) || 0;
     if (md) this.bill.mode = md.value;
+    var dc = this.el('b_disc'); if (dc) this.bill.discount = Math.max(0, parseFloat(dc.value) || 0);
   },
 
   scr_newbill: function () {
@@ -322,7 +339,11 @@ var App = {
       '<div class="lines" id="b_lines"></div>' +
       '</div>' +
       '<div class="card">' +
+      '<div id="b_cobox" hidden><label>Firm</label><select id="b_co"></select></div>' +
       '<div class="tot"><span>Subtotal</span><span id="b_sub">₹0.00</span></div>' +
+      '<div class="tot"><span>Discount ₹</span><input type="number" id="b_disc" inputmode="decimal" min="0" step="any" value="0" style="max-width:110px;margin:0;text-align:right"></div>' +
+      '<div class="tot" id="b_taxrow"><span>GST</span><span id="b_tax">₹0.00</span></div>' +
+      '<div class="tot" id="b_rorow"><span><label style="display:inline;color:inherit;font-weight:400"><input type="checkbox" id="b_ro" style="width:auto;margin:0 6px 0 0">Round off</label></span><span id="b_rov">₹0.00</span></div>' +
       '<div class="tot grand"><span>Total</span><span id="b_grand">₹0.00</span></div>' +
       '<label style="margin-top:10px">Money received</label>' +
       '<div class="row"><input type="number" id="b_paid" inputmode="decimal" value="0"><button class="btn sec" id="b_full" style="max-width:110px">All</button></div>' +
@@ -332,6 +353,25 @@ var App = {
       (this.bill.lines.length ? '<button class="btn ghost" id="b_clear">Discard bill</button>' : '') +
       '</div>';
 
+    Promise.all([DB.meta('companies', []), DB.meta('round_off', 1), DB.meta('composition', 0)]).then(function (a) {
+      var cos = a[0] || [];
+      self._cos = cos; self._composition = !!a[2];
+      if (self.bill.company_id == null) self.bill.company_id = cos.length ? cos[0].id : 0;
+      if (self.bill.round_off == null) self.bill.round_off = !!a[1];
+      if (cos.length > 1) {
+        self.el('b_cobox').hidden = false;
+        self.el('b_co').innerHTML = cos.map(function (c) {
+          return '<option value="' + c.id + '">' + self.esc(c.name) + (c.is_gst == 1 ? ' (GST)' : '') + '</option>';
+        }).join('');
+        self.el('b_co').value = self.bill.company_id;
+        self.el('b_co').addEventListener('change', function () { self.bill.company_id = parseInt(this.value, 10); self.renderLines(); self.saveDraft(); });
+      }
+      self.el('b_ro').checked = !!self.bill.round_off;
+      self.el('b_disc').value = self.bill.discount || 0;
+      self.renderLines();
+    });
+    this.el('b_ro').addEventListener('change', function () { self.bill.round_off = this.checked; self.renderLines(); self.saveDraft(); });
+    this.el('b_disc').addEventListener('change', function () { self.bill.discount = Math.max(0, parseFloat(this.value) || 0); self.renderLines(); self.saveDraft(); });
     DB.meta('modes', []).then(function (modes) {
       var sel = self.el('b_mode');
       var list = (modes && modes.length) ? modes : [{ code: 'cash', name: 'Cash' }, { code: 'upi', name: 'UPI' }];
@@ -376,6 +416,7 @@ var App = {
       if (q.length < 1) { res.classList.remove('show'); return; }
       t = setTimeout(function () {
         finder(q).then(function (rows) {
+          if (!document.body.contains(res)) return;   // the screen moved on while searching
           res.innerHTML = rows.length
             ? rows.map(function (r, i) {
                 return '<div data-i="' + i + '"><strong>' + self.esc(r.name) + '</strong>' +
@@ -435,6 +476,7 @@ var App = {
     if (ex) ex.qty += 1;
     else this.bill.lines.push({ item_id: it.id, name: it.name, qty: 1,
                                 price: parseFloat(it.selling_price) || 0, stock: parseFloat(it.stock) || 0,
+                                tax_rate: parseFloat(it.tax_rate) || 0, service: it.item_type === 'service',
                                 serial_tracked: it.serial_tracked == 1, serials: [] });
     this.renderLines();
     this.saveDraft();
@@ -532,23 +574,48 @@ var App = {
     });
   },
 
-  billTotal: function () {
-    return (this.bill.lines || []).reduce(function (s, l) { return s + l.qty * l.price; }, 0);
+  /** GST is charged only by a GST firm that is not a composition dealer -
+   *  the same rule the billing screen applies on the server. */
+  gstOn: function () {
+    var self = this, co = null;
+    (this._cos || []).forEach(function (c) { if (c.id == (self.bill && self.bill.company_id)) co = c; });
+    return !!(co && co.is_gst == 1) && !this._composition;
   },
+
+  /** The bill's money, worked out as the server will: line totals, GST on
+   *  each line, the bill discount, then round off to the rupee. This is only
+   *  what the screen shows - the server works it out again from the item
+   *  master and its answer is the bill. */
+  billMath: function () {
+    var b = this.bill || { lines: [] }, gst = this.gstOn();
+    var sub = 0, tax = 0;
+    (b.lines || []).forEach(function (l) {
+      var net = l.qty * l.price;
+      sub += net;
+      if (gst) tax += net * (l.tax_rate || 0) / 100;
+    });
+    var disc = Math.min(Math.max(0, b.discount || 0), sub);
+    var total = sub - disc + tax, ro = 0;
+    if (b.round_off) { var r = Math.round(total); ro = r - total; total = r; }
+    var r2 = function (n) { return Math.round(n * 100) / 100; };
+    return { sub: r2(sub), disc: r2(disc), tax: r2(tax), ro: r2(ro), total: r2(total) };
+  },
+
+  billTotal: function () { return this.billMath().total; },
 
   renderLines: function () {
     var self = this;
     var box = this.el('b_lines');
-    if (!box) return;
+    if (!box || !this.bill) return;
     if (!this.bill.lines.length) {
       box.innerHTML = '<p class="muted" style="margin:6px 0">Type an item name in the box above.</p>';
     } else {
       box.innerHTML = this.bill.lines.map(function (l, i) {
-        var short = l.qty > l.stock;
+        var short = !l.service && l.qty > l.stock;
         var need = l.serial_tracked ? (l.serials || []).length + '/' + l.qty : '';
         return '<div class="line">' +
           '<div style="flex:1"><div class="nm">' + self.esc(l.name) + '</div>' +
-            '<div class="sub">₹' + self.money(l.price) + ' × ' + l.qty +
+            '<div class="sub">₹' + self.money(l.price) + ' × ' + l.qty + (self.gstOn() && l.tax_rate ? ' + GST ' + l.tax_rate + '%' : '') +
             (short ? ' <span class="pill bad">stock ' + l.stock + '</span>' : '') + '</div>' +
             '<div class="row" style="margin-top:6px;gap:6px">' +
               '<input type="number" inputmode="decimal" step="any" min="0" value="' + l.qty + '" data-q="' + i + '" style="margin:0" aria-label="Quantity">' +
@@ -574,13 +641,13 @@ var App = {
           // fewer pieces than serials already picked would bill one thing
           // and hand over another
           if (l.serials && l.serials.length > l.qty) l.serials = l.serials.slice(0, l.qty);
-          self.renderLines(); self.saveDraft();
+          self.saveDraft(); setTimeout(function () { self.renderLines(); }, 0);
         });
       });
       box.querySelectorAll('[data-p]').forEach(function (inp) {
         inp.addEventListener('change', function () {
           self.bill.lines[parseInt(inp.dataset.p, 10)].price = Math.max(0, parseFloat(inp.value) || 0);
-          self.renderLines(); self.saveDraft();
+          self.saveDraft(); setTimeout(function () { self.renderLines(); }, 0);
         });
       });
       box.querySelectorAll('[data-sn]').forEach(function (b) {
@@ -590,9 +657,12 @@ var App = {
         });
       });
     }
-    var t = this.billTotal();
-    this.el('b_sub').textContent = '₹' + this.money(t);
-    this.el('b_grand').textContent = '₹' + this.money(t);
+    var m = this.billMath();
+    this.el('b_sub').textContent = '₹' + this.money(m.sub);
+    this.el('b_tax').textContent = '₹' + this.money(m.tax);
+    this.el('b_taxrow').hidden = !this.gstOn();
+    this.el('b_rov').textContent = (m.ro < 0 ? '− ₹' : '₹') + this.money(Math.abs(m.ro));
+    this.el('b_grand').textContent = '₹' + this.money(m.total);
   },
 
   saveBill: function () {
@@ -627,6 +697,8 @@ var App = {
     };
     var body = {
       client_uuid: uuid,
+      company_id: this.bill.company_id || 0,
+      discount: this.bill.discount || 0, round_off: this.bill.round_off ? 1 : 0,
       party_id: doc.party_id || 0,
       customer_name: doc.customer, customer_mobile: doc.mobile,
       sale_date: doc.date, paid: paid, payment_mode: mode,
@@ -729,8 +801,7 @@ var App = {
           li.addEventListener('click', function () {
             var r = list[parseInt(li.dataset.i, 10)];
             if (r.local) { self.go('done', r.key); return; }
-            if (!r.mobile) { self.toast('This bill has no mobile number', true); return; }
-            More.sendBill({ sale_id: r.id, mobile: r.mobile });
+            self.go('billview', r.id);
           });
         });
       };
@@ -749,10 +820,12 @@ var App = {
       '<div class="pick"><input type="text" id="c_party" placeholder="Type a party name" autocomplete="off"><div class="res" id="c_res"></div></div>' +
       '<div class="muted" id="c_bal" style="margin:-4px 0 10px"></div>' +
       '<label>How much *</label><input type="number" id="c_amt" inputmode="decimal">' +
-      '<label>How</label><select id="c_mode"><option value="cash">Cash</option><option value="upi">UPI</option><option value="bank">Bank</option><option value="cheque">Cheque</option></select>' +
+      '<label>How</label><select id="c_mode"></select>' +
+      '<label style="display:flex;gap:8px;align-items:center;font-weight:400;color:inherit"><input type="checkbox" id="c_wa" checked style="width:auto;margin:0"> Send the receipt on WhatsApp</label>' +
       '<div class="err" id="c_err"></div>' +
       '<button class="btn ok" id="c_save">💾 Record it</button>' +
       '</div>';
+    Entries.modes(this.el('c_mode'), false);
     var picked = null;
     var show = function (p) {
       picked = p;
@@ -775,7 +848,8 @@ var App = {
       var doc = { uuid: uuid, kind: 'payment', date: self.today(), created_at: new Date().toISOString(),
                   party_id: picked.id, customer: picked.name, amount: amt, mode: self.el('c_mode').value, synced: false };
       var body = { client_uuid: uuid, party_id: picked.id, direction: 'in', amount: amt,
-                   mode: doc.mode, pay_date: doc.date, notes: 'From the mobile app' };
+                   mode: doc.mode, pay_date: doc.date, notes: 'From the mobile app',
+                   send_wa: self.el('c_wa').checked && picked.mobile ? 1 : 0 };
       DB.put('docs', doc)
         .then(function () { return Sync.queue({ uuid: uuid, kind: 'payment', body: body, created_at: doc.created_at }); })
         .then(function () {
@@ -807,7 +881,7 @@ var App = {
           ? '<div class="card" style="margin-top:12px"><h3>⚠️ The shop would not accept these</h3>' +
             '<p class="muted" style="margin-top:0">These are safe on the phone. Fix the reason and send again, or remove them.</p>' +
             '<ul class="list">' + att.map(function (r) {
-              return '<li><div><div class="nm">' + (r.kind === 'payment' ? 'Payment' : 'Bill') + '</div>' +
+              return '<li><div><div class="nm">' + ({ payment: 'Money received', payout: 'Money paid', purchase: 'Purchase', expense: 'Expense', whatsapp: 'WhatsApp', reminder: 'Reminder' }[r.kind] || 'Bill') + '</div>' +
                 '<div class="sub">' + self.esc(r.last_error) + '</div></div>' +
                 '<div class="right"><button class="btn sec" style="width:auto;padding:6px 10px" data-retry="' + r.uuid + '">Retry</button>' +
                 '<button class="btn ghost" style="width:auto;padding:6px 10px;margin-top:4px" data-drop="' + r.uuid + '">Remove</button></div></li>';

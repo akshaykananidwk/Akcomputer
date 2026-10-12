@@ -84,8 +84,12 @@ var More = {
       // not yet sent - shown, and marked, so nobody is surprised later
       a[2].forEach(function (d) {
         if (d.synced || d.party_id != partyId) return;
+        // the same sides the server's ledger uses: what they owe us goes up
+        // with a bill or money we paid them, down with money in or their bill
         if (d.kind === 'sale') rows.push({ date: d.date, what: 'Bill (not sent yet)', debit: d.total || 0, credit: 0, id: d.uuid, pending: true });
-        else rows.push({ date: d.date, what: 'Received (not sent yet)', debit: 0, credit: d.amount || 0, id: d.uuid, pending: true });
+        else if (d.kind === 'payment') rows.push({ date: d.date, what: 'Received (not sent yet)', debit: 0, credit: d.amount || 0, id: d.uuid, pending: true });
+        else if (d.kind === 'payout') rows.push({ date: d.date, what: 'Paid out (not sent yet)', debit: d.amount || 0, credit: 0, id: d.uuid, pending: true });
+        else if (d.kind === 'purchase') rows.push({ date: d.date, what: 'Purchase (not sent yet)', debit: 0, credit: d.total || 0, id: d.uuid, pending: true });
       });
       rows.sort(function (x, y) { return (y.date || '').localeCompare(x.date || ''); });
       return rows;
@@ -112,6 +116,9 @@ var More = {
           '</div>' +
           (p.mobile && bal > 0.009
             ? '<button class="btn sec" id="p_remind" style="margin-bottom:10px">📩 Send payment reminder</button>' : '') +
+          (p.type !== 'customer' && App.can('payments.add')
+            ? '<div class="row" style="margin-bottom:10px"><button class="btn sec" id="p_payout">💸 Pay them</button>' +
+              (App.can('purchases.add') ? '<button class="btn sec" id="p_purch">📥 Their bill</button>' : '') + '</div>' : '') +
           '<div class="card"><h3>Recent account</h3>' + (rows.length
             ? '<ul class="list">' + rows.slice(0, 100).map(function (r) {
                 return '<li><div><div class="nm">' + App.esc(r.what) + (r.pending ? ' <span class="pill wait">pending</span>' : '') + '</div>' +
@@ -127,6 +134,10 @@ var More = {
           App.bill = null; App.go('newbill'); setTimeout(function () {
             var i = App.el('b_cust'); if (i) { i.value = p.name; App.bill.party = p; App.el('b_mob').value = p.mobile || ''; }
           }, 60);
+        });
+        if (App.el('p_payout')) App.el('p_payout').addEventListener('click', function () { App.go('payout', p.id); });
+        if (App.el('p_purch')) App.el('p_purch').addEventListener('click', function () {
+          Entries.pur = { lines: [], party: p, bill_no: '', paid: 0, mode: 'credit' }; App.go('purchase');
         });
         if (App.el('p_remind')) {
           App.el('p_remind').addEventListener('click', function () {
@@ -195,7 +206,7 @@ var More = {
           var a1 = sp.filter(function (p) { return p.direction === 'in' && (p.pay_date || '') >= from; })
                      .reduce(function (s, p) { return s + (parseFloat(p.amount) || 0); }, 0);
           var a2 = docs.filter(function (x) { return !x.synced && (x.date || '') >= from; })
-                       .reduce(function (s, x) { return s + (x.kind === 'payment' ? (x.amount || 0) : (x.paid || 0)); }, 0);
+                       .reduce(function (s, x) { return s + (x.kind === 'payment' ? (x.amount || 0) : (x.kind === 'sale' ? (x.paid || 0) : 0)); }, 0);
           return a1 + a2;
         };
         var outstanding = parties.reduce(function (s, p) {
@@ -262,6 +273,34 @@ var More = {
     });
   },
 
+  // --- one bill from the shop's books ---------------------------------------
+  /** What the counter needs about a bill: who, how much, what is still due -
+   *  from the phone's copy - and the ways to send it. Printing, the PDF,
+   *  e-mail and editing are the website's own bill screen, opened inside the
+   *  app, so there is one bill page to keep right, not two. */
+  scr_billview: function (saleId) {
+    var self = this;
+    App.chrome('Bill', true);
+    DB.all('ssales').then(function (rows) {
+      var s = null; rows.forEach(function (x) { if (x.id == saleId) s = x; });
+      if (!s) { App.el('main').innerHTML = '<div class="card"><p class="muted">This bill is not on the phone. Sync once.</p></div>'; return; }
+      var total = parseFloat(s.total) || 0, due = total - (parseFloat(s.paid) || 0);
+      App.el('main').innerHTML =
+        '<div class="card center"><div class="muted">' + App.esc(s.invoice_no || '') + ' · ' + App.esc(s.sale_date || '') + '</div>' +
+        '<div class="big">₹' + App.money(total) + '</div>' +
+        '<div class="muted">' + App.esc(s.customer_name || 'Walk-in') + (s.customer_mobile ? ' · ' + App.esc(s.customer_mobile) : '') + '</div>' +
+        (s.is_cancelled == 1 ? '<div><span class="pill bad">cancelled</span></div>'
+          : (due > 0.009 ? '<div style="color:var(--bad);font-weight:700">Due ₹' + App.money(due) + '</div>' : '<div style="color:var(--ok);font-weight:700">Paid in full ✔</div>')) +
+        '</div>' +
+        (s.customer_mobile && s.is_cancelled != 1 ? '<button class="btn ok" id="bv_wa">📲 Send on WhatsApp</button>' : '') +
+        '<button class="btn sec" id="bv_open">🧾 Open the full bill (print · PDF · e-mail · edit)</button>' +
+        (due > 0.009 && s.party_id && App.can('payments.add') ? '<button class="btn sec" id="bv_pay">₹ Take payment</button>' : '');
+      if (App.el('bv_wa')) App.el('bv_wa').addEventListener('click', function () { self.sendBill({ sale_id: s.id, mobile: s.customer_mobile }); });
+      App.el('bv_open').addEventListener('click', function () { self.openWeb('sale_view.php?id=' + s.id); });
+      if (App.el('bv_pay')) App.el('bv_pay').addEventListener('click', function () { App.go('collect', parseInt(s.party_id, 10)); });
+    });
+  },
+
   // --- every screen the shop has -------------------------------------------
   scr_all: function () {
     var self = this;
@@ -321,6 +360,6 @@ var More = {
 };
 
 // hang the screens off App so go('party') / go('all') just work
-['party', 'dues', 'reports', 'stock', 'all'].forEach(function (n) {
+['party', 'dues', 'reports', 'stock', 'all', 'billview'].forEach(function (n) {
   App['scr_' + n] = function (arg) { return More['scr_' + n].call(More, arg); };
 });

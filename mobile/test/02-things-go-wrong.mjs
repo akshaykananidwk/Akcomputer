@@ -79,7 +79,7 @@ await p.reload();                    // app killed and reopened
 await p.waitForTimeout(1500);
 const after = await p.evaluate(async () => ({
   q: (await DB.all('outbox')).length, docs: (await DB.all('docs')).length,
-  onHome: !!document.getElementById('h_new')
+  onHome: !!document.querySelector('[data-act="newbill"]')
 }));
 ok('the unsent bill survived the restart', after.q === 1, 'queue=' + after.q);
 ok('every bill is still on the phone', after.docs >= 2, after.docs + ' docs');
