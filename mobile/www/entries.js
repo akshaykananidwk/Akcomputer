@@ -13,7 +13,7 @@ var Entries = {
 
   /** Write it here, queue it, go home. One place, so the three screens
    *  cannot drift apart in how they save. */
-  save: function (kind, doc, body, msg) {
+  save: function (kind, doc, body, msg, next) {
     var uuid = newUuid();
     doc.uuid = uuid; doc.kind = kind; doc.date = doc.date || App.today();
     doc.created_at = new Date().toISOString(); doc.synced = false;
@@ -22,7 +22,11 @@ var Entries = {
       .then(function () { return Sync.queue({ uuid: uuid, kind: kind, body: body, created_at: doc.created_at }); })
       .then(function () {
         App.toast(msg);
-        App.go('home');
+        // back where the person came from (an edit) - or home after an entry;
+        // replacing the form in history so Back does not reopen it
+        next = next || ['home'];
+        try { history.replaceState({ name: next[0], arg: next[1] }, ''); } catch (e) { }
+        App.render(next[0], next[1]);
         if (navigator.onLine) App.syncNow(false);
       });
   },

@@ -75,16 +75,29 @@
         return Promise.resolve(res.charAt(0) === '✔');
       };
     }
-    // --- the way back to the app, where the website's menu button is ---------
+    // --- one look: inside the app a website screen wears the app's own header
+    // (back, title, home) - no website menu, search, bell or sidebar, which
+    // made it feel like a browser. Everything else on the page is untouched.
+    if (!document.getElementById('akStyle')) {
+      var st = document.createElement('style');
+      st.id = 'akStyle';
+      st.textContent = '#menuBtn,.topbar-search,.topbar-user,.sidebar,.sidebar-overlay,.bottomnav{display:none!important}' +
+        '.topbar{height:56px}.topbar .ak-b{background:rgba(255,255,255,.16);border:0;color:#fff;border-radius:10px;width:40px;height:40px;' +
+        'font-size:20px;display:flex;align-items:center;justify-content:center;flex:none;cursor:pointer}' +
+        '.content{margin-left:0!important}';
+      document.head.appendChild(st);
+    }
     var bar = document.querySelector('.topbar');
     if (bar && !document.getElementById('akHome')) {
-      var b = document.createElement('button');
-      b.id = 'akHome'; b.type = 'button'; b.className = 'menu-btn no-print';
-      b.setAttribute('aria-label', 'Back to the app'); b.title = 'Back to the app';
-      b.textContent = '⌂';
-      b.style.fontSize = '22px';
-      b.addEventListener('click', function () { AKApp.home(); });
-      bar.insertBefore(b, bar.firstChild);
+      var mk = function (id, label, txt, fn) {
+        var b = document.createElement('button');
+        b.id = id; b.type = 'button'; b.className = 'ak-b no-print';
+        b.setAttribute('aria-label', label); b.title = label; b.textContent = txt;
+        b.addEventListener('click', fn);
+        return b;
+      };
+      bar.insertBefore(mk('akBack', 'Back', '←', function () { if (history.length > 1) history.back(); else AKApp.home(); }), bar.firstChild);
+      bar.appendChild(mk('akHome', 'Back to the app', '⌂', function () { AKApp.home(); }));
     }
   };
   // the app adds this file to some pages only after they have loaded

@@ -1284,3 +1284,28 @@ t_ok('...it looks up a code or an address only - never an owner\'s mobile or e-m
      strpos($fs, 'owner_mobile') === false && strpos($fs, 'owner_email') === false);
 t_ok('...a closed or half-made shop is not handed out', strpos($fs, "['provisioning', 'closed']") !== false);
 t_ok('the app logs in by username OR e-mail', strpos($apiSrc, "u.username = ? OR (u.email IS NOT NULL AND u.email = ?)") !== false);
+
+t_group('App API — the whole shop on the phone (pull)');
+foreach (['sales', 'purchases', 'payments', 'expenses', 'sales_returns', 'purchase_returns'] as $tbl) {
+    $extra = (string)val("SELECT EXTRA FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'updated_at'", [$tbl]);
+    t_ok("$tbl stamps itself on every change (so a paid bill reaches the phone)", stripos($extra, 'on update') !== false, $extra);
+}
+t_eq('deleted rows are found by id ranges', api_id_ranges([1, 2, 3, 7, 9, 10]) === '1-3,7,9-10' ? 1 : 0, 1);
+$pullSrc = substr($apiSrc, strpos($apiSrc, "if (\$r === 'pull'"), 6000);
+t_ok('every table needs its own permission', substr_count($pullSrc, "'sales.view'") >= 2 && strpos($pullSrc, "'purchases.view'") !== false
+     && strpos($pullSrc, "'payments.view'") !== false && strpos($pullSrc, "'expenses.view'") !== false);
+t_ok('...a salesman sees only his own bills, as on the website', strpos($pullSrc, "api_own_scope(\$u, 'sales')") !== false);
+t_ok('cash, bank and receivable come from the books\' own functions', strpos($pullSrc, 'coa_cash_balance(') !== false && strpos($pullSrc, 'coa_ar_ap(') !== false);
+t_ok('the stock value is only for those who may see cost', strpos($pullSrc, "api_can('items.cost') ? round(coa_stock_value(), 2)") !== false);
+
+t_group('App API — parties, items and settings from the app');
+$ps = substr($apiSrc, strpos($apiSrc, "if (\$r === 'parties')"), 3000);
+t_ok('editing a party needs parties.edit, adding needs parties.add', strpos($ps, "api_require(\$pid ? 'parties.edit' : 'parties.add')") !== false);
+t_ok('a party with a mobile already on the books is not made twice', strpos($ps, "'duplicate' => true") !== false);
+t_ok('an edit from the app does not touch the opening balance (money)', strpos($ps, "UPDATE parties SET name=?, mobile=?, email=?, gstin=?, address=?, city=?, credit_days=? WHERE id=?") !== false);
+$is = substr($apiSrc, strpos($apiSrc, "if (\$r === 'items' && \$method === 'POST')"), 2600);
+t_ok('an item from the app keeps the minimum-profit rule', strpos($is, 'enforce_min_margin(') !== false);
+t_ok('...and only someone who may see cost can set the purchase price', strpos($is, "api_can('items.cost') && isset(\$b['purchase_price'])") !== false);
+t_ok('the app can change only a short list of settings, with settings.edit', strpos($apiSrc, "api_require('settings.edit');") !== false
+     && strpos($apiSrc, 'foreach (API_SETTINGS as $k)') !== false);
+t_ok('...and none of them is a secret or a key', !array_filter(API_SETTINGS, fn($k) => preg_match('/key|secret|pass|token/', $k)));

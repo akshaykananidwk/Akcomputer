@@ -76,3 +76,21 @@ function api_body() {
     $data = json_decode($raw, true);
     return is_array($data) ? $data : [];
 }
+
+/** ids as compact ranges: 1,2,3,7,8 -> "1-3,7-8" */
+function api_id_ranges(array $ids) {
+    sort($ids, SORT_NUMERIC);
+    $out = []; $s = $p = null;
+    foreach ($ids as $i) {
+        $i = (int)$i;
+        if ($s === null) { $s = $p = $i; continue; }
+        if ($i === $p + 1) { $p = $i; continue; }
+        $out[] = $s === $p ? (string)$s : "$s-$p"; $s = $p = $i;
+    }
+    if ($s !== null) $out[] = $s === $p ? (string)$s : "$s-$p";
+    return implode(',', $out);
+}
+
+// The few shop settings the app's own Settings screen shows. Read with the
+// sync; changed only with settings.edit, and only these keys.
+const API_SETTINGS = ['app_name', 'shop_mobile', 'shop_whatsapp', 'app_email', 'round_off_default', 'allow_negative_stock', 'default_margin_pct', 'google_review_link'];

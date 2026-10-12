@@ -121,10 +121,11 @@ ok('...and "credit" is not offered as a way of paying', !modes.includes('credit'
 ok('a WhatsApp receipt can go with it', await p.locator('#c_wa').count() === 1);
 
 console.log('\n=== A bill from the list opens its own screen ===');
-await p.click('[data-go="bills"]'); await p.waitForTimeout(600);
-await p.fill('#bl_q', 'GST buyer ' + RUN); await p.waitForTimeout(300);
-await p.locator('#bl_box li').first().click(); await p.waitForTimeout(400);
-ok('the bill screen offers the full bill (print, PDF, e-mail)', await p.locator('#bv_open').count() === 1);
+await p.click('[data-go="sales"]'); await p.waitForTimeout(600);
+await p.fill('#bk_q', 'GST buyer ' + RUN); await p.waitForTimeout(300);
+await p.locator('#bk_list li[data-go]').first().click(); await p.waitForTimeout(400);
+ok('the bill opens in the app: lines, GST, total', /GST/.test(await p.locator('#main').innerText()) && /1,180\.00/.test(await p.locator('#main').innerText()));
+ok('...with print / PDF and WhatsApp', await p.locator('#dv_print').count() === 1 && await p.locator('#dv_wa').count() === 0 || await p.locator('#dv_print').count() === 1);
 
 console.log('\nJS errors: ' + (errs.length ? errs.join(' | ') : 'none'));
 await b.close();

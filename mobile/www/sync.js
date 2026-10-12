@@ -109,8 +109,8 @@ var Sync = {
           DB.replaceAll('stock', (d.stock || []).map(function (s) {
             s.key = s.item_id + ':' + s.location_id; return s;
           })),
-          DB.replaceAll('ssales', d.sales || []),
-          DB.replaceAll('spayments', d.payments || []),
+          // (bills and payments come from pullAll() now - the whole shop,
+          // not this call's 90-day window, which must not overwrite them)
           DB.setMeta('locations', d.locations || []),
           DB.setMeta('companies', d.companies || []),
           DB.setMeta('modes', d.payment_modes || []),
@@ -118,6 +118,9 @@ var Sync = {
           DB.setMeta('round_off', d.round_off == null ? 1 : d.round_off),
           DB.setMeta('composition', d.composition || 0),
           DB.setMeta('expense_categories', d.expense_categories || []),
+          DB.setMeta('categories', d.categories || []),
+          DB.setMeta('banks', d.banks || []),
+          d.settings ? DB.setMeta('settings', d.settings) : null,
           // the SERVER's clock, never the phone's: a phone an hour slow would
           // ask for the same window for ever and miss everything in between
           DB.setMeta('since', d.server_time),
@@ -126,6 +129,56 @@ var Sync = {
           return { items: (d.items || []).length, parties: (d.parties || []).length, full: !!d.full };
         });
       });
+  },
+
+  /** The whole shop's books, page by page, until nothing is left. Each table
+   *  has its own cursor, so a first sync of a big shop can take several calls
+   *  and an everyday one is a few rows. At the end the server lists every id
+   *  it still has, and anything deleted on the website leaves the phone. */
+  STORES: { sales: 'ssales', purchases: 'spurchases', payments: 'spayments', expenses: 'sexpenses',
+            sreturns: 'sreturns', preturns: 'spreturns' },
+
+  pullAll: function () {
+    var self = this, base, hdr, rounds = 0;
+    var step = function () {
+      return DB.meta('cursors', {}).then(function (cur) {
+        var q = Object.keys(cur || {}).map(function (k) { return 'c%5B' + k + '%5D=' + encodeURIComponent(cur[k]); }).join('&');
+        return self.fetchJson(base + '/api.php?r=pull' + (q ? '&' + q : ''), { headers: hdr }, 90000).then(function (res) {
+          if (res.status === 401) return DB.setMeta('token_bad', 1).then(function () { throw new Error('Please log in again'); });
+          if (!res.ok || !res.data) throw new Error('The shop is not answering (' + res.status + ')');
+          var d = res.data, jobs = [];
+          Object.keys(self.STORES).forEach(function (k) {
+            var rows = d[k] || [];
+            // a bill's party index wants a number; the server sends strings
+            rows.forEach(function (r) { if (r.party_id != null) r.party_id = parseInt(r.party_id, 10) || 0; });
+            if (rows.length) jobs.push(DB.putMany(self.STORES[k], rows));
+          });
+          if (d.summary) jobs.push(DB.setMeta('summary', d.summary));
+          var next = Object.assign({}, cur || {}, d.cursor || {});
+          return Promise.all(jobs).then(function () { return DB.setMeta('cursors', next); }).then(function () { return d.more; });
+        });
+      }).then(function (more) {
+        if (more && ++rounds < 200) return step();
+      });
+    };
+    return Promise.all([this.base(), this.headers()]).then(function (a) {
+      base = a[0]; hdr = a[1];
+      if (!base) throw new Error('No shop address set');
+      return step();
+    }).then(function () {
+      // what is still on the server; the rest was deleted there
+      return self.fetchJson(base + '/api.php?r=pull&ids=1&c%5Bsales%5D=2999-01-01%2000:00:00&c%5Bpurchases%5D=2999-01-01%2000:00:00' +
+                            '&c%5Bpayments%5D=2999-01-01%2000:00:00&c%5Bexpenses%5D=2999-01-01%2000:00:00&c%5Bsreturns%5D=2999-01-01%2000:00:00' +
+                            '&c%5Bpreturns%5D=2999-01-01%2000:00:00', { headers: hdr }, 60000);
+    }).then(function (res) {
+      if (!res.ok || !res.data || !res.data.ids) return;
+      var ids = res.data.ids, jobs = [];
+      Object.keys(self.STORES).forEach(function (k) { if (ids[k] != null) jobs.push(DB.keepIds(self.STORES[k], ids[k])); });
+      if (ids.parties != null) jobs.push(DB.keepIds('parties', ids.parties));
+      if (ids.items != null) jobs.push(DB.keepIds('items', ids.items));
+      if (res.data.summary) jobs.push(DB.setMeta('summary', res.data.summary));
+      return Promise.all(jobs);
+    }).then(function () { return DB.setMeta('books_synced', new Date().toISOString()); });
   },
 
   /** The list of every screen the shop has, straight from the website's own
@@ -172,6 +225,7 @@ var Sync = {
   },
 
   KINDS: { payment: 'payments', payout: 'payments', sale: 'sales', purchase: 'purchases', expense: 'expenses',
+           party: 'parties', item: 'items', settings: 'settings',
            whatsapp: 'whatsapp', reminder: 'reminder', order: 'worder' },
 
   pushOne: function (row) {
@@ -281,7 +335,8 @@ var Sync = {
     var out = {};
     return this.push(force)
       .then(function (p) { out.push = p; return self.pull(); })
-      .then(function (p) { out.pull = p; return self.pullMenu(); })
+      .then(function (p) { out.pull = p; return self.pullAll(); })
+      .then(function () { return self.pullMenu(); })
       .then(function () { out.ok = true; return out; })
       .catch(function (e) { out.ok = false; out.error = (e && e.message) || 'Something went wrong'; return out; })
       .then(function (res) { self.running = false; return res; });

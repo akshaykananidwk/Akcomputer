@@ -32,7 +32,7 @@
 var DB = {
   _db: null,
   NAME: 'akshop',
-  VERSION: 3,
+  VERSION: 4,
 
   open: function () {
     var self = this;
@@ -78,6 +78,14 @@ var DB = {
           var sp = db.createObjectStore('spayments', { keyPath: 'id' });
           sp.createIndex('party_id', 'party_id', { unique: false });
         }
+        // v4 - the WHOLE shop's books, not a window: purchases, expenses and
+        // returns join the bills and payments, so every statement, list and
+        // report works offline and agrees with the website's
+        [['spurchases', 'party_id'], ['sexpenses', null], ['sreturns', 'party_id'], ['spreturns', 'party_id']].forEach(function (d) {
+          if (db.objectStoreNames.contains(d[0])) return;
+          var st = db.createObjectStore(d[0], { keyPath: 'id' });
+          if (d[1]) st.createIndex(d[1], d[1], { unique: false });
+        });
       };
       rq.onsuccess = function () { self._db = rq.result; resolve(self._db); };
       rq.onerror = function () { reject(rq.error); };
@@ -176,6 +184,31 @@ var DB = {
     });
   },
 
+  /** Keep only the rows whose id the server still has ("1-40,42" ranges):
+   *  a bill deleted on the website disappears from the phone too. */
+  keepIds: function (store, ranges) {
+    var keep = {};
+    String(ranges || '').split(',').forEach(function (r) {
+      if (!r) return;
+      var p = r.split('-'), a = parseInt(p[0], 10), b = p.length > 1 ? parseInt(p[1], 10) : a;
+      for (var i = a; i <= b; i++) keep[i] = 1;
+    });
+    return this.open().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx = db.transaction(store, 'readwrite'), st = tx.objectStore(store), gone = 0;
+        var c = st.openCursor();
+        c.onsuccess = function () {
+          var cur = c.result;
+          if (!cur) return;
+          if (!keep[cur.key]) { cur.delete(); gone++; }
+          cur.continue();
+        };
+        tx.oncomplete = function () { res(gone); };
+        tx.onerror = function () { rej(tx.error); };
+      });
+    });
+  },
+
   /** Rows of an index, e.g. every bill of one party. */
   by: function (store, index, key) {
     return this._tx(store, 'readonly').then(function (st) {
@@ -190,7 +223,8 @@ var DB = {
   clearAll: function () {
     return this.open().then(function (db) {
       return new Promise(function (res, rej) {
-        var names = ['meta', 'items', 'parties', 'docs', 'outbox', 'serials', 'stock', 'ssales', 'spayments', 'catalog'];
+        var names = ['meta', 'items', 'parties', 'docs', 'outbox', 'serials', 'stock', 'ssales', 'spayments', 'catalog',
+                     'spurchases', 'sexpenses', 'sreturns', 'spreturns'];
         var tx = db.transaction(names, 'readwrite');
         names.forEach(function (n) { tx.objectStore(n).clear(); });
         tx.oncomplete = function () { res(); };

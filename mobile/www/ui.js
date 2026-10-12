@@ -148,7 +148,7 @@ var App = {
       }
       return DB.meta('token_bad', 0).then(function (bad) {
         if (bad) { DB.setMeta('token_bad', 0); self.toast('Please log in again', true); self.go('login'); return; }
-        if (self.screen === 'home' || self.screen === 'sync' || self.screen === 'bills') self.go(self.screen);
+        if (['home', 'sync', 'bills', 'sales', 'parties', 'cashbank'].indexOf(self.screen) >= 0) self.render(self.screen, self._arg);
       });
     });
   },
@@ -264,7 +264,8 @@ var App = {
       btn.textContent = 'Getting your data…';
       // masters first - the app is usable the moment they land - then the
       // list of screens, which is nice to have and must not hold up login
-      return Sync.pull().then(function () { return Sync.pullMenu(); });
+      btn.textContent = 'Getting the whole shop onto this phone…';
+      return Sync.pull().then(function () { return Sync.pullAll(); }).then(function () { return Sync.pullMenu(); });
     }).then(function () {
       btn.disabled = false; btn.textContent = 'Log in';
       self.toast('Welcome, ' + (self.user.name || ''));
@@ -325,9 +326,13 @@ var App = {
     ['purchase', '📥', 'Purchase bill', 'purchases.add'],
     ['payout', '💸', 'Money paid', 'payments.add'],
     ['expense', '🧾', 'Expense', 'expenses.add'],
-    ['dues', '📋', 'Dues', 'payments.view'],
-    ['stock', '📦', 'Stock', 'items.view'],
+    ['parties', '👥', 'Parties', 'parties.view'],
+    ['items', '📦', 'Items & stock', 'items.view'],
+    ['sales', '📄', 'Bills', 'sales.view'],
+    ['purchases', '📥', 'Purchases', 'purchases.view'],
+    ['cashbank', '🏦', 'Cash & Bank', 'payments.view'],
     ['reports', '📊', 'Reports', 'sales.view'],
+    ['settings', '⚙️', 'Settings', null],
     ['all', '☰', 'Everything', null]
   ],
 

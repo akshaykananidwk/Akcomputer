@@ -264,7 +264,8 @@ if ($r === 'sync' && $method === 'GET') {
     $itemW = $full ? '' : ' AND i.updated_at > ?';
     $itemA = $full ? [] : [$sinceSql];
     $items = all("SELECT i.id, i.name, i.unit, i.barcode, i.hsn, i.tax_rate, i.selling_price, i.b2b_price,
-                         i.purchase_price, i.serial_tracked, i.item_type, i.is_active,
+                         i.purchase_price, i.serial_tracked, i.item_type, i.is_active, i.category_id, i.brand, i.model,
+                         i.min_stock, i.warranty_months, i.description, i.show_on_website,
                          COALESCE((SELECT SUM(st.qty) FROM stock st WHERE st.item_id = i.id), 0) stock
                   FROM items i WHERE 1=1 $itemW ORDER BY i.id LIMIT 5000", $itemA);
     // the cost price is a guarded number on the website; it is guarded here too
@@ -273,6 +274,7 @@ if ($r === 'sync' && $method === 'GET') {
     $partyW = $full ? '' : ' AND p.updated_at > ?';
     $partyA = $full ? [] : [$sinceSql];
     $parties = all("SELECT p.id, p.name, p.mobile, p.type, p.credit_days, p.credit_limit, p.is_active,
+                           p.opening_balance, p.email, p.gstin, p.address, p.city,
                            " . party_balance_expr('p') . " balance
                     FROM parties p WHERE 1=1 $partyW ORDER BY p.id LIMIT 5000", $partyA);
 
@@ -327,7 +329,80 @@ if ($r === 'sync' && $method === 'GET') {
         'round_off' => (int)(setting('round_off_default', '1') === '1'),
         'composition' => (int)biz_on('gst_composition'),
         'expense_categories' => array_values(array_unique(array_map('strval', expense_categories()))),
+        'categories' => all('SELECT id, name FROM categories ORDER BY name'),
+        'settings' => array_combine(API_SETTINGS, array_map(fn($k) => (string)setting($k, in_array($k, ['round_off_default', 'allow_negative_stock'], true) ? '1' : ''), API_SETTINGS)),
+        'banks' => api_can('payments.view') ? all('SELECT id, account_name name, bank_name FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id') : [],
     ]);
+}
+
+// ---------------------------------------------------------------------------
+// THE WHOLE SHOP ON THE PHONE (app 4.1+). Every document table, all of it,
+// not a 90-day window - so a party's statement, a bill from last year, the
+// day book and the GST totals all work with no signal.
+//
+// Each table is sent in pages, oldest change first, with a cursor per table
+// ("updated_at|id") so a big shop's first sync can take several calls and a
+// daily one is tiny. A bill's lines travel with the bill. Rows deleted on
+// the website are found by ?ids=1, which lists every id still there (as
+// ranges: "1-40,42") so the phone can drop the rest.
+//
+// Nothing is worked out for the phone except the money figures that need
+// the server's books (cash in hand, bank, receivable/payable, stock value):
+// those come from the same functions the website's own screens use.
+// ---------------------------------------------------------------------------
+if ($r === 'pull' && $method === 'GET') {
+    api_require('items.view');
+    $limit = 3000;
+    $cur = (array)get('c', []);
+    list($own, $ownArgs) = api_own_scope($u, 'sales');
+    // table => [permission, columns, date column, extra WHERE, child table, child key, child columns]
+    $T = [
+        'sales' => ['sales.view', 'id, company_id, invoice_no, party_id, customer_name, customer_mobile, location_id, sale_date, due_date, subtotal, discount, tax_amount, shipping, adjustment, round_off, total, paid, payment_mode, status, is_cancelled, notes, created_by, client_uuid, updated_at',
+                    $own, $ownArgs, 'sale_items', 'sale_id', 'id, sale_id, item_id, qty, free_qty, price, tax_rate, total, line_disc, serials, description'],
+        'purchases' => ['purchases.view', 'id, company_id, bill_no, party_id, location_id, purchase_date, due_date, subtotal, discount, tax_amount, shipping, total, paid, status, is_cancelled, notes, client_uuid, updated_at',
+                        '', [], 'purchase_items', 'purchase_id', 'id, purchase_id, item_id, qty, price, tax_rate, total'],
+        'payments' => ['payments.view', 'id, party_id, bank_account_id, direction, amount, mode, ref_type, ref_id, pay_date, notes, client_uuid, updated_at', '', [], null, null, null],
+        'expenses' => ['expenses.view', 'id, exp_date, category, amount, mode, bank_account_id, notes, location_id, client_uuid, updated_at', '', [], null, null, null],
+        'sreturns' => ['sales.view', 'id, return_no, sale_id, party_id, customer_name, return_date, total, refund_mode, notes, updated_at', '', [], null, null, null],
+        'preturns' => ['purchases.view', 'id, return_no, purchase_id, party_id, return_date, total, refund_mode, notes, updated_at', '', [], null, null, null],
+    ];
+    $real = ['sreturns' => 'sales_returns', 'preturns' => 'purchase_returns'];
+    $out = ['server_time' => date('c'), 'more' => false];
+    foreach ($T as $key => [$perm, $cols, $where, $args, $child, $fk, $ccols]) {
+        if (!api_can($perm)) { $out[$key] = []; continue; }
+        $tbl = $real[$key] ?? $key;
+        [$cu, $ci] = array_pad(explode('|', (string)($cur[$key] ?? '')), 2, '0');
+        $cu = preg_match('/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/', $cu) ? $cu : '1970-01-01 00:00:00';
+        $rows = all("SELECT $cols FROM `$tbl` WHERE (updated_at > ? OR (updated_at = ? AND id > ?)) $where ORDER BY updated_at, id LIMIT $limit",
+                    array_merge([$cu, $cu, (int)$ci], $args));
+        if ($child && $rows) {
+            $byParent = [];
+            foreach (array_chunk(array_column($rows, 'id'), 1000) as $chunk) {
+                $in = implode(',', array_map('intval', $chunk));
+                foreach (all("SELECT $ccols FROM `$child` WHERE $fk IN ($in) ORDER BY id") as $c) $byParent[$c[$fk]][] = $c;
+            }
+            foreach ($rows as &$rw) $rw['lines'] = $byParent[$rw['id']] ?? []; unset($rw);
+        }
+        $out[$key] = $rows;
+        if ($rows) { $last = end($rows); $out['cursor'][$key] = $last['updated_at'] . '|' . $last['id']; }
+        if (count($rows) === $limit) $out['more'] = true;
+        if (get('ids')) $out['ids'][$key] = api_id_ranges(array_map('intval', array_column(all("SELECT id FROM `$tbl` WHERE 1=1 $where", $args), 'id')));
+    }
+    if (get('ids')) {
+        $out['ids']['parties'] = api_id_ranges(array_map('intval', array_column(all('SELECT id FROM parties'), 'id')));
+        $out['ids']['items'] = api_id_ranges(array_map('intval', array_column(all('SELECT id FROM items'), 'id')));
+    }
+    // the books' own figures, for Cash & Bank and Home
+    if (api_can('reports.view') || api_can('payments.view')) {
+        $arap = coa_ar_ap(today());
+        $out['summary'] = ['as_of' => date('c'), 'cash' => round(coa_cash_balance(today()), 2), 'bank' => round(coa_bank_balance(today()), 2),
+                           'receivable' => round($arap['ar'], 2), 'payable' => round($arap['ap'], 2),
+                           'stock_value' => api_can('items.cost') ? round(coa_stock_value(), 2) : null,
+                           'banks' => array_map(fn($b) => ['id' => (int)$b['id'], 'name' => $b['account_name'] . ($b['bank_name'] ? ' · ' . $b['bank_name'] : ''),
+                                                           'balance' => round(bank_account_balance($b['id']), 2)],
+                                                all('SELECT id, account_name, bank_name FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id'))];
+    }
+    api_json($out);
 }
 
 // ---------------------------------------------------------------------------
@@ -342,9 +417,12 @@ if ($r === 'sync' && $method === 'GET') {
 if ($r === 'menu' && $method === 'GET') {
     // the screens the app does ITSELF, offline. Everything else opens the
     // real website page inside the app.
-    $native = ['sales.php?action=new' => 'newbill', 'sales.php' => 'bills',
-               'payments.php' => 'collect', 'my_collections.php' => 'collect',
-               'parties.php' => 'parties', 'items.php' => 'items', 'stock.php' => 'stock'];
+    $native = ['index.php' => 'home', 'sales.php?action=new' => 'newbill', 'sales.php' => 'sales',
+               'purchases.php' => 'purchases', 'purchases.php?action=new' => 'purchase',
+               'payments.php' => 'payments', 'my_collections.php' => 'collect', 'expenses.php' => 'expenses',
+               'parties.php' => 'parties', 'parties.php?action=new' => 'partyedit', 'items.php' => 'items',
+               'items.php?action=new' => 'itemedit', 'stock.php' => 'items', 'cash_bank.php' => 'cashbank',
+               'reports.php' => 'reports', 'settings.php' => 'settings'];
     $out = [];
     foreach (nav_menu() as $e) {
         if ($e[0] === 'link') {
@@ -427,6 +505,36 @@ if ($r === 'sales') {
     api_json(['error' => 'Unsupported method'], 405);
 }
 
+if ($r === 'items' && $method === 'POST') {
+    // the app's item form: the core fields of the website's. Photos, variants
+    // and kits stay on the website screen.
+    $b = api_body();
+    $iid = (int)($b['id'] ?? 0);
+    api_require($iid ? 'items.edit' : 'items.add');
+    $name = trim((string)($b['name'] ?? ''));
+    if ($name === '') api_json(['error' => 'name required'], 422);
+    $old = $iid ? row('SELECT * FROM items WHERE id = ?', [$iid]) : null;
+    if ($iid && !$old) api_json(['error' => 'Item not found'], 404);
+    $cost = api_can('items.cost') && isset($b['purchase_price']) ? (float)$b['purchase_price'] : (float)($old['purchase_price'] ?? 0);
+    $f = [$name, (int)($b['category_id'] ?? 0) ?: null, trim((string)($b['brand'] ?? '')), mb_substr(trim((string)($b['unit'] ?? 'Pcs')), 0, 20),
+          trim((string)($b['hsn'] ?? '')), (float)($b['tax_rate'] ?? 0), $cost, (float)($b['selling_price'] ?? 0),
+          !empty($b['serial_tracked']) ? 1 : 0, ($b['item_type'] ?? '') === 'service' ? 'service' : 'product',
+          (float)($b['min_stock'] ?? 0), trim((string)($b['barcode'] ?? ''))];
+    if ($iid) q('UPDATE items SET name=?, category_id=?, brand=?, unit=?, hsn=?, tax_rate=?, purchase_price=?, selling_price=?, serial_tracked=?, item_type=?, min_stock=?, barcode=? WHERE id=?', array_merge($f, [$iid]));
+    else { q('INSERT INTO items (name, category_id, brand, unit, hsn, tax_rate, purchase_price, selling_price, serial_tracked, item_type, min_stock, barcode, is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)', $f); $iid = insert_id(); }
+    enforce_min_margin($iid);   // the shop's minimum-profit rule, as on the website
+    log_activity($old ? 'api_item_edit' : 'api_item_add', $name . ' (app)');
+    api_json(['id' => $iid, 'selling_price' => (float)val('SELECT selling_price FROM items WHERE id = ?', [$iid])], $old ? 200 : 201);
+}
+
+if ($r === 'settings' && $method === 'POST') {
+    api_require('settings.edit');
+    $b = api_body();
+    foreach (API_SETTINGS as $k) if (array_key_exists($k, $b)) set_setting($k, mb_substr(trim((string)$b[$k]), 0, 250));
+    log_activity('api_settings', implode(',', array_intersect(array_keys($b), API_SETTINGS)) . ' (app)');
+    api_json(['id' => 1, 'saved' => true]);
+}
+
 if ($r === 'items') {
     api_require('items.view');
     if ($id) {
@@ -462,13 +570,31 @@ if ($r === 'parties') {
         api_json(['data' => $rows]);
     }
     if ($method === 'POST') {
-        api_require('parties.add');
+        // a new party, or (with id) the same fields the website's party form
+        // has; every party works on both sides, as on the website
         $b = api_body();
-        if (empty($b['name'])) api_json(['error' => 'name required'], 422);
-        q('INSERT INTO parties (name, type, mobile, email, gstin, address, city, credit_days) VALUES (?,?,?,?,?,?,?,?)',
-          [$b['name'], $b['type'] ?? 'customer', $b['mobile'] ?? '', $b['email'] ?? '', $b['gstin'] ?? '', $b['address'] ?? '', $b['city'] ?? '', (int)($b['credit_days'] ?? 0)]);
+        $pid = (int)($b['id'] ?? 0);
+        api_require($pid ? 'parties.edit' : 'parties.add');
+        $name = trim((string)($b['name'] ?? ''));
+        if ($name === '') api_json(['error' => 'name required'], 422);
+        $mobile = preg_replace('/[^\d+]/', '', (string)($b['mobile'] ?? ''));
+        $f = [$name, $mobile, trim((string)($b['email'] ?? '')), strtoupper(trim((string)($b['gstin'] ?? ''))),
+              trim((string)($b['address'] ?? '')), trim((string)($b['city'] ?? '')), max(0, (int)($b['credit_days'] ?? 0))];
+        if ($pid) {
+            if (!row('SELECT id FROM parties WHERE id = ?', [$pid])) api_json(['error' => 'Party not found'], 404);
+            q('UPDATE parties SET name=?, mobile=?, email=?, gstin=?, address=?, city=?, credit_days=? WHERE id=?', array_merge($f, [$pid]));
+            log_activity('api_party_edit', $name . ' (app)');
+            api_json(['id' => $pid]);
+        }
+        // the same mobile almost always means the same person: one ledger,
+        // not two (the website's own duplicate guard)
+        $mob10 = substr(preg_replace('/\D/', '', $mobile), -10);
+        if (strlen($mob10) === 10 && ($dupe = row("SELECT id FROM parties WHERE is_active = 1 AND RIGHT(REPLACE(REPLACE(mobile,' ',''),'-',''),10) = ? LIMIT 1", [$mob10])))
+            api_json(['id' => (int)$dupe['id'], 'duplicate' => true], 200);
+        q("INSERT INTO parties (name, type, mobile, email, gstin, address, city, credit_days, opening_balance, is_active) VALUES (?,'both',?,?,?,?,?,?,?,1)",
+          array_merge($f, [(float)($b['opening_balance'] ?? 0)]));
         $pid = insert_id();
-        log_activity('api_party_add', $b['name'] . ' via API token');
+        log_activity('api_party_add', $name . ' (app)');
         api_json(['id' => $pid], 201);
     }
     api_json(['error' => 'Unsupported method'], 405);

@@ -14,6 +14,15 @@
 import pkg from '/opt/node22/lib/node_modules/playwright/index.js';
 const { chromium } = pkg;
 const API = 'http://127.0.0.1:8088';
+// earlier runs sell what is on the shelf; make sure a serial-tracked item has
+// two pieces there, so the serial screens have something to show
+import { execFileSync } from 'child_process';
+execFileSync('php', ['-r', 'require "' + new URL('../../', import.meta.url).pathname + 'includes/init.php"; ' +
+  `$it = (int)val("SELECT id FROM items WHERE serial_tracked = 1 AND is_active = 1 ORDER BY id LIMIT 1");
+   $loc = (int)val("SELECT id FROM locations ORDER BY id LIMIT 1");
+   for ($i = (int)val("SELECT COUNT(*) FROM item_serials WHERE status = 'in_stock'"); $it && $i < 2; $i++) {
+     q("INSERT INTO item_serials (item_id, serial_no, location_id, status) VALUES (?,?,?,'in_stock')", [$it, 'TSN' . strtoupper(bin2hex(random_bytes(4))), $loc]);
+     adjust_stock($it, $loc, 1, 'opening', null, 'app test shelf'); }`]);
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const ctx = await b.newContext({ viewport: { width: 412, height: 860 } });
 const p = await ctx.newPage();
@@ -54,7 +63,7 @@ await cutApi();
 await p.waitForTimeout(300);
 
 // --- who owes what
-await p.click('.tabs button[data-go=dues]'); await p.waitForTimeout(700);
+await p.evaluate(() => App.go('dues')); await p.waitForTimeout(700);
 const duesTxt = await p.locator('#main').textContent();
 ok('Dues opens with no signal', /Total to receive/.test(duesTxt));
 const dueCount = await p.locator('#d_list li').count();
@@ -65,8 +74,8 @@ if (dueCount > 0) {
   await p.locator('#d_list li').first().click();
   await p.waitForTimeout(700);
   const t = await p.locator('#main').textContent();
-  ok('a party\'s balance shows, offline', /To receive|Advance held|All settled/.test(t));
-  ok('...with the statement under it', /Recent account/.test(t));
+  ok('a party\'s balance shows, offline', /They owe you|You owe them|Advance with you|All settled/.test(t));
+  ok('...with the statement under it (opening balance, every line)', /Statement/.test(t) && /Opening balance/.test(t));
   ok('...and a WhatsApp reminder button', await p.locator('#p_remind').count() + await p.locator('#p_collect').count() > 0);
 }
 
@@ -76,7 +85,7 @@ const rep = await p.locator('#main').textContent();
 ok('the day\'s figures work out offline', /Today's sales/.test(rep));
 ok('...sales for today, the week and the month', /Last 7 days/.test(rep) && /This month/.test(rep));
 ok('...and what is owed both ways', /To receive/.test(rep) && /To pay/.test(rep));
-ok('...honestly labelled as coming from the last sync', /last synced/.test(rep));
+ok('...honestly labelled as coming from the last sync', /last synced/.test(await p.locator('#main').textContent()));
 
 // --- stock
 await p.evaluate(() => App.go('stock')); await p.waitForTimeout(500);
