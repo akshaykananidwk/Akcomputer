@@ -7,112 +7,14 @@ $action = get('action', 'list');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('purchases.add');
-    if (is_period_locked(post('purchase_date', today()))) { flash(period_lock_message(), 'error'); redirect('purchases.php?action=new'); }
-    $company = row('SELECT * FROM companies WHERE id = ?', [(int)post('company_id', 1)]);
-    $loc_id = stock_home_location((int)post('location_id') ?: (int)$u['location_id']);
-    if (locked_location_id()) $loc_id = locked_location_id(); // godown/shop manager bills only from their own place
-    $party_id = (int)post('party_id');
-    $item_ids = post('item_id', []);
-    $qtys = post('qty', []);
-    $prices = post('price', []);
-    $taxes = post('tax_rate', []);
-    $serials_in = post('serials', []);
-
-    $rows = [];
-    $si = 0;
-    foreach ($item_ids as $i => $iid) {
-        $iid = (int)$iid;
-        $qty = (float)($qtys[$i] ?? 0);
-        // Serial-tracked line: the count of serial numbers typed IS the qty, so
-        // 4 serials with qty left at 1 becomes qty 4 automatically (no error).
-        $serialsRaw = trim((string)($serials_in[$i] ?? ''));
-        $snCount = $serialsRaw !== '' ? count(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $serialsRaw)))) : 0;
-        if ($snCount > 0) $qty = $snCount;
-        if (!$iid || $qty <= 0) { continue; }
-        $tr = ($company && $company['is_gst']) ? (float)($taxes[$i] ?? 0) : 0;
-        $rows[] = ['item_id' => $iid, 'qty' => $qty, 'price' => (float)($prices[$i] ?? 0),
-                   'tax_rate' => $tr, 'total' => $qty * (float)($prices[$i] ?? 0),
-                   'serials' => $serialsRaw];
-    }
-    if (!$rows || !$party_id) { flash('Party and at least one item required.', 'error'); redirect('purchases.php?action=new'); }
-
-    $subtotal = array_sum(array_column($rows, 'total'));
-    $tax = 0;
-    foreach ($rows as $r) $tax += $r['total'] * $r['tax_rate'] / 100;
-    $discType = post('discount_type') === 'percent' ? 'percent' : 'amount';
-    $discRaw = (float)post('discount_val');
-    $discount = $discType === 'percent' ? round($subtotal * $discRaw / 100, 2) : min($discRaw, $subtotal);
-    $discPct = $discType === 'percent' ? $discRaw : 0;
-    $shipping = max(0, (float)post('shipping'));
-    $total = $subtotal - $discount + $tax + $shipping;
-    $paid = min((float)post('paid'), $total);
-    $credit_days = (int)post('credit_days');
-    $pdate = post('purchase_date', today());
-    $modeCode = post('payment_mode', 'cash');
-    list($pmId, $bankAccId) = resolve_payment_target($modeCode, post('bank_account_id'));
-
-    $pdo = db();
-    $pdo->beginTransaction();
     try {
-        q('INSERT INTO purchases (company_id, bill_no, party_id, location_id, purchase_date, credit_days, due_date,
-           subtotal, discount, discount_type, discount_pct, tax_amount, shipping, total, paid, payment_method_id, bank_account_id, status, notes, created_by, bill_photo)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-          [(int)post('company_id', 1), post('bill_no'), $party_id, $loc_id, $pdate, $credit_days,
-           $credit_days ? date('Y-m-d', strtotime("$pdate +$credit_days days")) : null,
-           $subtotal, $discount, $discType, $discPct, $tax, $shipping, $total, $paid, $pmId, $bankAccId, payment_status($total, $paid), post('notes'), $u['id'],
-           preg_replace('/[^A-Za-z0-9_\-.]/', '', post('bill_photo'))]);
-        $pid = insert_id();
-
-        foreach ($rows as $r) {
-            $item = row('SELECT * FROM items WHERE id = ?', [$r['item_id']]);
-            q('INSERT INTO purchase_items (purchase_id, item_id, qty, price, tax_rate, total) VALUES (?,?,?,?,?,?)',
-              [$pid, $r['item_id'], $r['qty'], $r['price'], $r['tax_rate'], $r['total']]);
-            adjust_stock($r['item_id'], $loc_id, $r['qty'], 'purchase', $pid, post('bill_no'), (float)$r['price']);
-
-            if ($item['serial_tracked']) {
-                $sns = array_values(array_filter(array_map('trim', preg_split('/[\r\n,]+/', $r['serials']))));
-                if (count($sns) != $r['qty']) throw new Exception("Enter {$r['qty']} serial number(s) for {$item['name']} (one per line).");
-                if ($bad = biz_bad_imeis($sns)) throw new Exception('Not a real IMEI for ' . $item['name'] . ': ' . implode(', ', $bad) . ' — an IMEI is 15 digits (dial *#06# on the phone).');
-                foreach ($sns as $sn) {
-                    // Advance billing reconciliation: this serial may already be
-                    // SOLD (sale entered before the vendor's bill arrived). Link
-                    // it to this purchase and leave it sold - the stock +qty
-                    // above cancels the sale's earlier -qty, and the unit's
-                    // history is complete. A serial already sitting in stock is
-                    // a genuine duplicate and is refused.
-                    $srow = row('SELECT id, status FROM item_serials WHERE item_id=? AND serial_no=?', [$r['item_id'], $sn]);
-                    if ($srow && $srow['status'] === 'sold') {
-                        q('UPDATE item_serials SET purchase_id=? WHERE id=?', [$pid, $srow['id']]);
-                    } elseif ($srow) {
-                        throw new Exception("Serial $sn already exists in stock for {$item['name']} - it can't be purchased twice.");
-                    } else {
-                        q("INSERT INTO item_serials (item_id, serial_no, location_id, status, purchase_id, warranty_months)
-                           VALUES (?,?,?,'in_stock',?,?)", [$r['item_id'], $sn, $loc_id, $pid, $item['warranty_months']]);
-                    }
-                }
-            }
-        }
-        // update item purchase price to latest, then lift selling to keep
-        // the minimum profit margin (item's own margin, else the default %)
-        foreach ($rows as $r) {
-            q('UPDATE items SET purchase_price = ? WHERE id = ?', [$r['price'], $r['item_id']]);
-            enforce_min_margin($r['item_id']);
-        }
-
-        if ($paid > 0) {
-            q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-              [$party_id, 'out', $paid, $modeCode, $bankAccId, $pmId, 'purchase', $pid, $pdate, 'Against purchase bill ' . post('bill_no'), $u['id']]);
-        }
-        $pdo->commit();
-        log_activity('purchase_add', "#$pid total $total");
-        flash('Purchase saved, stock updated.');
-        redirect('purchase_view.php?id=' . $pid);
+        $res = purchase_save_form($u);
     } catch (Exception $ex) {
-        $pdo->rollBack();
-        flash('Error: ' . plain_error($ex), 'error');
+        flash(($ex instanceof SaleRefused ? '' : 'Error: ') . plain_error($ex), 'error');
         redirect('purchases.php?action=new');
     }
+    flash('Purchase saved, stock updated.');
+    redirect('purchase_view.php?id=' . $res['id']);
 }
 
 // ---------- delete / cancel ----------

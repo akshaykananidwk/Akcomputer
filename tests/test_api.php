@@ -106,7 +106,8 @@ $_POST = [];
 // An app payment against a party must settle that party's oldest bills, or
 // the bill stays "unpaid" on the website for ever and Receivables lies.
 $payPost = substr($src, strpos($src, "if (\$r === 'payments'"));
-t_ok('an app payment settles the oldest bills first', strpos($payPost, 'money_settle_oldest_first') !== false);
+t_ok('an app payment settles the oldest bills first (the website\'s own save)', strpos($payPost, 'payment_save_form(') !== false
+     && strpos(file_get_contents(__DIR__ . '/../includes/entry_save.php'), 'money_settle_oldest_first') !== false);
 
 t_group('App API — the phone can reach it at all');
 
@@ -1229,3 +1230,49 @@ t_ok('...only the FIRST heading, so a sub-heading is not given a rule too',
      strpos($cssF, '.card > h2:first-child') !== false && strpos($cssF, '.card h2:first-child {') === false);
 t_ok('every colour is a token, so both themes follow',
      !preg_match('/\.card \{[^}]*#[0-9a-f]{3,6}/i', $cssF));
+
+t_group('App API — purchase, money out and expenses are the website\'s own saves');
+$apiSrc = file_get_contents(__DIR__ . '/../api.php');
+foreach (['purchase_save_form(', 'payment_save_form(', 'expense_save_form('] as $fn)
+    t_ok("the app's route calls $fn (the same as the website screen)", strpos($apiSrc, $fn) !== false);
+foreach (['purchases.php' => 'purchase_save_form(', 'payments.php' => 'payment_save_form(', 'expenses.php' => 'expense_save_form('] as $f => $fn)
+    t_ok("$f calls $fn", strpos(file_get_contents(__DIR__ . '/../' . $f), $fn) !== false);
+foreach (['purchases', 'expenses', 'expense_requests'] as $tbl) {
+    $uniq = val("SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'client_uuid' AND NON_UNIQUE = 0", [$tbl]);
+    t_ok("$tbl.client_uuid is UNIQUE (a retry cannot stock or spend twice)", (int)$uniq === 1);
+}
+// a purchase from the app: stock in, cost updated, money out in the cash book
+$sup = t_party(); q("UPDATE parties SET type = 'supplier' WHERE id = ?", [$sup]);
+$pit = t_item(0, $loc1, 500);
+$pu = 'pu-' . bin2hex(random_bytes(8));
+$_POST = ['company_id' => $gstCo ?: 1, 'location_id' => $loc1, 'party_id' => $sup, 'bill_no' => 'S-77', 'purchase_date' => today(),
+          'paid' => 200, 'payment_mode' => 'cash', 'item_id' => [$pit], 'qty' => [3], 'price' => [400], 'tax_rate' => [18], 'serials' => ['']];
+$pr = purchase_save_form($admin, $pu);
+$prow = row('SELECT * FROM purchases WHERE id = ?', [$pr['id']]);
+t_ok('the purchase carries the phone\'s uuid', $prow['client_uuid'] === $pu);
+t_eq('three came onto the shelf', (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$pit]), 3);
+t_eq('the cost price is now the supplier\'s', (float)val('SELECT purchase_price FROM items WHERE id = ?', [$pit]), 400);
+t_eq('the money paid went out of the cash book', (float)val("SELECT SUM(amount) FROM payments WHERE ref_type = 'purchase' AND ref_id = ? AND direction = 'out'", [$pr['id']]), 200);
+if ($gstCo) t_eq('...and GST on a GST firm\'s purchase is the supplier\'s rate', (float)$prow['tax_amount'], 216);
+// money out to that supplier settles the purchase bill
+$pay = 'pa-' . bin2hex(random_bytes(8));
+$_POST = ['party_id' => $sup, 'direction' => 'out', 'amount' => 100, 'mode' => 'cash', 'pay_date' => today()];
+$po = payment_save_form($admin, $pay);
+t_ok('payment-out carries the phone\'s uuid', val('SELECT client_uuid FROM payments WHERE id = ?', [$po['id']]) === $pay);
+t_eq('...and settles the supplier\'s bill', (float)val('SELECT paid FROM purchases WHERE id = ?', [$pr['id']]), 300);
+$threw = '';
+try { $_POST = ['party_id' => 0, 'direction' => 'out', 'amount' => 100]; payment_save_form($admin); } catch (SaleRefused $e) { $threw = $e->getMessage(); }
+t_ok('a payment with no party is refused, nothing written', $threw !== '');
+// expenses: small ones go in, big ones from staff wait for the owner
+$old = setting('expense_approval_above', '0'); set_setting('expense_approval_above', '1000');
+$_POST = ['amount' => 150, 'category' => 'Tea & Snacks', 'mode' => 'cash', 'exp_date' => today()];
+$e1 = expense_save_form($admin, 'ex-' . bin2hex(random_bytes(8)));
+t_ok('an expense is written', !$e1['pending'] && (float)val('SELECT amount FROM expenses WHERE id = ?', [$e1['id']]) === 150.0);
+$staff = $admin; $staff['perms'] = ['expenses.add'];
+$_SESSION_BAK = $_SESSION ?? []; $_SESSION = [];
+$_POST = ['amount' => 5000, 'category' => 'Office Rent', 'mode' => 'cash', 'exp_date' => today()];
+$e2 = expense_save_form($staff, 'ex-' . bin2hex(random_bytes(8)));
+$_SESSION = $_SESSION_BAK;
+t_ok('a big expense from staff waits for approval, not in the books', $e2['pending'] && !val('SELECT id FROM expenses WHERE amount = 5000 AND client_uuid IS NOT NULL AND created_by = ? AND exp_date = ?', [$staff['id'], today()]));
+set_setting('expense_approval_above', $old);
+$_POST = [];

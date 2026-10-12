@@ -10,147 +10,17 @@ $id = (int)get('id');
 // ---------- save payment (with optional bill allocation) ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save_payment') {
     require_perm('payments.add');
-    $party_id = (int)post('party_id');
     $dir = post('direction') === 'out' ? 'out' : 'in';
-    $amount = (float)post('amount');
-    // settlement discount ("₹7,040 ના ₹7,000 લઈ ₹40 જતા કર્યા") - settles the
-    // ledger/bills WITHOUT touching cash or bank (its own 'discount' row)
-    $discount = max(0, round((float)post('discount'), 2));
-    $party = row('SELECT * FROM parties WHERE id = ?', [$party_id]);
-    if (!$party || $amount + $discount <= 0) { flash('Party and amount required.', 'error'); redirect('payments.php?action=new&dir=' . $dir); }
-    if (is_period_locked(post('pay_date', today()))) { flash(period_lock_message(), 'error'); redirect('payments.php?action=new&dir=' . $dir); }
-
-    $allocIds = post('alloc_id', []);
-    $allocAmts = post('alloc_amt', []);
-    $pdo = db();
-    $pdo->beginTransaction();
     try {
-        $allocated = 0;
-        $allocNotes = [];
-        $allocRows = []; // structured record of which bills this payment settles, so a later delete can be reversed correctly
-        foreach ($allocIds as $i => $bid) {
-            $amt = round((float)($allocAmts[$i] ?? 0), 2);
-            // 'op' = the party's OPENING balance line (જૂનો હિસાબ) - nothing
-            // to update on any bill; the allocation row itself is the record
-            if ($bid === 'op') {
-                $amt = min($amt, opening_due($party_id, $dir));
-                if ($amt <= 0.009) continue;
-                $allocNotes[] = 'Opening Bal: ₹' . money($amt);
-                $allocRows[] = ['ref_type' => 'opening', 'ref_id' => $party_id, 'amount' => $amt];
-                $allocated += $amt;
-                continue;
-            }
-            $bid = (int)$bid;
-            if (!$bid || $amt <= 0) continue;
-            if ($dir === 'in') {
-                $bill = row('SELECT * FROM sales WHERE id = ? AND party_id = ? AND is_cancelled = 0', [$bid, $party_id]);
-                if (!$bill) continue;
-                $amt = min($amt, $bill['total'] - $bill['paid']);
-                if ($amt <= 0) continue;
-                q('UPDATE sales SET paid = paid + ?, status = ? WHERE id = ?',
-                  [$amt, payment_status($bill['total'], $bill['paid'] + $amt), $bid]);
-                $allocNotes[] = $bill['invoice_no'] . ': ₹' . money($amt);
-                $allocRows[] = ['ref_type' => 'sale', 'ref_id' => $bid, 'amount' => $amt];
-            } else {
-                $bill = row('SELECT * FROM purchases WHERE id = ? AND party_id = ? AND is_cancelled = 0', [$bid, $party_id]);
-                if (!$bill) continue;
-                $amt = min($amt, $bill['total'] - $bill['paid']);
-                if ($amt <= 0) continue;
-                q('UPDATE purchases SET paid = paid + ?, status = ? WHERE id = ?',
-                  [$amt, payment_status($bill['total'], $bill['paid'] + $amt), $bid]);
-                $allocNotes[] = ($bill['bill_no'] ?: '#' . $bid) . ': ₹' . money($amt);
-                $allocRows[] = ['ref_type' => 'purchase', 'ref_id' => $bid, 'amount' => $amt];
-            }
-            $allocated += $amt;
-        }
-        if ($allocated > $amount + $discount + 0.009) throw new Exception('Linked amount is more than payment + discount.');
-
-        // whatever is NOT explicitly linked settles the party's OLDEST due
-        // bills automatically (Vyapar-style): a plain "received ₹400" also
-        // clears the bill it obviously pays, so the Receivables list stays
-        // truthful instead of showing already-collected bills forever
-        $autoLeft = round($amount + $discount - $allocated, 2);
-        foreach (money_settle_oldest_first($party_id, $dir, $autoLeft) as $t) {
-            $allocNotes[] = $t['label'] . ': ₹' . money($t['amount']);
-            $allocRows[] = ['ref_type' => $t['ref_type'], 'ref_id' => $t['ref_id'], 'amount' => $t['amount']];
-            $allocated += $t['amount'];
-        }
-
-        // bills settle from the CASH part first; whatever remains rides the
-        // separate discount row so a later delete reverses each correctly
-        list($mainAlloc, $discAlloc) = money_split_cash_discount($allocRows, $amount);
-
-        $notes = trim(post('notes'));
-        if ($allocNotes) $notes = trim($notes . ' [' . implode(', ', $allocNotes) . ']');
-        // resolve_payment_target: only a bank-type mode may carry a bank
-        // account id - the hidden bank dropdown still posts a value on cash
-        // payments, and that stray id used to land cash receipts in the
-        // Bank Ledger
-        [$pmId, $bankAccId] = resolve_payment_target(post('mode', 'cash'), (int)post('bank_account_id'));
-        $pid = null;
-        if ($amount > 0.009) {
-            q('INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, pay_date, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?)',
-              [$party_id, $dir, $amount, post('mode', 'cash'), $bankAccId, $pmId,
-               post('pay_date', today()), $notes, $u['id']]);
-            $pid = insert_id();
-            foreach ($mainAlloc as $a) {
-                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $a['ref_type'], $a['ref_id'], $a['amount']]);
-            }
-        }
-        if ($discount > 0.009) {
-            q("INSERT INTO payments (party_id, direction, amount, mode, bank_account_id, payment_method_id, pay_date, notes, created_by) VALUES (?,?,?,'discount',NULL,NULL,?,?,?)",
-              [$party_id, $dir, $discount, post('pay_date', today()), trim('Settlement discount' . ($notes !== '' ? ' — ' . $notes : '')), $u['id']]);
-            $dpid = insert_id();
-            $pid = $pid ?: $dpid;
-            foreach ($discAlloc as $a) {
-                q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$dpid, $a['ref_type'], $a['ref_id'], $a['amount']]);
-            }
-        }
-        // The cheque itself. The payment above is the money; this is the
-        // piece of paper, which still has to reach the bank and can still
-        // bounce - and if it does, cheques.php reverses that payment.
-        if ($pid && post('mode') === 'cheque' && trim((string)post('cheque_no')) !== '') {
-            cheque_add(['direction' => $dir, 'party_id' => $party_id, 'payment_id' => $pid,
-                        'cheque_no' => post('cheque_no'), 'bank_name' => post('cheque_bank'),
-                        'cheque_date' => post('cheque_date', post('pay_date', today())),
-                        'amount' => $amount, 'notes' => 'Payment P-' . $pid . ' with']);
-        }
-        // What the bank or the gateway quietly took off this payment. It is a
-        // real cost, so it becomes an ordinary expense in the category the
-        // reports already group under - never hidden inside the amount.
-        $charge = round((float)post('bank_charge'), 2);
-        if ($charge > 0.009) {
-            bank_charge_post($charge, post('pay_date', today()), $bankAccId, post('mode', 'cash'),
-                             '— ' . $party['name'] . ' (P-' . $pid . ')');
-        }
-        $pdo->commit();
-        log_activity('payment_add', "P-$pid party={$party['name']} $dir $amount");
-        fire_webhook('payment.recorded', ['payment_id' => $pid, 'party' => $party['name'], 'direction' => $dir, 'amount' => $amount]);
-        if ($dir === 'in') big_payment_alert($amount, $party['name']);
-        // a UPI credit from the inbox (upi.php) is now in the books
-        if ((int)post('upi_id')) { try { q("UPDATE upi_inbox SET status = 'recorded', payment_id = ?, party_id = ? WHERE id = ? AND status = 'new'", [$pid, $party['id'], (int)post('upi_id')]); } catch (Exception $e) {} }
-
-        // WhatsApp receipt to party (payment-in only)
-        if ($dir === 'in' && post('send_wa') && $party['mobile']) {
-            $bal = party_balance($party_id);
-            $balTxt = $bal > 0.009 ? '₹' . money($bal) . ' (due)' : ($bal < -0.009 ? '₹' . money(-$bal) . ' (advance)' : '₹0.00 (clear)');
-            $discLine = $discount > 0.009 ? 'Discount: Rs ' . money($discount) . "\n" : '';
-            wa_context(['kind' => 'receipt', 'amount' => money($amount), 'date' => dmy(post('pay_date', today())), 'balance' => $balTxt]);
-            send_whatsapp($party['mobile'], wa_template('payment_receipt', [
-                'amount' => money($amount), 'mode' => post('mode', 'cash'), 'date' => dmy(post('pay_date', today())),
-                'alloc' => ($allocNotes ? 'Against: ' . implode(', ', $allocNotes) . "\n" : '') . $discLine,
-                'balance' => $balTxt, 'party' => $party['name'],
-            ]), '', wa_customer_buttons($party['mobile'], 'receipt'));
-        }
-        flash(($dir === 'in' ? 'Payment-In' : 'Payment-Out') . ' of ₹' . money($amount) . ' saved'
-            . ($discount > 0.009 ? ' + discount Rs ' . money($discount) : '')
-            . ($allocNotes ? ' & linked to ' . count($allocNotes) . ' bill(s).' : '.'));
-        redirect('payments.php');
+        $res = payment_save_form($u);
     } catch (Exception $ex) {
-        $pdo->rollBack();
-        flash('Error: ' . plain_error($ex), 'error');
+        flash(($ex instanceof SaleRefused ? '' : 'Error: ') . plain_error($ex), 'error');
         redirect('payments.php?action=new&dir=' . $dir);
     }
+    flash(($dir === 'in' ? 'Payment-In' : 'Payment-Out') . ' of ₹' . money($res['amount']) . ' saved'
+        . ($res['discount'] > 0.009 ? ' + discount Rs ' . money($res['discount']) : '')
+        . ($res['alloc'] ? ' & linked to ' . count($res['alloc']) . ' bill(s).' : '.'));
+    redirect('payments.php');
 }
 
 // ---------- one-time cleanup: link OLD unlinked payments to their bills ----------

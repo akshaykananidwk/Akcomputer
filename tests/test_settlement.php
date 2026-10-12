@@ -602,7 +602,7 @@ t_ok('the payment screen asks for it only where a bank is in the middle',
 t_ok('...and the cheque details only for a cheque', strpos($paySrc, "o.value === 'cheque'") !== false);
 
 t_group('a big expense waits for the owner');
-$expSrc = file_get_contents(dirname(__DIR__) . '/expenses.php');
+$expSrc = file_get_contents(dirname(__DIR__) . '/expenses.php') . file_get_contents(dirname(__DIR__) . '/includes/entry_save.php');
 t_ok('the threshold is a setting', strpos($expSrc, "setting('expense_approval_above', '0')") !== false);
 t_ok('...the admin is not stopped by it', strpos($expSrc, '&& !is_full_admin()') !== false);
 // the reason it is held in its own table and not as a pending expense row

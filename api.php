@@ -296,10 +296,14 @@ if ($r === 'sync' && $method === 'GET') {
         'payments' => $pays,
         'days' => $days,
         'locations' => all('SELECT id, name FROM locations WHERE is_active = 1 ORDER BY id'),
-        'companies' => all('SELECT id, name, invoice_prefix, is_gst FROM companies ORDER BY id'),
+        'companies' => all('SELECT id, name, invoice_prefix, is_gst FROM companies WHERE is_active = 1 ORDER BY id'),
         'payment_modes' => all("SELECT code, name, type FROM payment_methods WHERE is_active = 1 ORDER BY sort_order, id"),
         'shop' => setting('app_name', 'AK Computer'),
         'wa_share' => (int)!!setting('wa_enabled', 1),
+        // what the phone needs to total a bill the way the shop's screen will
+        'round_off' => (int)(setting('round_off_default', '1') === '1'),
+        'composition' => (int)biz_on('gst_composition'),
+        'expense_categories' => array_values(array_unique(array_map('strval', expense_categories()))),
     ]);
 }
 
@@ -447,37 +451,80 @@ if ($r === 'parties') {
     api_json(['error' => 'Unsupported method'], 405);
 }
 
+// ---------------------------------------------------------------------------
+// MONEY IN AND OUT, PURCHASES AND EXPENSES FROM THE APP - each through the
+// website screen's own save (includes/entry_save.php), laid out as that
+// screen's form. Each carries the uuid the phone made, so a retry after a
+// lost reply finds the first one instead of writing a second.
+// ---------------------------------------------------------------------------
+/** The phone's uuid, checked; '' when it sent none. */
+function api_uuid(array $b) {
+    $c = trim((string)($b['client_uuid'] ?? ''));
+    if ($c !== '' && !preg_match('/^[0-9a-f-]{16,36}$/i', $c)) api_json(['error' => 'bad client_uuid'], 422);
+    return $c;
+}
+/** Run one of the shared saves with $_POST = $form; refusals come back as 422 with the reason. */
+function api_save(callable $fn, array $form) {
+    $_POST = $form;
+    try { return $fn(); }
+    catch (Exception $ex) { api_json(['error' => plain_error($ex)], 422); }
+}
+$date = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) ? $v : today();
+
 if ($r === 'payments' && $method === 'POST') {
     api_require('payments.add');
     $b = api_body();
-    $amount = (float)($b['amount'] ?? 0);
-    $dir = ($b['direction'] ?? 'in') === 'out' ? 'out' : 'in';
-    if ($amount <= 0) api_json(['error' => 'amount must be > 0'], 422);
-    $partyId = (int)($b['party_id'] ?? 0) ?: null;
-    // retry-safe, exactly as for a bill
-    $cuuid = trim((string)($b['client_uuid'] ?? ''));
+    $cuuid = api_uuid($b);
+    if ($cuuid !== '' && ($dupe = row('SELECT id FROM payments WHERE client_uuid = ?', [$cuuid])))
+        api_json(['id' => (int)$dupe['id'], 'duplicate' => true], 200);
+    $res = api_save(fn() => payment_save_form($u, $cuuid !== '' ? $cuuid : null), [
+        'party_id' => (int)($b['party_id'] ?? 0), 'direction' => ($b['direction'] ?? 'in') === 'out' ? 'out' : 'in',
+        'amount' => (float)($b['amount'] ?? 0), 'discount' => max(0, (float)($b['discount'] ?? 0)),
+        'mode' => (string)($b['mode'] ?? 'cash'), 'pay_date' => $date($b['pay_date'] ?? ''),
+        'notes' => (string)($b['notes'] ?? ''), 'send_wa' => !empty($b['send_wa']) ? '1' : '']);
+    fire_webhook('payment.recorded', ['payment_id' => $res['id'], 'direction' => $res['dir'], 'amount' => $res['amount'], 'source' => 'api']);
+    api_json(['id' => $res['id']], 201);
+}
+
+if ($r === 'purchases' && $method === 'POST') {
+    api_require('purchases.add');
+    $b = api_body();
+    $cuuid = api_uuid($b);
+    if ($cuuid !== '' && ($dupe = row('SELECT id FROM purchases WHERE client_uuid = ?', [$cuuid])))
+        api_json(['id' => (int)$dupe['id'], 'duplicate' => true], 200);
+    $company = row('SELECT * FROM companies WHERE id = ? AND is_active = 1', [(int)($b['company_id'] ?? 0)])
+            ?: row('SELECT * FROM companies WHERE is_active = 1 ORDER BY id LIMIT 1');
+    $f = ['company_id' => $company['id'] ?? 0, 'location_id' => (int)($b['location_id'] ?? $u['location_id']),
+          'party_id' => (int)($b['party_id'] ?? 0), 'bill_no' => mb_substr(trim((string)($b['bill_no'] ?? '')), 0, 60),
+          'purchase_date' => $date($b['purchase_date'] ?? ''), 'paid' => max(0, (float)($b['paid'] ?? 0)),
+          'payment_mode' => (string)($b['payment_mode'] ?? 'cash'), 'discount_type' => 'amount',
+          'discount_val' => max(0, (float)($b['discount'] ?? 0)), 'notes' => (string)($b['notes'] ?? ''), 'credit_days' => 0];
+    foreach ((array)($b['items'] ?? []) as $it) {
+        $item = row('SELECT id, tax_rate FROM items WHERE id = ? AND is_active = 1', [(int)($it['item_id'] ?? 0)]);
+        if (!$item) api_json(['error' => 'Invalid item_id ' . ($it['item_id'] ?? '')], 422);
+        $f['item_id'][] = $item['id'];
+        $f['qty'][] = (float)($it['qty'] ?? 0);
+        $f['price'][] = (float)($it['price'] ?? 0);
+        // the supplier's bill may carry a different rate than our item master
+        $f['tax_rate'][] = isset($it['tax_rate']) ? (float)$it['tax_rate'] : (float)$item['tax_rate'];
+        $f['serials'][] = implode("\n", array_map('strval', (array)($it['serials'] ?? [])));
+    }
+    $res = api_save(fn() => purchase_save_form($u, $cuuid !== '' ? $cuuid : null), $f);
+    api_json(['id' => $res['id'], 'total' => $res['total']], 201);
+}
+
+if ($r === 'expenses' && $method === 'POST') {
+    api_require('expenses.add');
+    $b = api_body();
+    $cuuid = api_uuid($b);
     if ($cuuid !== '') {
-        if (!preg_match('/^[0-9a-f-]{16,36}$/i', $cuuid)) api_json(['error' => 'bad client_uuid'], 422);
-        $dupe = row('SELECT id FROM payments WHERE client_uuid = ?', [$cuuid]);
-        if ($dupe) api_json(['id' => (int)$dupe['id'], 'duplicate' => true], 200);
+        if ($dupe = row('SELECT id FROM expenses WHERE client_uuid = ?', [$cuuid])) api_json(['id' => (int)$dupe['id'], 'duplicate' => true], 200);
+        if ($dupe = row('SELECT id FROM expense_requests WHERE client_uuid = ?', [$cuuid])) api_json(['id' => (int)$dupe['id'], 'pending' => true, 'duplicate' => true], 200);
     }
-    list($pmId2, ) = resolve_payment_target($b['mode'] ?? 'cash', 0);
-    q('INSERT INTO payments (party_id, direction, amount, mode, payment_method_id, pay_date, notes, created_by, client_uuid) VALUES (?,?,?,?,?,?,?,?,?)',
-      [$partyId, $dir, $amount, $b['mode'] ?? 'cash', $pmId2, $b['pay_date'] ?? today(), $b['notes'] ?? '', $u['id'],
-       $cuuid !== '' ? $cuuid : null]);
-    $pid = insert_id();
-    // an unlinked payment still has to settle the party's oldest bills, the
-    // same way the website's Payment-In does - otherwise the app's
-    // collections never clear anything and Receivables lies
-    if ($partyId) {
-        foreach (money_settle_oldest_first($partyId, $dir, $amount) as $t) {
-            q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)',
-              [$pid, $t['ref_type'], $t['ref_id'], $t['amount']]);
-        }
-    }
-    log_activity('api_payment_add', "P-$pid via API token");
-    fire_webhook('payment.recorded', ['payment_id' => $pid, 'direction' => $dir, 'amount' => $amount, 'source' => 'api']);
-    api_json(['id' => $pid], 201);
+    $res = api_save(fn() => expense_save_form($u, $cuuid !== '' ? $cuuid : null), [
+        'amount' => (float)($b['amount'] ?? 0), 'category' => mb_substr(trim((string)($b['category'] ?? '')) ?: 'General', 0, 60),
+        'mode' => (string)($b['mode'] ?? 'cash'), 'exp_date' => $date($b['exp_date'] ?? ''), 'notes' => (string)($b['notes'] ?? '')]);
+    api_json(['id' => $res['id'], 'pending' => $res['pending'], 'over' => $res['over']], 201);
 }
 
 // ---------------------------------------------------------------------------

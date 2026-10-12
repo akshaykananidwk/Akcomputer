@@ -207,7 +207,7 @@ t_ok('assigning a task sends the button message', strpos($tasks, 'wa_task_notify
 $wa = file_get_contents(__DIR__ . '/../includes/whatsapp.php');
 t_ok('a bill goes with its buttons', strpos($wa, "wa_customer_buttons(\$mobile, 'bill', \$sale, \$due)") !== false);
 foreach (['payments.php' => 2, 'repairs.php' => 3, 'collection.php' => 1, 'includes/cron_jobs.php' => 2] as $f => $n)
-    t_ok("$f sends its customer messages with buttons", substr_count(file_get_contents(__DIR__ . '/../' . $f), 'wa_customer_buttons(') >= $n);
+    t_ok("$f sends its customer messages with buttons", substr_count(file_get_contents(__DIR__ . '/../' . $f) . ($f === 'payments.php' ? file_get_contents(__DIR__ . '/../includes/entry_save.php') : ''), 'wa_customer_buttons(') >= $n);
 
 unset($GLOBALS['_wa_http_mock']);
 
