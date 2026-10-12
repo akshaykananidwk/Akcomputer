@@ -22,6 +22,7 @@ let errs = [], bad = 0;
 p.on('pageerror', e => errs.push(e.message));
 const ok = (label, cond, extra) => { if (!cond) bad++; console.log((cond ? '  ✔ ' : '  ✘ ') + label + (extra !== undefined ? '  → ' + extra : '')); };
 const login = async (code, user, pass) => {
+  if (await p.locator('#l_other').isVisible().catch(() => false)) await p.click('#l_other');
   await p.fill('#l_shopcode', code); await p.fill('#l_user', user); await p.fill('#l_pass', pass);
   await p.click('#l_go'); await p.waitForTimeout(4500);
 };
@@ -32,7 +33,8 @@ try {
   await p.click('#l_adv'); await p.fill('#l_srv', 'http://127.0.0.1:8088');
 
   console.log('=== The login screen ===');
-  ok('asks for the shop code, and username OR e-mail', await p.locator('#l_shopcode').count() === 1
+  ok('the shop code is one tap away ("Other shop?"), not a third box for everyone', await p.locator('#l_shopcode').isHidden() && await p.locator('#l_other').isVisible());
+  ok('asks for username OR e-mail', await p.locator('#l_shopcode').count() === 1
      && /e-mail/i.test(await p.locator('label:has-text("Username")').textContent()));
   ok('has "Forgot password?"', await p.locator('#l_forgot').count() === 1);
 

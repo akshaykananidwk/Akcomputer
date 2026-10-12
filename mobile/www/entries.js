@@ -143,7 +143,8 @@ var Entries = {
     if (!box || !p) return;
     box.innerHTML = p.lines.length ? p.lines.map(function (l, i) {
       return '<div class="line"><div style="flex:1;min-width:0"><div class="nm">' + App.esc(l.name) + '</div>' +
-        '<div class="row" style="margin-top:6px;gap:6px">' +
+        '<div class="row cap" style="margin-top:6px;gap:6px"><span>Qty</span><span>Rate ₹</span><span style="max-width:70px">GST %</span></div>' +
+        '<div class="row" style="gap:6px">' +
         '<input type="number" inputmode="decimal" step="any" min="0" value="' + l.qty + '" data-f="qty" data-i="' + i + '" style="margin:0" aria-label="Quantity" placeholder="Qty">' +
         '<input type="number" inputmode="decimal" step="any" min="0" value="' + l.price + '" data-f="price" data-i="' + i + '" style="margin:0" aria-label="Rate" placeholder="Rate">' +
         '<input type="number" inputmode="decimal" step="any" min="0" value="' + l.tax_rate + '" data-f="tax_rate" data-i="' + i + '" style="margin:0;max-width:70px" aria-label="GST %" placeholder="GST%">' +

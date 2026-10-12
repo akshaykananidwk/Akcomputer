@@ -172,13 +172,17 @@ var App = {
         '<div class="logo">AK Computer</div>' +
         '<p class="center muted" style="margin:0 0 20px">Your shop, in your pocket</p>' +
         '<div class="card">' +
-        '<label>Shop code <span style="font-weight:400">(leave empty for AK Computer)</span></label>' +
-        '<input type="text" id="l_shopcode" autocapitalize="off" autocorrect="off" placeholder="e.g. rammobile" value="' + self.esc(code) + '">' +
+        // most people here log in to the main shop: two boxes, not three. A
+        // phone that already uses another shop's code shows it straight away.
+        '<div id="l_codebox"' + (code ? '' : ' hidden') + '>' +
+        '<label>Shop code</label>' +
+        '<input type="text" id="l_shopcode" autocapitalize="off" autocorrect="off" placeholder="e.g. rammobile" value="' + self.esc(code) + '"></div>' +
         '<label>Username or e-mail</label><input type="text" id="l_user" autocapitalize="off" autocorrect="off" autocomplete="username">' +
         '<label>Password</label><input type="password" id="l_pass" autocomplete="current-password">' +
         '<div class="err" id="l_err"></div>' +
         '<button class="btn" id="l_go">Log in</button>' +
-        '<p class="center" style="margin:12px 0 0;font-size:14px"><a href="#" id="l_forgot">Forgot password?</a></p>' +
+        '<p class="center" style="margin:12px 0 0;font-size:14px"><a href="#" id="l_forgot">Forgot password?</a>' +
+        (code ? '' : ' · <a href="#" id="l_other">🏪 Other shop?</a>') + '</p>' +
         '</div>' +
         '<button class="btn sec" id="l_shop">🛒 Browse products &amp; prices</button>' +
         '<p class="center muted" style="font-size:13px;margin-top:16px">' +
@@ -192,6 +196,10 @@ var App = {
       self.el('l_pass').addEventListener('keydown', function (e) { if (e.key === 'Enter') self.doLogin(); });
       self.el('l_user').addEventListener('keydown', function (e) { if (e.key === 'Enter') self.el('l_pass').focus(); });
       self.el('l_shop').addEventListener('click', function () { Shop.enter(); });
+      if (self.el('l_other')) self.el('l_other').addEventListener('click', function (e) {
+        e.preventDefault();
+        self.el('l_codebox').hidden = false; this.hidden = true; self.el('l_shopcode').focus();
+      });
       self.el('l_forgot').addEventListener('click', function (e) {
         e.preventDefault();
         // the website's own page: a reset link by e-mail or an OTP on WhatsApp.
@@ -393,7 +401,7 @@ var App = {
       '<div class="card">' +
       '<div id="b_cobox" hidden><label>Firm</label><select id="b_co"></select></div>' +
       '<div class="tot"><span>Subtotal</span><span id="b_sub">₹0.00</span></div>' +
-      '<div class="tot"><span>Discount ₹</span><input type="number" id="b_disc" inputmode="decimal" min="0" step="any" value="0" style="max-width:110px;margin:0;text-align:right"></div>' +
+      '<div class="tot" style="align-items:center"><span>Discount ₹</span><input type="number" id="b_disc" inputmode="decimal" min="0" step="any" value="0" style="max-width:110px;margin:0;text-align:right"></div>' +
       '<div class="tot" id="b_taxrow"><span>GST</span><span id="b_tax">₹0.00</span></div>' +
       '<div class="tot" id="b_rorow"><span><label style="display:inline;color:inherit;font-weight:400"><input type="checkbox" id="b_ro" style="width:auto;margin:0 6px 0 0">Round off</label></span><span id="b_rov">₹0.00</span></div>' +
       '<div class="tot grand"><span>Total</span><span id="b_grand">₹0.00</span></div>' +
@@ -669,7 +677,8 @@ var App = {
           '<div style="flex:1"><div class="nm">' + self.esc(l.name) + '</div>' +
             '<div class="sub">₹' + self.money(l.price) + ' × ' + l.qty + (self.gstOn() && l.tax_rate ? ' + GST ' + l.tax_rate + '%' : '') +
             (short ? ' <span class="pill bad">stock ' + l.stock + '</span>' : '') + '</div>' +
-            '<div class="row" style="margin-top:6px;gap:6px">' +
+            '<div class="row cap" style="margin-top:6px;gap:6px"><span>Qty</span><span>Rate ₹</span></div>' +
+            '<div class="row" style="gap:6px">' +
               '<input type="number" inputmode="decimal" step="any" min="0" value="' + l.qty + '" data-q="' + i + '" style="margin:0" aria-label="Quantity">' +
               '<input type="number" inputmode="decimal" step="any" min="0" value="' + l.price + '" data-p="' + i + '" style="margin:0" aria-label="Price">' +
             '</div>' +
