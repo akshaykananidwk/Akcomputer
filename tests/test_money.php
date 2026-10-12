@@ -311,7 +311,7 @@ t_ok('the year in the number is the bill\'s year, not today\'s',
 $coB = (int)val('SELECT id FROM companies ORDER BY id DESC LIMIT 1');
 if ($coB !== $coA) t_eq('the other firm has its own series',
      doc_next_no($coB, '2026-06-10', 'OTH', $dt), 'OTH-26-27-00001');
-$slsSrc = file_get_contents(dirname(__DIR__) . '/sales.php');
+$slsSrc = file_get_contents(dirname(__DIR__) . '/sales.php') . file_get_contents(dirname(__DIR__) . '/includes/sale_save.php');
 t_ok('the bill screen no longer builds the number from the row id',
      strpos($slsSrc, "str_pad(\$sale_id, 5, '0'") === false);
 t_ok('...it asks for the next one in the series', strpos($slsSrc, 'doc_next_no($company[\'id\']') !== false);

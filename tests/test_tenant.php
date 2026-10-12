@@ -161,7 +161,7 @@ t_ok('every permission module the code checks maps to a feature or is meant for 
     $everyPlan = ['settings', 'users', 'roles', 'companies', 'dashboard', 'reports'];
     return !array_filter(array_unique($mods), fn($x) => perm_feature($x . '.view') === '' && !in_array($x, $everyPlan, true));
 })());
-foreach (['users.php' => "plan_limit_problem('users')", 'sales.php' => "plan_limit_problem('bills')", 'api.php' => "plan_limit_problem('bills')",
+foreach (['users.php' => "plan_limit_problem('users')", 'includes/sale_save.php' => "plan_limit_problem('bills')",
           'locations.php' => "plan_limit_problem('locations')", 'includes/whatsapp.php' => "plan_limit_problem('wa')"] as $f => $needle)
     t_ok("$f holds its plan limit", strpos(file_get_contents(dirname(__DIR__) . '/' . $f), $needle) !== false);
 $mp = file_get_contents(dirname(__DIR__) . '/my_plan.php');

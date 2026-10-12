@@ -53,28 +53,55 @@ t_ok('rows with no uuid (the website\'s own) are unaffected', $ok);
 // --- the retry must be answered before anything is written ------------------
 $post = substr($src, strpos($src, "if (\$r === 'sales')"));
 $dupePos = strpos($post, 'SELECT id, invoice_no, total FROM sales WHERE client_uuid');
-$insPos  = strpos($post, 'INSERT INTO sales');
-t_ok('the duplicate check runs before the INSERT, not after',
+$insPos  = strpos($post, 'sale_save_form(');
+t_ok('the duplicate check runs before the bill is written, not after',
      $dupePos !== false && $insPos !== false && $dupePos < $insPos);
 t_ok('a repeat answers 200 with the bill it already has, not an error',
      (bool)preg_match("/'duplicate' => true\], 200\)/", $post));
 
-t_group('App API — a half-written bill is never left behind');
+t_group('App API — an app bill is the SAME bill the billing screen writes');
 
-// Every item is looked up and every qty checked BEFORE beginTransaction, so a
-// bad line means nothing at all was written - no stock moved, no number burnt.
-$salesPost = substr($post, strpos($post, "if (\$method === 'POST')"));
-$validate = strpos($salesPost, "api_json(['error' => 'Invalid item_id");
-$begin    = strpos($salesPost, 'beginTransaction');
-t_ok('items are validated before the transaction opens', $validate !== false && $begin !== false && $validate < $begin);
-t_ok('a rejected bill rolls back', strpos($salesPost, 'rollBack') !== false);
-
-// Money taken at the counter has to reach the cash book. Setting sales.paid
-// on its own leaves "Cash in Hand" short by exactly that amount.
-t_ok('cash taken with an app bill writes a real payments row',
-     strpos($salesPost, 'INSERT INTO payments') !== false);
-t_ok('the app bill gets its number from doc_next_no(), the same series as the shop',
-     strpos($salesPost, 'doc_next_no(') !== false);
+// The app used to write its own, simpler bill: no GST, no party from the
+// mobile, services taking stock off the shelf. Now both doors go through
+// sale_save_form(); this proves it with money, not by reading source.
+t_ok('the app\'s bill goes through the billing screen\'s own save', strpos($post, 'sale_save_form(') !== false
+     && strpos($post, 'INSERT INTO sales') === false);
+$admin = row('SELECT u.*, l.name location_name FROM users u JOIN locations l ON l.id = u.location_id WHERE u.is_active = 1 ORDER BY u.id LIMIT 1');
+$admin['perms'] = ['*'];
+$gstCo = (int)val('SELECT id FROM companies WHERE is_active = 1 AND is_gst = 1 ORDER BY id LIMIT 1');
+$loc1 = (int)val('SELECT id FROM locations ORDER BY id LIMIT 1');
+$itA = t_item(10, $loc1, 1000); q('UPDATE items SET tax_rate = 18 WHERE id = ?', [$itA]);
+$svc = t_item(0, $loc1, 300);   q("UPDATE items SET tax_rate = 18, item_type = 'service' WHERE id = ?", [$svc]);
+$mob = '98' . str_pad((string)random_int(0, 99999999), 8, '0', STR_PAD_LEFT);
+$appUuid = substr(bin2hex(random_bytes(16)), 0, 32);
+$_POST = sale_form_from_app(['company_id' => $gstCo, 'location_id' => $loc1, 'customer_name' => 'App Buyer', 'customer_mobile' => $mob,
+    'paid' => 500, 'payment_mode' => 'cash', 'round_off' => 1,
+    'items' => [['item_id' => $itA, 'qty' => 2, 'price' => 1000, 'discount' => 50], ['item_id' => $svc, 'qty' => 1, 'price' => 299.5]]], $admin);
+$appRes = sale_save_form($admin, $appUuid);
+$appSale = row('SELECT * FROM sales WHERE id = ?', [$appRes['id']]);
+// (2*1000 - 50) + 299.5 = 2249.50 taxable; 18% = 404.91; 2654.41 -> 2654 round off -0.41
+if ($gstCo) {
+    t_eq('GST is charged on an app bill, from the item master', $appSale['tax_amount'], 404.91);
+    t_eq('...with the line discount taken before tax', $appSale['subtotal'], 2249.50);
+    t_eq('...and rounded off like the screen does', $appSale['total'], 2654);
+}
+t_ok('the bill carries the phone\'s uuid (so a retry finds it)', $appSale['client_uuid'] === $appUuid);
+t_ok('the invoice number is from the shop\'s own series', $appSale['invoice_no'] !== '' && $appSale['invoice_no'] !== null);
+$autoParty = row('SELECT * FROM parties WHERE mobile = ?', [$mob]);
+t_ok('a new mobile becomes a party, as on the billing screen', $autoParty && (int)$appSale['party_id'] === (int)$autoParty['id']);
+t_eq('the money taken reached the cash book', (float)val("SELECT SUM(amount) FROM payments WHERE ref_type = 'sale' AND ref_id = ?", [$appRes['id']]), 500);
+t_eq('the product left the shelf', (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$itA]), 8);
+t_eq('a service did not touch stock', (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$svc]), 0);
+$threw = '';
+try { $_POST = sale_form_from_app(['items' => [['item_id' => 99999999, 'qty' => 1]]], $admin); }
+catch (SaleRefused $e) { $threw = $e->getMessage(); }
+t_ok('an unknown item is refused before anything is written', $threw !== '');
+$cnt = (int)val('SELECT COUNT(*) FROM sales');
+$threw = false;
+try { $_POST = sale_form_from_app(['items' => [['item_id' => $itA, 'qty' => 1]]], $admin); q('UPDATE items SET is_active = 0 WHERE id = ?', [$itA]); $_POST['item_id'] = [$itA]; sale_save_form(['id' => 0] + $admin); }
+catch (Throwable $e) { $threw = true; }
+q('UPDATE items SET is_active = 1 WHERE id = ?', [$itA]);
+$_POST = [];
 
 // An app payment against a party must settle that party's oldest bills, or
 // the bill stays "unpaid" on the website for ever and Receivables lies.
@@ -269,11 +296,11 @@ t_ok('serials are withheld from a phone not allowed to see stock', strpos($sync,
 
 t_group('One rule: a serial leaves the shelf the same way everywhere');
 
-$salesSrc = file_get_contents(__DIR__ . '/../sales.php');
+$salesSrc = file_get_contents(__DIR__ . '/../sales.php') . file_get_contents(__DIR__ . '/../includes/sale_save.php');
 t_ok('the billing screen no longer works it out by hand',
      substr_count($salesSrc, "UPDATE item_serials SET status='sold'") === 0, 'hand-written copies left');
 t_ok('the billing screen calls the rule', substr_count($salesSrc, 'serial_sell(') === 2, 'new sale + bill edit');
-t_ok('the app calls the same rule', strpos($src, 'serial_sell(') !== false);
+t_ok('the app calls the same rule (the billing screen\'s own save)', strpos($src, 'sale_save_form(') !== false);
 
 // and the rule itself behaves
 $si = t_item(3);

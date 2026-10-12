@@ -386,78 +386,16 @@ if ($r === 'sales') {
             if ($dupe) api_json(['id' => (int)$dupe['id'], 'invoice_no' => $dupe['invoice_no'],
                                  'total' => (float)$dupe['total'], 'duplicate' => true], 200);
         }
-        $company = row('SELECT * FROM companies WHERE is_active = 1 ORDER BY id LIMIT 1');
-        $loc = (int)($b['location_id'] ?? $u['location_id']);
-        $subtotal = 0;
-        $lineRows = [];
-        foreach ($items as $it) {
-            $item = row('SELECT * FROM items WHERE id = ? AND is_active = 1', [(int)($it['item_id'] ?? 0)]);
-            if (!$item) api_json(['error' => 'Invalid item_id ' . ($it['item_id'] ?? '')], 422);
-            $qty = (float)($it['qty'] ?? 0);
-            $price = isset($it['price']) ? (float)$it['price'] : (float)$item['selling_price'];
-            if ($qty <= 0) api_json(['error' => 'qty must be > 0'], 422);
-            $lineTotal = $qty * $price;
-            $subtotal += $lineTotal;
-            // serials come up from the phone as an array of strings; blanks
-            // dropped here so a half-filled box never becomes a serial ''
-            $serials = array_values(array_filter(array_map(
-                fn($s) => trim((string)$s), (array)($it['serials'] ?? [])), fn($s) => $s !== ''));
-            if ($item['serial_tracked'] && count($serials) > $qty) {
-                api_json(['error' => 'Too many serial numbers: ' . $item['name']], 422);
-            }
-            $lineRows[] = ['item_id' => $item['id'], 'qty' => $qty, 'price' => $price, 'total' => $lineTotal,
-                           'serials' => $serials, 'warranty_months' => (int)$item['warranty_months']];
-        }
-        $total = $subtotal;
-        if (($lim = plan_limit_problem('bills')) !== '') api_json(['error' => $lim], 402);
-        $pdo = db();
-        $pdo->beginTransaction();
+        // THE SAME BILL AS THE BILLING SCREEN WRITES - see sale_form_from_app()
         try {
-            $paid = max(0.0, min((float)($b['paid'] ?? 0), $total));
-            $saleDate = $b['sale_date'] ?? today();
-            $mode = $b['payment_mode'] ?? ($paid > 0.009 ? 'cash' : 'credit');
-            list($pmId, $bankAccId) = resolve_payment_target($mode, 0);
-            q('INSERT INTO sales (company_id, party_id, customer_name, customer_mobile, location_id, sale_date, price_type,
-               subtotal, total, paid, payment_mode, payment_method_id, status, notes, created_by, share_token, client_uuid)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-              [$company['id'], (int)($b['party_id'] ?? 0) ?: null, $b['customer_name'] ?? '', $b['customer_mobile'] ?? '', $loc,
-               $saleDate, 'retail', $subtotal, $total, $paid, $mode, $pmId,
-               payment_status($total, $paid), $b['notes'] ?? '', $u['id'], share_token(), $cuuid !== '' ? $cuuid : null]);
-            $sale_id = insert_id();
-            // the SAME numbering rule the billing screen uses - one series per
-            // firm per financial year. The API used to build its own number
-            // from the row id, which is the format the website stopped using.
-            $invoice_no = doc_next_no($company['id'], $saleDate, $company['invoice_prefix']);
-            q('UPDATE sales SET invoice_no = ? WHERE id = ?', [$invoice_no, $sale_id]);
-            foreach ($lineRows as $lr) {
-                q('INSERT INTO sale_items (sale_id, item_id, qty, price, total) VALUES (?,?,?,?,?)',
-                  [$sale_id, $lr['item_id'], $lr['qty'], $lr['price'], $lr['total']]);
-                adjust_stock($lr['item_id'], $loc, -$lr['qty'], 'sale', $sale_id);
-                // one rule, three callers: the billing screen, bill-edit and
-                // this. A serial already on somebody else's bill is refused
-                // here exactly as it is at the counter.
-                foreach ($lr['serials'] as $sn) {
-                    serial_sell($lr['item_id'], $sn, $sale_id, $saleDate, $lr['warranty_months']);
-                }
-            }
-            // money received has to reach the cash book, or "Cash in Hand" is
-            // wrong from the moment the phone syncs. The website's billing
-            // screen writes this row; the API used to set sales.paid and
-            // write nothing, so every app payment was invisible to the books.
-            if ($paid > 0.009) {
-                q('INSERT INTO payments (party_id, direction, amount, mode, payment_method_id, ref_type, ref_id, pay_date, notes, created_by)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)',
-                  [(int)($b['party_id'] ?? 0) ?: null, 'in', $paid, $mode, $pmId, 'sale', $sale_id,
-                   $saleDate, 'With bill ' . $invoice_no . ' (app)', $u['id']]);
-            }
-            $pdo->commit();
-            log_activity('api_sale_add', "$invoice_no via API token");
-            fire_webhook('sale.created', ['sale_id' => $sale_id, 'invoice_no' => $invoice_no, 'total' => $total, 'source' => 'api']);
-            api_json(['id' => $sale_id, 'invoice_no' => $invoice_no, 'total' => $total], 201);
+            $_POST = sale_form_from_app($b, $u);
+            $res = sale_save_form($u, $cuuid !== '' ? $cuuid : null);
         } catch (Exception $ex) {
-            $pdo->rollBack();
-            api_json(['error' => $ex->getMessage()], 422);
+            api_json(['error' => plain_error($ex)], 422);
         }
+        log_activity('api_sale_add', $res['invoice_no'] . ' via the app');
+        api_json(['id' => $res['id'], 'invoice_no' => $res['invoice_no'], 'total' => $res['total'], 'paid' => $res['paid'],
+                  'party_id' => $res['party_id']], 201);
     }
     api_json(['error' => 'Unsupported method'], 405);
 }

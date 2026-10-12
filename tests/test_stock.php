@@ -939,7 +939,7 @@ kit_move_stock($kKit, $kLoc, 2, 1, 'sale_delete', 0, 'test');
 t_eq('cancelling the bill puts the cameras back', stock_qty($kCam, $kLoc), 20.0);
 t_eq('...and the recorders', stock_qty($kDvr, $kLoc), 5.0);
 
-$slsK = file_get_contents(dirname(__DIR__) . '/sales.php');
+$slsK = file_get_contents(dirname(__DIR__) . '/sales.php') . file_get_contents(dirname(__DIR__) . '/includes/sale_save.php');
 t_ok('the bill screen moves a kit\'s parts when it is sold',
      strpos($slsK, "kit_move_stock(\$r['item_id'], \$rloc, \$r['qty'] + \$r['free'], -1, 'sale'") !== false);
 t_ok('...and gives them back when it is cancelled',
@@ -982,7 +982,7 @@ t_eq('...and no serials are held: the shelf may have moved by the time it is res
      $pl['items'][0]['serials'], null);
 t_ok('parking takes no bill number', strpos($slsK, "post('do') === 'park'") !== false
      && strpos($slsK, "doc_next_no") !== false
-     && preg_match("/post\('do'\) === 'park'.*?doc_next_no/s", $slsK) !== 1);
+     && preg_match("/post\('do'\) === 'park'.*?doc_next_no/s", file_get_contents(dirname(__DIR__) . '/sales.php')) !== 1);
 t_ok('finishing a parked bill removes it from the hold list',
      strpos($slsK, "if ((int)post('park_id')) q('DELETE FROM parked_bills WHERE id = ?'") !== false);
 

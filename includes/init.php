@@ -59,6 +59,7 @@ require_once __DIR__ . '/biz.php';   // the kind of business: IMEI, weight, tabl
 require_once __DIR__ . '/i18n.php';  // Gujarati / Hindi screens, text size, simple menu
 require_once __DIR__ . '/hr.php';    // attendance, leave, salary; owner alerts
 require_once __DIR__ . '/mailer.php'; // e-mail: SMTP or the server's mail()
+require_once __DIR__ . '/sale_save.php'; // the one way a bill is written (screen, counter, app)
 tenant_plan_guard();   // another shop: its plan's parts only, and paid up
 
 function base_url($path = '') {
