@@ -26,6 +26,7 @@ pre { font: 12px/1.35 'Courier New', monospace; margin: 8px auto; width: <?= $mm
 </div>
 <p id="btMsg" class="np" style="justify-content:center;font:13px sans-serif"></p>
 <script src="assets/btprint.js?v=<?= asset_v('btprint.js') ?>"></script>
+<?php if (in_phone_app()): ?><script src="assets/appshim.js?v=<?= asset_v('appshim.js') ?>"></script><?php endif; ?>
 <script>
 document.getElementById('btPrint').addEventListener('click', function () {
   var msg = document.getElementById('btMsg');

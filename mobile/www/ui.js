@@ -71,6 +71,14 @@ var App = {
         try { history.replaceState({ name: first }, ''); } catch (e) { }
         self.render(first);
         if (first === 'login') return;
+        // the website's own session ran out while a screen of it was open:
+        // the app asks for a fresh handover and puts the owner back there
+        var m = /[#&]reopen=([^&]*)/.exec(location.hash || '');
+        if (m) {
+          try { history.replaceState({ name: first }, '', location.pathname); } catch (e) { }
+          More.openWeb(decodeURIComponent(m[1]));
+          return;
+        }
         // catching up happens quietly in the background - the app is already
         // usable before the first byte arrives
         setTimeout(function () { self.syncNow(false); }, 800);

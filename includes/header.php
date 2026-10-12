@@ -62,6 +62,7 @@ $_uiClass = trim(($_ui['text'] !== 'normal' ? 't-' . $_ui['text'] : '') . ($_ui[
 <link rel="apple-touch-icon" href="assets/icon-192.png">
 <title><?= e($page_title) ?> - <?= e($app_name) ?></title>
 <link rel="stylesheet" href="assets/style.css?v=<?= asset_v('style.css') ?>">
+<?php if (in_phone_app()): ?><script src="assets/appshim.js?v=<?= asset_v('appshim.js') ?>"></script><?php endif; ?>
 </head>
 <body>
 <?php if ($u): ?>

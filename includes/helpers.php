@@ -472,6 +472,11 @@ function adjust_staff_stock($user_id, $item_id, $delta, $ref_type, $ref_id = nul
  *  every "Settings > Update" automatically forces phones to fetch the new
  *  CSS/JS instead of serving a stale 7-day-cached copy (that stale cache is
  *  how a fixed bug kept LOOKING broken on the owner's phone). */
+/** Is this page open inside the shop's own Android app? (its WebView says so
+ *  in the user agent). Used only to lend the page the app's printer, voice
+ *  typing and file saving - never to decide what someone may see or do. */
+function in_phone_app() { return strpos((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 'AKShopApp/') !== false; }
+
 function asset_v($file) {
     static $c = [];
     if (!isset($c[$file])) { $v = @filemtime(__DIR__ . '/../assets/' . $file); $c[$file] = $v ?: 1; }
