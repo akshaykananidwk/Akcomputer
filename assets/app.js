@@ -1311,6 +1311,8 @@ var SearchPick = {
   init: function (selectId, placeholder) {
     var sel = document.getElementById(selectId);
     if (!sel || sel.dataset.pickReady) return;
+    // already a type-in box from searchselect.js (same search): one box, not two
+    if (sel._ss) return;
     sel.dataset.pickReady = '1';
 
     var wrap = document.createElement('div');

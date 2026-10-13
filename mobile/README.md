@@ -9,8 +9,8 @@
 
 એક જ વાર કરવાનું:
 
-1. ફોનના Chrome માં ખોલો: **https://shop.akdwk.in/mobile/AKComputer-4.1.apk**
-   (અથવા WhatsApp/કેબલથી `AKComputer-4.1.apk` ફાઇલ ફોનમાં મોકલો)
+1. ફોનના Chrome માં ખોલો: **https://shop.akdwk.in/mobile/AKComputer-4.2.apk**
+   (અથવા WhatsApp/કેબલથી `AKComputer-4.2.apk` ફાઇલ ફોનમાં મોકલો)
 2. ડાઉનલોડ પૂરું થાય એટલે એના પર ટચ કરો.
 3. Android પૂછશે — *"આ સ્રોતથી એપ નાખવાની મંજૂરી આપો?"* → **Settings** → **Allow from this source** ચાલુ કરો → પાછા આવો.
    (આ એટલા માટે પૂછે છે કે એપ Play Store માંથી નથી આવતી, આપણી પોતાની દુકાનની છે. જોખમ કંઈ નથી.)
@@ -155,8 +155,8 @@ gradle :app:assembleRelease
 
 તૈયાર apk: `mobile/app/build/outputs/apk/release/app-release.apk`
 
-વહેંચવા માટે એને `mobile/AKComputer-4.1.apk` તરીકે કૉપી કરીને commit કરો —
-પછી એ સીધી `https://shop.akdwk.in/mobile/AKComputer-4.1.apk` પરથી ડાઉનલોડ થાય છે.
+વહેંચવા માટે એને `mobile/AKComputer-4.2.apk` તરીકે કૉપી કરીને commit કરો —
+પછી એ સીધી `https://shop.akdwk.in/mobile/AKComputer-4.2.apk` પરથી ડાઉનલોડ થાય છે.
 
 નવું વર્ઝન કાઢતી વખતે `app/build.gradle` માં `versionCode` અને `versionName`
 વધારવા — નહીં તો Android જૂની એપ પર નવી નાખવા નહીં દે.
@@ -225,6 +225,7 @@ node mobile/test/05-money-in-and-out.mjs   # GST બિલ, ખરીદી, પ
 node mobile/test/06-website-inside-the-app.mjs  # પ્રિન્ટ, ફાઇલ, વોઇસ, Bluetooth, logout
 node mobile/test/07-any-shop-one-app.mjs   # શોપ કોડ, e-mail થી લોગિન, બે શોપ ભેગી નહીં
 node mobile/test/08-whole-shop-offline.mjs # આખી દુકાન ફોનમાં, દરેક પાર્ટીનું બેલેન્સ = વેબસાઈટ, નેટ વગર બધાં સ્ક્રીન
+node mobile/test/09-no-dropdowns.mjs       # ક્યાંય ડ્રોપ ડાઉન નહીં: 129 પેજ + એપ, ટાઇપ કરીને શોધો
 ```
 
 ---

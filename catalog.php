@@ -1018,5 +1018,6 @@ document.querySelectorAll('.cat-link').forEach(function (ch) {
 });
 </script>
 <?= seo_footer() ?>
+<script src="assets/searchselect.js?v=<?= asset_v('searchselect.js') ?>"></script>
 </body>
 </html>

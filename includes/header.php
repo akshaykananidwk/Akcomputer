@@ -177,6 +177,7 @@ $_uiClass = trim(($_ui['text'] !== 'normal' ? 't-' . $_ui['text'] : '') . ($_ui[
 <?php endif; ?>
 <script>var CSRF_TOKEN = <?= json_encode(csrf_token()) ?>;<?php if ($_ui['lang'] !== 'en' && ($_dict = i18n_dict($_ui['lang']))): ?> var I18N = <?= json_encode($_dict, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;<?php endif; ?></script>
 <script src="assets/app.js?v=<?= asset_v('app.js') ?>"></script>
+<script src="assets/searchselect.js?v=<?= asset_v('searchselect.js') ?>"></script>
 <?php unset($_navMenu, $_navItems, $_navQuick, $_nm, $_ni, $_nq, $_navOpen); ?>
 <main class="content<?= $u ? '' : ' content-full' ?>">
 <?php if ($u && !empty($_SESSION['impersonator_id'])): ?>
