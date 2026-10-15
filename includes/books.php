@@ -61,7 +61,7 @@ function it_summary($from, $to) {
     try { foreach (all('SELECT * FROM assets') as $a) $dep += asset_dep($a, fy_of($to)[0])['dep']; } catch (Exception $e) {}
     return ['revenue' => $pl['net_sales'], 'cogs' => $pl['cogs'], 'gross' => $pl['gross'], 'expenses' => $pl['expense_total'], 'by_category' => $pl['expenses'],
             'other_income' => $pl['other_total'], 'loan_principal' => round($principal, 2), 'depreciation' => round($dep, 2),
-            'net' => round($pl['net'] - $dep, 2), 'drawings' => $pl['drawings']];
+            'net' => round($pl['net'] - $dep, 2), 'drawings' => $pl['drawings'], 'final' => round($pl['final'] - $dep, 2)];
 }
 
 /** This month's spending against each budget: [category, budget, spent, pct]. */

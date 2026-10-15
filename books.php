@@ -85,8 +85,9 @@ $yrs = []; for ($y = (int)date('Y') - (date('n') < 4 ? 1 : 0); $y >= (int)date('
   <?php if ($s['other_income']): ?><tr><td>Other income</td><td class="num">+ ₹<?= money($s['other_income']) ?></td></tr><?php endif; ?>
   <tr><td>Business expenses</td><td class="num">− ₹<?= money($s['expenses']) ?></td></tr>
   <tr><td>Depreciation on assets</td><td class="num">− ₹<?= money($s['depreciation']) ?></td></tr>
-  <tr><td><b>Net profit</b></td><td class="num"><b class="<?= $s['net'] < 0 ? 'text-danger' : '' ?>">₹<?= money($s['net']) ?></b></td></tr>
-  <tr><td class="muted">Owner's household spending (drawings, not a business cost)</td><td class="num muted">₹<?= money($s['drawings']) ?></td></tr>
+  <tr><td><b>Business net profit</b></td><td class="num"><b class="<?= $s['net'] < 0 ? 'text-danger' : '' ?>">₹<?= money($s['net']) ?></b></td></tr>
+  <tr><td>Household / personal (drawings)</td><td class="num">− ₹<?= money($s['drawings']) ?></td></tr>
+  <tr><td><b><?= e(ledger_final_label()) ?></b><?= $s['final'] < 0 ? ' <b class="text-danger">(LOSS)</b>' : '' ?></td><td class="num"><b class="<?= $s['final'] < 0 ? 'text-danger' : '' ?>">₹<?= money($s['final']) ?></b></td></tr>
 </tbody></table><button class="btn btn-sm btn-outline no-print mt" onclick="print()">🖨️ Print for the CA</button></div>
 
 <?php elseif ($tab === 'budget'): $st = []; foreach (budget_status() as $b) $st[$b['category']] = $b; ?>

@@ -229,7 +229,44 @@ function ledger_pl($from, $to) {
     return ['sales' => round($sales, 2), 'returns' => round($returns, 2), 'net_sales' => $netSales, 'cogs' => round($cogs, 2), 'gross' => $gross,
             'other_income' => array_filter($inc, fn($v) => abs($v) > 0.004), 'other_total' => $other,
             'expenses' => $byCat, 'expense_total' => $opex, 'net' => round($gross + $other - $opex, 2),
-            'drawings' => round($b['3100'] ?? 0, 2), 'gst' => round(-($b['2100'] ?? 0), 2)];
+            'drawings' => round($b['3100'] ?? 0, 2), 'household' => ledger_household_by_category($from, $to),
+            // what is left after the business's costs AND what went home - each
+            // cost counted once: household is never inside 'net', purchases sit
+            // in stock until sold (COGS), GST is not income, EMI principal is the loan
+            'final' => round($gross + $other - $opex - ($b['3100'] ?? 0), 2),
+            'gst' => round(-($b['2100'] ?? 0), 2)];
+}
+
+/** Household / personal spending (Drawings) in a period, by category. Money
+ *  taken out through a cash / bank adjustment marked "taken home" is its own line. */
+function ledger_household_by_category($from, $to) {
+    $out = [];
+    foreach (all("SELECT IF(src = 'adjust', 'Taken home from cash / bank (adjustment)', descr) cat, SUM(dr - cr) amt FROM " . ledger_sql() . " x
+                  WHERE acct = '3100' AND d BETWEEN ? AND ? GROUP BY cat ORDER BY amt DESC", [$from, $to]) as $r)
+        if (abs((float)$r['amt']) > 0.004) $out[$r['cat'] ?: 'Other'] = round((float)$r['amt'], 2);
+    return $out;
+}
+
+/** The three figures every profit screen shows, in the same words:
+ *  business profit, household, and what is left after both. */
+function ledger_final_label() { return 'Net Profit After Business & Household Expenses (બધા ખર્ચા બાદ બાકી)'; }
+
+/** The three figures as cards, the same on the P&L, the dashboard and the
+ *  Business Report. A minus is spelled out as a LOSS, in red. */
+function ledger_three_cards(array $pl, $link = '') {
+    $card = function ($label, $v, $note, $main = false) use ($link) {
+        $loss = $v < -0.004;
+        $tag = $link ? 'a href="' . e($link) . '"' : 'div';
+        return '<' . $tag . ' class="stat ' . ($loss ? 's-bad' : 's-ok') . '"' . ($main ? ' style="outline:2px solid ' . ($loss ? 'var(--bad)' : 'var(--ok)') . ';outline-offset:-2px"' : '') . '>'
+             . '<div class="stat-label">' . e($label) . '</div>'
+             . '<div class="stat-value">' . ($loss ? '−₹' . money(-$v) : '₹' . money($v)) . '</div>'
+             . '<div class="muted" style="font-size:12px">' . ($loss ? '<b style="color:var(--bad)">LOSS (ખોટ)</b> · ' : '') . e($note) . '</div></' . ($link ? 'a' : 'div') . '>';
+    };
+    return '<div class="grid-stats">'
+         . $card('🏪 Business Net Profit (બિઝનેસનો નફો)', $pl['net'], 'sales − cost of goods − discount − business expenses')
+         . '<div class="stat s-warn"><div class="stat-label">🏠 Household / Personal (ઘરખર્ચ)</div><div class="stat-value">₹' . money($pl['drawings']) . '</div><div class="muted" style="font-size:12px">household, personal and owner drawings</div></div>'
+         . $card('✅ ' . ledger_final_label(), $pl['final'], 'business profit − household', true)
+         . '</div>';
 }
 
 /** Operating expenses (account 6000) by category in a period - the part of

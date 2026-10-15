@@ -148,3 +148,48 @@ t_group('Double entry — it only reads');
 $src = file_get_contents(__DIR__ . '/../includes/ledger.php');
 t_ok('no INSERT, UPDATE, DELETE or ALTER in the books engine', !preg_match('/\b(INSERT|UPDATE|DELETE|ALTER|DROP|TRUNCATE)\b|\bq\(|set_setting\(/', preg_replace('#//.*#', '', $src)));
 $_POST = [];
+
+t_group('Three figures — business profit, household, and what is left after both');
+// a quiet month of its own, so only what is added here is in it
+$F = '2032-06-01'; $Tt = '2032-06-30';
+$three = function () use ($F, $Tt) { $p = ledger_pl($F, $Tt); return [$p['net'], $p['drawings'], $p['final']]; };
+$moves = function ($label, callable $do, $net, $home, $final) use ($three) {
+    [$n0, $h0, $f0] = $three(); $do(); [$n1, $h1, $f1] = $three();
+    t_ok("$label: business profit " . money($net) . ', household ' . money($home) . ', left after all ' . money($final),
+         abs(($n1 - $n0) - $net) < 0.01 && abs(($h1 - $h0) - $home) < 0.01 && abs(($f1 - $f0) - $final) < 0.01,
+         json_encode([round($n1 - $n0, 2), round($h1 - $h0, 2), round($f1 - $f0, 2)]));
+};
+$x = function ($cat, $amt, $mode = 'cash') use ($loc) {
+    q('INSERT INTO expenses (exp_date, category, amount, mode, location_id, created_by) VALUES (?,?,?,?,?,1)', ['2032-06-10', $cat, $amt, $mode, $loc]);
+    return (int)val('SELECT MAX(id) FROM expenses');
+};
+q("INSERT INTO items (name, selling_price, purchase_price, tax_rate, is_active, item_type) VALUES ('TF Item', 1000, 600, 18, 1, 'product')"); $ti = (int)val('SELECT MAX(id) FROM items');
+$_POST = ['company_id' => $co, 'location_id' => $loc, 'party_id' => $ps, 'bill_no' => 'TF-P', 'purchase_date' => '2032-06-02', 'paid' => 0, 'payment_mode' => 'credit',
+          'item_id' => [$ti], 'qty' => [2], 'price' => [600], 'tax_rate' => [18], 'serials' => ['']];
+$moves('buying stock is not an expense (it is a cost only when sold)', function () use ($u) { purchase_save_form($u); }, 0, 0, 0);
+$_POST = ['company_id' => $co, 'location_id' => $loc, 'party_id' => $pa, 'sale_date' => '2032-06-03', 'payment_mode' => 'credit', 'paid' => 0,
+          'row_n' => [1], 'item_id' => [$ti], 'qty' => [1], 'price' => [1000], 'tax_rate' => [18]];
+$moves('selling one: ₹1,000 + GST, cost ₹600 once - GST is not profit', function () use ($u) { sale_save_form($u); }, 400, 0, 400);
+$moves('a ₹50 settlement discount', fn() => q("INSERT INTO payments (party_id, direction, amount, mode, pay_date, created_by) VALUES (?, 'in', 50, 'discount', '2032-06-04', 1)", [$pa]), -50, 0, -50);
+$moves('shop rent ₹300: off both', fn() => $x('Office Rent', 300), -300, 0, -300);
+$moves('₹500 given home: off the last line only', fn() => $x('Money Given Home', 500), 0, 500, -500);
+$moves('a personal medical bill ₹100: household too', fn() => $x('Medical / Personal', 100), 0, 100, -100);
+$moves('cash taken home through an adjustment marked "drawings"', fn() => q("INSERT INTO money_transfers (txn_type, amount, adjust_dir, txn_date, status, created_by, counter) VALUES ('cash_adjust', 70, 'reduce', '2032-06-11', 'done', 1, 'drawings')"), 0, 70, -70);
+$moves('an EMI of ₹1,000 paid through Loans: only its ₹120 interest is a cost', function () use ($x) {
+    $e = $x('EMI / Loan', 1000, 'bank');
+    q("INSERT INTO loans (lender, principal, rate_pct, start_date, months, emi, notes) VALUES ('TF Loan', 10000, 12, '2032-01-01', 12, 1000, '')");
+    q('INSERT INTO loan_payments (loan_id, n, due_date, emi, interest, principal_part, paid_on, expense_id) VALUES (?, 1, ?, 1000, 120, 880, ?, ?)', [(int)val('SELECT MAX(id) FROM loans'), '2032-06-01', '2032-06-10', $e]);
+}, -120, 0, -120);
+$moves('a staff advance is not a cost until it is taken from salary', fn() => $x('Staff Advance', 200), 0, 0, 0);
+[$n, $h, $f] = $three();
+t_eq('left after all = business profit − household, counted once', $f, $n - $h);
+t_eq('...here: 400 − 50 − 300 − 120 = −70 business, −670 home → −740', $f, -740);
+$cards = ledger_three_cards(ledger_pl($F, $Tt));
+t_ok('a minus is shown as a LOSS, in red', strpos($cards, 'LOSS (ખોટ)') !== false && strpos($cards, '−₹740.00') !== false && strpos($cards, 's-bad') !== false);
+t_ok('...under its own name, apart from the business profit', strpos($cards, e(ledger_final_label())) !== false && strpos($cards, 'Business Net Profit') !== false);
+$rb = file_get_contents(__DIR__ . '/../includes/report_body.php'); $ix = file_get_contents(__DIR__ . '/../index.php');
+t_ok('the P&L, the Business Report and the dashboard all draw the same three cards', substr_count($rb, 'ledger_three_cards(') >= 2 && strpos($ix, 'ledger_three_cards($sPL') !== false);
+require_once __DIR__ . '/../includes/books.php';
+t_eq('the year summary for the CA carries the same last line', it_summary($F, $Tt)['final'], $f - it_summary($F, $Tt)['depreciation']);
+$_POST = [];
+

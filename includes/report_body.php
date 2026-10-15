@@ -29,11 +29,7 @@ if ($r === 'business' && can('reports.profit')) {
     $paybl = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid' AND is_cancelled = 0");
     $stockVal = stock_value();
 
-    echo '<div class="grid-stats">';
-    echo '<div class="stat"><div class="stat-label">Net Sales (without GST)</div><div class="stat-value">₹' . money($pl['net_sales']) . '</div></div>';
-    echo '<div class="stat s-ok"><div class="stat-label">Gross Profit</div><div class="stat-value">₹' . money($pl['gross']) . '</div></div>';
-    echo '<div class="stat ' . ($pl['net'] >= 0 ? 's-ok' : 's-bad') . '"><div class="stat-label">NET PROFIT</div><div class="stat-value">₹' . money($pl['net']) . '</div></div>';
-    echo '</div>';
+    echo ledger_three_cards($pl, 'reports.php?r=profit_loss&from=' . urlencode($from) . '&to=' . urlencode($to));
 
     echo '<div class="card"><h2>Profit & Loss (' . dmy($from) . ' → ' . dmy($to) . ')</h2>';
     echo '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><tbody>';
@@ -44,7 +40,9 @@ if ($r === 'business' && can('reports.profit')) {
         ['Gross Profit', $pl['gross'], 'B'],
         ['Add: Other income', $pl['other_total'], ''],
         ['Less: Business expenses', -$pl['expense_total'], ''],
-        ['NET PROFIT', $pl['net'], 'B'],
+        ['BUSINESS NET PROFIT', $pl['net'], 'B'],
+        ['Less: Household / personal', -$pl['drawings'], ''],
+        [strtoupper(ledger_final_label()), $pl['final'], 'B'],
     ];
     foreach ($rows as $x) {
         if ($x[2] !== 'B' && abs($x[1]) < 0.005 && $x[0] === 'Add: Other income') continue;
@@ -54,7 +52,7 @@ if ($r === 'business' && can('reports.profit')) {
              money($x[1]) . ($b ? '</strong>' : '') . '</td></tr>';
     }
     echo '</tbody></table></div>';
-    echo '<p class="muted">The same figures as Accounting → Profit &amp; Loss. Household spending (₹' . money($pl['drawings']) . ') is drawings, not a business expense.</p>';
+    echo '<p class="muted">The same figures as Accounting → Profit &amp; Loss.</p>';
     if ($svc + $repairIncome > 0.009)
         echo '<p class="muted">⚠️ Not in the books: repair jobs delivered (charge − outsource cost) ₹' . money($repairIncome) . ' and task service charges ₹' . money($svc) . '. A job card records no money - make a sale bill for the charge so it reaches the P&amp;L, cash and the customer\'s ledger.</p>';
     echo '</div>';
@@ -1444,15 +1442,13 @@ if ($r === 'balance_sheet' && can('reports.accounting')) {
 
 // ---------------- Profit & Loss, double entry (period) ----------------
 if ($r === 'profit_loss' && can('reports.accounting')) {
+    // Three figures, each counted once: what the business made, what went home,
+    // and what is left after both - the one the owner reads first.
     $pl = ledger_pl($from, $to);
-    echo '<div class="grid-stats">';
-    echo '<div class="stat"><div class="stat-label">Net sales (without GST)</div><div class="stat-value">₹' . money($pl['net_sales']) . '</div></div>';
-    echo '<div class="stat s-ok"><div class="stat-label">Gross Profit</div><div class="stat-value">₹' . money($pl['gross']) . '</div></div>';
-    echo '<div class="stat ' . ($pl['net'] >= 0 ? 's-ok' : 's-bad') . '"><div class="stat-label">NET PROFIT</div><div class="stat-value">₹' . money($pl['net']) . '</div></div>';
-    echo '</div>';
+    echo ledger_three_cards($pl);
     $names = ledger_accounts();
     $line = fn($label, $v, $minus = false, $pad = false) => '<tr><td' . ($pad ? ' style="padding-left:20px"' : '') . '>' . $label . '</td><td class="num"' . ($minus ? ' style="color:var(--bad)"' : '') . '>' . ($minus ? '−' : '') . '₹' . money($v) . '</td></tr>';
-    $bold = fn($label, $v, $top = '1px solid var(--border,#ddd)') => '<tr style="font-weight:600;border-top:' . $top . '"><td>' . $label . '</td><td class="num">₹' . money($v) . '</td></tr>';
+    $bold = fn($label, $v, $top = '1px solid var(--border,#ddd)') => '<tr style="font-weight:600;border-top:' . $top . '"><td>' . $label . '</td><td class="num"' . ($v < -0.004 ? ' style="color:var(--bad)"' : '') . '>' . ($v < -0.004 ? '−₹' . money(-$v) : '₹' . money($v)) . '</td></tr>';
     echo '<div class="card"><h2>Profit &amp; Loss (' . dmy($from) . ' &rarr; ' . dmy($to) . ')</h2>';
     echo '<div class="table-wrap"><table><tbody>';
     echo $line('Sales (without GST)', $pl['sales']);
@@ -1462,18 +1458,18 @@ if ($r === 'profit_loss' && can('reports.accounting')) {
     echo $bold('Gross Profit', $pl['gross']);
     foreach ($pl['other_income'] as $code => $v) echo $line('Add: ' . e($names[$code][0] ?? $code), $v, false, true);
     foreach ($pl['expenses'] as $cat => $v) echo $line('Less: ' . e($cat), $v, true, true);
-    echo $bold('Total expenses', $pl['expense_total']);
-    echo $bold('NET PROFIT', $pl['net'], '2px solid var(--text)');
+    echo $bold('Total business expenses', $pl['expense_total']);
+    echo $bold('🏪 BUSINESS NET PROFIT' . ($pl['net'] < -0.004 ? ' <span style="color:var(--bad)">(LOSS)</span>' : ''), $pl['net'], '2px solid var(--text)');
+    echo '<tr><td colspan="2" style="padding-top:14px;font-weight:600">🏠 Household / personal (ઘરખર્ચ)</td></tr>';
+    foreach ($pl['household'] as $cat => $v) echo $line('Less: ' . e($cat), $v, true, true);
+    if (!$pl['household']) echo '<tr><td style="padding-left:20px" class="muted">None in this period</td><td class="num">₹0.00</td></tr>';
+    echo $bold('Total household / personal', $pl['drawings']);
+    echo $bold('✅ ' . e(strtoupper(ledger_final_label())) . ($pl['final'] < -0.004 ? ' <span style="color:var(--bad)">(LOSS)</span>' : ''), $pl['final'], '3px double var(--text)');
     echo '</tbody></table></div>';
-    echo '<p class="muted mt">GST collected (₹' . money($pl['gst']) . ' net in this period, after returns) belongs to the government and is not income; it is on the Balance Sheet. '
-       . 'Household / personal spending, staff advances and the principal part of loan EMIs are not business expenses, so they are not deducted here.</p>';
-    if ($pl['drawings'] > 0.009) {
-        echo '<div class="card mt"><h3>🏠 Household / personal (drawings)</h3><div class="table-wrap"><table><tbody>';
-        echo $line('Net profit of the business', $pl['net']);
-        echo $line('Taken home / personal spending in this period', $pl['drawings'], true);
-        echo $bold('Left in the business', $pl['net'] - $pl['drawings'], '2px solid var(--text)');
-        echo '</tbody></table></div><p class="muted mt">Money taken home is the owner\'s drawings: it reduces capital, not profit. It used to be deducted as an expense, which showed the business making less than it does.</p></div>';
-    }
+    echo '<p class="muted mt">Each cost is taken off once. Purchases go into stock and become a cost only when the goods are sold (cost of goods sold). '
+       . 'GST collected (₹' . money($pl['gst']) . ' net in this period) belongs to the government and is not income. '
+       . 'A loan EMI\'s interest is an expense; its principal pays the loan back and is not. A staff advance becomes salary when it is recovered from pay. '
+       . 'Household spending is not a business expense, so it is taken off only in the last line.</p>';
     echo '</div>';
 }
 
