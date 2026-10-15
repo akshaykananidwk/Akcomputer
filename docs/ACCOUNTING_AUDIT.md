@@ -1,3 +1,226 @@
+# AK Computer: Accounting System નું સંપૂર્ણ Audit (ભાગ 3, અંતિમ)
+
+**તારીખ:** 15-10-2026 · **Branch:** `claude/multi-location-billing-system-rs1ly6` · **Migration:** v94
+
+> **આ report ના ત્રણ ભાગ છે:**
+> - **ભાગ 3 (આ ભાગ):** સંપૂર્ણ audit, સુધારા અને ચકાસણી.
+> - **ભાગ 1 અને ભાગ 2 (નીચે):** પહેલાં કરેલું નિદાન. તેમાં લખેલું કે "Trial Balance ક્યારેય balance નહીં થાય", તે હવે જૂનું થઈ ગયું છે, કારણ કે ભાગ 3 માં તે મૂળથી સુધાર્યું છે.
+
+---
+
+## 0. તપાસ કેવી રીતે કરી, અને શું નથી કર્યું
+
+**Production data માં કોઈ ફેરફાર કર્યો નથી.** કોઈ entry, opening balance, journal, payment link કે stock બદલ્યો નથી, અને કોઈ suspense entry નાખી નથી. જે સુધારા કર્યા છે તે **ફક્ત software (calculation)** ના છે. તે તમે Settings → Update કરશો ત્યારે જ લાગુ થશે.
+
+તપાસની રીત:
+
+1. **કોડ:** Accounting ને અસર કરતો દરેક ભાગ લાઇન-બાય-લાઇન વાંચ્યો.
+   - Sales, Purchase અને બંનેના Returns
+   - Payment In/Out, contra, discount, credit note
+   - Expenses, Cash/Bank transfers અને adjustments
+   - Opening balances, Stock movements, Loans/EMI, Payroll
+   - Journal
+   - બધા reports: TB, GL, P&L, BS, Business, Bill Profit, GST, Aging, Daily, Purchase
+2. **Test copy:** live ડેટા મને દેખાતો નથી. એટલે એક અલગ database (test copy) બનાવી અને તેમાં દરેક પ્રકારની entry ખરેખર બનાવી. દરેક entry પછી દરેક ખાતાની રકમ હાથથી ગણેલી રકમ સાથે સરખાવી. બધા tests એક transaction માં ચાલે છે અને અંતે rollback થાય છે.
+3. **Browser:** ફોન (390px) અને કમ્પ્યુટર બંને પર દરેક પેજ ખોલીને જોયું.
+4. **ઝડપ:** 20,000 બિલ સાથે Trial Balance 0.6 સેકન્ડમાં બને છે.
+
+**Backup:** સુધારો લાગુ કરતાં પહેલાં **Settings → Backup → Download backup now** કરો અને ફાઇલ સાચવી રાખો. Backup ની ખાતરી હું અહીંથી કરી શકતો નથી, એ તમારે કરવાની છે.
+
+---
+
+## 1. મુખ્ય તારણ
+
+**₹1,50,279.62 ના તફાવતનું મૂળ કારણ કોઈ ખોટી entry નહોતું. Trial Balance ની ગણવાની રીત જ ખોટી હતી.**
+
+- જૂનું Trial Balance દરેક લાઇન જુદા ટેબલમાંથી **અલગ અલગ** ગણતું હતું:
+  - Cash: payments માંથી
+  - Stock: આજની શેલ્ફની કિંમત પરથી
+  - Receivable: party balance પરથી
+- કોઈ પણ entry ની Debit અને Credit બંને બાજુ એક સાથે નોંધાતી નહોતી. એટલે Debit ≠ Credit થવું નક્કી હતું.
+
+**સુધારો (કોડ):** હવે દરેક દસ્તાવેજ **સાચા double-entry** થી post થાય છે (નીચે વિભાગ 2): બિલ, ખરીદી, return, payment, ખર્ચ, transfer, adjustment, opening, stock movement અને journal.
+
+- Trial Balance **પોતાની મેળે balance** થાય છે.
+- કોઈ suspense કે plug entry નથી.
+- તફાવત આવી શકે એવી એક જ જગ્યા બાકી છે: હાથે નાખેલી **unbalanced journal**. Accounting check તેનું નામ બતાવે છે.
+
+Test copy માં પરિણામ:
+
+| | Debit | Credit | ફરક |
+|---|---|---|---|
+| જૂની રીત | ₹2,53,632 | ₹1,55,600 | **₹98,032** |
+| નવી રીત (double entry) | ₹3,12,850 | ₹3,12,850 | **₹0 ✅** |
+
+**તમારા live ના ₹1,50,279.62 નું ચોક્કસ વિભાજન:**
+- **🩺 Accounting check** પેજ "The OLD Trial Balance difference" વિભાગમાં જૂનો ફરક કારણ પ્રમાણે ભાગમાં વહેંચે છે.
+- બધા ભાગનો સરવાળો **બરાબર** જૂના ફરક જેટલો આવે છે. આ test થી સાબિત કર્યું છે.
+- દરેક ભાગ હવે નવી ચોપડીમાં કયા ખાતામાં ગયો તે પણ ત્યાં દેખાય છે.
+
+---
+
+## 2. દરેક Transaction નું Debit / Credit (નવી Posting)
+
+| Transaction | Debit | Credit |
+|---|---|---|
+| **વેચાણ (Sale)** | Party / Walk-in customers (બિલ total) | Sales (GST વગર) + GST collected |
+| …માલ શેલ્ફમાંથી ગયો | Cost of Goods Sold (free pieces સહિત) | Stock |
+| …exchange (trade-in) માં જૂનો માલ આવ્યો | Stock (exchange ની કિંમત) | Sales |
+| **Sales Return** | Sales Returns (GST વગર) + GST collected (પાછો) | Party / Walk-in |
+| …માલ પાછો શેલ્ફ પર | Stock (વેચ્યો ત્યારની cost) | Cost of Goods Sold |
+| **ખરીદી (Purchase)** | Stock (GST વગર, freight સહિત, discount બાદ) + GST input | Supplier |
+| **Purchase Return** | Supplier | Stock |
+| **Payment In** | Cash / Bank / "Money not in a bank yet" | Party / Walk-in |
+| **Payment Out** | Party | Cash / Bank |
+| Settlement discount (in) | Discount allowed (ખર્ચ) | Party |
+| Discount મળ્યું (out) | Party | Discount received (આવક) |
+| Warranty credit note | Supplier | Warranty credit notes (આવક) |
+| Contra | Party (in) / Party (out) | Contra (હંમેશાં શૂન્ય થવું જોઈએ) |
+| **ખર્ચ: business** | Operating expenses (category પ્રમાણે) | Cash / Bank |
+| **ખર્ચ: ઘરખર્ચ / personal** | **Drawings** (capital માંથી ઉપાડ) | Cash / Bank |
+| **ખર્ચ: Staff Advance** | **Staff advances** (સ્ટાફ પાસે લેણું) | Cash / Bank |
+| Salary માંથી advance કપાયો | Salary (ખર્ચ) | Staff advances |
+| **EMI (Books → Loans થી)** | Loan (મુદ્દલ) + Loan interest (ખર્ચ) | Cash / Bank |
+| Loan લીધી (Loans register) | Opening balances | Loans |
+| Cash → Bank / Bank → Cash | Bank / Cash | Cash / Bank |
+| **Cash/Bank adjustment** | Cash / Bank | **તમે પસંદ કરો તે ખાતું:** Capital / Opening / Other income / Bank charges / Drawings. પસંદ ન કરો ત્યાં સુધી "not yet classified" (Balance Sheet પર ખુલ્લું દેખાય છે) |
+| Party / Bank opening balance | Party / Bank | Opening balances |
+| Opening stock / Excel import | Stock | Opening balances |
+| Stock ગણતરી / સુધારો / warranty | Stock | Stock adjustments |
+| Repair માં વપરાયેલો માલ | Cost of Goods Sold | Stock |
+| Journal (હાથે) | જે ખાતું લખ્યું હોય | જે ખાતું લખ્યું હોય |
+
+**Edit / Delete / Cancel:** Posting હંમેશાં **દસ્તાવેજની હાલની સ્થિતિ** પરથી ગણાય છે.
+- બિલ બદલો, delete કરો કે cancel કરો, એટલે દરેક ledger અને report આપોઆપ સાચું થઈ જાય છે.
+- Cancel થયેલું બિલ કંઈ post કરતું નથી (test થી ચકાસ્યું છે).
+- એક જ entry **બે વાર post થઈ શકતી નથી**, કારણ કે posting દસ્તાવેજ પરથી ગણાય છે, અલગથી સાચવાતી નથી.
+- એપ અને વેબસાઈટ બંને એક જ save function વાપરે છે.
+
+---
+
+## 3. મળેલી સમસ્યાઓ: મૂળ કારણ, અસર અને સ્થિતિ
+
+પ્રકાર: 🧮 software (કોડ) · 📂 opening data · ✍️ entry ની રીત
+
+| # | સમસ્યા | મૂળ કારણ | અસર (Reports / Accounts) | પ્રકાર | સ્થિતિ |
+|---|---|---|---|---|---|
+| 1 | Trial Balance balance થતું નહોતું (₹1,50,279.62) | દરેક લાઇન અલગ ટેબલમાંથી ગણાતી; double entry નહોતી | TB, Balance Sheet | 🧮 | ✅ **સુધાર્યું:** નવી double-entry |
+| 2 | ખર્ચ Trial Balance માં નહોતા | ફક્ત P&L માં ગણાતા | TB | 🧮 | ✅ સુધાર્યું |
+| 3 | ખરીદીનો Stock/GST input Debit નહોતો | Stock = શેલ્ફની કિંમત | TB, BS | 🧮 | ✅ સુધાર્યું |
+| 4 | Sales Return TB માં બે વાર બાદ થતો | Sales લાઇન પહેલેથી net હતી | TB | 🧮 | ✅ સુધાર્યું |
+| 5 | Walk-in બિલનું બાકી ક્યાંય નહોતું | Party વગરનું બિલ | TB, BS, Receivable | 🧮 | ✅ "Walk-in customers" ખાતું |
+| 6 | **GST ને આવક ગણાતો હતો** | P&L આવક = GST સાથે બિલ total | P&L (નફો વધારે દેખાતો), BS (GST payable નહોતો) | 🧮 | ✅ આવક GST વગર; GST collected/input BS પર |
+| 7 | Return થયેલા માલની cost COGS માંથી બાદ નહોતી થતી | Return પર cost reverse થતી નહોતી | P&L (નફો ઓછો દેખાતો) | 🧮 | ✅ સુધાર્યું |
+| 8 | **ઘરખર્ચ, Staff Advance અને EMI ની મુદ્દલ** ખર્ચ તરીકે ગણાતાં | Category નો accounting અર્થ નહોતો | P&L (નફો ઓછો), BS | 🧮 | ✅ Drawings / Staff advances (asset) / Loan |
+| 9 | વેચાણમાં free આપેલા pieces ની cost COGS માં નહોતી | Cost ફક્ત qty પર લાગતી, free qty પર નહીં | P&L | 🧮 | ✅ સુધાર્યું |
+| 10 | Opening balances સામે કોઈ ખાતું નહોતું | Opening Capital entry જ નહોતી | TB, BS ("old equity not recorded") | 📂 | ✅ "Opening balances" ખાતું, વિભાજન સાથે. ⚠️ **તમારે જૂના હિસાબ સાથે મેળવવાનું** (વિભાગ 5) |
+| 11 | Cash/Bank adjustments (જેમ કે **Mom gold ₹1,60,889.60**) ની સામે કોઈ ખાતું નહોતું | Adjustment માં "આ શું હતું" પૂછાતું નહોતું | TB, BS, P&L | ✍️ | ✅ "આ શું હતું?" પસંદ કરવાની સુવિધા ઉમેરી. ⚠️ **જૂનાં adjustments તમારે પસંદ કરવાનાં** (વિભાગ 4) |
+| 12 | UPI/Card/Cheque **bank account વગર** સેવ થયાં | Default UPI method નો type "other" છે | Bank balance ઓછું, passbook સાથે ફરક | ✍️ | ⚠️ "Money not in a bank yet" ખાતામાં **ખુલ્લું** દેખાય છે. Entries માં bank પસંદ કરવી એ ડેટા ફેરફાર છે, **તમારી મંજૂરીથી** |
+| 13 | "Cash" mode ની payment પર bank account પણ (જૂની entries) | જૂનું form | Cash & Bank પેજ તેને cash અને bank **બંનેમાં** ગણે છે | ✍️ | ⚠️ Accounting check બતાવે છે. ડેટા સુધારો મંજૂરીથી |
+| 14 | "1000 Cash" પર journal entry Cash & Bank પેજમાં દેખાતી નથી | પેજ journals વાંચતું નથી | Cash ledger ≠ TB | 🧮 | ⚠️ Accounting check ફરક બતાવે છે. Cash માટે journal ન વાપરવી, adjustment વાપરવું |
+| 15 | Switch-off કરેલાં ખાતાં TB માંથી ગાયબ થતાં | ફક્ત active ખાતાં ગણાતાં | TB | 🧮 | ✅ Balance હોય તે દરેક ખાતું દેખાય છે |
+| 16 | **Business Report નો પોતાનો P&L** હતો (GST સાથે, ઘરખર્ચ ખર્ચ તરીકે, repair job card ની આવક ઉમેરતો) | એક જ નફાની બે ગણતરી | Business Report ≠ P&L | 🧮 | ✅ હવે બંને **એક જ** P&L. Repair/task ની રકમ "હિસાબમાં નથી" તરીકે અલગ |
+| 17 | Business Report: **cancel થયેલી ખરીદી** Purchases અને "To Pay" માં ગણાતી | Filter નહોતું | Business Report | 🧮 | ✅ સુધાર્યું |
+| 18 | Daily / Purchase / Vendor reports માં cancel થયેલાં બિલ ગણાતાં | Report filter માં નિયમ નહોતો | એ reports ના total | 🧮 | ✅ "Cancelled" filter પસંદ ન કરો ત્યાં સુધી બાકાત |
+| 19 | **GST report ના slab ટેબલ** માં cancel થયેલાં બિલ ગણાતાં | Filter નહોતું | GST report (slab-wise) | 🧮 | ✅ સુધાર્યું |
+| 20 | ₹0 (free) ખરીદી item નો ખરીદ ભાવ ₹0 કરી દેતી | ખરીદી પછી ભાવ આંધળી રીતે update થતો | Stock value, COGS, નફો | 🧮 | ✅ નવી entries માટે સુધાર્યું. ⚠️ જૂની entries થી જે items નો ભાવ ₹0 થઈ ગયો છે, તેમનો ભાવ પાછો મૂકવો એ **ડેટા ફેરફાર છે, મંજૂરીથી** (યાદી: Accounting check → entries) |
+| 21 | Data Health Check ની ખોટી ચેતવણીઓ (બિલ mismatch, party mismatch) | Check બિલ વખતે ભરેલા પૈસા અને ખરીદીનું netting ગણતું નહોતું | Data Health Check | 🧮 | ✅ સુધાર્યું (test થી ચકાસ્યું કે જૂનો check ખોટો હતો) |
+| 22 | **GST, બિલ-discount બાદ કર્યા પહેલાં ગણાય છે** (sales અને purchase) | GST લાઇન-total પર, discount પહેલાં | બિલ total, GST report, GSTR | 🧮 | ⏸ **સુધાર્યું નથી.** આનાથી નવાં બિલના total બદલાશે, એટલે **તમારો નિર્ણય** જોઈએ (વિભાગ 7) |
+| 23 | Sales/Purchase return પર GST અલગ સચવાતો નથી | Return ટેબલમાં GST column નથી | GST collected/input | 🧮 | ⚠️ Sales return નો GST મૂળ બિલના પ્રમાણમાં ગણાય છે; purchase return માં આખું stock માં. GSTR-1 માં credit notes portal પર જાતે ઉમેરવાની |
+| 24 | Stock: books ≠ શેલ્ફ | શેલ્ફ = આજનો ભાવ; books = ખરીદ ભાવ − વેચાણની cost | Stock report ≠ BS | 📂/🧮 | ✅ બંને આંકડા અને ફરકનું કારણ Accounting check માં |
+| 25 | Repair job / task ની રકમ ફક્ત job card પર | Job card પૈસા નોંધતું નથી | P&L, cash | ✍️ | ⚠️ Job ની રકમનું sale બિલ બનાવો |
+| 26 | Service લાઇનની "outside cost" | બિલ પર ફક્ત યાદી માટે; ચૂકવણી અલગ | Bill Profit vs P&L | 🧮 | ℹ️ P&L માં બે વાર ન ગણાય એટલે post કરી નથી. એ પૈસા ખર્ચ કે ખરીદી તરીકે નાખો |
+| 27 | Books → Loans વગર નાખેલી EMI | સાદો ખર્ચ; મુદ્દલ/વ્યાજ અલગ થઈ શકતાં નથી | P&L (નફો ઓછો) | ✍️ | ⚠️ Accounting check યાદી બતાવે છે. EMI Books → Loans → "EMI paid" થી ભરો |
+| 28 | "Office Equipment & Furniture" અને "GST & Government" ખર્ચ તરીકે | Furniture એ asset છે; ભરેલો GST એ જવાબદારી ઘટાડે છે | P&L | ✍️ | ⚠️ Accounting check બતાવે છે. તમારા CA સાથે નક્કી કરો |
+
+---
+
+## 4. Bank adjustment: "Mom gold ₹1,60,889.60"
+
+- **અત્યારે:** Bank balance વધ્યું, પણ સામે કોઈ ખાતું નહોતું. એટલે આખી રકમ TB ના ફરકમાં ગઈ.
+- **સાચી accounting** (પૈસાનો સ્ત્રોત શું હતો તેના પર આધાર):
+  - બાનું સોનું વેચી પૈસા **દુકાનમાં મૂક્યા, પાછા આપવાના નથી** → **Owner's Capital** (માલિકની મૂડી). આ સૌથી સંભવિત છે.
+  - બાને **પાછા આપવાના છે** → **Loan** (Books → Loans માં નોંધો).
+  - સોફ્ટવેર શરૂ થયું તે પહેલાંનું જૂનું bank balance હતું → **Opening balance**.
+- **કેવી રીતે કરવું:** Accounting check → "Cash / bank adjustments - what were they?" → **Say what it was** → પ્રકાર પસંદ કરો.
+  - **Bank balance, રકમ અને તારીખ બદલાતાં નથી.** ફક્ત ચોપડીમાં તે કયા ખાતામાં બતાવવું તે નક્કી થાય છે.
+  - Admin જ કરી શકે છે, અને Period lock લાગુ પડે છે.
+- **Bank transfer આવક કે ખર્ચ ગણાતું નથી:** Cash ↔ Bank અને Bank ↔ Bank ફક્ત બે asset ખાતાં વચ્ચે ખસે છે. P&L માં આવતાં નથી (test થી ચકાસ્યું છે).
+
+---
+
+## 5. વાસ્તવિક statement સાથે મેળવવાનું (Reconciliation): તમારે કરવાનું
+
+| શું | કોની સાથે | ક્યાં |
+|---|---|---|
+| **Bank of Baroda, HDFC** | Bank statement નું closing balance (એ જ તારીખનું) | Cash & Bank → દરેક bank નું ledger, અને **Bank Reconciliation** પેજ. ફરક હોય તો: bank વગરનાં UPI (#12), cash+bank entries (#13), bank charges/interest |
+| **Opening balances** | જૂના ચોપડા / જૂના software નું closing, શરૂઆતની તારીખે | Accounting check → "Opening balances" નું વિભાજન: party, bank, stock, loans |
+| **Cash in Hand** | ગલ્લાની ખરેખર ગણતરી | Cash & Bank પેજ. ફરક હોય તો adjustment કરો અને **"Shortage/excess"** પસંદ કરો |
+| **Stock** | ખરેખર ગણતરી (Stock Audit) | Stock Audit પછી Accounting check → Stock: books vs shelf |
+| **GST** | GST portal નું GSTR-3B / ભરેલું challan | Accounting check → GST (collected − input) |
+| **Party outstanding** | પાર્ટી સાથે statement મેળવવું | Party ledger. Payment linking થી બિલ-વાર |
+
+---
+
+## 6. કરેલા સુધારા અને તેની ચકાસણી
+
+| સુધારો | ફાઇલ | ચકાસણી |
+|---|---|---|
+| Double-entry engine (TB, GL, P&L, BS એક જ posting પરથી) | `includes/ledger.php` (નવી), `includes/report_body.php`, `includes/accounting.php` | `tests/test_ledger.php`: 28 પ્રકારની entry એક પછી એક. દરેક પછી Debit = Credit, અને **ફક્ત** સાચાં ખાતાં સાચી રકમથી ખસે છે (69 checks) |
+| નવાં ખાતાં + adjustment નો પ્રકાર | `install/upgrade_v94.sql` | Migration test copy પર લાગુ કર્યું |
+| Adjustment "આ શું હતું?" | `cash_bank.php` | Browser test: Mom gold → Capital. Bank balance બદલાયું નહીં, BS balanced રહ્યું |
+| Accounting check: નવું TB, "તમારે જોવાનું", જૂના ફરકનું વિભાજન | `accounting_check.php`, `includes/accounting_audit.php` | જૂના ફરકના ભાગોનો સરવાળો = જૂનો ફરક (16 પ્રકારની entry પછી પણ) |
+| Business Report = P&L; cancelled ખરીદી બાકાત | `includes/report_body.php` | `tests/test_reports.php` |
+| Reports માંથી cancelled બિલ બાકાત | `includes/helpers.php` | test |
+| GST slab: cancelled બાકાત | `includes/report_body.php` | test |
+| Free ખરીદી ભાવ ભૂંસતી નથી | `includes/entry_save.php`, `purchases.php` | test |
+| Data Health Check ની ખોટી ચેતવણીઓ | `includes/health.php`, `includes/money.php` | test. જૂનો check એ જ test માં fail થાય છે, એટલે ખાતરી થઈ કે test ભૂલ પકડે છે |
+| Year summary (CA માટે) = એ જ P&L | `includes/books.php`, `books.php` | test |
+
+**આખો test suite:** 3,926 pass. 4 fail પહેલાંથી હતા અને આ કામ સાથે સંબંધિત નથી (તારીખ પર આધારિત forecast/calendar tests).
+
+---
+
+## 7. તમારા નિર્ણય / મંજૂરી બાકી
+
+1. **GST discount પછી ગણવો (#22).** ઉદાહરણ: ₹500 પર ₹100 discount હોય તો GST ₹400 પર ₹72 થવો જોઈએ, પણ અત્યારે ₹90 લાગે છે. GST કાયદા પ્રમાણે discount પછીની કિંમત પર GST લાગે છે. સુધારવાથી **નવાં** બિલના total બદલાશે; જૂનાં બિલ બદલાશે નહીં. મંજૂરી આપો તો કરી દઉં.
+2. **ઘરખર્ચ = Drawings (#8).** પહેલાં તમે કહ્યું હતું કે ઘરખર્ચ નફામાં ગણાય. આ audit માં તમે કહ્યું કે personal ખર્ચ business ખર્ચ નથી. એટલે હવે:
+   - P&L business નો નફો બતાવે છે.
+   - તેની નીચે "ઘરે લઈ ગયા ₹X → business માં બાકી ₹Y" બતાવે છે.
+   - બંને આંકડા દેખાય છે. જૂની રીત પાછી જોઈએ તો કહો.
+3. **ડેટા સુધારા (દરેક અલગ મંજૂરીથી, પહેલાં backup):**
+   - (a) Bank વગરનાં UPI/card entries ને bank સોંપવી (#12).
+   - (b) Cash + bank બંને વાળી જૂની entries (#13).
+   - (c) ₹0 ભાવ થઈ ગયેલા items નો ભાવ (#20).
+   - (d) Settings → Payment methods માં UPI ને તમારું bank account આપવું, જેથી નવાં UPI સીધાં bank માં જાય. આ setting છે; તમે જાતે કરી શકો છો.
+
+**કોઈ Historical Correction કે Data Migration આપમેળે થયું નથી.** Migration v94 ફક્ત:
+- નવાં ખાતાં ઉમેરે છે, અને
+- adjustments માટે "પ્રકાર" નું ખાલી column ઉમેરે છે.
+
+---
+
+## 8. અંતિમ Reconciliation કેવી રીતે confirm કર્યું
+
+- **Trial Balance:** Debit = Credit. Test માં દરેક entry પછી ચકાસ્યું છે, અને અહીં ખોટું થવું ફક્ત unbalanced journal થી શક્ય છે.
+- **General Ledger ↔ TB:** દરેક ખાતાની GL lines નો સરવાળો = TB નો આંકડો (test).
+- **P&L ↔ Balance Sheet:** Assets = Liabilities + Equity + શરૂઆતથી આજ સુધીનો નફો (test). Business Report અને Year summary એ જ P&L વાપરે છે.
+- **Receivable ↔ Party ledgers:** Accounts Receivable = દરેક પાર્ટીનું ledger balance (દેવાદાર પાર્ટીઓ), એક જ સૂત્ર (test).
+- **Bank, Cash:** ચોપડીનો આંકડો ↔ Cash & Bank પેજ. ફરક અને તેનું કારણ Accounting check માં દેખાય છે.
+- **Stock:** Books ↔ શેલ્ફ, ફરક અને કારણ સાથે.
+
+**Live પર ખાતરી કરવા:**
+1. Backup લો.
+2. Settings → Update કરો.
+3. **Migrate (v94)** કરો.
+4. **🩺 Accounting check** ખોલો.
+5. ઉપરનું "Trial Balance (double entry)" **₹0 ફરક** બતાવવું જોઈએ.
+6. "The OLD Trial Balance difference" માં ₹1,50,279.62 નું વિભાજન જુઓ.
+7. "What the books need you to look at" વિભાગનો screenshot મોકલો.
+
+---
+---
+
 # Accounting Module: તપાસ અને નિદાન (Audit report)
 
 **સ્થિતિ:** ફક્ત તપાસ કરી છે. કોઈ entry, opening balance, journal કે ડેટામાં **કોઈ ફેરફાર કર્યો નથી.**

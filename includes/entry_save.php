@@ -95,8 +95,11 @@ function purchase_save_form(array $u, $clientUuid = null) {
         }
         // update item purchase price to latest, then lift selling to keep
         // the minimum profit margin (item's own margin, else the default %)
+        // A free piece (₹0) does not change what the item costs: it used to set
+        // the purchase price to ₹0, so every later sale showed no cost (profit too
+        // high) and the whole stock of that item was valued at nothing.
         foreach ($rows as $r) {
-            q('UPDATE items SET purchase_price = ? WHERE id = ?', [$r['price'], $r['item_id']]);
+            if ((float)$r['price'] > 0) q('UPDATE items SET purchase_price = ? WHERE id = ?', [$r['price'], $r['item_id']]);
             enforce_min_margin($r['item_id']);
         }
 

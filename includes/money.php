@@ -696,6 +696,17 @@ function money_reverse_bill_paid($ref_type, $ref_id, $amt) {
 /** Where a return's bill-by-bill credit is recorded, per side. */
 function return_credit_table($side) { return $side === 'sale' ? 'sales_return_credits' : 'purchase_return_credits'; }
 
+/** Money recorded against a sale bill, as SQL ($a = the sales alias): what
+ *  was paid WITH the bill (payments.ref_type sale), payments linked to it later
+ *  (allocations - minus a payment's own bill, which is already in the first),
+ *  and sales-return credits put on it. A bill's "paid" should equal this. */
+function money_bill_recorded_sql($a = 's') {
+    return "(COALESCE((SELECT SUM(py.amount) FROM payments py WHERE py.ref_type = 'sale' AND py.ref_id = $a.id), 0)
+           + COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa JOIN payments py ON py.id = pa.payment_id
+                       WHERE pa.ref_type = 'sale' AND pa.ref_id = $a.id AND NOT (py.ref_type <=> 'sale' AND py.ref_id <=> $a.id)), 0)
+           + COALESCE((SELECT SUM(rc.amount) FROM sales_return_credits rc WHERE rc.bill_id = $a.id), 0))";
+}
+
 /** A return that is ADJUSTED (not refunded in cash) leaves a credit with the
  *  other party. This settles that credit against their due bills and records
  *  which bill got what, so deleting the return can put back exactly what it

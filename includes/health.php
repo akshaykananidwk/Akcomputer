@@ -88,11 +88,13 @@ function health_checks() {
              LEFT JOIN locations l ON l.id=st.location_id WHERE st.qty < -0.01 LIMIT 10"), 'warn');
 
     // ---- allocations: the link between a payment and the bill it settles ----
-    $add('Bill "paid" does not match its linked payments',
-        'written on the bill "paid" The amount and the sum of the payments linked to it do not agree — open the bill and relink the payments.',
-        all("SELECT s.id, s.invoice_no no, s.sale_date d, s.paid amount, ROUND(SUM(pa.amount),2) expect
-             FROM sales s JOIN payment_allocations pa ON pa.ref_type='sale' AND pa.ref_id=s.id
-             WHERE s.is_cancelled=0 GROUP BY s.id HAVING ABS(s.paid - expect) > 1 LIMIT 10"), 'warn');
+    // counted the full way: paid with the bill + linked later + return credits.
+    // It used to count only the later links, so a bill paid partly at the
+    // counter and partly later was flagged although it was right.
+    $add('Bill "paid" does not match its payments',
+        'The "paid" written on the bill and the payments recorded against it (with the bill, linked later, and return credits) do not agree — open the bill and check its payments.',
+        all("SELECT s.id, s.invoice_no no, s.sale_date d, s.paid amount, ROUND(" . money_bill_recorded_sql('s') . ", 2) expect
+             FROM sales s WHERE s.is_cancelled=0 HAVING ABS(s.paid - expect) > 1 LIMIT 10"), 'warn');
     $add('Payment linked to more than it is worth',
         'A payment is spread across bills for more than its own amount — the links are wrong, open the payment and fix them.',
         all("SELECT py.id, py.pay_date d, py.amount, ROUND(SUM(pa.amount),2) expect, COALESCE(p.name,'Walk-in') who
@@ -107,11 +109,14 @@ function health_checks() {
                 OR (pa.ref_type='opening' AND NOT EXISTS (SELECT 1 FROM parties p WHERE p.id=pa.ref_id)) LIMIT 10"), 'warn');
 
     // ---- the over-claim that reminders and WhatsApp used to send ----
+    // A party we also BUY from has its sales and purchases netted in the
+    // ledger, so their unpaid purchase bills are added back before comparing.
     $add('Party whose bills ask for more than the ledger says',
-        'The sum of this party outstanding bills is more than what they really owe — a payment has come in but is not linked to a bill. Open the payment and link it, or a reminder will ask for too much.',
+        'The sum of this party\'s unpaid bills is more than they owe — usually a payment, an opening advance or a sales return that is not put against a bill. Open Payments → "Not on any bill" for this party and link it, or a reminder will ask for too much.',
         all("SELECT p.id, p.name who,
                     COALESCE((SELECT SUM(ROUND(s.total - s.paid,2)) FROM sales s WHERE s.party_id=p.id AND s.status<>'paid' AND s.is_cancelled=0),0) amount,
-                    " . party_balance_expr('p') . " expect
+                    " . party_balance_expr('p') . "
+                    + COALESCE((SELECT SUM(ROUND(pu.total - pu.paid,2)) FROM purchases pu WHERE pu.party_id=p.id AND pu.is_cancelled=0),0) expect
              FROM parties p
              HAVING amount > expect + 1 AND amount > 0 ORDER BY amount - expect DESC LIMIT 10"), 'warn');
 

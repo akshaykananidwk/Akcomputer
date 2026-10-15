@@ -142,26 +142,11 @@ function coa_net_profit($from, $to) {
     return $rev - $cogs - $exp;
 }
 
-/** Net debit balance of one account (system-computed + any manual journal
- *  postings), cumulative from inception through $to - the shared figure
- *  behind Trial Balance and Balance Sheet. Income/liability/equity
- *  accounts come back negative here when they carry their normal credit
- *  balance; callers flip the sign using coa_normal_side() for display. */
+/** Net debit balance of one account, cumulative through $to, from the
+ *  double-entry postings (includes/ledger.php) - the same figure the Trial
+ *  Balance and Balance Sheet show. Credit-side accounts come back negative. */
 function coa_balance_asof($account, $to) {
-    $bal = 0;
-    if ($account['is_system']) {
-        switch ($account['code']) {
-            case '1000': $bal = coa_cash_balance($to); break;
-            case '1100': $bal = coa_bank_balance($to); break;
-            case '1200': $bal = coa_ar_ap($to)['ar']; break;
-            case '1300': $bal = coa_stock_value(); break;
-            case '2000': $bal = -coa_ar_ap($to)['ap']; break;
-            case '4000': $bal = -coa_sales_revenue('0001-01-01', $to); break;
-            case '4100': $bal = (float)val("SELECT COALESCE(SUM(total),0) FROM sales_returns WHERE return_date <= ?", [$to]); break;
-            case '5000': $bal = coa_cogs('0001-01-01', $to); break;
-        }
-    }
-    return $bal + journal_balance($account['id'], '0001-01-01', $to);
+    return (float)(ledger_balances($to)[$account['code']] ?? 0);
 }
 /** Transaction-level rows for one account's General Ledger, in a date
  *  range, each as ['date','desc','debit','credit','link']. System accounts

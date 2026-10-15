@@ -12,10 +12,10 @@ $tag = fn($k) => ['software' => '<span class="badge badge-info">software check</
 <p class="muted">This page only reads. It changes no bill, payment, stock, purchase or journal.</p>
 
 <div class="card" id="paid"><h3 style="margin-top:0">1. Bills: "paid" vs the payments recorded (<?= count($paid) ?>)</h3>
-  <div class="table-wrap"><table><thead><tr><th>Bill</th><th class="num">Total</th><th class="num">Paid on bill</th><th class="num">With the bill</th><th class="num">Linked later</th><th class="num">Gap</th><th>What it is</th></tr></thead><tbody>
+  <div class="table-wrap"><table><thead><tr><th>Bill</th><th class="num">Total</th><th class="num">Paid on bill</th><th class="num">Recorded payments</th><th class="num">of which linked later</th><th class="num">Gap</th><th>What it is</th></tr></thead><tbody>
   <?php foreach ($paid as $r): ?>
     <tr><td><a href="sale_view.php?id=<?= (int)$r['id'] ?>"><?= e($r['invoice_no']) ?></a><br><small class="muted"><?= dmy($r['sale_date']) ?> · <?= e($r['party']) ?></small></td>
-      <td class="num">₹<?= money($r['total']) ?></td><td class="num">₹<?= money($r['paid']) ?></td><td class="num">₹<?= money($r['direct']) ?></td>
+      <td class="num">₹<?= money($r['total']) ?></td><td class="num">₹<?= money($r['paid']) ?></td><td class="num">₹<?= money($r['recorded']) ?></td>
       <td class="num">₹<?= money($r['linked']) ?></td><td class="num"><?= abs($r['gap']) < 0.01 ? '—' : '₹' . money($r['gap']) ?></td>
       <td><?= $tag($r['kind']) ?> <?= e($r['verdict']) ?></td></tr>
   <?php endforeach; if (!$paid): ?><tr><td colspan="7" class="muted">None.</td></tr><?php endif; ?>

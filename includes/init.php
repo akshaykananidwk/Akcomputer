@@ -62,6 +62,7 @@ require_once __DIR__ . '/mailer.php'; // e-mail: SMTP or the server's mail()
 require_once __DIR__ . '/sale_save.php'; // the one way a bill is written (screen, counter, app)
 require_once __DIR__ . '/entry_save.php'; // ...and a purchase bill and a payment
 require_once __DIR__ . '/paylink.php';   // linking payments to bills, any time later
+require_once __DIR__ . '/ledger.php';    // the books in double entry
 tenant_plan_guard();   // another shop: its plan's parts only, and paid up
 
 function base_url($path = '') {

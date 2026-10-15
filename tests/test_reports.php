@@ -129,15 +129,20 @@ t_eq('a service line is charged no cost of goods',
                  FROM sale_items si JOIN items i ON i.id = si.item_id WHERE si.item_id = ?', [$rSvc]), 0);
 
 t_group('Profit & Loss and the Business Report now agree');
-$revBusiness = (float)val('SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?', [$RF, $RT])
-             - (float)val('SELECT COALESCE(SUM(total),0) FROM sales_returns WHERE return_date BETWEEN ? AND ?', [$RF, $RT]);
-t_eq('revenue is the same on both', $revBusiness, coa_sales_revenue($RF, $RT));
-t_eq('cost of goods sold is the same on both', $cogs, coa_cogs($RF, $RT));
-t_eq('...so gross profit is the same on both',
-     $revBusiness - $cogs, coa_sales_revenue($RF, $RT) - coa_cogs($RF, $RT));
-// This is the assertion that would have failed before the fix.
-t_ok('the two never differ by the cost of services or by price drift',
-     abs(($revBusiness - $cogs) - (coa_sales_revenue($RF, $RT) - coa_cogs($RF, $RT))) < 0.02);
+// both read ledger_pl() - one profit, whichever screen it is read on
+$rbB = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
+$bizBlock = substr($rbB, strpos($rbB, "if (\$r === 'business'"), 7000);
+t_ok('the Business Report\'s profit comes from the same P&L', strpos($bizBlock, '$pl = ledger_pl($from, $to);') !== false);
+t_ok('...and the P&L report too', strpos($rbB, "if (\$r === 'profit_loss'") !== false && strpos(substr($rbB, strpos($rbB, "if (\$r === 'profit_loss'"), 400), 'ledger_pl($from, $to)') !== false);
+t_ok('cancelled purchase bills are not counted as purchases or as owed', strpos($bizBlock, "FROM purchases WHERE is_cancelled = 0 AND purchase_date") !== false && strpos($bizBlock, "status <> 'paid' AND is_cancelled = 0") !== false);
+$plR = ledger_pl($RF, $RT);
+$goodsCost = (float)val("SELECT COALESCE(SUM((si.qty + COALESCE(si.free_qty,0)) * IF(si.cost_price > 0, si.cost_price, i.purchase_price)),0) FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
+                         WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ? AND i.item_type <> 'service'", [$RF, $RT]);
+$otherCost = (float)val("SELECT COALESCE(SUM(dr - cr), 0) FROM " . ledger_sql() . " x WHERE acct = '5000' AND src <> 'sale' AND d BETWEEN ? AND ?", [$RF, $RT]);
+t_eq('the P&L\'s cost of goods = goods on the bills at cost (free pieces too), less goods returned', $plR['cogs'], $goodsCost + $otherCost);
+t_eq('the P&L\'s sales = bill totals less their GST (and exchanges at value)', $plR['sales'],
+     (float)val('SELECT COALESCE(SUM(total - tax_amount),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?', [$RF, $RT])
+     + (float)val('SELECT COALESCE(SUM(ti.value),0) FROM trade_ins ti JOIN sales s ON s.id = ti.sale_id WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?', [$RF, $RT]));
 
 t_group('a bill total is exactly the sum of its own parts');
 $off = (float)val("SELECT COALESCE(SUM(ABS(total - (subtotal - discount - loyalty_discount + tax_amount + shipping + adjustment + round_off))),0)
@@ -181,18 +186,16 @@ t_eq('the expense total matches the P&L breakdown',
      $expTotal, array_sum(array_column(coa_expenses_by_category($RF, $RT), 'total')));
 t_eq('...and it is the expense that was booked', $expTotal - $base['exp'], 800.0);
 
-t_group('net profit reconciles once service and repair are counted');
+t_group('repair and task charges are found, and said to be outside the books');
 $svc = (float)val('SELECT COALESCE(SUM(service_charge),0) FROM tasks WHERE status = "completed" AND DATE(end_time) BETWEEN ? AND ?', [$RF, $RT]);
 $repIn = (float)val('SELECT COALESCE(SUM(final_charge),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$RF, $RT]);
 $repCost = (float)val('SELECT COALESCE(SUM(outsource_cost),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$RF, $RT]);
 t_eq('the task income is picked up', $svc - $base['svc'], 300.0);
 t_eq('the repair margin is income less what was paid out', ($repIn - $base['repIn']) - ($repCost - $base['repCost']), 700.0);
-$netBusiness = ($revBusiness - $cogs) + ($svc + $repIn - $repCost) - $expTotal;
-$netPL = coa_net_profit($RF, $RT);
-// The P&L is the accounting statement and only knows what is journalled, so
-// service and repair income reach it another way. Like for like, they match.
-t_eq('the two statements agree once compared like for like',
-     $netBusiness, $netPL + ($svc + $repIn - $repCost));
+// A job card records no money (no bill, no payment), so neither the P&L nor the
+// Business Report adds it to profit any more - one adding it and the other not
+// is how the two used to disagree. The Business Report names it instead.
+t_ok('the Business Report names job-card money as not in the books', strpos($bizBlock, 'Not in the books: repair jobs delivered') !== false);
 
 t_group('a cancelled bill counts nowhere');
 q("UPDATE sales SET is_cancelled = 1 WHERE id = ?", [$rSale2]);
@@ -283,57 +286,43 @@ t_ok('...while ones with no stock stay hidden', strpos($rb, "ABS(sq.q) > 0.0001"
 // ------------------------------------------ Total Assets - Total Liabilities --
 // The one line an owner reads a balance sheet for, and the sheet did not have
 // it: the reader had to subtract two figures a screen apart in their head.
-t_group('the Balance Sheet shows Net Worth');
+t_group('the Balance Sheet shows Net Worth, and balances');
 $rb2 = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
-t_ok('there is a Net Worth line', strpos($rb2, '$netWorth = $totAssets - $totLiab;') !== false);
-t_ok('...on the sheet itself, right after the liabilities',
-     strpos($rb2, 'Net Worth') !== false);
-t_ok('...and worked out in full below it', strpos($rb2, 'Net Worth — the whole picture') !== false);
-t_ok('...reconciled against what the books actually record',
-     strpos($rb2, 'Of that, recorded on the books') !== false);
-t_ok('...with the unrecorded opening capital as its own line',
-     strpos($rb2, 'old equity not yet recorded') !== false);
+t_ok('there is a Net Worth line, right after the liabilities', strpos($rb2, 'Net Worth <span class="muted"') !== false);
+t_ok('...and the sheet says whether assets = liabilities + equity', strpos($rb2, 'Assets = Liabilities + Equity.') !== false);
 // the exports render the same body, so the line reaches PDF and Excel too
 foreach (['report_pdf.php', 'report_xlsx.php'] as $f)
     t_ok($f . ' renders the same report body',
          strpos(file_get_contents(dirname(__DIR__) . '/' . $f), "include __DIR__ . '/includes/report_body.php'") !== false);
 
-t_group('the sheet no longer gives advice that cannot work');
-// It used to say: post the difference via a Journal Entry against Owner's
-// Capital "and this will balance to zero going forward". It cannot. Every line
-// of a BALANCED entry lands in Assets, Liabilities or Equity with matching
-// signs, so Assets - Liabilities - Equity is invariant under any journal
-// entry. The arithmetic below is that proof, run rather than asserted.
-require_once dirname(__DIR__) . '/includes/accounting.php';
+t_group('the Balance Sheet balances, and a balanced journal keeps it balanced');
+// It used to carry an "old equity not yet recorded" gap that no journal could
+// close. The books are double entry now: every opening figure has its other
+// side under "Opening balances", so the gap is zero - and stays zero whatever
+// balanced journal is posted.
 function tbs_gap($to) {
     $A = 0; $L = 0; $E = 0;
-    foreach (coa_all() as $x) {
-        if ($x['type'] === 'asset') $A += coa_balance_asof($x, $to);
-        elseif ($x['type'] === 'liability') $L += -coa_balance_asof($x, $to);
-        elseif ($x['type'] === 'equity') $E += ($x['code'] === '3900'
-            ? coa_net_profit('0001-01-01', $to) - journal_balance($x['id'], '0001-01-01', $to)
-            : -journal_balance($x['id'], '0001-01-01', $to));
+    foreach (ledger_trial_balance($to) as $x) {
+        if ($x['type'] === 'asset') $A += $x['dr'] - $x['cr'];
+        elseif ($x['type'] === 'liability') $L += $x['cr'] - $x['dr'];
+        elseif ($x['type'] === 'equity') $E += $x['cr'] - $x['dr'];
     }
-    return money_r($A - $L - $E);
+    // (less whatever an unbalanced manual journal - which another test makes on purpose - leaves)
+    return money_r($A - $L - $E - ledger_net_profit('0001-01-01', $to) - (float)val('SELECT COALESCE(SUM(debit - credit), 0) FROM journal_lines'));
 }
 $tbsTo = today();
-$gap0 = tbs_gap($tbsTo);
+t_eq('assets − liabilities − equity − profit to date = 0', tbs_gap($tbsTo), 0);
 $capId = (int)val("SELECT id FROM chart_of_accounts WHERE code = '3000'");
 foreach (['1000', '2000', '3900'] as $against) {
     q("INSERT INTO journal_entries (ref_no, entry_date, narration, source, created_by, created_at)
        VALUES (?,?, 'opening capital', 'manual', 1, NOW())", ['TBS-' . $against, $tbsTo]);
-    $eId = insert_id();
+    $eId = (int)val('SELECT MAX(id) FROM journal_entries');
     $drId = (int)val('SELECT id FROM chart_of_accounts WHERE code = ?', [$against]);
     q('INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES (?,?,1000,0)', [$eId, $drId]);
     q('INSERT INTO journal_lines (entry_id, account_id, debit, credit) VALUES (?,?,0,1000)', [$eId, $capId]);
-    t_eq('crediting Owner\'s Capital against ' . $against . ' does not close the gap', tbs_gap($tbsTo), $gap0);
+    t_eq('a capital journal against ' . $against . ' keeps it balanced', tbs_gap($tbsTo), 0);
 }
-t_ok('so the sheet does not promise a Journal Entry will fix it',
-     strpos($rb2, 'this will balance to zero going forward') === false);
-t_ok('...it says what the number actually is instead',
-     strpos($rb2, 'That amount is not wrong; it is simply not recorded') !== false);
-t_ok('...and that Net Worth itself is the reliable figure',
-     strpos($rb2, 'a figure you can trust') !== false);
+t_ok('the sheet no longer talks of "old equity not yet recorded"', strpos($rb2, 'old equity not yet recorded') === false);
 
 // ------------------------------------------------- the shop's own categories --
 t_group('expense categories are the shop\'s own list, in one place');
@@ -361,7 +350,7 @@ t_ok('the screen reads the shared list, not its own copy',
      && strpos($ex_src, "'General', 'Rent', 'Salary'") === false);
 t_ok('...and shows the two groups apart', strpos($ex_src, '<optgroup label=') !== false);
 
-t_group('home spending is counted like any other, and still countable on its own');
+t_group('home spending is the owner\'s drawings, and still countable on its own');
 foreach (['Money Given Home', 'Home Electricity', 'Owner Drawings / Personal'] as $c)
     t_ok('"' . $c . '" is household', expense_is_home($c));
 foreach (['Office Rent', 'Electricity', 'Business Miscellaneous'] as $c)
@@ -395,12 +384,15 @@ foreach ($mon as $mm) t_eq('each month\'s parts add to its total (' . $mm['ym'] 
      money_r($mm['home'] + $mm['shop']), money_r($mm['total']));
 
 $rb3 = file_get_contents(dirname(__DIR__) . '/includes/report_body.php');
-t_ok('the P&L says how much of the profit went home', strpos($rb3, 'expense_home_total($from, $to)') !== false);
-t_ok('...and what the shop alone made', strpos($rb3, 'business profit only') !== false);
-// the owner asked for it to stay an expense - so net profit must NOT change
-t_ok('home spending is still inside net profit',
-     strpos($rb3, "<td>NET PROFIT</td><td class=\"num\">₹' . money(\$net) . '") !== false);
-t_ok('...and the screen says so in as many words', strpos($rb3, 'already included in the profit above — it has not been removed') !== false);
+// The owner first asked for home spending to stay inside net profit; the
+// accounting audit asked for personal spending NOT to be counted as a business
+// expense. Both figures stay on the screen: business profit, then what went
+// home, then what was left in the business.
+$plE = ledger_pl($ecFrom, $ecTo);
+t_ok('home spending is not deducted from the business profit', !isset($plE['expenses']['Money Given Home']) && !isset($plE['expenses']['Home Groceries']));
+t_eq('...it is counted as drawings instead', $plE['drawings'], 9100.0);
+t_eq('...and the shop\'s own spending is the expense', ($plE['expenses']['Office Rent'] ?? 0) + ($plE['expenses']['Electricity'] ?? 0), 4900.0);
+t_ok('the P&L says how much went home and what was left in the business', strpos($rb3, 'Taken home / personal spending in this period') !== false && strpos($rb3, 'Left in the business') !== false);
 t_ok('the expense report lists the two apart', strpos($rb3, 'Household total') !== false && strpos($rb3, 'Business total') !== false);
 t_ok('...and month by month', strpos($rb3, 'expense_home_by_month($from, $to)') !== false);
 t_ok('the expenses screen splits its total too', strpos($ex_src, "expense_is_home(\$rw['category'])") !== false);
@@ -546,3 +538,16 @@ $apH = t_party('AGING_INACTIVE', 2500);
 q("UPDATE parties SET is_active = 0, created_at = ? WHERE id = ?", [date('Y-m-d', strtotime('-95 days')) . ' 10:00:00', $apH]);
 t_eq('an inactive party\'s opening balance is still chased',
      money_r(tr_aging_row($apH)['b4']), 2500.0);
+
+t_group('the GST report\'s slab table leaves cancelled bills out, like its total');
+$gstSrc = substr($rbB, strpos($rbB, "if (\$r === 'gst'"), 2500);
+t_ok('the slab-wise taxable and tax skip cancelled bills', strpos($gstSrc, 'WHERE s.is_cancelled = 0 AND s.company_id = ?') !== false);
+
+t_group('a cancelled bill is left out of every report unless asked for');
+t_ok('the report filter leaves cancelled bills out by default', strpos(report_extra_where('s', 0, 0, '')[0], 's.is_cancelled = 0') !== false);
+t_ok('...and shows only them when "cancelled" is picked', strpos(report_extra_where('s', 0, 0, 'cancelled')[0], 's.is_cancelled = 1') !== false
+     && strpos(report_extra_where('s', 0, 0, 'cancelled')[0], 'is_cancelled = 0') === false);
+$cx = t_sale(t_party(), 777, 0, '2031-03-03'); q('UPDATE sales SET is_cancelled = 1 WHERE id = ?', [$cx]);
+[$ewX, $epX] = report_extra_where('sales', 0, 0, '');
+t_eq('the Daily report\'s total skips it', (float)val("SELECT COALESCE(SUM(total),0) FROM sales WHERE sale_date = '2031-03-03' $ewX", $epX), 0);
+

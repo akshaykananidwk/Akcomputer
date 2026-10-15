@@ -738,11 +738,12 @@ function report_extra_where($alias, $fCompany, $fParty, $fStatus, $fUser = 0) {
     // Status: 'paid' / 'partial' / 'due' map straight to the status column;
     // 'cancelled' and 'overdue' are derived (Vyapar-style) so the Reports
     // filter can offer the same choices the app owner expects.
-    if ($fStatus === 'cancelled') {
-        $where .= " AND $alias.is_cancelled = 1";
-    } elseif ($fStatus === 'overdue') {
-        $where .= " AND $alias.is_cancelled = 0 AND $alias.status <> 'paid' AND $alias.due_date IS NOT NULL AND $alias.due_date < CURDATE()";
-    } elseif ($fStatus) {
+    // A cancelled bill is shown only when asked for: the Daily, Purchase and
+    // Vendor reports used to add cancelled bills into their sales / spend.
+    $where .= " AND $alias.is_cancelled = " . ($fStatus === 'cancelled' ? 1 : 0);
+    if ($fStatus === 'overdue') {
+        $where .= " AND $alias.status <> 'paid' AND $alias.due_date IS NOT NULL AND $alias.due_date < CURDATE()";
+    } elseif ($fStatus && $fStatus !== 'cancelled') {
         $where .= " AND $alias.status = ?"; $params[] = $fStatus;
     }
     return [$where, $params];

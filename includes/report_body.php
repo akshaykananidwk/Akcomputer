@@ -14,55 +14,50 @@
 
 // ---------------- business report (P&L) ----------------
 if ($r === 'business' && can('reports.profit')) {
-    $sales = (float)val('SELECT COALESCE(SUM(total),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?', [$from, $to]);
-    $salesRet = (float)val('SELECT COALESCE(SUM(total),0) FROM sales_returns WHERE return_date BETWEEN ? AND ?', [$from, $to]);
-    $cogs = (float)val('SELECT COALESCE(SUM(' . profit_cost_sql() . '),0)
-                        FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
-                        WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?', [$from, $to]);
-    $purch = (float)val('SELECT COALESCE(SUM(total),0) FROM purchases WHERE purchase_date BETWEEN ? AND ?', [$from, $to]);
+    // The profit block is the SAME double-entry P&L as Accounting → Profit &
+    // Loss (includes/ledger.php): sales without GST, returns at their cost,
+    // household spending as drawings. It used to be worked out here on its own
+    // and showed a different profit from the P&L for the same dates.
+    $pl = ledger_pl($from, $to);
+    $purch = (float)val('SELECT COALESCE(SUM(total),0) FROM purchases WHERE is_cancelled = 0 AND purchase_date BETWEEN ? AND ?', [$from, $to]);
     $purchRet = (float)val('SELECT COALESCE(SUM(total),0) FROM purchase_returns WHERE return_date BETWEEN ? AND ?', [$from, $to]);
     $svc = (float)val('SELECT COALESCE(SUM(service_charge),0) FROM tasks WHERE status = "completed" AND DATE(end_time) BETWEEN ? AND ?', [$from, $to]);
-    $repairIncome = (float)val('SELECT COALESCE(SUM(final_charge),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$from, $to]);
-    $repairCost = (float)val('SELECT COALESCE(SUM(outsource_cost),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$from, $to]);
-    $exp = (float)val('SELECT COALESCE(SUM(amount),0) FROM expenses WHERE exp_date BETWEEN ? AND ?', [$from, $to]);
+    $repairIncome = (float)val('SELECT COALESCE(SUM(final_charge - outsource_cost),0) FROM repairs WHERE status = "delivered" AND delivered_date BETWEEN ? AND ?', [$from, $to]);
     $discGiven = (float)val('SELECT COALESCE(SUM(discount + loyalty_discount),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?', [$from, $to])
                + (float)val('SELECT COALESCE(SUM(si.line_disc),0) FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.is_cancelled = 0 AND s.sale_date BETWEEN ? AND ?', [$from, $to]);
     $recv = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM sales WHERE status <> 'paid' AND is_cancelled = 0");
-    $paybl = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid'");
-    // the shared rule - this copy had no service filter, so a stray stock row
-    // against a service was being priced as if it were goods on a shelf
+    $paybl = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases WHERE status <> 'paid' AND is_cancelled = 0");
     $stockVal = stock_value();
-    $netSales = $sales - $salesRet;
-    $gross = $netSales - $cogs;
-    $serviceProfit = $svc + $repairIncome - $repairCost;
-    $net = $gross + $serviceProfit - $exp;
 
     echo '<div class="grid-stats">';
-    echo '<div class="stat"><div class="stat-label">Net Sales</div><div class="stat-value">₹' . money($netSales) . '</div></div>';
-    echo '<div class="stat s-ok"><div class="stat-label">Gross Profit (items)</div><div class="stat-value">₹' . money($gross) . '</div></div>';
-    echo '<div class="stat s-ok"><div class="stat-label">Service + Repair</div><div class="stat-value">₹' . money($serviceProfit) . '</div></div>';
-    echo '<div class="stat ' . ($net >= 0 ? 's-ok' : 's-bad') . '"><div class="stat-label">NET PROFIT</div><div class="stat-value">₹' . money($net) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">Net Sales (without GST)</div><div class="stat-value">₹' . money($pl['net_sales']) . '</div></div>';
+    echo '<div class="stat s-ok"><div class="stat-label">Gross Profit</div><div class="stat-value">₹' . money($pl['gross']) . '</div></div>';
+    echo '<div class="stat ' . ($pl['net'] >= 0 ? 's-ok' : 's-bad') . '"><div class="stat-label">NET PROFIT</div><div class="stat-value">₹' . money($pl['net']) . '</div></div>';
     echo '</div>';
 
     echo '<div class="card"><h2>Profit & Loss (' . dmy($from) . ' → ' . dmy($to) . ')</h2>';
     echo '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><tbody>';
     $rows = [
-        ['Sales', $sales, ''], ['Less: Sales Returns', -$salesRet, ''],
-        ['Net Sales', $netSales, 'B'],
-        ['Less: Cost of goods sold', -$cogs, ''],
-        ['Gross Profit', $gross, 'B'],
-        ['Add: Service charges (tasks)', $svc, ''],
-        ['Add: Repair income', $repairIncome, ''], ['Less: Repair outsource cost', -$repairCost, ''],
-        ['Less: Expenses', -$exp, ''],
-        ['NET PROFIT', $net, 'B'],
+        ['Sales (without GST)', $pl['sales'], ''], ['Less: Sales Returns', -$pl['returns'], ''],
+        ['Net Sales', $pl['net_sales'], 'B'],
+        ['Less: Cost of goods sold', -$pl['cogs'], ''],
+        ['Gross Profit', $pl['gross'], 'B'],
+        ['Add: Other income', $pl['other_total'], ''],
+        ['Less: Business expenses', -$pl['expense_total'], ''],
+        ['NET PROFIT', $pl['net'], 'B'],
     ];
     foreach ($rows as $x) {
+        if ($x[2] !== 'B' && abs($x[1]) < 0.005 && $x[0] === 'Add: Other income') continue;
         $b = $x[2] === 'B';
         echo '<tr' . ($b ? ' style="border-top:2px solid var(--text)"' : '') . '><td>' . ($b ? '<strong>' : '') . e($x[0]) . ($b ? '</strong>' : '') .
              '</td><td class="num" style="color:' . ($x[1] < 0 ? 'var(--bad)' : 'inherit') . '">' . ($b ? '<strong>' : '') .
              money($x[1]) . ($b ? '</strong>' : '') . '</td></tr>';
     }
-    echo '</tbody></table></div></div>';
+    echo '</tbody></table></div>';
+    echo '<p class="muted">The same figures as Accounting → Profit &amp; Loss. Household spending (₹' . money($pl['drawings']) . ') is drawings, not a business expense.</p>';
+    if ($svc + $repairIncome > 0.009)
+        echo '<p class="muted">⚠️ Not in the books: repair jobs delivered (charge − outsource cost) ₹' . money($repairIncome) . ' and task service charges ₹' . money($svc) . '. A job card records no money - make a sale bill for the charge so it reaches the P&amp;L, cash and the customer\'s ledger.</p>';
+    echo '</div>';
 
     echo '<div class="grid-stats">';
     echo '<div class="stat"><div class="stat-label">Purchases (period)</div><div class="stat-value">₹' . money($purch - $purchRet) . '</div></div>';
@@ -207,7 +202,7 @@ if ($r === 'daily') {
     $summ = row("SELECT COUNT(*) txns, COALESCE(SUM(total),0) total, COALESCE(SUM(total - paid),0) due,
                  COALESCE(SUM(discount + loyalty_discount),0)
                  + COALESCE((SELECT SUM(si.line_disc) FROM sale_items si JOIN sales s2 ON s2.id = si.sale_id
-                             WHERE s2.sale_date BETWEEN ? AND ?), 0) disc
+                             WHERE s2.is_cancelled = 0 AND s2.sale_date BETWEEN ? AND ?), 0) disc
                  FROM sales WHERE sale_date BETWEEN ? AND ? $ew", array_merge([$from, $to, $from, $to], $ep));
     if (empty($reportPdf)) {
         echo '<div class="grid-stats mb">';
@@ -290,7 +285,7 @@ if ($r === 'gst' && can('reports.gst')) {
         if ($co['is_gst']) {
             $slabs = all('SELECT si.tax_rate, SUM(si.total) taxable, SUM(si.total * si.tax_rate / 100) tax
                           FROM sale_items si JOIN sales s ON s.id = si.sale_id
-                          WHERE s.company_id = ? AND s.sale_date BETWEEN ? AND ? GROUP BY si.tax_rate ORDER BY si.tax_rate', [$co['id'], $from, $to]);
+                          WHERE s.is_cancelled = 0 AND s.company_id = ? AND s.sale_date BETWEEN ? AND ? GROUP BY si.tax_rate ORDER BY si.tax_rate', [$co['id'], $from, $to]);
             echo '<div class="table-wrap" style="box-shadow:none"><table class="table-sm"><thead><tr><th>GST slab</th><th class="num">Taxable ₹</th><th class="num">CGST ₹</th><th class="num">SGST ₹</th><th class="num">Total tax ₹</th></tr></thead><tbody>';
             foreach ($slabs as $sl) {
                 echo '<tr><td>' . (float)$sl['tax_rate'] . '%</td><td class="num">' . money($sl['taxable']) . '</td><td class="num">' . money($sl['tax'] / 2) . '</td><td class="num">' . money($sl['tax'] / 2) . '</td><td class="num">' . money($sl['tax']) . '</td></tr>';
@@ -1364,6 +1359,8 @@ if ($r === 'custom' && can('reports.builder')) {
 }
 
 // ---------------- General Ledger (one account, transaction-level) ----------------
+// Every report below reads the same double-entry postings (includes/ledger.php),
+// so the ledger, Trial Balance, P&L and Balance Sheet cannot disagree.
 if ($r === 'general_ledger' && can('reports.accounting')) {
     $glAcc = coa_get($glAccount);
     if (!$glAcc) {
@@ -1371,10 +1368,12 @@ if ($r === 'general_ledger' && can('reports.accounting')) {
     } else {
         $openTo = date('Y-m-d', strtotime($from . ' -1 day'));
         $opening = coa_balance_asof($glAcc, $openTo);
-        $glRows = coa_gl_rows($glAcc, $from, $to);
+        $glRows = ledger_gl_rows($glAcc['code'], $from, $to);
         echo '<div class="card"><h2>' . e($glAcc['code']) . ' - ' . e($glAcc['name']) . ' <span class="muted" style="font-size:13px;font-weight:normal">(' . ucfirst($glAcc['type']) . ')</span></h2>';
+        if (in_array($glAcc['code'], ['1200', '2000'], true))
+            echo '<p class="muted">Every party\'s entries. Each party is netted on its own: those who owe you make Receivable, those you owe make Payable - see each party\'s ledger for one party.</p>';
         echo '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead><tbody>';
-        $bal = $opening;
+        $bal = in_array($glAcc['code'], ['1200', '2000'], true) ? (float)val("SELECT COALESCE(SUM(dr - cr), 0) FROM " . ledger_sql() . " x WHERE (acct = 'P' OR acct = ?) AND d <= ?", [$glAcc['code'], $openTo]) : $opening;
         echo '<tr style="font-weight:600;background:var(--card-alt,rgba(0,0,0,.03))"><td colspan="4">Opening Balance (' . dmy($from) . ')</td><td class="num">₹' . money(abs($bal)) . ' ' . ($bal < 0 ? 'Cr' : 'Dr') . '</td></tr>';
         $totDr = 0; $totCr = 0;
         foreach ($glRows as $row) {
@@ -1394,180 +1393,86 @@ if ($r === 'general_ledger' && can('reports.accounting')) {
 
 // ---------------- Trial Balance (every account, as of "To" date) ----------------
 if ($r === 'trial_balance' && can('reports.accounting')) {
-    $accts = coa_all();
+    $ids = array_column(all('SELECT id, code FROM chart_of_accounts'), 'id', 'code');
     $totDr = 0; $totCr = 0;
     echo '<div class="card"><h2>Trial Balance (as of ' . dmy($to) . ')</h2>';
     echo '<div class="table-wrap"><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>';
-    foreach ($accts as $a) {
-        $bal = coa_balance_asof($a, $to);
-        $side = coa_normal_side($a['type']);
-        if ($side === 'debit') { $dr = $bal > 0 ? $bal : 0; $cr = $bal < 0 ? -$bal : 0; }
-        else { $cr = $bal < 0 ? -$bal : 0; $dr = $bal > 0 ? $bal : 0; }
-        if ($dr == 0 && $cr == 0) continue;
-        $totDr += $dr; $totCr += $cr;
-        echo '<tr><td>' . e($a['code']) . '</td><td><a href="reports.php?r=general_ledger&gl_account=' . $a['id'] . '&from=' . e($from) . '&to=' . e($to) . '">' . e($a['name']) . '</a></td><td>' . ucfirst($a['type']) . '</td>'
-           . '<td class="num">' . ($dr ? '₹' . money($dr) : '') . '</td><td class="num">' . ($cr ? '₹' . money($cr) : '') . '</td></tr>';
+    foreach (ledger_trial_balance($to) as $a) {
+        $totDr += $a['dr']; $totCr += $a['cr'];
+        $name = isset($ids[$a['code']]) ? '<a href="reports.php?r=general_ledger&gl_account=' . $ids[$a['code']] . '&from=' . e($from) . '&to=' . e($to) . '">' . e($a['name']) . '</a>' : e($a['name']);
+        echo '<tr><td>' . e($a['code']) . '</td><td>' . $name . '</td><td>' . ucfirst($a['type']) . '</td>'
+           . '<td class="num">' . ($a['dr'] ? '₹' . money($a['dr']) : '') . '</td><td class="num">' . ($a['cr'] ? '₹' . money($a['cr']) : '') . '</td></tr>';
     }
     echo '<tr style="font-weight:600;border-top:2px solid var(--text)"><td colspan="3">Total</td><td class="num">₹' . money($totDr) . '</td><td class="num">₹' . money($totCr) . '</td></tr>';
     echo '</tbody></table></div>';
     if (abs($totDr - $totCr) > 0.01) {
-        // same correction as on the Balance Sheet: a balanced journal entry
-        // cannot move this difference, so do not send the owner to do one
-        echo '<p class="muted mt">Between debit and credit Rs ' . money(abs($totDr - $totCr)) . ' difference — '
-           . 'since this Accounting module was switched on <em>before that</em> of equity (old stock, old cash, old receivables/payables), '
-           . 'which no entry created but which really existed. That amount is not wrong; it is simply not on the books.</p>';
+        echo '<p class="flash flash-error mt">Debit and credit differ by ₹' . money(abs($totDr - $totCr)) . '. Every entry the software makes posts both sides, so this can only come from a manual journal entry whose debit ≠ credit - <a href="accounting_check.php">🩺 Accounting check</a> names it.</p>';
+    } else {
+        echo '<p class="muted mt">✅ Debit = Credit. Every sale, purchase, return, payment, expense, transfer, adjustment and opening balance is posted on both sides.</p>';
     }
     echo '</div>';
 }
 
 // ---------------- Balance Sheet (Assets = Liabilities + Equity, as of "To" date) ----------------
 if ($r === 'balance_sheet' && can('reports.accounting')) {
-    $accts = coa_all();
-    $assets = array_filter($accts, fn($a) => $a['type'] === 'asset');
-    $liabs = array_filter($accts, fn($a) => $a['type'] === 'liability');
-    $equity = array_filter($accts, fn($a) => $a['type'] === 'equity');
-    $totAssets = 0; $totLiab = 0; $totEquity = 0;
+    $tb = ledger_trial_balance($to);
+    $profit = ledger_net_profit('0001-01-01', $to);
+    $sec = ['asset' => [], 'liability' => [], 'equity' => []];
+    foreach ($tb as $a) if (isset($sec[$a['type']])) $sec[$a['type']][] = $a + ['v' => $a['type'] === 'asset' ? $a['dr'] - $a['cr'] : $a['cr'] - $a['dr']];
+    $sec['equity'][] = ['code' => 'P&L', 'name' => 'Profit & Loss to date (all years)', 'v' => $profit];
+    $tot = array_map(fn($rows) => round(array_sum(array_column($rows, 'v')), 2), $sec);
 
     echo '<div class="card"><h2>Balance Sheet (as of ' . dmy($to) . ')</h2>';
     echo '<div class="table-wrap"><table><thead><tr><th>Account</th><th class="num">Amount</th></tr></thead><tbody>';
-    echo '<tr style="font-weight:600"><td colspan="2">Assets</td></tr>';
-    foreach ($assets as $a) {
-        $v = coa_balance_asof($a, $to);
-        $totAssets += $v;
-        echo '<tr><td style="padding-left:20px">' . e($a['name']) . '</td><td class="num">₹' . money($v) . '</td></tr>';
+    foreach (['asset' => 'Assets', 'liability' => 'Liabilities', 'equity' => 'Capital &amp; equity'] as $k => $label) {
+        echo '<tr style="font-weight:600"><td colspan="2">' . $label . '</td></tr>';
+        foreach ($sec[$k] as $a) echo '<tr><td style="padding-left:20px">' . e($a['name']) . '</td><td class="num">₹' . money($a['v']) . '</td></tr>';
+        echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Total ' . strtolower(strip_tags($label)) . '</td><td class="num">₹' . money($tot[$k]) . '</td></tr>';
+        if ($k === 'liability') echo '<tr style="font-weight:700;background:var(--bg,#f6f8fb)"><td>Net Worth <span class="muted" style="font-weight:normal">(assets − liabilities)</span></td><td class="num">₹' . money($tot['asset'] - $tot['liability']) . '</td></tr>';
     }
-    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Total Assets</td><td class="num">₹' . money($totAssets) . '</td></tr>';
-
-    echo '<tr style="font-weight:600"><td colspan="2">Liabilities</td></tr>';
-    foreach ($liabs as $a) {
-        $v = -coa_balance_asof($a, $to);
-        $totLiab += $v;
-        echo '<tr><td style="padding-left:20px">' . e($a['name']) . '</td><td class="num">₹' . money($v) . '</td></tr>';
-    }
-    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Total Liabilities</td><td class="num">₹' . money($totLiab) . '</td></tr>';
-
-    // What the shop is actually worth: everything it owns less everything it
-    // owes. It is the one line an owner reads a balance sheet for, and it was
-    // the one line the sheet did not have - the reader had to do the
-    // subtraction in their head against two figures a screen apart.
-    $netWorth = $totAssets - $totLiab;
-    echo '<tr style="font-weight:700;border-top:2px solid var(--text);background:var(--bg,#f6f8fb)">'
-       . '<td>Net Worth <span class="muted" style="font-weight:normal">(total assets − total liabilities)</span></td>'
-       . '<td class="num">₹' . money($netWorth) . '</td></tr>';
-
-    echo '<tr style="font-weight:600"><td colspan="2">Equity</td></tr>';
-    foreach ($equity as $a) {
-        $v = $a['code'] === '3900'
-            ? coa_net_profit('0001-01-01', $to) - journal_balance($a['id'], '0001-01-01', $to)
-            : -journal_balance($a['id'], '0001-01-01', $to);
-        $totEquity += $v;
-        echo '<tr><td style="padding-left:20px">' . e($a['name']) . ($a['code'] === '3900' ? ' <span class="muted">(accumulated Net Profit)</span>' : '') . '</td><td class="num">₹' . money($v) . '</td></tr>';
-    }
-    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Total Equity</td><td class="num">₹' . money($totEquity) . '</td></tr>';
-    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>Total Liabilities + Equity</td><td class="num">₹' . money($totLiab + $totEquity) . '</td></tr>';
+    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>Total Liabilities + Equity</td><td class="num">₹' . money($tot['liability'] + $tot['equity']) . '</td></tr>';
     echo '</tbody></table></div>';
-
-    // The same net worth again, worked out in full, and reconciled against
-    // what the books have actually recorded. The gap between the two IS the
-    // opening capital nobody has posted yet - showing it as a line beats
-    // leaving it as a footnote the eye skips.
-    $diff = $totAssets - ($totLiab + $totEquity);
-    echo '<div class="card mt"><h3>💼 Net Worth — the whole picture</h3>';
-    echo '<div class="table-wrap"><table><tbody>';
-    echo '<tr><td>Total Assets</td><td class="num">₹' . money($totAssets) . '</td></tr>';
-    echo '<tr><td>− Total Liabilities</td><td class="num">− ₹' . money($totLiab) . '</td></tr>';
-    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>= Net Worth</td>'
-       . '<td class="num">₹' . money($netWorth) . '</td></tr>';
-    echo '<tr><td colspan="2" style="padding-top:12px" class="muted">Of that, recorded on the books:</td></tr>';
-    foreach ($equity as $a) {
-        $v = $a['code'] === '3900'
-            ? coa_net_profit('0001-01-01', $to) - journal_balance($a['id'], '0001-01-01', $to)
-            : -journal_balance($a['id'], '0001-01-01', $to);
-        echo '<tr><td style="padding-left:20px">' . e($a['name']) . '</td><td class="num">₹' . money($v) . '</td></tr>';
-    }
-    echo '<tr><td style="padding-left:20px">Total Equity on the books</td><td class="num">₹' . money($totEquity) . '</td></tr>';
-    if (abs($diff) > 0.01) {
-        echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)">'
-           . '<td>old equity not yet recorded</td><td class="num">₹' . money($diff) . '</td></tr>';
-    }
-    echo '</tbody></table></div>';
-    if (abs($diff) > 0.01) {
-        // The note that used to sit here told the owner to post this via a
-        // Journal Entry against Owner's Capital. It cannot work: every line of
-        // a balanced entry lands in Assets, Liabilities or Equity with
-        // matching signs, so Assets - Liabilities - Equity does not move -
-        // checked against a capital entry debited to cash, to a liability and
-        // to retained earnings, and the gap stayed at exactly the same figure
-        // all three times. Telling someone to do something that cannot work is
-        // worse than telling them nothing, so this says what the number is.
-        echo '<p class="muted mt">the above <strong>Net worth Rs ' . money($netWorth) . '</strong> is what the business is really worth — '
-           . 'arrived at by taking total liabilities away from total assets, so it is a figure you can trust.</p>';
-        echo '<p class="muted">on the books only Rs ' . money($totEquity) . ' is recorded. The remaining '
-           . '<strong>₹' . money($diff) . '</strong> since this Accounting module was switched on <em>before that</em> of equity — '
-           . 'Old stock, old cash and old receivables/payables that no entry created but which really existed. '
-           . 'That amount is not wrong; it is simply not recorded.</p>';
-    } else {
-        echo '<p class="muted mt">The equity on the books matches the real net worth — the accounts balance exactly. ✅</p>';
-    }
+    $gap = round($tot['asset'] - $tot['liability'] - $tot['equity'], 2);
+    echo abs($gap) > 0.01
+        ? '<p class="flash flash-error mt">Assets and Liabilities + Equity differ by ₹' . money($gap) . ' - only an unbalanced manual journal can do this; <a href="accounting_check.php">🩺 Accounting check</a> names it.</p>'
+        : '<p class="muted mt">✅ Assets = Liabilities + Equity.</p>';
+    $st = ledger_stock_check();
+    if (abs($st['diff']) > 0.5 && $to >= today())
+        echo '<p class="muted">📦 Stock in the books ₹' . money($st['book']) . ' (opening + purchases − cost of sales ± corrections). The shelf today at today\'s purchase prices is worth ₹' . money($st['shelf']) . ' - ₹' . money($st['diff']) . ' apart, because prices changed after buying, freight / discount sit in the bill cost, or old stock moved without a record. <a href="accounting_check.php#stock">Details</a>.</p>';
     echo '</div>';
 }
 
-// ---------------- Profit & Loss, Chart-of-Accounts based (period) ----------------
+// ---------------- Profit & Loss, double entry (period) ----------------
 if ($r === 'profit_loss' && can('reports.accounting')) {
-    $revenue = coa_sales_revenue($from, $to);
-    $customIncome = array_filter(coa_all(), fn($a) => $a['type'] === 'income' && !in_array($a['code'], ['4000', '4100'], true));
-    foreach ($customIncome as $a) $revenue += -journal_balance($a['id'], $from, $to);
-
-    $cogs = coa_cogs($from, $to);
-    $expCats = coa_expenses_by_category($from, $to);
-    $customExpense = array_filter(coa_all(), fn($a) => $a['type'] === 'expense' && $a['code'] !== '5000');
-    $totalOpex = array_sum(array_column($expCats, 'total'));
-    foreach ($customExpense as $a) $totalOpex += journal_balance($a['id'], $from, $to);
-
-    $gross = $revenue - $cogs;
-    $net = $gross - $totalOpex;
-
+    $pl = ledger_pl($from, $to);
     echo '<div class="grid-stats">';
-    echo '<div class="stat"><div class="stat-label">Revenue</div><div class="stat-value">₹' . money($revenue) . '</div></div>';
-    echo '<div class="stat s-ok"><div class="stat-label">Gross Profit</div><div class="stat-value">₹' . money($gross) . '</div></div>';
-    echo '<div class="stat ' . ($net >= 0 ? 's-ok' : 's-bad') . '"><div class="stat-label">NET PROFIT</div><div class="stat-value">₹' . money($net) . '</div></div>';
+    echo '<div class="stat"><div class="stat-label">Net sales (without GST)</div><div class="stat-value">₹' . money($pl['net_sales']) . '</div></div>';
+    echo '<div class="stat s-ok"><div class="stat-label">Gross Profit</div><div class="stat-value">₹' . money($pl['gross']) . '</div></div>';
+    echo '<div class="stat ' . ($pl['net'] >= 0 ? 's-ok' : 's-bad') . '"><div class="stat-label">NET PROFIT</div><div class="stat-value">₹' . money($pl['net']) . '</div></div>';
     echo '</div>';
-
+    $names = ledger_accounts();
+    $line = fn($label, $v, $minus = false, $pad = false) => '<tr><td' . ($pad ? ' style="padding-left:20px"' : '') . '>' . $label . '</td><td class="num"' . ($minus ? ' style="color:var(--bad)"' : '') . '>' . ($minus ? '−' : '') . '₹' . money($v) . '</td></tr>';
+    $bold = fn($label, $v, $top = '1px solid var(--border,#ddd)') => '<tr style="font-weight:600;border-top:' . $top . '"><td>' . $label . '</td><td class="num">₹' . money($v) . '</td></tr>';
     echo '<div class="card"><h2>Profit &amp; Loss (' . dmy($from) . ' &rarr; ' . dmy($to) . ')</h2>';
     echo '<div class="table-wrap"><table><tbody>';
-    echo '<tr><td>Sales Revenue (net of returns)</td><td class="num">₹' . money($revenue) . '</td></tr>';
-    echo '<tr><td>Less: Cost of Goods Sold</td><td class="num" style="color:var(--bad)">-₹' . money($cogs) . '</td></tr>';
-    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Gross Profit</td><td class="num">₹' . money($gross) . '</td></tr>';
-    foreach ($expCats as $c) {
-        if ((float)$c['total'] == 0) continue;
-        echo '<tr><td style="padding-left:20px">Less: ' . e($c['category']) . '</td><td class="num" style="color:var(--bad)">-₹' . money($c['total']) . '</td></tr>';
-    }
-    foreach ($customExpense as $a) {
-        $v = journal_balance($a['id'], $from, $to);
-        if ($v == 0) continue;
-        echo '<tr><td style="padding-left:20px">Less: ' . e($a['name']) . '</td><td class="num" style="color:var(--bad)">-₹' . money($v) . '</td></tr>';
-    }
-    echo '<tr style="font-weight:600;border-top:1px solid var(--border,#ddd)"><td>Total Expenses</td><td class="num">₹' . money($totalOpex) . '</td></tr>';
-    echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>NET PROFIT</td><td class="num">₹' . money($net) . '</td></tr>';
+    echo $line('Sales (without GST)', $pl['sales']);
+    if ($pl['returns']) echo $line('Less: Sales returns (without GST)', $pl['returns'], true);
+    echo $bold('Net sales', $pl['net_sales']);
+    echo $line('Less: Cost of goods sold <span class="muted">(cost of what was sold, less the cost of goods returned)</span>', $pl['cogs'], true);
+    echo $bold('Gross Profit', $pl['gross']);
+    foreach ($pl['other_income'] as $code => $v) echo $line('Add: ' . e($names[$code][0] ?? $code), $v, false, true);
+    foreach ($pl['expenses'] as $cat => $v) echo $line('Less: ' . e($cat), $v, true, true);
+    echo $bold('Total expenses', $pl['expense_total']);
+    echo $bold('NET PROFIT', $pl['net'], '2px solid var(--text)');
     echo '</tbody></table></div>';
-
-    // The household runs off the same money here, so home spending IS an
-    // expense and stays inside the Net Profit above - nothing is taken out.
-    // This block only answers the second question alongside it: how much of
-    // that went home, and what the shop alone would have made.
-    $homeExp = expense_home_total($from, $to);
-    if ($homeExp > 0.009) {
-        echo '<div class="card mt"><h3>🏠 Household spending, separately</h3>';
-        echo '<div class="table-wrap"><table><tbody>';
-        echo '<tr><td>the NET PROFIT above (household spending included)</td><td class="num">₹' . money($net) . '</td></tr>';
-        echo '<tr><td>household spending within it</td><td class="num">₹' . money($homeExp) . '</td></tr>';
-        echo '<tr style="font-weight:700;border-top:2px solid var(--text)"><td>business profit only</td>'
-           . '<td class="num">₹' . money($net + $homeExp) . '</td></tr>';
-        echo '</tbody></table></div>';
-        echo '<p class="muted mt">Household spending is already included in the profit above — it has not been removed. '
-           . 'This box only says that out of it Rs ' . money($homeExp) . ' went home, '
-           . 'and the shop alone Rs ' . money($net + $homeExp) . ' earned. Both figures are correct.</p>';
-        echo '</div>';
+    echo '<p class="muted mt">GST collected (₹' . money($pl['gst']) . ' net in this period, after returns) belongs to the government and is not income; it is on the Balance Sheet. '
+       . 'Household / personal spending, staff advances and the principal part of loan EMIs are not business expenses, so they are not deducted here.</p>';
+    if ($pl['drawings'] > 0.009) {
+        echo '<div class="card mt"><h3>🏠 Household / personal (drawings)</h3><div class="table-wrap"><table><tbody>';
+        echo $line('Net profit of the business', $pl['net']);
+        echo $line('Taken home / personal spending in this period', $pl['drawings'], true);
+        echo $bold('Left in the business', $pl['net'] - $pl['drawings'], '2px solid var(--text)');
+        echo '</tbody></table></div><p class="muted mt">Money taken home is the owner\'s drawings: it reduces capital, not profit. It used to be deducted as an expense, which showed the business making less than it does.</p></div>';
     }
     echo '</div>';
 }

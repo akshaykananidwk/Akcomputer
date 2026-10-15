@@ -52,19 +52,16 @@ function asset_dep(array $a, $fyStart) {
  *  "EMI / Loan" expenses is taken back out (it repays a debt, it is not a cost);
  *  household expenses are shown as the owner's drawings, not as business cost. */
 function it_summary($from, $to) {
-    $rev = coa_sales_revenue($from, $to); $cogs = coa_cogs($from, $to);
-    $exp = 0.0; $home = 0.0; $byCat = [];
-    foreach (coa_expenses_by_category($from, $to) as $c) {
-        if (expense_is_home($c['category'])) { $home += (float)$c['total']; continue; }
-        $exp += (float)$c['total']; $byCat[$c['category']] = (float)$c['total'];
-    }
+    // the same double-entry P&L as the Profit & Loss report: sales without
+    // GST, loan principal and household spending already out of the expenses
+    $pl = ledger_pl($from, $to);
     $principal = 0.0;
-    try { $principal = (float)val('SELECT COALESCE(SUM(lp.principal_part), 0) FROM loan_payments lp WHERE lp.paid_on BETWEEN ? AND ? AND lp.expense_id IS NOT NULL', [$from, $to]); } catch (Exception $e) {}
+    try { $principal = (float)val('SELECT COALESCE(SUM(lp.principal_part), 0) FROM loan_payments lp JOIN expenses x ON x.id = lp.expense_id WHERE x.exp_date BETWEEN ? AND ?', [$from, $to]); } catch (Exception $e) {}
     $dep = 0.0;
     try { foreach (all('SELECT * FROM assets') as $a) $dep += asset_dep($a, fy_of($to)[0])['dep']; } catch (Exception $e) {}
-    $exp = round($exp - $principal, 2);
-    return ['revenue' => round($rev, 2), 'cogs' => round($cogs, 2), 'gross' => round($rev - $cogs, 2), 'expenses' => $exp, 'by_category' => $byCat,
-            'loan_principal' => round($principal, 2), 'depreciation' => round($dep, 2), 'net' => round($rev - $cogs - $exp - $dep, 2), 'drawings' => round($home, 2)];
+    return ['revenue' => $pl['net_sales'], 'cogs' => $pl['cogs'], 'gross' => $pl['gross'], 'expenses' => $pl['expense_total'], 'by_category' => $pl['expenses'],
+            'other_income' => $pl['other_total'], 'loan_principal' => round($principal, 2), 'depreciation' => round($dep, 2),
+            'net' => round($pl['net'] - $dep, 2), 'drawings' => $pl['drawings']];
 }
 
 /** This month's spending against each budget: [category, budget, spent, pct]. */

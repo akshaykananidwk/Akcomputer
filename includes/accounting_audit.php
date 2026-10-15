@@ -1,22 +1,47 @@
 <?php
 // ACCOUNTING HEALTH CHECK - READ ONLY. Nothing here writes a single row.
 //
-// The Trial Balance (report_body.php) is not a double-entry ledger: each line
-// is worked out on its own from a different table (cash from payments, stock
-// from today's shelf value, receivables from party balances...). So debit and
-// credit only agree when every money movement happens to appear on both
-// sides. This file explains, line by line, WHY they do not - each reason as
-// an amount, and the reasons add up to the Trial Balance difference exactly
-// (the test proves it). Diagnosis only: it changes nothing.
+// The Trial Balance is now true double entry (includes/ledger.php) and
+// balances by construction. The Trial Balance BEFORE that worked each line out
+// on its own from a different table (cash from payments, stock from today's
+// shelf value, receivables from party balances...), so debit and credit only
+// agreed by accident - the shop saw ₹1,50,279.62 between them. This file still
+// takes that OLD difference apart, reason by reason, adding up to it exactly
+// (the test proves it), so the owner can see where each rupee of it went; and
+// it lists what the new books need the owner to look at. Diagnosis only.
 
-/** Debit and credit totals exactly as the Trial Balance screen adds them. */
+/** Debit and credit totals as the OLD Trial Balance screen added them. */
 function acct_tb_totals($to) {
     $dr = 0; $cr = 0;
     foreach (coa_all() as $a) {
-        $bal = coa_balance_asof($a, $to);
+        $bal = acct_old_balance($a, $to);
         if ($bal > 0) $dr += $bal; elseif ($bal < 0) $cr += -$bal;
     }
     return ['dr' => round($dr, 2), 'cr' => round($cr, 2), 'diff' => round($dr - $cr, 2)];
+}
+/** One account's balance the old way (each figure from its own table). */
+function acct_old_balance($account, $to) {
+    $bal = 0;
+    if ($account['is_system']) {
+        switch ($account['code']) {
+            case '1000': $bal = coa_cash_balance($to); break;
+            case '1100': $bal = coa_bank_balance($to); break;
+            case '1200': $bal = coa_ar_ap($to)['ar']; break;
+            case '1300': $bal = coa_stock_value(); break;
+            case '2000': $bal = -coa_ar_ap($to)['ap']; break;
+            case '4000': $bal = -coa_sales_revenue('0001-01-01', $to); break;
+            case '4100': $bal = (float)val("SELECT COALESCE(SUM(total),0) FROM sales_returns WHERE return_date <= ?", [$to]); break;
+            case '5000': $bal = coa_cogs('0001-01-01', $to); break;
+        }
+    }
+    return $bal + journal_balance($account['id'], '0001-01-01', $to);
+}
+
+/** The NEW (double-entry) Trial Balance totals. */
+function acct_new_tb_totals($to) {
+    $rows = ledger_trial_balance($to);
+    $dr = round(array_sum(array_column($rows, 'dr')), 2); $cr = round(array_sum(array_column($rows, 'cr')), 2);
+    return ['dr' => $dr, 'cr' => $cr, 'diff' => round($dr - $cr, 2), 'rows' => $rows];
 }
 
 /**
@@ -81,12 +106,47 @@ function acct_tb_breakdown($to) {
     // a switched-off account drops out of the Trial Balance entirely: its
     // journal lines, and for an automatic account its whole computed figure
     $inactive = 0;
-    foreach (coa_all(false) as $a) if (!$a['is_active']) $inactive += coa_balance_asof($a, $to);
+    foreach (coa_all(false) as $a) if (!$a['is_active']) $inactive += acct_old_balance($a, $to);
     $add('inactive_accounts', -$inactive, 'entry', 'Accounts that were switched off',
          'The Trial Balance lists only active accounts, so whatever is on a switched-off account (journal lines, or an automatic account\'s figure) disappears from one side.', 'Switch the account back on, or move the lines.');
     $add('unbalanced_journals', $v("SELECT COALESCE(SUM(jl.debit - jl.credit),0) FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id WHERE je.entry_date <= ?", [$to]), 'entry',
          'Journal entries whose debit ≠ credit', 'A journal must balance; these do not.', 'Correct each entry.');
     return $out;
+}
+
+/** What the double-entry books need the owner to look at, each with its
+ *  amount and the entries behind it. Read only. */
+function acct_attention($to) {
+    $b = ledger_balances($to);
+    $v = fn($sql, $a = []) => round((float)val($sql, $a), 2);
+    $o = [];
+    // what "Opening balances" is made of
+    $o['opening'] = [];
+    foreach (all("SELECT src, SUM(cr - dr) amt FROM " . ledger_sql() . " x WHERE acct = '3010' AND d <= ? GROUP BY src", [$to]) as $r)
+        $o['opening'][$r['src']] = round((float)$r['amt'], 2);
+    $o['opening_total'] = round(-($b['3010'] ?? 0), 2);
+    // adjustments nobody has said the meaning of
+    $o['unclassified'] = all("SELECT t.id, t.txn_type, t.adjust_dir, t.amount, t.txn_date, t.notes, ba.account_name bank
+                              FROM money_transfers t LEFT JOIN bank_accounts ba ON ba.id = t.to_bank_id
+                              WHERE t.status = 'done' AND t.txn_type IN ('cash_adjust','bank_adjust') AND t.counter IS NULL AND t.txn_date <= ?
+                              ORDER BY t.amount DESC", [$to]);
+    $o['unclassified_total'] = round(-($b['3090'] ?? 0), 2);
+    // money saved with no bank account
+    $o['no_bank'] = all("SELECT 'payment' kind, mode, COUNT(*) n, SUM(IF(direction='in',1,-1) * amount) amt FROM payments
+                         WHERE mode <> 'cash' AND bank_account_id IS NULL AND mode NOT IN ('contra','discount','credit_note') AND pay_date <= ? GROUP BY mode
+                         UNION ALL SELECT 'expense', mode, COUNT(*), -SUM(amount) FROM expenses WHERE mode <> 'cash' AND bank_account_id IS NULL AND exp_date <= ? GROUP BY mode", [$to, $to]);
+    $o['no_bank_total'] = round($b['1150'] ?? 0, 2);
+    $o['walkin'] = round($b['1210'] ?? 0, 2);
+    $o['contra'] = round($b['1900'] ?? 0, 2);
+    $o['gst_out'] = round(-($b['2100'] ?? 0), 2);
+    $o['gst_in'] = round($b['1400'] ?? 0, 2);
+    $o['staff_adv'] = round($b['1500'] ?? 0, 2);
+    $o['loans'] = round(-($b['2200'] ?? 0), 2);
+    $o['stock'] = ledger_stock_check();
+    $o['cash_books'] = round($b['1000'] ?? 0, 2);
+    $o['cash_page'] = round(coa_cash_balance($to), 2);
+    $o['unbalanced'] = all('SELECT je.id, je.ref_no, je.entry_date, SUM(jl.debit) d, SUM(jl.credit) c FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id WHERE je.entry_date <= ? GROUP BY je.id HAVING ABS(d - c) > 0.01', [$to]);
+    return $o;
 }
 
 /** The other checks of the audit: banks, P&L, stock, parties, entries.
@@ -97,7 +157,7 @@ function acct_checks($from, $to) {
     $add = function ($area, $ok, $title, $amount, $detail, $kind = 'software') use (&$c) { $c[] = compact('area', 'ok', 'title', 'amount', 'detail', 'kind'); };
 
     // --- 2. Bank: the Trial Balance's one Bank line vs each bank's own ledger
-    $tbBank = round(coa_bank_balance($to), 2);
+    $tbBank = round(coa_bank_balance($to), 2);   // (old method, for the breakdown below)
     $sumActive = 0;
     $banks = all('SELECT * FROM bank_accounts ORDER BY id');
     foreach ($banks as $b) {
@@ -109,7 +169,12 @@ function acct_checks($from, $to) {
             - $v("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE bank_account_id IS NOT NULL AND exp_date <= ? AND bank_account_id NOT IN (SELECT id FROM bank_accounts)", [$to]);
     $future = round(array_sum(array_map(fn($b) => bank_account_balance($b['id']), $banks)) - coa_bank_balance($to), 2) + $orphan;
     $jBank = round(journal_balance((int)val("SELECT id FROM chart_of_accounts WHERE code = '1100'"), '0001-01-01', $to), 2);
-    $add('bank', abs($tbBank + $jBank - $sumActive) < 0.01, 'Trial Balance Bank vs Cash & Bank page (active banks)', round($tbBank + $jBank - $sumActive, 2),
+    $newBank = round(ledger_balances($to)['1100'] ?? 0, 2);
+    $dbl = $v("SELECT COALESCE(SUM(IF(direction='in',1,-1) * amount),0) FROM payments WHERE pay_date <= ? AND mode = 'cash' AND bank_account_id IS NOT NULL", [$to]);
+    $add('bank', abs($newBank - $sumActive) < 0.01, 'Books bank vs Cash & Bank page (active banks)', round($newBank - $sumActive, 2),
+         sprintf('Books ₹%s · Cash & Bank page ₹%s. A gap comes from: payments marked "cash" that also carry a bank account (the page counts them in the bank too) ₹%s, journal entries on 1100 Bank ₹%s, switched-off bank accounts ₹%s, entries on a deleted bank account ₹%s, entries dated after %s.',
+                 money($newBank), money($sumActive), money($dbl), money($jBank), money($inactiveBal), money($orphan), dmy($to)), 'entry');
+    $add('bank', abs($tbBank + $jBank - $sumActive) < 0.01, 'Old Trial Balance Bank vs Cash & Bank page (active banks)', round($tbBank + $jBank - $sumActive, 2),
          sprintf('Trial Balance bank ₹%s (of which journal entries ₹%s) · active bank accounts ₹%s · switched-off accounts ₹%s · entries on a deleted bank account ₹%s · entries dated after %s ₹%s',
                  money($tbBank + $jBank), money($jBank), money($sumActive), money($inactiveBal), money($orphan), dmy($to), money($future)));
     $noBank = all("SELECT mode, COUNT(*) n, SUM(amount) amt FROM payments WHERE bank_account_id IS NULL AND mode <> 'cash' AND mode NOT IN ('contra','discount','credit_note') AND pay_date <= ? GROUP BY mode", [$to]);
@@ -122,26 +187,22 @@ function acct_checks($from, $to) {
     $add('cash', abs($jCash) < 0.01, 'Journal entries posted straight to Cash in Hand', $jCash,
          'They change the Trial Balance cash but NOT the Cash & Bank page or the day closing, so the two cash figures differ by this.', 'software');
 
-    // --- 4. Profit & Loss in the period
+    // --- 4. Profit & Loss in the period (the double-entry P&L)
+    $pl = ledger_pl($from, $to);
     $gst = $v('SELECT COALESCE(SUM(tax_amount),0) FROM sales WHERE is_cancelled = 0 AND sale_date BETWEEN ? AND ?', [$from, $to]);
-    $add('pl', $gst < 0.01, 'GST collected is counted as sales revenue', $gst,
-         'P&L revenue = bill totals including GST. The GST belongs to the government (minus input credit): profit is overstated by this, and the Balance Sheet has no "GST payable".');
-    $retCost = 0;
-    try {
-        $retCost = $v("SELECT COALESCE(SUM(ri.qty * COALESCE(NULLIF((SELECT si.cost_price FROM sale_items si WHERE si.sale_id = r.sale_id AND si.item_id = ri.item_id LIMIT 1), 0), i.purchase_price)),0)
-                       FROM sales_return_items ri JOIN sales_returns r ON r.id = ri.return_id JOIN items i ON i.id = ri.item_id
-                       WHERE r.return_date BETWEEN ? AND ? AND i.item_type <> 'service'", [$from, $to]);
-    } catch (Exception $e) { }
-    $add('pl', $retCost < 0.01, 'Cost of returned goods is not taken back out of COGS', $retCost,
-         'A sales return reduces revenue, but the cost of the goods that came back to the shelf stays in Cost of Goods Sold - profit is understated by this.');
-    $retInP = $v('SELECT COALESCE(SUM(total),0) FROM sales_returns WHERE return_date BETWEEN ? AND ?', [$from, $to]);
-    $add('pl', true, 'Sales returns in the P&L', $retInP, 'Deducted once from revenue in the P&L - correct (it is only the Trial Balance that deducts them twice).');
-    $cats = all('SELECT category, SUM(amount) amt FROM expenses WHERE exp_date BETWEEN ? AND ? GROUP BY category', [$from, $to]);
-    $notPL = array_values(array_filter($cats, fn($r) => preg_match('/advance|loan|emi|drawing|personal|household|home|owner/i', $r['category']) || expense_is_home($r['category'])));
-    $add('pl', !$notPL, 'Expense kinds that are not really a business expense', $notPL ? round(array_sum(array_column($notPL, 'amt')), 2) : 0,
-         $notPL ? implode(', ', array_map(fn($r) => $r['category'] . ' ₹' . money($r['amt']), $notPL))
-               . ' - staff advance is money the staff owes (an asset), a loan EMI is mostly the loan being repaid (a liability going down; only the interest is an expense), household/personal/owner spending is Drawings (out of capital). All are deducted as expenses today, so profit is understated by this.'
-               : 'None in this period.');
+    $add('pl', true, 'GST kept out of sales', $gst,
+         'Sales in the P&L are now without GST; the GST collected (₹' . money($pl['gst']) . ' net of returns) is a liability on the Balance Sheet. It used to be counted as income.');
+    $add('pl', true, 'Cost of returned goods taken back out of COGS', null,
+         'A sales return now puts the goods back in stock at the cost they were sold at, and takes that cost out of Cost of Goods Sold.');
+    $notExp = $v("SELECT COALESCE(SUM(dr - cr),0) FROM " . ledger_sql() . " x WHERE src IN ('expense','payslip') AND acct IN ('3100','1500','2200') AND d BETWEEN ? AND ?", [$from, $to]);
+    $add('pl', true, 'Expenses that are not business expenses, kept out of the P&L', $notExp,
+         'Household / personal → Drawings ₹' . money($pl['drawings']) . '; staff advances → money the staff owe (asset); the principal part of a loan EMI → the loan goes down. Only real business costs are deducted.');
+    $emiLoose = $v("SELECT COALESCE(SUM(x.amount),0) FROM expenses x WHERE x.category = 'EMI / Loan' AND x.exp_date BETWEEN ? AND ? AND NOT EXISTS (SELECT 1 FROM loan_payments lp WHERE lp.expense_id = x.id)", [$from, $to]);
+    $add('pl', $emiLoose < 0.01, 'Loan EMIs not paid through Books → Loans', $emiLoose,
+         $emiLoose > 0.009 ? 'These EMIs were typed as ordinary expenses, so the software cannot split them into principal and interest: the whole EMI is counted as an expense. Pay EMIs from Books → Loans → "EMI paid" and the split is automatic.' : 'None.', 'entry');
+    $capital = all("SELECT category, SUM(amount) amt FROM expenses WHERE category IN ('Office Equipment & Furniture','GST & Government') AND exp_date BETWEEN ? AND ? GROUP BY category", [$from, $to]);
+    $add('pl', true, 'Expenses worth a second look', $capital ? round(array_sum(array_column($capital, 'amt')), 2) : 0,
+         $capital ? implode(', ', array_map(fn($r) => $r['category'] . ' ₹' . money($r['amt']), $capital)) . ' - furniture / equipment is an asset (Books → Assets, with depreciation), and GST paid to the government reduces the GST you owe rather than being a cost. Kept as expenses until you decide.' : 'None.', 'entry');
 
     // --- 5. Stock
     $add('stock', true, 'Stock value used in the reports', round(coa_stock_value(), 2),
@@ -173,8 +234,7 @@ function acct_checks($from, $to) {
     $dupPay = all("SELECT ref_type, ref_id, amount, pay_date, COUNT(*) n FROM payments WHERE ref_type IN ('sale','purchase') AND ref_id IS NOT NULL GROUP BY ref_type, ref_id, amount, pay_date, mode HAVING n > 1 LIMIT 50");
     $add('journal', !$dupPay, 'Possible duplicate payments (same bill, amount, date and mode)', count($dupPay),
          $dupPay ? implode(', ', array_map(fn($d) => $d['ref_type'] . ' #' . $d['ref_id'] . ' ₹' . money($d['amount']) . ' ×' . $d['n'] . ' on ' . dmy($d['pay_date']), array_slice($dupPay, 0, 10))) . ' - check each; two real payments of the same amount on one day are possible.' : 'None.', 'entry');
-    $paidMismatch = all("SELECT s.id, s.invoice_no, s.paid, COALESCE((SELECT SUM(amount) FROM payments WHERE ref_type='sale' AND ref_id = s.id),0)
-                         + COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa JOIN payments p ON p.id = pa.payment_id WHERE pa.ref_type='sale' AND pa.ref_id = s.id AND NOT (p.ref_type <=> 'sale' AND p.ref_id <=> s.id)),0) got
+    $paidMismatch = all("SELECT s.id, s.invoice_no, s.paid, ROUND(" . money_bill_recorded_sql('s') . ", 2) got
                          FROM sales s WHERE s.is_cancelled = 0 HAVING ABS(s.paid - got) > 0.01 LIMIT 50");
     $add('journal', !$paidMismatch, 'Bills whose "paid" does not match the payments recorded against them', count($paidMismatch),
          $paidMismatch ? implode(', ', array_map(fn($s) => $s['invoice_no'] . ' (paid ₹' . money($s['paid']) . ', payments ₹' . money($s['got']) . ')', array_slice($paidMismatch, 0, 10))) : 'None.', 'entry');
@@ -193,25 +253,16 @@ function acct_checks($from, $to) {
  *  though it is right. Returns every bill the health check flags, each marked. */
 function acct_detail_paid() {
     $rows = all("SELECT s.id, s.invoice_no, s.sale_date, s.total, s.paid, COALESCE(p.name, s.customer_name, 'Walk-in') party,
-                   COALESCE((SELECT SUM(amount) FROM payments WHERE ref_type = 'sale' AND ref_id = s.id), 0) direct,
-                   COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa WHERE pa.ref_type = 'sale' AND pa.ref_id = s.id), 0) linked,
-                   COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa JOIN payments py ON py.id = pa.payment_id
-                             WHERE pa.ref_type = 'sale' AND pa.ref_id = s.id AND py.ref_type = 'sale' AND py.ref_id = s.id), 0) both_kinds
+                   ROUND(" . money_bill_recorded_sql('s') . ", 2) recorded,
+                   COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa WHERE pa.ref_type = 'sale' AND pa.ref_id = s.id), 0) linked
                  FROM sales s LEFT JOIN parties p ON p.id = s.party_id
                  WHERE s.is_cancelled = 0
-                   AND (ABS(s.paid - COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa WHERE pa.ref_type = 'sale' AND pa.ref_id = s.id), 0)) > 1
-                        AND EXISTS (SELECT 1 FROM payment_allocations pa WHERE pa.ref_type = 'sale' AND pa.ref_id = s.id)
-                        OR ABS(s.paid - COALESCE((SELECT SUM(amount) FROM payments WHERE ref_type = 'sale' AND ref_id = s.id), 0)
-                               - COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa WHERE pa.ref_type = 'sale' AND pa.ref_id = s.id), 0)
-                               + COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa JOIN payments py ON py.id = pa.payment_id
-                                           WHERE pa.ref_type = 'sale' AND pa.ref_id = s.id AND py.ref_type = 'sale' AND py.ref_id = s.id), 0)) > 0.01)
+                 HAVING (linked > 0 AND ABS(s.paid - linked) > 1) OR ABS(s.paid - recorded) > 0.01
                  ORDER BY s.sale_date, s.id");
     foreach ($rows as &$r) {
-        $got = round($r['direct'] + $r['linked'] - $r['both_kinds'], 2);
-        $r['recorded'] = $got;
-        $r['gap'] = round($r['paid'] - $got, 2);
+        $r['gap'] = round($r['paid'] - $r['recorded'], 2);
         $r['verdict'] = abs($r['gap']) < 0.01
-            ? 'Correct - paid partly with the bill and partly by a later payment. The Data Health check counts only the later part (a fault in the check).'
+            ? 'Correct - paid partly with the bill and partly by a later payment (or a return credit). The old Data Health check counted only the later part.'
             : ($r['gap'] > 0 ? 'The bill says ₹' . money($r['gap']) . ' more was paid than any payment shows - a payment was deleted or edited after the bill, or "paid" was typed on the bill.'
                              : 'Payments of ₹' . money(-$r['gap']) . ' more than the bill shows as paid are recorded against it - a payment was linked twice, or the bill was edited after payment.');
         $r['kind'] = abs($r['gap']) < 0.01 ? 'software' : 'entry';
@@ -242,7 +293,7 @@ function acct_detail_zero_purchases() {
             if ((float)$l['price'] <= 0 && (float)$l['now_cost'] <= 0)
                 $r['effects'][] = $l['name'] . ': its purchase price is now ₹0 - this free entry overwrote it, so later sales of this item show no cost (profit too high) and its stock is valued at ₹0.';
             elseif ((float)$l['price'] <= 0)
-                $r['effects'][] = $l['name'] . ': this free entry set its purchase price to ₹0 at the time; a later paid purchase has put it back (now ₹' . money($l['now_cost']) . ').';
+                $r['effects'][] = $l['name'] . ': its purchase price is ₹' . money($l['now_cost']) . ' - fine (a free piece no longer changes it; an older free entry may have set it to ₹0 until the next paid purchase).';
             elseif ($full)
                 $r['effects'][] = $l['name'] . ': stock is valued at ₹' . money($l['price']) . ' each although it cost nothing.';
             if ($l['serial_tracked']) $r['effects'][] = $l['name'] . ': serial numbers were entered with it - correct.';

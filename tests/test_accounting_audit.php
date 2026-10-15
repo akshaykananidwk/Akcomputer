@@ -10,6 +10,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(403); die('CLI only'); }
 //  entry must move exactly the reason it belongs to. And it writes nothing.
 // ============================================================================
 require_once __DIR__ . '/../includes/accounting_audit.php';
+require_once __DIR__ . '/../includes/health.php';
 
 t_group('Accounting check — the reasons add up to the Trial Balance difference');
 $T = '2099-12-31';
@@ -66,7 +67,7 @@ t_ok('...and has no form that posts anything', stripos($page, 'method="post"') =
 $checks = acct_checks('2026-01-01', $T);
 $by = []; foreach ($checks as $c) $by[$c['title']] = $c;
 t_ok('the UPI without a bank account is found', !$by['UPI / card / cheque payments saved without a bank account']['ok']);
-t_ok('the GST counted as revenue is measured', isset($by['GST collected is counted as sales revenue']));
+t_ok('GST is kept out of sales (and the amount is shown)', isset($by['GST kept out of sales']));
 t_eq('the walk-in bill\'s unpaid ₹200 is found', $by['Unpaid amount on walk-in bills (no party)']['amount'] >= 200 ? 1 : 0, 1);
 
 t_group('Data Health warnings, entry by entry — each one sorted correctly');
@@ -81,6 +82,8 @@ $_POST = ['party_id' => $pb, 'direction' => 'in', 'amount' => 200, 'mode' => 'ca
 payment_save_form($u0);
 $hit = array_values(array_filter(acct_detail_paid(), fn($r) => $r['id'] == $sb['id']));
 t_ok('a bill paid partly with it and partly later is shown as correct (a fault of the old check)', $hit && $hit[0]['kind'] === 'software' && abs($hit[0]['gap']) < 0.01);
+$flagged = function ($title, $id) { foreach (health_checks() as $c) if (strpos($c['t'] ?? '', $title) === 0) foreach ($c['rows'] ?? [] as $r) if ((int)($r['id'] ?? 0) === (int)$id) return true; return false; };
+t_ok('...and the Data Health check no longer flags it either', !$flagged('Bill "paid"', $sb['id']));
 q('UPDATE sales SET paid = paid + 50 WHERE id = ?', [$sb['id']]);
 $hit = array_values(array_filter(acct_detail_paid(), fn($r) => $r['id'] == $sb['id']));
 t_ok('...and a real gap is shown as an entry problem, with its amount', $hit && $hit[0]['kind'] === 'entry' && abs($hit[0]['gap'] - 50) < 0.01);
@@ -90,7 +93,11 @@ $_POST = ['company_id' => $co, 'location_id' => $loc, 'party_id' => $pb, 'bill_n
 $pf = purchase_save_form($u0);
 $hit = array_values(array_filter(acct_detail_zero_purchases(), fn($r) => $r['id'] == $pf['id']));
 t_ok('a free item at ₹0 price is recognised as free/gift (kept, not an error)', $hit && $hit[0]['kind'] === 'gift');
-t_ok('...and the damage it did is named: the item\'s purchase price is now ₹0', $hit && preg_match('/purchase price is now ₹0/', implode(' ', $hit[0]['effects'])));
+t_eq('a free piece no longer wipes the item\'s purchase price', (float)val('SELECT purchase_price FROM items WHERE id = ?', [$ib]), 300);
+q('UPDATE items SET purchase_price = 0 WHERE id = ?', [$ib]);   // what an older free entry did
+$hit = array_values(array_filter(acct_detail_zero_purchases(), fn($r) => $r['id'] == $pf['id']));
+t_ok('...and damage an older one did is named: the item\'s purchase price is now ₹0', $hit && preg_match('/purchase price is now ₹0/', implode(' ', $hit[0]['effects'])));
+q('UPDATE items SET purchase_price = 300 WHERE id = ?', [$ib]);
 $_POST = ['company_id' => $co, 'location_id' => $loc, 'party_id' => $pb, 'bill_no' => 'EB-DISC', 'purchase_date' => '2026-02-04', 'paid' => 0, 'payment_mode' => 'credit',
           'discount_type' => 'percent', 'discount_val' => 100, 'item_id' => [$ib], 'qty' => [1], 'price' => [300], 'tax_rate' => [0], 'serials' => ['']];
 $pd = purchase_save_form($u0);
@@ -104,6 +111,7 @@ $_POST = ['company_id' => $co, 'location_id' => $loc, 'party_id' => $pb, 'sale_d
 sale_save_form($u0);
 $hit = array_values(array_filter(acct_detail_parties(), fn($r) => $r['id'] == $pb));
 t_ok('a party we both sell to and buy from is explained by the purchases, not "payment not linked"', $hit && stripos($hit[0]['why'], 'you also bought from them') !== false);
+t_ok('...and the Data Health check no longer flags a party just for buying from them too', !$flagged('Party whose bills', $pb));
 $_POST = [];
 $src2 = file_get_contents(__DIR__ . '/../includes/accounting_check_entries.php');
 t_ok('the entry-by-entry screen has no form and writes nothing', stripos($src2, '<form') === false && !preg_match('/\b(INSERT|UPDATE|DELETE)\b|\bq\(/', $src2));

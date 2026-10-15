@@ -31,10 +31,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'adjust') {
     $walletUser = (int)post('wallet_user') ?: $u['id'];
     if ($amount <= 0) { flash('Amount must be more than zero.', 'error'); redirect('cash_bank.php'); }
     if ($kind === 'bank_adjust' && !$bankId) { flash('Pick the bank account.', 'error'); redirect('cash_bank.php'); }
-    q('INSERT INTO money_transfers (txn_type, amount, adjust_dir, from_user_id, to_bank_id, txn_date, notes, status, created_by)
-       VALUES (?,?,?,?,?,?,?,\'done\',?)',
+    $counter = isset(ledger_adjust_kinds()[post('counter')]) ? post('counter') : null;
+    q('INSERT INTO money_transfers (txn_type, amount, adjust_dir, from_user_id, to_bank_id, txn_date, notes, status, created_by, counter)
+       VALUES (?,?,?,?,?,?,?,\'done\',?,?)',
       [$kind, $amount, $dirAdj, $kind === 'cash_adjust' ? $walletUser : null, $kind === 'bank_adjust' ? $bankId : null,
-       post('txn_date', today()), trim(post('notes')), $u['id']]);
+       post('txn_date', today()), trim(post('notes')), $u['id'], $counter]);
     log_activity('cashbank_adjust', "$kind $dirAdj $amount");
     flash(($kind === 'cash_adjust' ? 'Cash' : 'Bank') . ' balance ' . ($dirAdj === 'add' ? 'increased' : 'reduced') . ' by ₹' . money($amount) . '.');
     redirect('cash_bank.php');
@@ -166,6 +167,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'mt_update') {
     log_activity('cashbank_mt_edit', "T-{$t['id']} {$t['txn_type']} ₹" . money($t['amount']) . ' → ₹' . money($amount));
     flash('Entry updated — balances recalculated.');
     redirect('cash_bank.php');
+}
+
+// ---------- say what an adjustment WAS (capital, opening, income...) ----------
+// Only its meaning in the books changes - the amount, date and the cash / bank
+// balance stay exactly as they are. Done by the owner, one entry at a time.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'classify') {
+    if (!is_full_admin()) { flash('Only an admin can do this.', 'error'); redirect('cash_bank.php'); }
+    $t = row("SELECT * FROM money_transfers WHERE id = ? AND txn_type IN ('cash_adjust','bank_adjust') AND status = 'done'", [(int)post('id')]);
+    $kind = post('counter');
+    if (!$t || ($kind !== '' && !isset(ledger_adjust_kinds()[$kind]))) { flash('Entry not found.', 'error'); redirect('cash_bank.php'); }
+    if (is_period_locked($t['txn_date'])) { flash(period_lock_message(), 'error'); redirect('cash_bank.php'); }
+    q('UPDATE money_transfers SET counter = ? WHERE id = ?', [$kind === '' ? null : $kind, $t['id']]);
+    log_activity('cashbank_classify', "T-{$t['id']} ₹" . money($t['amount']) . ' → ' . ($kind ?: 'not classified'));
+    flash('Saved: ₹' . money($t['amount']) . ' is now "' . ($kind ? ledger_adjust_kinds()[$kind][1] : 'not yet classified') . '" in the books. The cash / bank balance has not changed.');
+    redirect('accounting_check.php');
+}
+if (get('action') === 'classify') {
+    if (!is_full_admin()) { flash('Only an admin can do this.', 'error'); redirect('cash_bank.php'); }
+    $t = row("SELECT t.*, ba.account_name bank FROM money_transfers t LEFT JOIN bank_accounts ba ON ba.id = t.to_bank_id WHERE t.id = ? AND t.txn_type IN ('cash_adjust','bank_adjust')", [(int)get('id')]);
+    if (!$t) { flash('Entry not found.', 'error'); redirect('cash_bank.php'); }
+    $page_title = 'What was this adjustment?';
+    include __DIR__ . '/includes/header.php'; ?>
+    <div class="page-head"><h1>What was this adjustment?</h1></div>
+    <form method="post" class="card" style="max-width:560px">
+      <?= csrf_field() ?><input type="hidden" name="do" value="classify"><input type="hidden" name="id" value="<?= (int)$t['id'] ?>">
+      <p><strong><?= $t['txn_type'] === 'cash_adjust' ? '💵 Cash' : '🏦 Bank' . ($t['bank'] ? ' (' . e($t['bank']) . ')' : '') ?> <?= $t['adjust_dir'] === 'add' ? 'increased' : 'reduced' ?> by ₹<?= money($t['amount']) ?></strong> on <?= dmy($t['txn_date']) ?><?= $t['notes'] ? ' · ' . e($t['notes']) : '' ?></p>
+      <p class="muted">The balance stays exactly as it is. This only tells the books where the money came from (or went), so the Trial Balance and Balance Sheet show it in the right place.</p>
+      <?php foreach (ledger_adjust_kinds() + ['' => ['3090', '❔ I don\'t know yet (keep as not classified)']] as $k => [, $label]): ?>
+        <label class="check-inline" style="display:block;padding:8px 0"><input type="radio" name="counter" value="<?= e($k) ?>" <?= (string)$t['counter'] === (string)$k ? 'checked' : '' ?>> <?= e($label) ?></label>
+      <?php endforeach; ?>
+      <p class="muted" style="font-size:13px">Example: gold sold and the money put in the shop's bank → "Owner's money put in (capital)". If it must be paid back to someone, it is a loan - add it in Books → Loans instead and choose "I don't know yet" here.</p>
+      <div class="modal-actions"><a class="btn btn-outline" href="accounting_check.php">Cancel</a><button class="btn" type="submit">Save</button></div>
+    </form>
+    <?php include __DIR__ . '/includes/footer.php'; exit;
 }
 
 // ---------- full CASH ledger (tap on the Cash in Hand card) ----------
@@ -688,6 +723,9 @@ include __DIR__ . '/includes/header.php';
         <div><label>Date</label><input type="date" name="txn_date" value="<?= today() ?>"></div>
         <div><label>Reason / note</label><input type="text" name="notes" placeholder="e.g. Bank SMS charges"></div>
       </div>
+      <div class="field"><label>What is this money? <span class="muted">(for the books)</span></label>
+        <?php foreach (ledger_adjust_kinds() as $k => [, $label]): ?><label class="check-inline" style="display:block"><input type="radio" name="counter" value="<?= $k ?>"> <?= e($label) ?></label><?php endforeach; ?>
+        <label class="check-inline" style="display:block"><input type="radio" name="counter" value="" checked> ❔ Not sure - decide later</label></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-outline" onclick="cbHide('cbAdjust')">Cancel</button>
         <button class="btn" type="submit">Save adjustment</button>

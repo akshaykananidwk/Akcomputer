@@ -77,11 +77,12 @@ $yrs = []; for ($y = (int)date('Y') - (date('n') < 4 ? 1 : 0); $y >= (int)date('
 <?php if ($tab === 'year'): $s = it_summary($fs, min($fe, today())); ?>
 <div class="card"><h3 style="margin-top:0">FY <?= e($fyl) ?> <span class="muted" style="font-weight:normal">(<?= dmy($fs) ?> – <?= dmy(min($fe, today())) ?>)</span></h3>
 <table class="rowlist"><tbody>
-  <tr><td>Sales (after returns)</td><td class="num">₹<?= money($s['revenue']) ?></td></tr>
+  <tr><td>Sales (after returns, without GST)</td><td class="num">₹<?= money($s['revenue']) ?></td></tr>
   <tr><td>Cost of goods sold</td><td class="num">− ₹<?= money($s['cogs']) ?></td></tr>
   <tr><td><b>Gross profit</b></td><td class="num"><b>₹<?= money($s['gross']) ?></b></td></tr>
   <?php foreach ($s['by_category'] as $c => $v): ?><tr><td style="padding-left:20px"><?= e($c) ?></td><td class="num muted">₹<?= money($v) ?></td></tr><?php endforeach; ?>
-  <?php if ($s['loan_principal'] > 0): ?><tr><td style="padding-left:20px">less: loan principal inside EMIs (not a cost)</td><td class="num muted">− ₹<?= money($s['loan_principal']) ?></td></tr><?php endif; ?>
+  <?php if ($s['loan_principal'] > 0): ?><tr><td style="padding-left:20px" class="muted">(loan principal inside EMIs ₹<?= money($s['loan_principal']) ?> is not a cost and is not counted above)</td><td></td></tr><?php endif; ?>
+  <?php if ($s['other_income']): ?><tr><td>Other income</td><td class="num">+ ₹<?= money($s['other_income']) ?></td></tr><?php endif; ?>
   <tr><td>Business expenses</td><td class="num">− ₹<?= money($s['expenses']) ?></td></tr>
   <tr><td>Depreciation on assets</td><td class="num">− ₹<?= money($s['depreciation']) ?></td></tr>
   <tr><td><b>Net profit</b></td><td class="num"><b class="<?= $s['net'] < 0 ? 'text-danger' : '' ?>">₹<?= money($s['net']) ?></b></td></tr>
