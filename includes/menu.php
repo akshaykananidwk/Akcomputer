@@ -76,6 +76,7 @@ return simple_filter_menu(plan_filter_menu([
         ['bank_reconcile.php', 'Bank Reconciliation', 'accounting.view', null, null],
         ['reports.php?r=general_ledger', 'General Ledger', 'reports.accounting', null, null],
         ['reports.php?r=trial_balance', 'Trial Balance', 'reports.accounting', null, null],
+        ['accounting_check.php', '🩺 Accounting check (read only)', 'reports.accounting', null, null],
         ['reports.php?r=balance_sheet', 'Balance Sheet', 'reports.accounting', null, null],
         ['reports.php?r=profit_loss', 'Profit & Loss', 'reports.accounting', null, null],
     ]],
