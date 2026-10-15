@@ -187,6 +187,7 @@ $due = $sale['is_cancelled'] ? 0 : $sale['total'] - $sale['paid'];
 ?>
 <?php if ($sale['is_cancelled']): ?><div class="flash flash-error">🚫 This INVOICE is CANCELLED.</div><?php endif; ?>
 <?php if (!$public): ?>
+<?php $plType = 'sale'; $plId = $id; include __DIR__ . '/includes/paylink_bill_card.php'; ?>
 <?php if (($sale['total'] - $sale['paid']) > 0.009): ?>
 <script>
 function copyPay() {

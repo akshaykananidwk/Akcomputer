@@ -44,6 +44,7 @@ if ($pendEditReq) {
 }
 ?>
 <?php if ($p['is_cancelled']): ?><div class="flash flash-error">🚫 This PURCHASE BILL is CANCELLED.</div><?php endif; ?>
+<?php $plType = 'purchase'; $plId = $id; include __DIR__ . '/includes/paylink_bill_card.php'; ?>
 <div class="page-actions no-print">
   <button class="btn" onclick="window.print()">🖨️ Print</button>
   <a class="btn btn-outline" href="purchases.php">← Back</a>

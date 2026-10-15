@@ -178,7 +178,10 @@ function payment_save_form(array $u, $clientUuid = null) {
         // clears the bill it obviously pays, so the Receivables list stays
         // truthful instead of showing already-collected bills forever
         $autoLeft = round($amount + $discount - $allocated, 2);
-        foreach (money_settle_oldest_first($party_id, $dir, $autoLeft) as $t) {
+        // "Keep as advance": the owner will put it on a bill later, so the
+        // part not linked by hand is NOT spread over the oldest bills
+        $keepAdvance = post('on_account') === '1';
+        foreach ($keepAdvance ? [] : money_settle_oldest_first($party_id, $dir, $autoLeft) as $t) {
             $allocNotes[] = $t['label'] . ': ₹' . money($t['amount']);
             $allocRows[] = ['ref_type' => $t['ref_type'], 'ref_id' => $t['ref_id'], 'amount' => $t['amount']];
             $allocated += $t['amount'];
@@ -201,6 +204,7 @@ function payment_save_form(array $u, $clientUuid = null) {
               [$party_id, $dir, $amount, post('mode', 'cash'), $bankAccId, $pmId,
                post('pay_date', today()), $notes, $u['id'], $clientUuid]);
             $pid = insert_id();
+            if ($keepAdvance) q('UPDATE payments SET on_account = 1 WHERE id = ?', [$pid]);
             foreach ($mainAlloc as $a) {
                 q('INSERT INTO payment_allocations (payment_id, ref_type, ref_id, amount) VALUES (?,?,?,?)', [$pid, $a['ref_type'], $a['ref_id'], $a['amount']]);
             }

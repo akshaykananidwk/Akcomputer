@@ -229,10 +229,12 @@ if ($action === 'ledger' && $id) {
     foreach (all('SELECT id, bill_no ref, purchase_date d, total amt, paid FROM purchases WHERE party_id = ? AND is_cancelled = 0', [$id]) as $r)
         $entries[] = ['date' => $r['d'], 'desc' => 'Purchase ' . ($r['ref'] ?: '#' . $r['id']), 'dr' => 0, 'cr' => $r['amt'],
                       'link' => 'purchase_view.php?id=' . $r['id'], 'sub' => $r['amt'] - $r['paid'] > 0.009 ? 'Balance ₹' . money($r['amt'] - $r['paid']) : 'Paid'];
-    foreach (all('SELECT * FROM payments WHERE party_id = ?', [$id]) as $r)
+    // each payment with how much of it is on bills (🟢🟡🔴🔵), and a tap opens its link screen
+    foreach (all('SELECT p.*, ' . paylink_linked_sql('p') . ' linked, ' . paylink_status_sql('p') . ' st FROM payments p WHERE p.party_id = ?', [$id]) as $r)
         $entries[] = ['date' => $r['pay_date'], 'desc' => ($r['direction'] === 'in' ? 'Received' : 'Paid') . ' (' . $r['mode'] . ') ' . $r['notes'],
                       'dr' => $r['direction'] === 'out' ? $r['amount'] : 0, 'cr' => $r['direction'] === 'in' ? $r['amount'] : 0,
-                      'link' => 'payments.php?action=view&id=' . $r['id'], 'sub' => 'Receipt P-' . str_pad($r['id'], 5, '0', STR_PAD_LEFT)];
+                      'link' => 'payments.php?action=' . ($r['st'] === 'na' ? 'view' : 'link') . '&id=' . $r['id'], 'sub' => 'Receipt P-' . str_pad($r['id'], 5, '0', STR_PAD_LEFT),
+                      'chip' => paylink_chip($r['st'], $r['amount'] - $r['linked'])];
     foreach (all('SELECT id, return_no, return_date d, total amt FROM sales_returns WHERE party_id = ?', [$id]) as $r)
         $entries[] = ['date' => $r['d'], 'desc' => 'Sales Return ' . $r['return_no'], 'dr' => 0, 'cr' => $r['amt'],
                       'link' => 'sales_return.php', 'sub' => ''];
@@ -357,6 +359,15 @@ if ($action === 'ledger' && $id) {
     foreach ($entries as $en) if (abs((float)$en['dr']) < 0.005 && abs((float)$en['cr']) < 0.005) $zeroN++;
     $showZero = get('z') === '1';
     ?>
+    <?php $plFreeP = row("SELECT COUNT(*) n, COALESCE(SUM(p.amount - " . paylink_linked_sql('p') . "),0) amt, SUM(" . paylink_status_sql('p') . " = 'advance') adv
+                         FROM payments p WHERE p.party_id = ? AND " . paylink_status_sql('p') . " IN ('unlinked','partial','advance')", [$id]);
+    if ((int)$plFreeP['n']): ?>
+    <div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1">🔗 <b><?= (int)$plFreeP['n'] ?></b> payment<?= $plFreeP['n'] > 1 ? 's' : '' ?> of this party have <b>₹<?= money($plFreeP['amt']) ?></b> not on any bill<?= $plFreeP['adv'] ? ' (' . (int)$plFreeP['adv'] . ' kept as advance 🔵)' : '' ?>.
+        <div class="muted" style="font-size:13px">The balance above already counts them; linking only says which bill they paid.</div></div>
+      <a class="btn btn-sm" href="payments.php?ls=free&party=<?= $id ?>#recent">See them</a>
+    </div>
+    <?php endif; ?>
     <div class="card list-card">
       <div class="list-row" style="cursor:default">
         <div class="list-row-main"><strong>Opening Balance</strong></div>
@@ -366,7 +377,7 @@ if ($action === 'ledger' && $id) {
             $isZero = abs((float)$en['dr']) < 0.005 && abs((float)$en['cr']) < 0.005;
             if ($isZero && !$showZero) continue; ?>
       <a class="list-row" href="<?= e($en['link']) ?>">
-        <div class="list-row-main"><strong><?= e($en['desc']) ?></strong><div class="muted list-row-sub"><?= dmy($en['date']) ?><?= $en['sub'] ? ' · ' . e($en['sub']) : '' ?></div></div>
+        <div class="list-row-main"><strong><?= e($en['desc']) ?></strong><div class="muted list-row-sub"><?= dmy($en['date']) ?><?= $en['sub'] ? ' · ' . e($en['sub']) : '' ?> <?= $en['chip'] ?? '' ?></div></div>
         <div class="list-row-val">
           <?php if ($en['dr'] > 0): ?><span class="bal-get">+₹<?= money($en['dr']) ?></span>
           <?php else: ?><span class="bal-give">-₹<?= money($en['cr']) ?></span><?php endif; ?>
