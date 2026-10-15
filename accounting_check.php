@@ -22,6 +22,12 @@ $page_title = 'Accounting check';
 include __DIR__ . '/includes/header.php';
 ?>
 <div class="page-head"><h1>🩺 Accounting check</h1></div>
+<?php $view = get('view') === 'entries' ? 'entries' : 'books'; ?>
+<div class="chips" style="display:flex;gap:8px;margin-bottom:12px">
+  <a class="btn btn-sm <?= $view === 'books' ? '' : 'btn-outline' ?>" href="accounting_check.php">⚖️ Trial Balance &amp; reports</a>
+  <a class="btn btn-sm <?= $view === 'entries' ? '' : 'btn-outline' ?>" href="accounting_check.php?view=entries">🔎 Data Health warnings, entry by entry</a>
+</div>
+<?php if ($view === 'entries') { include __DIR__ . '/includes/accounting_check_entries.php'; include __DIR__ . '/includes/footer.php'; exit; } ?>
 <form class="card" method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
   <div><label>P&amp;L period from</label><input type="date" name="from" value="<?= e($from) ?>"></div>
   <div><label>Up to</label><input type="date" name="to" value="<?= e($to) ?>"></div>

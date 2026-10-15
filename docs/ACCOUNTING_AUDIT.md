@@ -200,3 +200,172 @@ Check સ્ક્રીન આ બધું ગણી બતાવે છે:
 1. વેબસાઈટ પર **Settings → Update** દબાવો. Migrate ની જરૂર નથી, કારણ કે database બદલાતો નથી.
 2. **Accounting → 🩺 Accounting check** ખોલો. "Up to" તારીખ એ જ રાખો જે તારીખે ₹1,50,279.62 દેખાયો હતો.
 3. એ પેજનો screenshot મોકલો. તમારા ફરકનો દરેક રૂપિયો કયા કારણથી છે તે હું ચોક્કસ કહીશ, અને પછી A/B/C માંથી શું કરવું તે તમે નક્કી કરજો.
+
+---
+---
+
+# ભાગ 2: Data Health Check ની 6 ચેતવણીઓ, entry by entry
+
+**સ્થિતિ:** ફક્ત તપાસ કરી છે. કોઈ transaction, payment link, stock, opening, purchase કે journal માં **કોઈ ફેરફાર કર્યો નથી.**
+
+દરેક શંકા અલગ **test copy** માં ખરેખર entry બનાવીને ચકાસી (rollback સાથે). લાઇવ ડેટાની દરેક entry જોવા માટે નવી read-only સ્ક્રીન ઉમેરી છે:
+**Accounting → 🩺 Accounting check → "🔎 Data Health warnings, entry by entry"**
+
+એ સ્ક્રીન દરેક અસરગ્રસ્ત entry ની યાદી બનાવે છે અને દરેક પર લેબલ લગાડે છે:
+
+| લેબલ | અર્થ |
+|---|---|
+| `software check` | Entry સાચી છે; ચેતવણી ખોટી (check ની ભૂલ) |
+| `entry` | ખરેખર entry તપાસવાની છે |
+| `free / gift - keep` | જાણી જોઈને કરેલી free / 100% discount entry. **રાખવાની છે, delete નહીં** |
+
+## પહેલું કામ: Backup ની ખાતરી (કોઈ પણ સુધારા પહેલાં)
+
+લાઇવ સર્વર મને અહીંથી દેખાતું નથી. એટલે backup ની ખાતરી તમારે કરવી પડશે:
+
+1. **Settings → Backup → "Download backup now"** દબાવો. ફાઇલ ખુલે છે કે નહીં તે જુઓ, અને તેને Drive/Pen-drive માં રાખો.
+2. Entry-by-entry સ્ક્રીનના **વિભાગ 6** માં જુઓ: "Last automatic backup" ની તારીખ અને "Backup password set".
+3. Automatic backup **cron** થી ચાલે છે. Cron ન ચાલે તો automatic backup બિલકુલ લેવાતો નથી.
+
+**નિયમ:** સુધારાની મંજૂરી આપો ત્યારે પણ, પહેલાં એ દિવસનો નવો backup લઈશું, અને પછી જ સુધારો કરીશું.
+
+---
+
+## 1. Bills અને Payments mismatch (5 બિલ)
+
+**શું છે:** Health Check બિલ પરનું "paid" ફક્ત પછીથી link થયેલાં payments સાથે સરખાવે છે. બિલ બનાવતી વખતે ભરાયેલા પૈસા (counter પર cash/UPI) એ ગણતરીમાં લેતું જ નથી.
+
+**Test copy માં:** ₹500 નું બિલ બનાવ્યું. ₹300 બિલ વખતે ભરાયા અને ₹200 પછી Payment-In થી. બિલ સાચું અને પૂરું ભરાયેલું હતું, છતાં Health Check એ તેને **mismatch** બતાવ્યું (paid 500, linked 200).
+
+**ભૂલ કોની?**
+- મોટાભાગે **સોફ્ટવેરના check ની** (ખોટી ચેતવણી).
+- નવી સ્ક્રીન દરેક બિલ માટે સાચી રીતે ગણે છે: બિલ વખતનાં payments + પછી link થયેલાં payments.
+  - `software check` લેબલ = બિલ સાચું છે.
+  - `entry` લેબલ = ખરેખર ફરક છે, અને કેટલા ₹ નો તે પણ બતાવે છે. કારણ: payment પછીથી delete/edit થયું, કે બિલ પર "paid" હાથે લખ્યું.
+
+**સુધારો (મંજૂરી પછી):**
+- Health Check ની ગણતરી સુધારવી. આ ફક્ત કોડ છે, ડેટા નહીં.
+- `entry` વાળાં બિલ દરેક એક પછી એક તમને બતાવીને સુધારવાં.
+
+**પછી ફરી શું ચકાસીશું:** Data Health Check, Party Ledger, Receivables, Bank/Cash Ledger.
+
+## 2. ₹0 ની Purchase Bills (10+)
+
+**સ્ક્રીન દરેક ₹0 બિલ માટે બતાવે છે:** બિલ નંબર, તારીખ, સપ્લાયર, દરેક લાઇન (આઇટમ × જથ્થો × ભાવ), subtotal − discount + GST = total, અને નીચેનામાંથી કયો પ્રકાર:
+
+| પ્રકાર | ઓળખ | શું કરવું |
+|---|---|---|
+| **Free items, ₹0 ભાવ** | બધી લાઇનનો ભાવ ₹0 | ✅ રાખવાનું (gift) |
+| **100% discount** | Discount ≥ subtotal | ✅ રાખવાનું (gift) |
+| **અધૂરું** | કોઈ આઇટમ લાઇન જ નથી | તમે confirm કરો પછી જ |
+| **શંકાસ્પદ** | લાઇનમાં ભાવ છે, છતાં total ₹0 | તમે confirm કરો પછી જ |
+
+**આવી entries ની અસર (test copy માં ચકાસ્યું):**
+
+| પરિણામ | ₹0 ભાવ વાળી entry | 100% discount વાળી entry |
+|---|---|---|
+| Stock જથ્થો | ✅ વધે છે, સાચું | ✅ વધે છે, સાચું |
+| Supplier balance | ✅ કંઈ બદલાતું નથી | ⚠️ **GST ફર્મ પર** total ₹0 નહીં, GST જેટલું (₹108) રહે છે, અને સપ્લાયરને એટલું આપવાનું બાકી બને છે |
+| Purchase register | ✅ ₹0 | ⚠️ GST ફર્મ પર GST જેટલું |
+| **આઇટમનો ખરીદ ભાવ** | ❌ **₹0 થઈ જાય છે!** (પહેલાં ₹300 હતો) | ✅ મૂળ ભાવ રહે છે |
+| Inventory valuation | ❌ એ આઇટમનો **આખો** સ્ટોક ₹0 ગણાય છે | ⚠️ free માલ પણ પૂરા ભાવે ગણાય છે |
+| COGS / નફો | ❌ એ આઇટમના પછીનાં વેચાણમાં cost ₹0, એટલે **નફો વધારે** દેખાય. આ આગલી paid ખરીદી સુધી ચાલુ રહે | ⚠️ free માલની cost પૂરા ભાવે ગણાય, એટલે નફો થોડો ઓછો |
+
+**ભૂલ કોની?**
+- Entry **તમારી સાચી છે.**
+- **સોફ્ટવેરની logic ખોટી છે:**
+  - (a) ₹0 ભાવની લાઇન આઇટમનો સામાન્ય ખરીદ ભાવ ભૂંસી નાખે છે.
+  - (b) GST, discount બાદ કર્યા **પહેલાં** ગણાય છે.
+  - (c) Purchase માં લાઇન-પ્રમાણે discount નથી, ફક્ત આખા બિલ પર.
+
+**Free items માટે સાચી accounting:**
+- જથ્થો: સ્ટોકમાં ઉમેરવો.
+- Cost: ₹0. એટલે weighted-average cost થોડી ઘટે, પણ ₹0 ન થઈ જાય.
+- સપ્લાયર: કંઈ બાકી નહીં.
+- GST: free માલ પર કોઈ GST નહીં.
+
+**સુધારો (મંજૂરી પછી, કોડ):**
+1. ₹0 (free) લાઇન આઇટમનો ખરીદ ભાવ **બદલે નહીં.** Cost layer માં ₹0 નો હિસ્સો જાય, જેથી average સાચી રહે.
+2. Purchase માં લાઇન પર "Free" નો વિકલ્પ, અથવા લાઇન-પ્રમાણે discount.
+3. GST, discount બાદ કર્યા **પછી** ગણવો.
+   - **આ જ ખામી Sales બિલમાં પણ છે:** ₹500 પર ₹100 discount આપો તો GST ₹400 પર ₹72 થવો જોઈએ, પણ ₹90 ગણાય છે. **GST return ની દ્રષ્ટિએ આ મહત્વનું છે.**
+
+**જૂની entries:**
+- જે આઇટમનો ખરીદ ભાવ ₹0 થઈ ગયો છે, તેની યાદી સ્ક્રીન આપે છે ("its purchase price is now ₹0").
+- એ આઇટમનો સાચો ભાવ પાછો મૂકવો એ ડેટા ફેરફાર છે, એટલે **તમારી મંજૂરી પછી**, આઇટમ પ્રમાણે.
+- Gift entries **delete કે change નહીં થાય.**
+
+**પછી ફરી શું ચકાસીશું:** Stock value, Product-wise profit, P&L (COGS), Purchase register, Supplier ledger, GSTR-3B (ITC).
+
+## 3. Stock અને Serial mismatch, negative stock (9 items)
+
+**Negative stock:**
+- સ્ક્રીન દરેક આઇટમ માટે છેલ્લી ખરીદી અને છેલ્લા વેચાણની તારીખ બતાવે છે, અને કારણ: *"ખરીદી કદી નોંધાઈ નથી"* / *"છેલ્લી ખરીદી પછી વધારે વેચાયું"*.
+- **ભૂલ કોની?** Entry ની. માલ પહેલાં વેચાયો અને ખરીદી પછી નોંધાઈ (કે નોંધાઈ જ નહીં).
+- Setting "Allow billing more than the stock" ચાલુ છે, એટલે સોફ્ટવેર આવું થવા દે છે. **સોફ્ટવેરની ગણતરી સાચી છે.**
+
+**Serial ≠ stock:**
+
+| જે દેખાય | મોટાભાગે કારણ |
+|---|---|
+| Stock > serial | Opening stock કે stock adjustment serial વગર નાખ્યો, અથવા વેચાણ serial પસંદ કર્યા વગર થયું |
+| Serial > stock | Stock ઘટ્યો (adjustment, handover) પણ serial "in stock" જ રહ્યા, અથવા stock negative છે |
+
+**ભૂલ કોની?** Entry ની.
+
+**સુધારો (મંજૂરી પછી):**
+1. ખૂટતી purchase bills નાખવી.
+2. 🔧 **Serial/Stock Repair** (`serial_fix.php`) થી દરેક આઇટમ તમને બતાવીને સરખી કરવી.
+3. સોફ્ટવેરમાં serial-વાળી આઇટમના stock adjustment વખતે serial ફરજિયાત માગવો.
+
+**પછી ફરી શું ચકાસીશું:** Stock report, Serial list, Stock value, Data Health Check.
+
+## 4. Party Ledger mismatch (Zala bapu (jijaji) સહિત 3)
+
+**શું છે:** Health Check કહે છે *"ખુલ્લાં બિલનો સરવાળો લેજર કરતાં વધારે છે, કોઈ payment link નથી"*. પણ test copy માં બીજું કારણ મળ્યું.
+
+**મળેલું કારણ:** જે પાર્ટીને **વેચીએ અને જેની પાસેથી ખરીદીએ પણ**, તેનું લેજર બંનેને net કરે છે (વેચાણ − ખરીદી). પણ "ખુલ્લાં બિલ" માં ફક્ત વેચાણનાં બિલ ગણાય છે. **આ ભૂલ નથી**, લેજર સાચું છે. Health Check નું કારણ ખોટું લખાયું છે.
+
+**સ્ક્રીન દરેક પાર્ટી માટે ફરક ભાગમાં બતાવે છે:**
+- તેમની કેટલી purchase bills બાકી છે
+- કેટલું payment કોઈ બિલ સાથે link નથી
+- કેટલા sales return
+- કેટલું opening advance
+
+**ભૂલ કોની?**
+- Purchase netting વાળો ભાગ = સાચું (software check નું કારણ ખોટું લખાયું છે).
+- Link વગરનું payment = entry. એ payment ને બિલ સાથે link કરવું.
+
+**સુધારો (મંજૂરી પછી):**
+- Link કરવાનાં payments તમને બતાવીને link કરવાં.
+- જે પાર્ટી સાથે વેચાણ અને ખરીદી બંને હોય તેમાં **Contra-settle**, જો તમે બંને હિસાબ સરભર કરવા માગતા હો.
+- Health Check નું લખાણ સાચું કરવું (કોડ).
+
+**પછી ફરી શું ચકાસીશું:** Party ledger, Receivables/Payables, Reminder ની રકમ, Balance Sheet.
+
+## 5. Accounting reconciliation (Trial Balance, opening, UPI)
+
+ભાગ 1 માં વિગત છે. **⚖️ Trial Balance & reports** ટેબ ફરક ને કારણ પ્રમાણે ભાગમાં બતાવે છે, અને બધા ભાગનો સરવાળો ફરક જેટલો જ આવે છે. એ ટેબનો screenshot મોકલશો એટલે ₹1,50,279.62 નું ચોક્કસ વિભાજન કહીશ.
+
+## 6. Security અને Technical
+
+| મુદ્દો | શું છે | ભૂલ કોની | સુધારો |
+|---|---|---|---|
+| Backup password | Password ન હોય તો backup ફાઇલ કોઈ પણ ખોલી શકે | Setting | **Settings → Backup** માં password નાખો. આ તમારે જ કરવાનું, કારણ કે password ફક્ત તમારી પાસે રહેવો જોઈએ |
+| Automatic backup | Cron ન ચાલે તો backup જ નથી લેવાતો | Hosting setup | નીચે "Cron" જુઓ |
+| API key plain-text | અમુક key એન્ક્રિપ્ટ થયા વગર database માં પડી છે. સ્ક્રીન ફક્ત key નાં **નામ** બતાવે છે, કિંમત નહીં | Cron ન ચાલવાથી (રોજનું housekeeping key ને encrypt કરે છે) | Settings માં એ key ને એક વાર "Save" કરો એટલે તરત encrypt થાય. અથવા cron ચાલુ થાય એટલે જાતે થઈ જશે |
+| Cron | "Cron last ran" જૂનું કે "never" હોય તો hosting માં cron સેટ નથી કે બંધ છે. Reminders, backup, WhatsApp, housekeeping બધું એના પર ચાલે છે | Hosting setup | cPanel → Cron Jobs માં દર 5 મિનિટે `cron.php` ચલાવવું (Cron Manager માં લાઇન લખેલી છે). Fail થતા job નું નામ અને કારણ સ્ક્રીન બતાવે છે |
+| 93 errors | સ્ક્રીન એક જ પ્રકારની ભૂલોને ભેગી કરીને બતાવે છે: કઈ ભૂલ કેટલી વાર અને છેલ્લે ક્યારે | ભૂલ પ્રમાણે | એ ટેબલનો screenshot મોકલો. દરેક ભૂલનું કારણ અને સુધારો અલગ કહીશ. મોટાભાગે થોડી જ ભૂલો વારંવાર આવતી હોય છે |
+
+---
+
+## હવે શું કરવાનું (ક્રમ પ્રમાણે)
+
+1. **Settings → Backup → Download backup now**. ફાઇલ સાચવી રાખો.
+2. **Settings → Update** (Migrate ની જરૂર નથી).
+3. **Accounting → 🩺 Accounting check** ખોલો, અને બંને ટેબના screenshot મોકલો:
+   - "⚖️ Trial Balance & reports"
+   - "🔎 Data Health warnings, entry by entry"
+4. એ પછી હું દરેક અસરગ્રસ્ત entry માટે કહીશ કે શું કરવું, અને સુધારાની યાદી નક્કી કરીશું:
+   - **ફક્ત કોડ:** check સુધારવા, free item logic, GST discount પછી ગણવો.
+   - **ડેટા:** entry પ્રમાણે, તમારી દરેક મંજૂરી પછી.

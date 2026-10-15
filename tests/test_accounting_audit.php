@@ -68,3 +68,43 @@ $by = []; foreach ($checks as $c) $by[$c['title']] = $c;
 t_ok('the UPI without a bank account is found', !$by['UPI / card / cheque payments saved without a bank account']['ok']);
 t_ok('the GST counted as revenue is measured', isset($by['GST collected is counted as sales revenue']));
 t_eq('the walk-in bill\'s unpaid ₹200 is found', $by['Unpaid amount on walk-in bills (no party)']['amount'] >= 200 ? 1 : 0, 1);
+
+t_group('Data Health warnings, entry by entry — each one sorted correctly');
+$u0 = row('SELECT u.*, l.name location_name FROM users u JOIN locations l ON l.id = u.location_id ORDER BY u.id LIMIT 1'); $u0['perms'] = ['*'];
+q("INSERT INTO parties (name, type, mobile) VALUES ('EB Both', 'both', '9844444444')"); $pb = insert_id();
+q("INSERT INTO items (name, selling_price, purchase_price, tax_rate, is_active, item_type) VALUES ('EB Item', 500, 300, 18, 1, 'product')"); $ib = insert_id();
+adjust_stock($ib, $loc, 5, 'opening', null, 't');
+$_POST = ['company_id' => $co, 'location_id' => $loc, 'party_id' => $pb, 'sale_date' => '2026-02-01', 'payment_mode' => 'cash', 'paid' => 300,
+          'row_n' => [1], 'item_id' => [$ib], 'qty' => [1], 'price' => [500], 'tax_rate' => [0]];
+$sb = sale_save_form($u0);
+$_POST = ['party_id' => $pb, 'direction' => 'in', 'amount' => 200, 'mode' => 'cash', 'pay_date' => '2026-02-02'];
+payment_save_form($u0);
+$hit = array_values(array_filter(acct_detail_paid(), fn($r) => $r['id'] == $sb['id']));
+t_ok('a bill paid partly with it and partly later is shown as correct (a fault of the old check)', $hit && $hit[0]['kind'] === 'software' && abs($hit[0]['gap']) < 0.01);
+q('UPDATE sales SET paid = paid + 50 WHERE id = ?', [$sb['id']]);
+$hit = array_values(array_filter(acct_detail_paid(), fn($r) => $r['id'] == $sb['id']));
+t_ok('...and a real gap is shown as an entry problem, with its amount', $hit && $hit[0]['kind'] === 'entry' && abs($hit[0]['gap'] - 50) < 0.01);
+q('UPDATE sales SET paid = paid - 50 WHERE id = ?', [$sb['id']]);
+$_POST = ['company_id' => $co, 'location_id' => $loc, 'party_id' => $pb, 'bill_no' => 'EB-FREE', 'purchase_date' => '2026-02-03', 'paid' => 0, 'payment_mode' => 'credit',
+          'item_id' => [$ib], 'qty' => [2], 'price' => [0], 'tax_rate' => [0], 'serials' => ['']];
+$pf = purchase_save_form($u0);
+$hit = array_values(array_filter(acct_detail_zero_purchases(), fn($r) => $r['id'] == $pf['id']));
+t_ok('a free item at ₹0 price is recognised as free/gift (kept, not an error)', $hit && $hit[0]['kind'] === 'gift');
+t_ok('...and the damage it did is named: the item\'s purchase price is now ₹0', $hit && preg_match('/purchase price is now ₹0/', implode(' ', $hit[0]['effects'])));
+$_POST = ['company_id' => $co, 'location_id' => $loc, 'party_id' => $pb, 'bill_no' => 'EB-DISC', 'purchase_date' => '2026-02-04', 'paid' => 0, 'payment_mode' => 'credit',
+          'discount_type' => 'percent', 'discount_val' => 100, 'item_id' => [$ib], 'qty' => [1], 'price' => [300], 'tax_rate' => [0], 'serials' => ['']];
+$pd = purchase_save_form($u0);
+$hit = array_values(array_filter(acct_detail_zero_purchases(), fn($r) => $r['id'] == $pd['id']));
+t_ok('a 100% discount purchase is recognised as such', $hit && $hit[0]['kind'] === 'gift' && strpos($hit[0]['what'], '100% discount') === 0);
+$_POST = ['company_id' => $co, 'location_id' => $loc, 'party_id' => $pb, 'bill_no' => 'EB-BUY', 'purchase_date' => '2026-02-05', 'paid' => 0, 'payment_mode' => 'credit',
+          'item_id' => [$ib], 'qty' => [1], 'price' => [250], 'tax_rate' => [0], 'serials' => ['']];
+purchase_save_form($u0);
+$_POST = ['company_id' => $co, 'location_id' => $loc, 'party_id' => $pb, 'sale_date' => '2026-02-06', 'payment_mode' => 'credit', 'paid' => 0,
+          'row_n' => [1], 'item_id' => [$ib], 'qty' => [1], 'price' => [500], 'tax_rate' => [0]];
+sale_save_form($u0);
+$hit = array_values(array_filter(acct_detail_parties(), fn($r) => $r['id'] == $pb));
+t_ok('a party we both sell to and buy from is explained by the purchases, not "payment not linked"', $hit && stripos($hit[0]['why'], 'you also bought from them') !== false);
+$_POST = [];
+$src2 = file_get_contents(__DIR__ . '/../includes/accounting_check_entries.php');
+t_ok('the entry-by-entry screen has no form and writes nothing', stripos($src2, '<form') === false && !preg_match('/\b(INSERT|UPDATE|DELETE)\b|\bq\(/', $src2));
+t_ok('unencrypted keys are listed by name only, never their value', strpos($src, "\$o['plain_keys'][] = \$k;") !== false);
