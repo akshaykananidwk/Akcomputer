@@ -106,10 +106,6 @@ if (can('sales.view')) {
     $sKpis = dash_kpis($dFrom, $dTo, $dashOwner, $dashLoc);
     $sPrev = dash_kpis($cFrom, $cTo, $dashOwner, $dashLoc);
 }
-// the P&L's three figures for the same dates - business profit, household,
-// and what is left after both (whole shop: the books are not kept per branch)
-$sPL = (can('reports.accounting') && $dashOwner === null) ? ledger_pl($dFrom, $dTo) : null;
-$sPLMonth = $sPL !== null ? ledger_pl(date('Y-m-01'), today()) : null;   // always on the front: this month so far
 $sBals = $seeMoney ? dash_balances() : null;
 if ($sBals) {
     // the same figures the To Receive / To Pay cards show - one sweep, not two
@@ -341,13 +337,6 @@ if (can('sales.add')):
 </div>
 <?php endif; ?>
 
-<?php if ($sPLMonth): ?>
-<div class="card" style="padding:12px 14px">
-  <h3 style="margin:0 0 8px">💰 <?= e(date('F Y')) ?> so far <span class="muted" style="font-weight:400;font-size:13px">· after all expenses</span></h3>
-  <?= ledger_three_cards($sPLMonth, 'reports.php?r=profit_loss&from=' . date('Y-m-01') . '&to=' . today()) ?>
-</div>
-<?php endif; ?>
-
 <div class="hm-tiles">
   <?php if (can('sales.view')): ?>
   <a class="hm-tile t-blue" href="sales.php">
@@ -498,7 +487,7 @@ if (can('sales.add')):
       $rq = 'from=' . urlencode($dFrom) . '&to=' . urlencode($dTo);
       dash_card('Sales', money($sKpis['sales']), 'reports.php?r=daily&' . $rq, $sKpis['sales'], $sPrev['sales']);
       if ($seeMoney) dash_card('Collected', money($sKpis['collected']), 'reports.php?r=cashbook&' . $rq, $sKpis['collected'], $sPrev['collected'], 's-ok');
-      if ($seeProfit) dash_card('Gross profit (items)', money($sKpis['profit']), 'reports.php?r=profit&' . $rq, $sKpis['profit'], $sPrev['profit'], 's-ok');
+      if ($seeProfit) dash_card('Profit', money($sKpis['profit']), 'reports.php?r=profit&' . $rq, $sKpis['profit'], $sPrev['profit'], 's-ok');
       if (can('expenses.view')) dash_card('Expenses', money($sKpis['expenses']), 'expenses.php', $sKpis['expenses'], $sPrev['expenses'], 's-warn');
       if ($seeMoney) dash_card('Net cash', money($sKpis['net_cash']), 'cash_bank.php', $sKpis['net_cash'], $sPrev['net_cash'], $sKpis['net_cash'] < 0 ? 's-bad' : '');
       dash_card('Bill', (string)$sKpis['bills'], 'sales.php', $sKpis['bills'], $sPrev['bills'], '', '');
@@ -512,10 +501,6 @@ if (can('sales.add')):
       if ($newOrders) dash_card('New orders', (string)$newOrders, 'web_orders.php', null, null, 's-warn', '');
     ?>
   </div>
-  <?php if ($sPL): ?>
-  <h3 style="margin:14px 0 6px">💰 After all expenses <span class="muted" style="font-weight:400;font-size:13px">· <?= e($dLabel) ?><?= $dashLoc ? ' · whole shop' : '' ?></span></h3>
-  <?= ledger_three_cards($sPL, 'reports.php?r=profit_loss&' . $rq) ?>
-  <?php endif; ?>
   <p class="muted" style="margin:8px 0 0;font-size:12px">Click any figure to open the list behind it.
     <?php if ($seeProfit && $sKpis['discount'] > 0.009): ?>· discount given Rs <?= money($sKpis['discount']) ?><?php endif; ?>
     <?php if ($seeProfit && $sKpis['margin_pct']): ?>· margin <?= $sKpis['margin_pct'] ?>%<?php endif; ?>

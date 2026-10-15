@@ -184,11 +184,11 @@ Test copy માં પરિણામ:
 ## 7. તમારા નિર્ણય / મંજૂરી બાકી
 
 1. **GST discount પછી ગણવો (#22).** ઉદાહરણ: ₹500 પર ₹100 discount હોય તો GST ₹400 પર ₹72 થવો જોઈએ, પણ અત્યારે ₹90 લાગે છે. GST કાયદા પ્રમાણે discount પછીની કિંમત પર GST લાગે છે. સુધારવાથી **નવાં** બિલના total બદલાશે; જૂનાં બિલ બદલાશે નહીં. મંજૂરી આપો તો કરી દઉં.
-2. **ઘરખર્ચ (#8): ✅ નક્કી થયું.** P&L, Dashboard, Business Report અને Year summary માં હવે **ત્રણ આંકડા** દેખાય છે:
+2. **ઘરખર્ચ (#8): ✅ નક્કી થયું.** P&L, Business Report અને Year summary માં હવે **ત્રણ આંકડા** દેખાય છે:
    - 🏪 **Business Net Profit (બિઝનેસનો નફો)** = વેચાણ (GST વગર) − Cost of goods − Discount allowed − Business ખર્ચ. ઘરખર્ચ આમાં બાદ થતો નથી.
    - 🏠 **Household / Personal (ઘરખર્ચ)** = ઘરખર્ચ + personal ખર્ચ + Owner drawings (adjustment માં "taken home" પસંદ કર્યું હોય તે પણ). Category પ્રમાણે યાદી પણ દેખાય છે.
    - ✅ **Net Profit After Business & Household Expenses (બધા ખર્ચા બાદ બાકી)** = Business Net Profit − Household. આ મુખ્ય આંકડો છે. રકમ ઓછી (minus) હોય તો લાલ રંગમાં **LOSS (ખોટ)** લખાય છે.
-   - Dashboard ના મુખ્ય ભાગમાં "આ મહિનો" ના ત્રણ આંકડા, અને "Everything else" માં પસંદ કરેલી તારીખના આંકડા.
+   - Dashboard પર આ આંકડા **નથી** (માલિકની સૂચના); Dashboard પહેલાં જેવું જ છે.
    - **કોઈ ખર્ચ બે વાર બાદ થતો નથી.** Test થી ચકાસ્યું છે:
      - ખરીદી એ ખર્ચ નથી; માલ વેચાય ત્યારે જ તેની cost ગણાય.
      - GST આવક નથી.
