@@ -111,4 +111,36 @@ $colors = ['present' => '#16a34a', 'half' => '#f59e0b', 'absent' => '#dc2626', '
     <input type="text" name="note" placeholder="Note" style="max-width:160px"><button class="btn btn-sm" type="submit">Mark</button></form>
   <?php endif; ?>
 </div>
+<?php $mc = hr_month_calc($who, $month); $rate = hr_rate($who, $month); $hourly = $who['pay_type'] === 'hourly';
+      $km = hr_month_km($who['id'], $month); $pens = all('SELECT * FROM hr_penalties WHERE user_id = ? AND DATE_FORMAT(pen_date, "%Y-%m") = ? ORDER BY pen_date', [$who['id'], $month]);
+      $canMoney = $who['id'] == $u['id'] || can('hr.payroll'); ?>
+<div class="card">
+  <h3 style="margin-top:0">📒 <?= e(date('F Y', strtotime("$month-01"))) ?> — day by day</h3>
+  <div class="grid-stats">
+    <div class="stat"><div class="stat-label">Hours worked</div><div class="stat-value"><?= +$mc['hours'] ?></div></div>
+    <div class="stat <?= $mc['penalty_hours'] > 0 ? 's-bad' : '' ?>"><div class="stat-label">Penalty hours</div><div class="stat-value"><?= +$mc['penalty_hours'] ?></div></div>
+    <?php if ($canMoney): ?><div class="stat"><div class="stat-label">Rate this month</div><div class="stat-value">₹<?= money($rate) ?><small><?= $hourly ? '/hour' : '/month' ?></small></div></div><?php endif; ?>
+    <?php if ($who['bike_allowed']): ?><div class="stat"><div class="stat-label">🏍️ Bike</div><div class="stat-value"><?= +$km ?> km</div></div><?php endif; ?>
+  </div>
+  <div class="table-wrap"><table class="table-sm"><thead><tr><th>Date</th><th>Day</th><th>In / out</th><th class="num">Hours</th><th class="num">Penalty</th><th>Why</th><?php if (can('hr.edit')): ?><th></th><?php endif; ?></tr></thead><tbody>
+  <?php foreach ($mc['days'] as $d => $x): if ($x['st'] === 'future') continue; ?>
+    <tr><td><?= dmy($d) ?></td><td><?= e($x['st']) ?></td>
+      <td><?= $x['in'] ? date('h:i A', strtotime($x['in'])) : '—' ?> / <?= $x['out'] ? date('h:i A', strtotime($x['out'])) : ($x['flag'] ? '<span class="badge badge-warn">' . e($x['flag']) . '</span>' : '—') ?></td>
+      <td class="num"><?= $x['hours'] ? +$x['hours'] : '' ?></td>
+      <td class="num" style="<?= $x['penalty'] > 0 ? 'color:var(--bad);font-weight:600' : '' ?>"><?= $x['penalty'] ? +$x['penalty'] . ' h' : '' ?></td>
+      <td class="muted" style="font-size:13px"><?= e($x['why']) ?></td>
+      <?php if (can('hr.edit')): ?><td><?php if ($x['penalty'] > 0 && strpos($x['why'], 'waived') === false): ?>
+        <form method="post" action="team.php" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="penalty"><input type="hidden" name="kind" value="waive">
+          <input type="hidden" name="user_id" value="<?= (int)$who['id'] ?>"><input type="hidden" name="date" value="<?= e($d) ?>"><input type="hidden" name="reason" value="let go by <?= e($u['name']) ?>">
+          <button class="btn btn-sm btn-outline" type="submit" onclick="return confirm('Let the automatic penalty for <?= e(dmy($d)) ?> go?')">Let go</button></form><?php endif; ?></td><?php endif; ?></tr>
+  <?php endforeach; ?></tbody></table></div>
+  <?php if (can('hr.edit')): ?>
+  <form method="post" action="team.php" class="mt" style="display:flex;gap:6px;flex-wrap:wrap;align-items:end"><?= csrf_field() ?><input type="hidden" name="do" value="penalty"><input type="hidden" name="kind" value="manual"><input type="hidden" name="user_id" value="<?= (int)$who['id'] ?>">
+    <input type="date" name="date" value="<?= e(today()) ?>" required><input type="number" name="hours" min="0.5" step="0.5" placeholder="Hours" style="max-width:90px" required>
+    <input type="text" name="reason" placeholder="Why (e.g. phone off on duty)" style="max-width:220px" required><button class="btn btn-sm" type="submit">➕ Add a penalty</button></form>
+  <?php foreach ($pens as $p): ?>
+    <form method="post" action="team.php" style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:4px"><?= csrf_field() ?><input type="hidden" name="do" value="penalty_del"><input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
+      <?= dmy($p['pen_date']) ?> · <?= $p['kind'] === 'waive' ? 'penalty let go' : +$p['hours'] . ' h penalty' ?> · <?= e($p['reason']) ?> <button class="btn btn-sm btn-outline" type="submit">✕</button></form>
+  <?php endforeach; endif; ?>
+</div>
 <?php include __DIR__ . '/includes/footer.php'; ?>

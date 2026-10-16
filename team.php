@@ -14,12 +14,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($do === 'shifts') {
         foreach ((array)post('id', []) as $i => $id) {
             $tm = fn($v) => preg_match('/^\d{2}:\d{2}$/', (string)$v) ? "$v:00" : null;
-            q('UPDATE users SET salary_monthly = ?, commission_pct = ?, shift_start = ?, shift_end = ?, weekly_off = ?, joined_on = ? WHERE id = ?',
+            $pr = trim((string)(post('petrol')[$i] ?? ''));
+            q('UPDATE users SET salary_monthly = ?, commission_pct = ?, shift_start = ?, shift_end = ?, weekly_off = ?, joined_on = ?,
+                 pay_type = ?, hourly_rate = ?, raise_amount = ?, raise_from = ?, raise_max = ?, bike_allowed = ?, petrol_rate = ? WHERE id = ?',
               [max(0, (float)(post('salary')[$i] ?? 0)), max(0, min(50, (float)(post('comm')[$i] ?? 0))), $tm(post('ss')[$i] ?? ''), $tm(post('se')[$i] ?? ''),
-               (post('off')[$i] ?? '') === '' ? null : (int)post('off')[$i], preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)(post('joined')[$i] ?? '')) ? post('joined')[$i] : null, (int)$id]);
+               (post('off')[$i] ?? '') === '' ? null : (int)post('off')[$i], preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)(post('joined')[$i] ?? '')) ? post('joined')[$i] : null,
+               (post('ptype')[$i] ?? '') === 'hourly' ? 'hourly' : 'monthly', max(0, (float)(post('hrate')[$i] ?? 0)), max(0, (float)(post('raise')[$i] ?? 0)),
+               preg_match('/^\d{4}-\d{2}$/', (string)(post('rfrom')[$i] ?? '')) ? post('rfrom')[$i] : null, max(0, (float)(post('rmax')[$i] ?? 0)),
+               in_array((string)$id, (array)post('bike', []), true) ? 1 : 0, $pr === '' ? null : max(0, (float)$pr), (int)$id]);
         }
         log_activity('team_shifts', '');
         flash('Saved.');
+    }
+    if ($do === 'rules') {
+        // switching the penalties on starts them from today; they never reach back
+        $on = post('rules_on') === '1';
+        set_setting('hr_rules_from', $on ? (setting('hr_rules_from', '') ?: today()) : '');
+        foreach (['hr_min_hours' => [1, 24], 'hr_late_after' => [0, 600], 'hr_late_hours' => [0, 48], 'hr_absent_hours' => [0, 72],
+                  'hr_noout_hours' => [0, 24], 'hr_leave_notice' => [0, 30], 'hr_petrol_rate' => [0, 100]] as $k => [$lo, $hi])
+            set_setting($k, (string)max($lo, min($hi, (float)post($k))));
+        log_activity('hr_rules', $on ? 'on' : 'off');
+        flash('Attendance rules saved.' . ($on ? ' Penalties count from ' . dmy(setting('hr_rules_from')) . '.' : ' Penalties are off.'));
+        redirect('team.php?tab=rules');
+    }
+    if ($do === 'penalty' && post('user_id')) {
+        // a penalty by hand, or letting one day's automatic penalty go
+        $d = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)post('date')) ? post('date') : today();
+        $kind = post('kind') === 'waive' ? 'waive' : 'manual';
+        q('INSERT INTO hr_penalties (user_id, pen_date, kind, hours, reason, created_by) VALUES (?,?,?,?,?,?)',
+          [(int)post('user_id'), $d, $kind, $kind === 'waive' ? 0 : max(0, min(100, (float)post('hours'))), mb_substr(trim((string)post('reason')), 0, 200), $u['id']]);
+        log_activity('hr_penalty_' . $kind, '#' . (int)post('user_id') . " $d " . post('hours'));
+        flash($kind === 'waive' ? 'The automatic penalty for ' . dmy($d) . ' is let go.' : 'Penalty of ' . +(float)post('hours') . ' hours added for ' . dmy($d) . '.');
+        redirect('attendance.php?u=' . (int)post('user_id') . '&m=' . substr($d, 0, 7));
+    }
+    if ($do === 'penalty_del') {
+        $p = row('SELECT * FROM hr_penalties WHERE id = ?', [(int)post('id')]);
+        if ($p) { q('DELETE FROM hr_penalties WHERE id = ?', [$p['id']]); log_activity('hr_penalty_del', '#' . $p['id']); }
+        redirect('attendance.php?u=' . (int)($p['user_id'] ?? 0) . '&m=' . substr((string)($p['pen_date'] ?? today()), 0, 7));
     }
     if ($do === 'doc' && !empty($_FILES['file']['tmp_name']) && $_FILES['file']['error'] === UPLOAD_ERR_OK && $_FILES['file']['size'] <= 8 * 1024 * 1024) {
         $ext = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
@@ -57,24 +88,51 @@ if ((int)get('doc')) {
 $staff = all('SELECT * FROM users WHERE is_active = 1 ORDER BY name');
 $page_title = 'Team';
 include __DIR__ . '/includes/header.php';
-$tabs = ['shifts' => '🕒 Shifts & salary', 'perf' => '📈 Performance & commission', 'docs' => '📁 Documents', 'training' => '🎓 Training', 'logins' => '⏱️ Came & went'];
+$tabs = ['shifts' => '🕒 Shifts & salary', 'rules' => '⚖️ Attendance rules', 'perf' => '📈 Performance & commission', 'docs' => '📁 Documents', 'training' => '🎓 Training', 'logins' => '⏱️ Came & went'];
 $days = ['' => '—', 0 => 'Sun', 1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat'];
 ?>
 <div class="page-head"><h1>👥 Team</h1><div style="display:flex;gap:6px"><a class="btn btn-sm btn-outline" href="attendance.php">🕘 Attendance</a><a class="btn btn-sm btn-outline" href="leaves.php">🏖️ Leave</a></div></div>
 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><?php foreach ($tabs as $k => $l): ?><a class="btn btn-sm <?= $tab === $k ? '' : 'btn-outline' ?>" href="team.php?tab=<?= $k ?>"><?= $l ?></a><?php endforeach; ?></div>
 
-<?php if ($tab === 'shifts'): ?>
+<?php if ($tab === 'shifts'): $thisMonth = date('Y-m'); ?>
 <form method="post" class="pane"><?= csrf_field() ?><input type="hidden" name="do" value="shifts">
-<div class="pane-body tight"><table class="rowlist"><thead><tr><th>Staff</th><th>Salary ₹/month</th><th>Commission %</th><th>Shift</th><th>Weekly off</th><th>Joined</th></tr></thead><tbody>
-<?php foreach ($staff as $s): ?>
-  <tr><td data-l="Staff"><b><?= e($s['name']) ?></b><input type="hidden" name="id[]" value="<?= (int)$s['id'] ?>"></td>
-    <td data-l="Salary"><input type="number" name="salary[]" min="0" step="1" value="<?= +$s['salary_monthly'] ?>" style="width:100px"></td>
+<div class="pane-body tight"><table class="rowlist"><thead><tr><th>Staff</th><th>Pay</th><th>Monthly raise</th><th>Commission %</th><th>Shift</th><th>Weekly off</th><th>Bike</th><th>Joined</th></tr></thead><tbody>
+<?php foreach ($staff as $s): $hourly = $s['pay_type'] === 'hourly'; ?>
+  <tr><td data-l="Staff"><b><?= e($s['name']) ?></b><input type="hidden" name="id[]" value="<?= (int)$s['id'] ?>">
+      <br><small class="muted">this month: ₹<?= money(hr_rate($s, $thisMonth)) ?><?= $hourly ? '/hour' : '/month' ?></small></td>
+    <td data-l="Pay"><select name="ptype[]"><option value="monthly" <?= $hourly ? '' : 'selected' ?>>Monthly ₹</option><option value="hourly" <?= $hourly ? 'selected' : '' ?>>Per hour ₹</option></select>
+      <input type="number" name="salary[]" min="0" step="1" value="<?= +$s['salary_monthly'] ?>" style="width:95px" title="Salary ₹ per month" placeholder="₹/month">
+      <input type="number" name="hrate[]" min="0" step="0.5" value="<?= +$s['hourly_rate'] ?>" style="width:75px" title="₹ per hour" placeholder="₹/hour"></td>
+    <td data-l="Monthly raise">+₹<input type="number" name="raise[]" min="0" step="0.5" value="<?= +$s['raise_amount'] ?>" style="width:70px" title="Added every month">
+      from <input type="month" name="rfrom[]" value="<?= e((string)$s['raise_from']) ?>" title="The month the base rate is for">
+      max <input type="number" name="rmax[]" min="0" step="1" value="<?= +$s['raise_max'] ?>" style="width:80px" title="Stop raising at (0 = no limit)"></td>
     <td data-l="Commission"><input type="number" name="comm[]" min="0" max="50" step="0.1" value="<?= +$s['commission_pct'] ?>" style="width:70px"></td>
     <td data-l="Shift"><input type="time" name="ss[]" value="<?= e(substr((string)$s['shift_start'], 0, 5)) ?>"> – <input type="time" name="se[]" value="<?= e(substr((string)$s['shift_end'], 0, 5)) ?>"></td>
     <td data-l="Weekly off"><select name="off[]"><?php foreach ($days as $k => $l): ?><option value="<?= $k ?>" <?= (string)$s['weekly_off'] === (string)$k ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?></select></td>
+    <td data-l="Bike"><label class="check-inline"><input type="checkbox" name="bike[]" value="<?= (int)$s['id'] ?>" <?= $s['bike_allowed'] ? 'checked' : '' ?>> 🏍️</label>
+      ₹<input type="number" name="petrol[]" min="0" step="0.1" value="<?= $s['petrol_rate'] === null ? '' : +$s['petrol_rate'] ?>" style="width:60px" placeholder="<?= +hr_rules()['petrol_rate'] ?>" title="₹ per km (empty = the shop's rate)">/km</td>
     <td data-l="Joined"><input type="date" name="joined[]" value="<?= e((string)$s['joined_on']) ?>"></td></tr>
 <?php endforeach; ?></tbody></table></div>
+<p class="muted" style="padding:0 12px;font-size:13px">Monthly raise: the rate goes up by this much on the 1st of every month after "from" — e.g. ₹32/hour from <?= e(date('Y-m')) ?> with +₹1 is ₹33 next month, ₹34 the month after. An older month always keeps its own rate.</p>
 <?php if (can('hr.edit')): ?><div style="padding:10px"><button class="btn" type="submit">💾 Save</button></div><?php endif; ?></form>
+
+<?php elseif ($tab === 'rules'): $r = hr_rules(); ?>
+<form method="post" class="card" style="max-width:640px;display:grid;gap:10px"><?= csrf_field() ?><input type="hidden" name="do" value="rules">
+  <h3 style="margin:0">⚖️ Attendance rules</h3>
+  <label class="check-inline"><input type="checkbox" name="rules_on" value="1" <?= $r['from'] !== '' ? 'checked' : '' ?>> <b>Penalties and the leave rules are ON</b>
+    <?= $r['from'] !== '' ? '<span class="muted">(since ' . dmy($r['from']) . ')</span>' : '<span class="muted">(they start from the day you switch them on)</span>' ?></label>
+  <div class="form-row cols-2">
+    <div><label>A full day's work (hours)</label><input type="number" name="hr_min_hours" step="0.5" value="<?= +$r['min_hours'] ?>"></div>
+    <div><label>Late if not in this many minutes after the shift starts</label><input type="number" name="hr_late_after" step="5" value="<?= +$r['late_after'] ?>"></div>
+    <div><label>Penalty for coming late (hours)</label><input type="number" name="hr_late_hours" step="0.5" value="<?= +$r['late_hours'] ?>"></div>
+    <div><label>Penalty for a day away without leave / certificate (hours)</label><input type="number" name="hr_absent_hours" step="0.5" value="<?= +$r['absent_hours'] ?>"></div>
+    <div><label>Penalty for forgetting to check out (hours)</label><input type="number" name="hr_noout_hours" step="0.5" value="<?= +$r['noout_hours'] ?>"></div>
+    <div><label>Planned leave must be taken this many days ahead</label><input type="number" name="hr_leave_notice" step="1" value="<?= +$r['notice_days'] ?>"></div>
+    <div><label>Petrol allowance ₹ per km (bike)</label><input type="number" name="hr_petrol_rate" step="0.1" value="<?= +$r['petrol_rate'] ?>"></div>
+  </div>
+  <p class="muted" style="font-size:13.5px;margin:0">Example with these numbers: shift 9:00 → not in by <?= date('H:i', strtotime('09:00 +' . (int)$r['late_after'] . ' minutes')) ?> = <?= +$r['late_hours'] ?> hours' penalty; not coming at all without leave or a doctor's certificate = <?= +$r['absent_hours'] ?> hours. A penalty hour costs the person's hourly rate (for monthly salary: salary ÷ working days ÷ <?= +$r['min_hours'] ?>). Weekly offs and approved leave carry no penalty. You can let any day's penalty go from the person's attendance page.</p>
+  <div><button class="btn" type="submit">💾 Save rules</button></div>
+</form>
 
 <?php elseif ($tab === 'perf'):
   $rows = [];

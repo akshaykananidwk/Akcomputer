@@ -126,6 +126,7 @@ return simple_filter_menu(plan_filter_menu([
     ['group', 'team', 'users', 'Team', [
         ['attendance.php', '🕘 Attendance', null, null, null],
         ['leaves.php', '🏖️ Leave', null, null, null],
+        ['bike.php', '🏍️ Bike km & petrol', null, null, null],
         ['chat.php', '💬 Staff chat', null, null, null],
         ['payroll.php', '💵 Payroll', 'hr.payroll', null, null],
         ['team.php', '👥 Shifts, performance, documents', 'hr.view', null, null],
@@ -155,7 +156,7 @@ return simple_filter_menu(plan_filter_menu([
 function simple_filter_menu(array $menu) {
     if (!function_exists('ui_prefs') || !ui_prefs()['simple']) return $menu;
     $keep = ['index.php', 'sales.php', 'parties.php', 'payments.php', 'items.php', 'stock.php', 'expenses.php', 'cash_bank.php',
-             'purchases.php', 'reports.php', 'tables.php', 'appointments.php', 'repairs.php', 'help.php', 'pos.php', 'attendance.php', 'leaves.php', 'chat.php'];
+             'purchases.php', 'reports.php', 'tables.php', 'appointments.php', 'repairs.php', 'help.php', 'pos.php', 'attendance.php', 'leaves.php', 'bike.php', 'chat.php'];
     $out = [];
     foreach ($menu as $m) {
         if ($m[0] === 'link') { if (in_array(strtok($m[1], '?'), $keep, true)) $out[] = $m; continue; }
