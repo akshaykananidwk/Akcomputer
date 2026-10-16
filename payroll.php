@@ -83,9 +83,10 @@ $pms = active_payment_methods();
 $page_title = 'Payroll';
 include __DIR__ . '/includes/header.php';
 ?>
-<div class="page-head"><h1>💵 Payroll</h1>
-  <form><input type="month" name="m" value="<?= e($month) ?>" onchange="this.form.submit()"></form></div>
-<?php if (!$staff): ?><div class="card">No one has a monthly salary yet. Set it in <a href="team.php?tab=shifts">Team → Shifts &amp; salary</a>.</div><?php else: ?>
+<?= hr_tabs('payroll') ?>
+<div class="hr-title"><div><h1 style="font-size:18px">Payroll</h1><div class="sub"><?= e(date('F Y', strtotime("$month-01"))) ?></div></div>
+  <form><input type="month" name="m" value="<?= e($month) ?>" onchange="this.form.submit()" aria-label="Month" style="width:175px;max-width:48vw"></form></div>
+<?php if (!$staff): ?><div class="card">No one has a salary or an hourly rate yet. Set it in <a href="team.php?tab=shifts">Staff pay</a>.</div><?php else: ?>
 <form method="post" class="pane"><?= csrf_field() ?><input type="hidden" name="do" value="save"><input type="hidden" name="m" value="<?= e($month) ?>">
 <div class="pane-body tight"><table class="rowlist"><thead><tr><th>Staff</th><th class="num">Days / hours</th><th class="num">Earned</th><th class="num">Commission</th><th class="num">Petrol (+)</th><th class="num">Penalty (−)</th><th class="num">Advance (less)</th><th class="num">Other (less)</th><th class="num">Net</th><th class="act"></th></tr></thead><tbody>
 <?php foreach ($staff as $i => $st): $s = $slips[$st['id']] ?? null; $c = hr_payslip_calc($st, $month, $s['advance_deduct'] ?? 0, $s['other_deduct'] ?? 0); $paid = $s && $s['paid_at']; ?>

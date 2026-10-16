@@ -91,47 +91,61 @@ include __DIR__ . '/includes/header.php';
 $tabs = ['shifts' => '🕒 Shifts & salary', 'rules' => '⚖️ Attendance rules', 'perf' => '📈 Performance & commission', 'docs' => '📁 Documents', 'training' => '🎓 Training', 'logins' => '⏱️ Came & went'];
 $days = ['' => '—', 0 => 'Sun', 1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat'];
 ?>
-<div class="page-head"><h1>👥 Team</h1><div style="display:flex;gap:6px"><a class="btn btn-sm btn-outline" href="attendance.php">🕘 Attendance</a><a class="btn btn-sm btn-outline" href="leaves.php">🏖️ Leave</a></div></div>
-<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><?php foreach ($tabs as $k => $l): ?><a class="btn btn-sm <?= $tab === $k ? '' : 'btn-outline' ?>" href="team.php?tab=<?= $k ?>"><?= $l ?></a><?php endforeach; ?></div>
+<?= hr_tabs($tab === 'shifts' ? 'team' : ($tab === 'rules' ? 'rules' : 'more')) ?>
+<?php if (!in_array($tab, ['shifts', 'rules'], true)): ?>
+<nav class="hr-tabs" aria-label="More" style="padding-top:0"><?php foreach (['perf' => '📈 Performance', 'docs' => '📁 Documents', 'training' => '🎓 Training', 'logins' => '⏱️ Came & went'] as $k => $l): ?>
+  <a class="hr-tab<?= $tab === $k ? ' on' : '' ?>" style="flex-direction:row;min-width:0;padding:8px 12px" href="team.php?tab=<?= $k ?>"><?= $l ?></a><?php endforeach; ?></nav>
+<?php endif; ?>
 
 <?php if ($tab === 'shifts'): $thisMonth = date('Y-m'); ?>
-<form method="post" class="pane"><?= csrf_field() ?><input type="hidden" name="do" value="shifts">
-<div class="pane-body tight"><table class="rowlist"><thead><tr><th>Staff</th><th>Pay</th><th>Monthly raise</th><th>Commission %</th><th>Shift</th><th>Weekly off</th><th>Bike</th><th>Joined</th></tr></thead><tbody>
+<form method="post"><?= csrf_field() ?><input type="hidden" name="do" value="shifts">
 <?php foreach ($staff as $s): $hourly = $s['pay_type'] === 'hourly'; ?>
-  <tr><td data-l="Staff"><b><?= e($s['name']) ?></b><input type="hidden" name="id[]" value="<?= (int)$s['id'] ?>">
-      <br><small class="muted">this month: ₹<?= money(hr_rate($s, $thisMonth)) ?><?= $hourly ? '/hour' : '/month' ?></small></td>
-    <td data-l="Pay"><select name="ptype[]"><option value="monthly" <?= $hourly ? '' : 'selected' ?>>Monthly ₹</option><option value="hourly" <?= $hourly ? 'selected' : '' ?>>Per hour ₹</option></select>
-      <input type="number" name="salary[]" min="0" step="1" value="<?= +$s['salary_monthly'] ?>" style="width:95px" title="Salary ₹ per month" placeholder="₹/month">
-      <input type="number" name="hrate[]" min="0" step="0.5" value="<?= +$s['hourly_rate'] ?>" style="width:75px" title="₹ per hour" placeholder="₹/hour"></td>
-    <td data-l="Monthly raise">+₹<input type="number" name="raise[]" min="0" step="0.5" value="<?= +$s['raise_amount'] ?>" style="width:70px" title="Added every month">
-      from <input type="month" name="rfrom[]" value="<?= e((string)$s['raise_from']) ?>" title="The month the base rate is for">
-      max <input type="number" name="rmax[]" min="0" step="1" value="<?= +$s['raise_max'] ?>" style="width:80px" title="Stop raising at (0 = no limit)"></td>
-    <td data-l="Commission"><input type="number" name="comm[]" min="0" max="50" step="0.1" value="<?= +$s['commission_pct'] ?>" style="width:70px"></td>
-    <td data-l="Shift"><input type="time" name="ss[]" value="<?= e(substr((string)$s['shift_start'], 0, 5)) ?>"> – <input type="time" name="se[]" value="<?= e(substr((string)$s['shift_end'], 0, 5)) ?>"></td>
-    <td data-l="Weekly off"><select name="off[]"><?php foreach ($days as $k => $l): ?><option value="<?= $k ?>" <?= (string)$s['weekly_off'] === (string)$k ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?></select></td>
-    <td data-l="Bike"><label class="check-inline"><input type="checkbox" name="bike[]" value="<?= (int)$s['id'] ?>" <?= $s['bike_allowed'] ? 'checked' : '' ?>> 🏍️</label>
-      ₹<input type="number" name="petrol[]" min="0" step="0.1" value="<?= $s['petrol_rate'] === null ? '' : +$s['petrol_rate'] ?>" style="width:60px" placeholder="<?= +hr_rules()['petrol_rate'] ?>" title="₹ per km (empty = the shop's rate)">/km</td>
-    <td data-l="Joined"><input type="date" name="joined[]" value="<?= e((string)$s['joined_on']) ?>"></td></tr>
-<?php endforeach; ?></tbody></table></div>
-<p class="muted" style="padding:0 12px;font-size:13px">Monthly raise: the rate goes up by this much on the 1st of every month after "from" — e.g. ₹32/hour from <?= e(date('Y-m')) ?> with +₹1 is ₹33 next month, ₹34 the month after. An older month always keeps its own rate.</p>
-<?php if (can('hr.edit')): ?><div style="padding:10px"><button class="btn" type="submit">💾 Save</button></div><?php endif; ?></form>
+  <div class="hr-staff"><input type="hidden" name="id[]" value="<?= (int)$s['id'] ?>">
+    <div class="head"><div class="hr-av"><?= e(hr_initials($s['name'])) ?></div>
+      <div style="min-width:0"><div class="nm"><?= e($s['name']) ?></div><div class="rt">This month ₹<?= money(hr_rate($s, $thisMonth)) ?><?= $hourly ? ' per hour' : ' per month' ?></div></div></div>
+    <fieldset><legend>Pay</legend>
+      <div><label>Paid</label><select name="ptype[]"><option value="monthly" <?= $hourly ? '' : 'selected' ?>>Per month</option><option value="hourly" <?= $hourly ? 'selected' : '' ?>>Per hour</option></select></div>
+      <div><label>₹ per month</label><input type="number" name="salary[]" min="0" step="1" inputmode="decimal" value="<?= +$s['salary_monthly'] ?>"></div>
+      <div><label>₹ per hour</label><input type="number" name="hrate[]" min="0" step="0.5" inputmode="decimal" value="<?= +$s['hourly_rate'] ?>"></div>
+      <div><label>Commission %</label><input type="number" name="comm[]" min="0" max="50" step="0.1" inputmode="decimal" value="<?= +$s['commission_pct'] ?>"></div></fieldset>
+    <fieldset><legend>Raise every month</legend>
+      <div><label>Add ₹</label><input type="number" name="raise[]" min="0" step="0.5" inputmode="decimal" value="<?= +$s['raise_amount'] ?>"></div>
+      <div><label>Starting month</label><input type="month" name="rfrom[]" value="<?= e((string)$s['raise_from']) ?>"></div>
+      <div><label>Stop at ₹ (0 = no limit)</label><input type="number" name="rmax[]" min="0" step="1" inputmode="decimal" value="<?= +$s['raise_max'] ?>"></div></fieldset>
+    <fieldset><legend>Shift</legend>
+      <div><label>Starts</label><input type="time" name="ss[]" value="<?= e(substr((string)$s['shift_start'], 0, 5)) ?>"></div>
+      <div><label>Ends</label><input type="time" name="se[]" value="<?= e(substr((string)$s['shift_end'], 0, 5)) ?>"></div>
+      <div><label>Weekly off</label><select name="off[]"><?php foreach ($days as $k => $l): ?><option value="<?= $k ?>" <?= (string)$s['weekly_off'] === (string)$k ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?></select></div>
+      <div><label>Joined</label><input type="date" name="joined[]" value="<?= e((string)$s['joined_on']) ?>"></div></fieldset>
+    <fieldset><legend>Bike</legend>
+      <div style="display:flex;align-items:end"><label class="hr-switch" style="color:var(--text);font-size:14px;margin:0 0 8px"><input type="checkbox" name="bike[]" value="<?= (int)$s['id'] ?>" <?= $s['bike_allowed'] ? 'checked' : '' ?>> Uses a bike</label></div>
+      <div><label>₹ per km (empty = shop's ₹<?= +hr_rules()['petrol_rate'] ?>)</label><input type="number" name="petrol[]" min="0" step="0.1" inputmode="decimal" value="<?= $s['petrol_rate'] === null ? '' : +$s['petrol_rate'] ?>"></div></fieldset>
+  </div>
+<?php endforeach; ?>
+<p class="muted" style="font-size:12.5px">Raise every month: ₹32 per hour with "Add ₹1" from <?= e(date('M Y')) ?> becomes ₹33 next month and ₹34 the month after. An older month always keeps its own rate.</p>
+<?php if (can('hr.edit')): ?><div class="hr-sticky-save"><button class="btn" type="submit" style="min-height:46px;padding:0 26px">💾 Save all</button></div><?php endif; ?></form>
 
 <?php elseif ($tab === 'rules'): $r = hr_rules(); ?>
-<form method="post" class="card" style="max-width:640px;display:grid;gap:10px"><?= csrf_field() ?><input type="hidden" name="do" value="rules">
-  <h3 style="margin:0">⚖️ Attendance rules</h3>
-  <label class="check-inline"><input type="checkbox" name="rules_on" value="1" <?= $r['from'] !== '' ? 'checked' : '' ?>> <b>Penalties and the leave rules are ON</b>
-    <?= $r['from'] !== '' ? '<span class="muted">(since ' . dmy($r['from']) . ')</span>' : '<span class="muted">(they start from the day you switch them on)</span>' ?></label>
-  <div class="form-row cols-2">
-    <div><label>A full day's work (hours)</label><input type="number" name="hr_min_hours" step="0.5" value="<?= +$r['min_hours'] ?>"></div>
-    <div><label>Late if not in this many minutes after the shift starts</label><input type="number" name="hr_late_after" step="5" value="<?= +$r['late_after'] ?>"></div>
-    <div><label>Penalty for coming late (hours)</label><input type="number" name="hr_late_hours" step="0.5" value="<?= +$r['late_hours'] ?>"></div>
-    <div><label>Penalty for a day away without leave / certificate (hours)</label><input type="number" name="hr_absent_hours" step="0.5" value="<?= +$r['absent_hours'] ?>"></div>
-    <div><label>Penalty for forgetting to check out (hours)</label><input type="number" name="hr_noout_hours" step="0.5" value="<?= +$r['noout_hours'] ?>"></div>
-    <div><label>Planned leave must be taken this many days ahead</label><input type="number" name="hr_leave_notice" step="1" value="<?= +$r['notice_days'] ?>"></div>
-    <div><label>Petrol allowance ₹ per km (bike)</label><input type="number" name="hr_petrol_rate" step="0.1" value="<?= +$r['petrol_rate'] ?>"></div>
+<form method="post" class="hr-card" style="display:grid;gap:14px"><?= csrf_field() ?><input type="hidden" name="do" value="rules">
+  <h3 style="margin:0"><span><?= icon('sliders', 18) ?> Attendance rules</span><?= $r['from'] !== '' ? '<span class="hr-chip ok">ON since ' . dmy($r['from']) . '</span>' : '<span class="hr-chip">OFF</span>' ?></h3>
+  <label class="hr-switch"><input type="checkbox" name="rules_on" value="1" <?= $r['from'] !== '' ? 'checked' : '' ?>> Penalties and leave rules are on</label>
+  <div class="muted" style="font-size:12.5px;margin-top:-8px">They count from the day you switch them on — never for earlier days.</div>
+  <div class="hr-form" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+    <div><label>Full day (hours)</label><input type="number" name="hr_min_hours" step="0.5" inputmode="decimal" value="<?= +$r['min_hours'] ?>"></div>
+    <div><label>Late after (minutes)</label><input type="number" name="hr_late_after" step="5" inputmode="numeric" value="<?= +$r['late_after'] ?>"></div>
+    <div><label>Late penalty (hours)</label><input type="number" name="hr_late_hours" step="0.5" inputmode="decimal" value="<?= +$r['late_hours'] ?>"></div>
+    <div><label>Absent penalty (hours)</label><input type="number" name="hr_absent_hours" step="0.5" inputmode="decimal" value="<?= +$r['absent_hours'] ?>"></div>
+    <div><label>No check-out (hours)</label><input type="number" name="hr_noout_hours" step="0.5" inputmode="decimal" value="<?= +$r['noout_hours'] ?>"></div>
+    <div><label>Leave notice (days)</label><input type="number" name="hr_leave_notice" step="1" inputmode="numeric" value="<?= +$r['notice_days'] ?>"></div>
+    <div><label>Petrol ₹ per km</label><input type="number" name="hr_petrol_rate" step="0.1" inputmode="decimal" value="<?= +$r['petrol_rate'] ?>"></div>
   </div>
-  <p class="muted" style="font-size:13.5px;margin:0">Example with these numbers: shift 9:00 → not in by <?= date('H:i', strtotime('09:00 +' . (int)$r['late_after'] . ' minutes')) ?> = <?= +$r['late_hours'] ?> hours' penalty; not coming at all without leave or a doctor's certificate = <?= +$r['absent_hours'] ?> hours. A penalty hour costs the person's hourly rate (for monthly salary: salary ÷ working days ÷ <?= +$r['min_hours'] ?>). Weekly offs and approved leave carry no penalty. You can let any day's penalty go from the person's attendance page.</p>
-  <div><button class="btn" type="submit">💾 Save rules</button></div>
+  <div class="hr-list" style="background:var(--card-alt);border-radius:14px;padding:4px 12px">
+    <div class="hr-row" style="grid-template-columns:28px minmax(0,1fr)"><span><?= icon('clock', 20) ?></span><div class="hr-main"><div class="s">Shift 9:00 → not in by <?= date('H:i', strtotime('09:00 +' . (int)$r['late_after'] . ' minutes')) ?> = <b><?= +$r['late_hours'] ?> h</b> penalty</div></div></div>
+    <div class="hr-row" style="grid-template-columns:28px minmax(0,1fr)"><span><?= icon('alert', 20) ?></span><div class="hr-main"><div class="s">A day away without leave or a doctor's certificate = <b><?= +$r['absent_hours'] ?> h</b></div></div></div>
+    <div class="hr-row" style="grid-template-columns:28px minmax(0,1fr)"><span><?= icon('rupee', 20) ?></span><div class="hr-main"><div class="s">A penalty hour costs the hourly rate (monthly salary ÷ working days ÷ <?= +$r['min_hours'] ?>)</div></div></div>
+    <div class="hr-row" style="grid-template-columns:28px minmax(0,1fr)"><span><?= icon('calendar', 20) ?></span><div class="hr-main"><div class="s">Weekly offs and approved leave carry no penalty; any day can be let go</div></div></div>
+  </div>
+  <button class="btn btn-block" type="submit" style="min-height:48px">💾 Save rules</button>
 </form>
 
 <?php elseif ($tab === 'perf'):

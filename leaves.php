@@ -99,55 +99,64 @@ $rows = all('SELECT l.*, us.name FROM leave_requests l JOIN users us ON us.id = 
             " ORDER BY (l.status = 'pending') DESC, l.from_date DESC LIMIT 200");
 $page_title = 'Leave';
 include __DIR__ . '/includes/header.php';
+$emMin = date('Y-m-d', strtotime(today() . ' -7 days')); $emMax = date('Y-m-d', strtotime(today() . ' +3 days'));
 ?>
-<div class="page-head"><h1>🏖️ Leave</h1><a class="btn btn-sm btn-outline" href="attendance.php">🕘 Attendance</a></div>
-<form method="post" enctype="multipart/form-data" class="card" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;align-items:end"><?= csrf_field() ?><input type="hidden" name="do" value="ask">
+<?= hr_tabs('leave') ?>
+<form method="post" enctype="multipart/form-data" class="hr-card" style="display:grid;gap:12px"><?= csrf_field() ?><input type="hidden" name="do" value="ask">
+  <h3 style="margin:0"><span><?= icon('calendar', 18) ?> <?= $ruled ? 'Take leave' : 'Ask for leave' ?></span></h3>
   <?php if ($ruled): ?>
-  <div class="field" style="grid-column:1/-1"><label>Kind of leave</label>
-    <label class="check-inline"><input type="radio" name="kind" value="planned" checked onchange="lvKind()"> 📅 Planned — from <?= dmy(hr_leave_earliest()) ?> onwards</label>
-    <label class="check-inline"><input type="radio" name="kind" value="emergency" onchange="lvKind()"> 🚑 Emergency — illness / hospital (certificate needed, else penalty)</label></div>
+  <div class="hr-seg" role="radiogroup" aria-label="Kind of leave">
+    <label><input type="radio" name="kind" value="planned" checked onchange="lvKind()"><span class="box"><b>📅 Planned</b><span>From <?= dmy(hr_leave_earliest()) ?> onwards · no certificate</span></span></label>
+    <label><input type="radio" name="kind" value="emergency" onchange="lvKind()"><span class="box"><b>🚑 Emergency</b><span>Illness / hospital · certificate = no penalty</span></span></label>
+  </div>
   <?php endif; ?>
-  <div class="field"><label>From</label><input type="date" name="from_date" id="lvFrom" required <?= $ruled ? 'min="' . e(hr_leave_earliest()) . '"' : '' ?>></div>
-  <div class="field"><label>To</label><input type="date" name="to_date"></div>
-  <?php if (!$ruled): ?><div class="field"><label>Type</label><select name="paid"><option value="1">Paid leave</option><option value="0">Without pay</option></select></div><?php endif; ?>
-  <div class="field"><label>Reason</label><input type="text" name="reason" maxlength="255"></div>
-  <?php if ($ruled): ?><div class="field" id="lvCert" hidden><label>Doctor / hospital certificate (photo or PDF)</label><input type="file" name="certificate" accept="image/*,application/pdf"></div><?php endif; ?>
-  <button class="btn" type="submit"><?= $ruled ? 'Take leave' : 'Ask for leave' ?></button>
+  <div class="hr-form">
+    <div><label for="lvFrom">From</label><input type="date" name="from_date" id="lvFrom" required <?= $ruled ? 'min="' . e(hr_leave_earliest()) . '"' : '' ?>></div>
+    <div><label for="lvTo">To</label><input type="date" name="to_date" id="lvTo"></div>
+    <?php if (!$ruled): ?><div><label>Type</label><select name="paid"><option value="1">Paid leave</option><option value="0">Without pay</option></select></div><?php endif; ?>
+    <div style="grid-column:1/-1"><label for="lvWhy">Reason</label><input type="text" name="reason" id="lvWhy" maxlength="255" placeholder="e.g. family function"></div>
+    <?php if ($ruled): ?><div id="lvCert" hidden style="grid-column:1/-1"><label>Doctor / hospital certificate (photo or PDF)</label><input type="file" name="certificate" accept="image/*,application/pdf"></div><?php endif; ?>
+  </div>
+  <button class="btn btn-block" type="submit" style="min-height:48px;font-size:16px"><?= $ruled ? 'Take leave' : 'Send to the owner' ?></button>
+  <?php if ($ruled): ?><div class="muted" style="font-size:12.5px">Planned leave is without pay and starts <?= (int)$rules['notice_days'] ?> days ahead at the earliest. Away without leave or a certificate: <?= +$rules['absent_hours'] ?> hours' penalty a day.</div><?php endif; ?>
 </form>
 <?php if ($ruled): ?>
 <script>
 function lvKind() {
-  var em = document.querySelector('input[name=kind][value=emergency]').checked;
+  var em = document.querySelector('input[name=kind][value=emergency]').checked, f = document.getElementById('lvFrom');
   document.getElementById('lvCert').hidden = !em;
-  var f = document.getElementById('lvFrom');
-  f.min = em ? '<?= e(date('Y-m-d', strtotime(today() . ' -7 days'))) ?>' : '<?= e(hr_leave_earliest()) ?>';
-  f.max = em ? '<?= e(date('Y-m-d', strtotime(today() . ' +3 days'))) ?>' : '';
+  f.min = em ? '<?= e($emMin) ?>' : '<?= e(hr_leave_earliest()) ?>'; f.max = em ? '<?= e($emMax) ?>' : '';
 }
 </script>
-<p class="muted" style="font-size:13.5px">Planned leave starts <?= (int)$rules['notice_days'] ?> days ahead at the earliest and is without pay. Away without leave or certificate: <?= +$rules['absent_hours'] ?> hours' penalty per day.</p>
 <?php endif; ?>
-<div class="pane"><div class="pane-body tight"><table class="rowlist"><thead><tr><?php if ($all): ?><th>Staff</th><?php endif; ?><th>Dates</th><th>Type</th><th>Reason</th><th>Status</th><th class="act"></th></tr></thead><tbody>
-<?php foreach ($rows as $l): $em = $l['kind'] === 'emergency'; ?>
-  <tr><?php if ($all): ?><td data-l="Staff"><b><?= e($l['name']) ?></b></td><?php endif; ?>
-    <td data-l="Dates"><?= dmy($l['from_date']) ?><?= $l['to_date'] !== $l['from_date'] ? ' → ' . dmy($l['to_date']) : '' ?></td>
-    <td data-l="Type"><?= $em ? '🚑 Emergency' : '📅 Planned' ?> · <?= $l['paid'] ? 'Paid' : 'Without pay' ?>
-      <?= $l['certificate'] ? ' · <a href="leaves.php?cert=' . (int)$l['id'] . '" target="_blank">📄 certificate</a>' : ($em ? ' · <span class="badge badge-bad">no certificate</span>' : '') ?></td>
-    <td data-l="Reason"><?= e($l['reason']) ?></td>
-    <td data-l="Status"><span class="badge badge-<?= ['pending' => 'warn', 'approved' => 'ok', 'rejected' => 'bad'][$l['status']] ?? 'info' ?>"><?= e($l['status']) ?></span></td>
-    <td class="act">
-      <form method="post" enctype="multipart/form-data" style="display:inline-flex;gap:4px;flex-wrap:wrap"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$l['id'] ?>">
-      <?php if (can('hr.edit')): ?>
-        <?php if ($l['status'] === 'pending'): ?><button class="btn btn-sm" name="do" value="approved">✔ Yes</button><?php endif; ?>
-        <?php if ($l['status'] === 'pending' || ($em && $l['status'] === 'approved')): ?><button class="btn btn-sm btn-outline" name="do" value="rejected" onclick="return confirm('Refuse this leave? Its days count as absent, with the penalty.')">✕ <?= $em && $l['certificate'] ? 'Refuse certificate' : 'No' ?></button><?php endif; ?>
-        <?php if ($l['status'] === 'approved'): ?><button class="btn btn-sm btn-outline" name="do" value="paid"><?= $l['paid'] ? 'Make without pay' : 'Make paid' ?></button><?php endif; ?>
-      <?php endif; ?>
-      <?php if ((int)$l['user_id'] === (int)$u['id'] && !($em && !$l['certificate']) && ($l['status'] === 'pending' || $l['from_date'] > today())): ?>
-        <button class="btn btn-sm btn-outline" name="do" value="withdraw">Withdraw</button>
-      <?php endif; ?></form>
-      <?php if ((int)$l['user_id'] === (int)$u['id'] && $em && !$l['certificate'] && $l['status'] === 'pending'): ?>
-      <form method="post" enctype="multipart/form-data" style="display:inline"><?= csrf_field() ?><input type="hidden" name="do" value="cert"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>">
-        <label class="btn btn-sm">📄 Upload certificate<input type="file" name="certificate" accept="image/*,application/pdf" hidden onchange="this.form.submit()"></label></form>
-      <?php endif; ?></td></tr>
-<?php endforeach; if (!$rows): ?><tr><td class="muted">No leave yet.</td></tr><?php endif; ?>
-</tbody></table></div></div>
+
+<div class="hr-card">
+  <h3><span><?= icon('book', 18) ?> <?= $all ? 'Everyone\'s leave' : 'My leave' ?></span></h3>
+  <div class="hr-list">
+  <?php foreach ($rows as $l): $em = $l['kind'] === 'emergency'; $mine = (int)$l['user_id'] === (int)$u['id']; ?>
+    <div class="hr-row">
+      <div class="hr-date"><b><?= (int)substr($l['from_date'], 8) ?></b><span><?= date('M', strtotime($l['from_date'])) ?></span></div>
+      <div class="hr-main">
+        <div class="t"><?= $all ? e($l['name']) . ' · ' : '' ?><?= $em ? '🚑 Emergency' : '📅 Planned' ?><?= $l['to_date'] !== $l['from_date'] ? ' · till ' . dmy($l['to_date']) : '' ?></div>
+        <div class="s"><?= $l['paid'] ? 'Paid' : 'Without pay' ?><?= $l['reason'] !== '' ? ' · ' . e($l['reason']) : '' ?>
+          <?= $l['certificate'] ? ' · <a href="leaves.php?cert=' . (int)$l['id'] . '" target="_blank">📄 certificate</a>' : ($em ? ' · <b style="color:var(--bad)">no certificate</b>' : '') ?></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+          <form method="post" style="display:contents"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$l['id'] ?>">
+          <?php if (can('hr.edit')): ?>
+            <?php if ($l['status'] === 'pending'): ?><button class="hr-mini" name="do" value="approved">✔ Yes</button><?php endif; ?>
+            <?php if ($l['status'] === 'pending' || ($em && $l['status'] === 'approved')): ?><button class="hr-mini" name="do" value="rejected" style="color:var(--bad)" onclick="return confirm('Refuse this leave? Its days count as absent, with the penalty.')">✕ <?= $em && $l['certificate'] ? 'Refuse certificate' : 'No' ?></button><?php endif; ?>
+            <?php if ($l['status'] === 'approved'): ?><button class="hr-mini" name="do" value="paid"><?= $l['paid'] ? 'Make without pay' : 'Make paid' ?></button><?php endif; ?>
+          <?php endif; ?>
+          <?php if ($mine && !($em && !$l['certificate']) && ($l['status'] === 'pending' || $l['from_date'] > today())): ?><button class="hr-mini" name="do" value="withdraw">Withdraw</button><?php endif; ?>
+          </form>
+          <?php if ($mine && $em && !$l['certificate'] && $l['status'] === 'pending'): ?>
+          <form method="post" enctype="multipart/form-data" style="display:contents"><?= csrf_field() ?><input type="hidden" name="do" value="cert"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>">
+            <label class="hr-mini" style="background:var(--primary);color:#fff;border-color:var(--primary)">📄 Upload certificate<input type="file" name="certificate" accept="image/*,application/pdf" hidden onchange="this.form.submit()"></label></form>
+          <?php endif; ?>
+        </div>
+      </div>
+      <div class="hr-end"><span class="hr-chip <?= ['pending' => 'warn', 'approved' => 'ok', 'rejected' => 'bad'][$l['status']] ?? '' ?>"><?= e(['pending' => 'waiting', 'approved' => 'approved', 'rejected' => 'refused'][$l['status']] ?? $l['status']) ?></span></div>
+    </div>
+  <?php endforeach; if (!$rows): ?><div class="hr-empty">No leave yet.</div><?php endif; ?></div>
+</div>
 <?php include __DIR__ . '/includes/footer.php'; ?>

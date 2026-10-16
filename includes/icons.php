@@ -32,6 +32,17 @@ function icon($name, $size = 20) {
         'book' => '<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 4.5v17"/><line x1="20" y1="19" x2="6.5" y2="19"/>',
         'link' => '<path d="M9 15l6-6"/><path d="M8 13l-2.5 2.5a3.5 3.5 0 0 0 5 5L13 18"/><path d="M16 11l2.5-2.5a3.5 3.5 0 0 0-5-5L11 6"/>',
         'moon' => '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>',
+        'clock' => '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/>',
+        'calendar' => '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><line x1="3.5" y1="10" x2="20.5" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/>',
+        'bike' => '<circle cx="5.5" cy="17" r="3.5"/><circle cx="18.5" cy="17" r="3.5"/><path d="M5.5 17l4-7h5l4 7"/><path d="M9.5 10L8 6.5H6"/><path d="M14.5 10l-2.5 7"/><line x1="13" y1="6.5" x2="16" y2="6.5"/>',
+        'rupee' => '<path d="M6 4h12"/><path d="M6 9h12"/><path d="M9 4c4 0 6 1.6 6 4.5S13 13 9 13l7 7"/>',
+        'sliders' => '<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="8" cy="18" r="2" fill="currentColor"/>',
+        'pin' => '<path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+        'camera' => '<path d="M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>',
+        'play' => '<polygon points="8 5 19 12 8 19 8 5" fill="currentColor"/>',
+        'stop' => '<rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor"/>',
+        'check' => '<polyline points="5 12.5 10 17.5 19 7"/>',
+        'alert' => '<path d="M12 3.5l9.5 16.5h-19z"/><line x1="12" y1="10" x2="12" y2="14"/><line x1="12" y1="17" x2="12" y2="17.01"/>',
     ];
     $body = $paths[$name] ?? $paths['grid'];
     return '<svg class="ico-svg" width="' . (int)$size . '" height="' . (int)$size . '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' . $body . '</svg>';

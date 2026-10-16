@@ -217,3 +217,23 @@ function big_payment_alert($amount, $who, $what = 'Payment received') {
     owner_alert("💰 $what: ₹" . money($amount) . ($who !== '' ? " from $who" : '') . ' — ' . date('d-m h:i A'));
     return true;
 }
+
+/** The tab bar on top of every HR screen - each person sees only the tabs they may open. */
+function hr_tabs($active) {
+    $u = current_user();
+    $tabs = [['attendance', 'attendance.php', 'clock', 'Attendance'], ['leave', 'leaves.php', 'calendar', 'Leave']];
+    if (!empty($u['bike_allowed']) || can('hr.view')) $tabs[] = ['bike', 'bike.php', 'bike', 'Bike'];
+    if (can('hr.payroll')) $tabs[] = ['payroll', 'payroll.php', 'rupee', 'Payroll'];
+    if (can('hr.view')) { $tabs[] = ['team', 'team.php?tab=shifts', 'users', 'Staff pay']; $tabs[] = ['rules', 'team.php?tab=rules', 'sliders', 'Rules']; $tabs[] = ['more', 'team.php?tab=perf', 'bar-chart', 'More']; }
+    $h = '<nav class="hr-tabs no-print" aria-label="Team">';
+    foreach ($tabs as [$k, $href, $ic, $label])
+        $h .= '<a class="hr-tab' . ($k === $active ? ' on' : '') . '" href="' . e($href) . '"' . ($k === $active ? ' aria-current="page"' : '') . '>' . icon($ic, 22) . '<span>' . e($label) . '</span></a>';
+    // the open tab is always in view, even when the bar scrolls sideways on a phone
+    return $h . '</nav><script>(function(){var t=document.querySelector(".hr-tabs .hr-tab.on");if(t&&t.scrollIntoView)t.scrollIntoView({block:"nearest",inline:"center"});})();</script>';
+}
+
+/** Initials for a round avatar. */
+function hr_initials($name) {
+    $p = preg_split('/\s+/', trim((string)$name)) ?: ['?'];
+    return mb_strtoupper(mb_substr($p[0], 0, 1) . (isset($p[1]) ? mb_substr($p[1], 0, 1) : ''));
+}

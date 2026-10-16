@@ -66,52 +66,72 @@ $route = function ($tripId) {
     for ($i = $step; $i < count($pts) - 1 && count($way) < 8; $i += $step) $way[] = $ll($pts[$i]);
     return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=' . $ll($pts[0]) . '&destination=' . $ll(end($pts)) . ($way ? '&waypoints=' . implode('|', $way) : '');
 };
+$myKm = hr_month_km($who['id'], $month); $myRate = hr_petrol_rate($who);
 $page_title = 'Bike';
 include __DIR__ . '/includes/header.php';
 ?>
-<div class="page-head"><h1>🏍️ Bike km &amp; petrol</h1><form><input type="month" name="m" value="<?= e($month) ?>" onchange="this.form.submit()"><?php if ($who['id'] != $u['id']): ?><input type="hidden" name="u" value="<?= (int)$who['id'] ?>"><?php endif; ?></form></div>
+<?= hr_tabs('bike') ?>
 
 <?php if ($u['bike_allowed']): ?>
-<div class="card" id="bikeCard">
+<div class="hr-hero ride" id="bikeCard">
   <?php if ($cur): ?>
-    <p style="margin-top:0"><b>🟢 Trip running</b> since <?= date('h:i A', strtotime($cur['started_at'])) ?> · <span id="bkKm">0.00</span> km so far · <span id="bkGps" class="muted">waiting for GPS…</span></p>
+    <div class="who">🟢 Riding since <?= date('h:i A', strtotime($cur['started_at'])) ?><?= $cur['note'] !== '' ? ' · ' . e($cur['note']) : '' ?></div>
+    <div class="hr-big" style="margin-top:10px"><span id="bkKm">0.00</span> <small>km</small></div>
+    <div class="meta" style="justify-content:center;margin-top:8px"><span id="bkGps"><?= icon('pin', 14) ?> waiting for GPS…</span></div>
     <form method="post" id="bkStop"><?= csrf_field() ?><input type="hidden" name="do" value="stop">
-      <button class="btn btn-block btn-danger" style="font-size:18px;padding:16px" type="submit">⏹ Stop — I have reached</button></form>
-    <p class="muted" style="font-size:13px">Keep this screen open while riding (the screen stays on by itself). If the phone locks, the km between the last two points are still counted in a straight line.</p>
+      <button class="hr-round stop" type="submit"><?= icon('stop', 34) ?>STOP</button></form>
+    <div class="note">Keep this screen open while riding — it stays on by itself.</div>
   <?php else: ?>
+    <div class="who"><?= e($u['name']) ?> · ₹<?= +hr_petrol_rate($u) ?> per km</div>
     <form method="post"><?= csrf_field() ?><input type="hidden" name="do" value="start">
-      <input type="text" name="note" maxlength="200" placeholder="Where to? (e.g. Okha site — CCTV)" style="margin-bottom:8px">
-      <button class="btn btn-block" style="font-size:18px;padding:16px" type="submit" onclick="if(navigator.geolocation)navigator.geolocation.getCurrentPosition(function(){},function(){},{enableHighAccuracy:true})">▶️ Start bike trip</button></form>
-    <p class="muted" style="font-size:13px">Allow location when the phone asks. The km are counted from where the bike actually goes.</p>
+      <button class="hr-round" type="submit" onclick="if(navigator.geolocation)navigator.geolocation.getCurrentPosition(function(){},function(){},{enableHighAccuracy:true})"><?= icon('play', 34) ?>START</button>
+      <input type="text" name="note" maxlength="200" placeholder="Where to? (e.g. Okha site — CCTV)" aria-label="Where to" style="margin-top:6px"></form>
+    <div class="note">Allow location when the phone asks. Km are counted from where the bike really goes.</div>
   <?php endif; ?>
 </div>
-<?php elseif (!$seeAll): ?><div class="card">Bike allowance is not on for you. The owner turns it on in Team → Shifts &amp; salary.</div><?php endif; ?>
+<?php elseif (!$seeAll): ?><div class="hr-card hr-empty">Bike allowance is not on for you. The owner turns it on in Staff pay.</div><?php endif; ?>
+
+<div class="hr-title"><div><h1 style="font-size:18px"><?= e($who['name']) ?></h1><div class="sub"><?= e(date('F Y', strtotime("$month-01"))) ?></div></div>
+  <form><?php if ($who['id'] != $u['id']): ?><input type="hidden" name="u" value="<?= (int)$who['id'] ?>"><?php endif; ?><input type="month" name="m" value="<?= e($month) ?>" onchange="this.form.submit()" aria-label="Month" style="width:175px;max-width:48vw"></form></div>
+<div class="hr-tiles">
+  <div class="hr-tile"><div class="ic"><?= icon('bike', 20) ?></div><div><div class="v"><?= +$myKm ?> <small>km</small></div><div class="l"><?= count(array_filter($trips, fn($t) => $t['status'] === 'done')) ?> trips</div></div></div>
+  <div class="hr-tile ok"><div class="ic"><?= icon('rupee', 20) ?></div><div><div class="v">₹<?= money($myKm * $myRate) ?></div><div class="l">Petrol allowance</div></div></div>
+</div>
 
 <?php if ($seeAll):
   $sum = all("SELECT us.id, us.name, us.petrol_rate, us.bike_allowed, COUNT(t.id) trips, COALESCE(SUM(COALESCE(t.adj_km, t.km)), 0) km
               FROM users us LEFT JOIN bike_trips t ON t.user_id = us.id AND t.status = 'done' AND DATE_FORMAT(t.started_at, '%Y-%m') = ?
               WHERE us.is_active = 1 AND (us.bike_allowed = 1 OR t.id IS NOT NULL) GROUP BY us.id ORDER BY km DESC", [$month]); ?>
-<div class="pane"><div class="pane-head"><h3><?= e(date('F Y', strtotime("$month-01"))) ?> — everyone</h3></div><div class="pane-body tight">
-<table class="rowlist"><thead><tr><th>Staff</th><th class="num">Trips</th><th class="num">Km</th><th class="num">₹/km</th><th class="num">Petrol allowance</th></tr></thead><tbody>
-<?php foreach ($sum as $r): $rate = hr_petrol_rate($r + ['bike_allowed' => 1]); ?>
-  <tr><td data-l="Staff"><a href="bike.php?u=<?= (int)$r['id'] ?>&amp;m=<?= e($month) ?>"><b><?= e($r['name']) ?></b></a></td><td class="num" data-l="Trips"><?= (int)$r['trips'] ?></td>
-    <td class="num" data-l="Km"><?= +round($r['km'], 2) ?></td><td class="num" data-l="₹/km"><?= +$rate ?></td><td class="num" data-l="Allowance"><b>₹<?= money($r['km'] * $rate) ?></b></td></tr>
-<?php endforeach; if (!$sum): ?><tr><td class="muted">No one has bike allowance on yet (Team → Shifts &amp; salary → 🏍️).</td></tr><?php endif; ?>
-</tbody></table></div></div>
+<div class="hr-card">
+  <h3><span><?= icon('users', 18) ?> Everyone this month</span></h3>
+  <div class="hr-list">
+  <?php foreach ($sum as $r): $rate = hr_petrol_rate($r + ['bike_allowed' => 1]); ?>
+    <a class="hr-row" href="bike.php?u=<?= (int)$r['id'] ?>&amp;m=<?= e($month) ?>" style="color:inherit"><div class="hr-av"><?= e(hr_initials($r['name'])) ?></div>
+      <div class="hr-main"><div class="t"><?= e($r['name']) ?></div><div class="s"><?= (int)$r['trips'] ?> trips · <?= +round($r['km'], 2) ?> km × ₹<?= +$rate ?></div></div>
+      <div class="hr-end"><b>₹<?= money($r['km'] * $rate) ?></b></div></a>
+  <?php endforeach; if (!$sum): ?><div class="hr-empty">No one has bike allowance yet — turn it on in Staff pay.</div><?php endif; ?></div>
+</div>
 <?php endif; ?>
 
-<div class="pane"><div class="pane-head"><h3><?= e($who['name']) ?> — trips (<?= +hr_month_km($who['id'], $month) ?> km)</h3></div><div class="pane-body tight">
-<table class="rowlist"><thead><tr><th>When</th><th>Where to</th><th class="num">Km</th><th>Route</th><?php if (can('hr.edit')): ?><th>Correct km</th><?php endif; ?></tr></thead><tbody>
-<?php foreach ($trips as $t): $link = $route($t['id']); ?>
-  <tr><td data-l="When"><?= date('d-m h:i A', strtotime($t['started_at'])) ?><?= $t['ended_at'] ? ' → ' . date('h:i A', strtotime($t['ended_at'])) : ' <span class="badge badge-ok">running</span>' ?></td>
-    <td data-l="Where to"><?= e($t['note']) ?></td>
-    <td class="num" data-l="Km"><?= $t['adj_km'] !== null ? '<b>' . +$t['adj_km'] . '</b> <small class="muted" title="' . e($t['adj_note']) . '">(GPS ' . +$t['km'] . ')</small>' : +$t['km'] ?></td>
-    <td data-l="Route"><?= $link ? '<a href="' . e($link) . '" target="_blank" rel="noopener">🗺️ map</a>' : '<span class="muted">' . (int)$t['n'] . ' points</span>' ?></td>
-    <?php if (can('hr.edit')): ?><td data-l="Correct km"><form method="post" style="display:flex;gap:4px"><?= csrf_field() ?><input type="hidden" name="do" value="adjust"><input type="hidden" name="id" value="<?= (int)$t['id'] ?>">
-      <input type="number" name="km" step="0.1" min="0" value="<?= $t['adj_km'] === null ? '' : +$t['adj_km'] ?>" placeholder="<?= +$t['km'] ?>" style="width:70px">
-      <input type="text" name="note" value="<?= e($t['adj_note']) ?>" placeholder="why" style="width:90px"><button class="btn btn-sm btn-outline" type="submit">✔</button></form></td><?php endif; ?></tr>
-<?php endforeach; if (!$trips): ?><tr><td class="muted">No trips this month.</td></tr><?php endif; ?>
-</tbody></table></div></div>
+<div class="hr-card">
+  <h3><span><?= icon('pin', 18) ?> Trips</span></h3>
+  <div class="hr-list">
+  <?php foreach ($trips as $t): $link = $route($t['id']); $kmShown = $t['adj_km'] !== null ? (float)$t['adj_km'] : (float)$t['km']; ?>
+    <div class="hr-row">
+      <div class="hr-date"><b><?= date('d', strtotime($t['started_at'])) ?></b><span><?= date('D', strtotime($t['started_at'])) ?></span></div>
+      <div class="hr-main"><div class="t"><?= $t['note'] !== '' ? e($t['note']) : 'Trip' ?></div>
+        <div class="s"><?= date('h:i A', strtotime($t['started_at'])) ?><?= $t['ended_at'] ? ' – ' . date('h:i A', strtotime($t['ended_at'])) : '' ?>
+          <?= $link ? ' · <a href="' . e($link) . '" target="_blank" rel="noopener">🗺️ route</a>' : '' ?><?= $t['adj_km'] !== null ? ' · corrected from ' . +$t['km'] . ' km' . ($t['adj_note'] !== '' ? ' (' . e($t['adj_note']) . ')' : '') : '' ?></div>
+        <?php if (can('hr.edit') && $t['status'] === 'done'): ?>
+        <details style="margin-top:4px"><summary class="hr-mini" style="display:inline-block;list-style:none">Correct km</summary>
+          <form method="post" class="hr-form" style="margin-top:6px"><?= csrf_field() ?><input type="hidden" name="do" value="adjust"><input type="hidden" name="id" value="<?= (int)$t['id'] ?>">
+            <div><input type="number" name="km" step="0.1" min="0" value="<?= $t['adj_km'] === null ? '' : +$t['adj_km'] ?>" placeholder="<?= +$t['km'] ?> km" aria-label="Km"></div>
+            <div><input type="text" name="note" value="<?= e($t['adj_note']) ?>" placeholder="why" aria-label="Why"></div><div><button class="btn btn-sm btn-block" type="submit">Save</button></div></form></details>
+        <?php endif; ?></div>
+      <div class="hr-end"><?= $t['status'] === 'running' ? '<span class="hr-chip ok">riding</span>' : '<b>' . +$kmShown . ' km</b>' ?></div>
+    </div>
+  <?php endforeach; if (!$trips): ?><div class="hr-empty">No trips this month.</div><?php endif; ?></div>
+</div>
 
 <?php if ($cur): ?>
 <script>
