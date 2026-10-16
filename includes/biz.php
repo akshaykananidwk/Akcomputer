@@ -110,7 +110,7 @@ function biz_item_save_extras($id) {
             $cols = 'category_id, brand, model, unit, hsn, tax_rate, purchase_price, selling_price, b2b_price, serial_tracked, margin_pct, item_type, warranty_months, min_stock, photo, is_active, description';
             foreach (variant_names(post('variant_sizes'), post('variant_colours')) as $v) {
                 if (val('SELECT id FROM items WHERE parent_id = ? AND variant = ?', [$id, $v])) continue;
-                q("INSERT INTO items (name, parent_id, variant, $cols) SELECT CONCAT(name, ' - ', ?), id, ?, $cols FROM items WHERE id = ?", [$v, $v, $id]);
+                q("INSERT INTO items (name, parent_id, variant, $cols) SELECT LEFT(CONCAT(name, ' - ', ?), 255), id, ?, $cols FROM items WHERE id = ?", [$v, $v, $id]);
                 $made++;
             }
         }

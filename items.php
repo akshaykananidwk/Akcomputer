@@ -34,6 +34,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (post('do') === 'save') {
         require_perm($id ? 'items.edit' : 'items.add');
+        // a text longer than its column used to crash the save ("Data too long")
+        foreach (item_text_limits() as $f => [$max, $label])
+            if (mb_strlen(trim((string)post($f))) > $max) {
+                flash($label . ' can be at most ' . $max . ' characters (this one is ' . mb_strlen(trim((string)post($f))) . '). Please shorten it.', 'error');
+                redirect('items.php?action=' . ($id ? 'edit&id=' . $id : 'new'));
+            }
         $photo = post('old_photo');
         $photoUploaded = false;
         if (!empty($_FILES['photo']['tmp_name'])) {
@@ -147,16 +153,16 @@ if ($action === 'new' || $action === 'edit') {
         <input type="hidden" name="do" value="save">
         <input type="hidden" name="old_photo" value="<?= e($it['photo'] ?? '') ?>">
         <div class="form-row cols-2">
-          <div><label>Item name *</label><input type="text" name="name" value="<?= e($it['name'] ?? get('model', '')) ?>" required></div>
+          <div><label>Item name *</label><input type="text" name="name" maxlength="255" value="<?= e($it['name'] ?? get('model', '')) ?>" required></div>
           <div><label>Category</label>
             <select name="category_id"><option value="">-- none --</option>
             <?php foreach ($cats as $c): ?><option value="<?= $c['id'] ?>" <?= ($it['category_id'] ?? '') == $c['id'] ? 'selected' : '' ?>><?= e($c['label']) ?></option><?php endforeach; ?>
             </select></div>
         </div>
         <div class="form-row cols-3">
-          <div><label>Brand</label><input type="text" name="brand" value="<?= e($it['brand'] ?? '') ?>"></div>
-          <div><label>Model</label><input type="text" name="model" value="<?= e($it['model'] ?? get('model', '')) ?>"></div>
-          <div><label>Unit</label><input type="text" name="unit" value="<?= e($it['unit'] ?? 'PCS') ?>"></div>
+          <div><label>Brand</label><input type="text" name="brand" maxlength="120" value="<?= e($it['brand'] ?? '') ?>"></div>
+          <div><label>Model</label><input type="text" name="model" maxlength="120" value="<?= e($it['model'] ?? get('model', '')) ?>"></div>
+          <div><label>Unit</label><input type="text" name="unit" maxlength="20" value="<?= e($it['unit'] ?? 'PCS') ?>"></div>
         </div>
         <div class="form-row cols-3">
           <div><label>Type</label>
@@ -170,13 +176,13 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>B2B Price</label><input type="number" step="any" name="b2b_price" value="<?= e($it['b2b_price'] ?? '0') ?>"></div>
         </div>
         <div class="form-row cols-4">
-          <div><label>HSN Code</label><input type="text" name="hsn" value="<?= e($it['hsn'] ?? '') ?>"></div>
+          <div><label>HSN Code</label><input type="text" name="hsn" maxlength="20" value="<?= e($it['hsn'] ?? '') ?>"></div>
           <div><label>GST %</label><input type="number" step="any" name="tax_rate" value="<?= e($it['tax_rate'] ?? setting('default_tax', '18')) ?>"></div>
           <div><label>Warranty (months)</label><input type="number" name="warranty_months" value="<?= e($it['warranty_months'] ?? '0') ?>"></div>
           <div><label>Min stock alert</label><input type="number" step="any" name="min_stock" value="<?= e($it['min_stock'] ?? '0') ?>"></div>
         </div>
         <div class="form-row cols-2">
-          <div><label>Barcode</label><input type="text" name="barcode" value="<?= e($it['barcode'] ?? '') ?>"></div>
+          <div><label>Barcode</label><input type="text" name="barcode" maxlength="64" value="<?= e($it['barcode'] ?? '') ?>"></div>
           <div><label>Photo (for website)</label><input type="file" name="photo" accept="image/*"></div>
         </div>
         <?php if (biz_on('biz_box_units') || biz_on('biz_slabs')): ?>

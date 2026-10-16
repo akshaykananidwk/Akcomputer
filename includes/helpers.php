@@ -328,6 +328,12 @@ function doc_no($prefix, $id) {
  *  negative delta). Every existing call site keeps working unchanged since
  *  this is purely additive; the Stock Report/COGS only start using it once
  *  Settings > Inventory has costing_method switched off "current". */
+/** Longest text each item field can hold (install/upgrade_v95.sql). */
+function item_text_limits() {
+    return ['name' => [255, 'Item name'], 'brand' => [120, 'Brand'], 'model' => [120, 'Model'],
+            'unit' => [20, 'Unit'], 'hsn' => [20, 'HSN code'], 'barcode' => [64, 'Barcode']];
+}
+
 function adjust_stock($item_id, $location_id, $delta, $ref_type, $ref_id = null, $note = '', $unit_cost = null) {
     // The goods have to land on a real shelf. Every screen works out the
     // location as "the one on the form, else the user's own" - and an admin

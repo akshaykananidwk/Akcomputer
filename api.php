@@ -511,7 +511,7 @@ if ($r === 'items' && $method === 'POST') {
     $b = api_body();
     $iid = (int)($b['id'] ?? 0);
     api_require($iid ? 'items.edit' : 'items.add');
-    $name = trim((string)($b['name'] ?? ''));
+    $name = mb_substr(trim((string)($b['name'] ?? '')), 0, 255);
     if ($name === '') api_json(['error' => 'name required'], 422);
     $old = $iid ? row('SELECT * FROM items WHERE id = ?', [$iid]) : null;
     if ($iid && !$old) api_json(['error' => 'Item not found'], 404);

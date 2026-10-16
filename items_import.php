@@ -103,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'import' && !empty($
             $pdo->beginTransaction();
             $cell = fn($r, $k) => isset($map[$k], $r[$map[$k]]) ? trim((string)$r[$map[$k]]) : '';
             foreach (array_slice($rows, 1) as $r) {
-                $name = $cell($r, 'name');
+                $name = mb_substr(trim((string)$cell($r, 'name')), 0, 255);
                 if ($name === '') { $skipped++; continue; }
                 $catId = null;
                 if (($cn = $cell($r, 'category')) !== '') {

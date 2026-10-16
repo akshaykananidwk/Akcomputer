@@ -172,7 +172,7 @@ if ($a === 'party_add' && can('parties.add') && $_SERVER['REQUEST_METHOD'] === '
 // else about the item (HSN, warranty, photo, min stock) is filled in later on
 // the Items screen, where there is room for it.
 if ($a === 'item_add' && can('items.add') && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $name = trim((string)post('name'));
+    $name = mb_substr(trim((string)post('name')), 0, 255);
     if ($name === '') { echo json_encode(['error' => 'An item name is needed.']); exit; }
     if (row('SELECT id FROM items WHERE name = ? AND is_active = 1', [$name])) {
         echo json_encode(['error' => 'An item with this name already exists — pick it from the search.']);

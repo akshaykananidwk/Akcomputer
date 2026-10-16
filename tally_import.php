@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'confirm' && !empty(
         }
         if (post('items') && can('items.add')) foreach ($d['items'] as [$name, $unit, $rate, $hsn]) {
             if (val('SELECT id FROM items WHERE name = ?', [$name])) continue;
-            q("INSERT INTO items (name, unit, selling_price, hsn, item_type, is_active) VALUES (?,?,?,?, 'product', 1)", [mb_substr($name, 0, 150), mb_substr($unit, 0, 20), $rate, mb_substr($hsn, 0, 20)]);
+            q("INSERT INTO items (name, unit, selling_price, hsn, item_type, is_active) VALUES (?,?,?,?, 'product', 1)", [mb_substr($name, 0, 255), mb_substr($unit, 0, 20), $rate, mb_substr($hsn, 0, 20)]);
             $ni++;
         }
         $pdo->commit();
