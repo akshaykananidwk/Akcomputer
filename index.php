@@ -266,6 +266,10 @@ include __DIR__ . '/includes/header.php';
 // something and they need answering rather than reading.
 $dashBranch = '';
 if ($dashLoc) foreach ($locsAllDash as $l) if ((int)$l['id'] === $dashLoc) $dashBranch = $l['name'];
+// The notices (WhatsApp, approvals, checklist, birthdays...) are gathered here
+// and shown BELOW the everyday cards, so the top of the screen is always the
+// same: to receive, to pay, and the four lists.
+ob_start();
 ?>
 <?php if ($myHandovers): ?>
 <div class="flash flash-info">🤝 You have <?= $myHandovers ?> stock handover(s) pending. <a href="my_stock.php">Accept with OTP →</a></div>
@@ -312,11 +316,12 @@ if (can('sales.add')):
   <b><?= e($bd['name']) ?></b>'s birthday<?= $bd['age'] > 0 && $bd['age'] < 100 ? ' — turning ' . (int)$bd['age'] : '' ?>.
   <a href="users.php?action=edit&amp;id=<?= (int)$bd['id'] ?>">Open →</a></div>
 <?php endforeach; ?>
+<?php $dashNotices = ob_get_clean(); ?>
 
 <?php if (setting('setup_wizard_done', '1') !== '1' || strtotime((string)(current_user()['created_at'] ?? '2000-01-01')) > time() - 14 * 86400): ?><span data-tour-auto hidden></span><?php endif; ?>
 <?php if ($seeMoney && $sBals): ?>
-<div style="display:flex;justify-content:flex-end;margin:0 0 6px"><button type="button" class="btn btn-sm btn-outline"
-  data-say="<?= e(say_text('dash', $todaySales['t'], $todaySales['c'], $sBals['receivable'], $sBals['payable'])) ?>">🔊 Read aloud</button></div>
+<?php $dashSay = '<div style="display:flex;justify-content:flex-end;margin:0 0 10px"><button type="button" class="btn btn-sm btn-outline" data-say="'
+    . e(say_text('dash', $todaySales['t'], $todaySales['c'], $sBals['receivable'], $sBals['payable'])) . '">🔊 Read aloud</button></div>'; ?>
 <div class="hm-money">
   <a class="hm-card hm-get" href="<?= $partiesLink ? 'parties.php?bal=get' : 'reports.php?r=aging' ?>">
     <span class="hm-ico"><?= icon('arrow-down', 24) ?></span>
@@ -375,6 +380,10 @@ if (can('sales.add')):
   </a>
   <?php endif; ?>
 </div>
+
+<?php // the notices and Read aloud, under the everyday cards
+if (trim($dashNotices) !== '') echo '<div class="dash-notices" style="margin-top:14px">' . $dashNotices . '</div>';
+echo $dashSay ?? ''; ?>
 
 <details class="more-opts no-print hm-more">
   <summary>📊 Everything else — today's figures, what to do, reports</summary>
