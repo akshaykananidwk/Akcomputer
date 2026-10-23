@@ -147,7 +147,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
             q('UPDATE cheques SET status = ? WHERE payment_id = ?', ['cancelled', $pid]);
             $pdo->commit();
             log_activity('payment_delete', "P-$pid");
-            flash('Payment entry deleted - any bill(s) it was linked to have had their paid amount reversed.');
+            flash('Payment P-' . str_pad($pid, 5, '0', STR_PAD_LEFT) . ' of ₹' . money($pay['amount']) . ' deleted - any bill(s) it was linked to have had their paid amount reversed.');
+            if (post('back') === 'ledger' && $pay['party_id']) redirect('parties.php?action=ledger&id=' . (int)$pay['party_id']);
         } catch (Exception $ex) {
             $pdo->rollBack();
             flash('Error deleting payment: ' . plain_error($ex), 'error');
@@ -650,71 +651,97 @@ if ($action === 'contra') {
 
 // ---------- view a single payment (detail + Edit / Delete) ----------
 // ---------- 🔗 link this payment to bills ----------
-if ($action === 'link' && $id) {
+// ---------- one page for a payment: what it is, edit / delete, and the bills it pays ----------
+// (the old separate "view" and "link" screens are this one page)
+if (($action === 'link' || $action === 'view') && $id) {
     require_perm('payments.view');
     $pay = paylink_get($id);
     if (!$pay) { flash('Payment not found.', 'error'); redirect('payments.php'); }
+    $more = row('SELECT u2.name by_name, ba.account_name bank_name FROM payments p JOIN users u2 ON u2.id = p.created_by LEFT JOIN bank_accounts ba ON ba.id = p.bank_account_id WHERE p.id = ?', [$id]);
     $free = money_r($pay['amount'] - $pay['linked']);
     $links = paylink_links($id);
     $open = paylink_open_bills($pay);
-    $canEdit = can('payments.edit') && $pay['mode'] !== 'contra' && $pay['party_id'];
-    $page_title = 'Link P-' . str_pad($id, 5, '0', STR_PAD_LEFT);
+    $canLink = can('payments.edit') && $pay['mode'] !== 'contra' && $pay['party_id'];
+    $canEditPay = can('payments.edit') && !in_array($pay['mode'], ['contra', 'discount'], true);
+    $canDel = can('payments.delete');
+    $locked = is_period_locked($pay['pay_date']);
+    $in = $pay['direction'] === 'in';
+    $no = 'P-' . str_pad($id, 5, '0', STR_PAD_LEFT);
+    $page_title = $no;
     include __DIR__ . '/includes/header.php';
     ?>
-    <div class="page-actions no-print"><a class="btn btn-outline" href="payments.php?action=view&id=<?= $id ?>">← Payment</a>
-      <?php if ($pay['party_id']): ?><a class="btn btn-outline" href="parties.php?action=ledger&id=<?= (int)$pay['party_id'] ?>">Party ledger</a><?php endif; ?></div>
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
-        <h2 style="margin:0"><?= $pay['direction'] === 'in' ? '⬇ Received' : '⬆ Paid' ?> ₹<?= money($pay['amount']) ?></h2>
-        <?= paylink_chip($pay['st'], $free) ?>
-      </div>
-      <p class="muted" style="margin:4px 0 10px">Receipt P-<?= str_pad($id, 5, '0', STR_PAD_LEFT) ?> · <?= dmy($pay['pay_date']) ?> · <?= e(strtoupper($pay['mode'])) ?> · <?= $pay['party_id'] ? e($pay['party_name']) : 'no party' ?></p>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">
-        <div><div class="muted" style="font-size:12px">Payment</div><strong>₹<?= money($pay['amount']) ?></strong></div>
-        <div><div class="muted" style="font-size:12px">On bills</div><strong style="color:var(--ok)">₹<?= money($pay['linked']) ?></strong></div>
-        <div><div class="muted" style="font-size:12px">Free to link</div><strong style="color:<?= $free > 0.009 ? 'var(--bad)' : 'inherit' ?>">₹<?= money($free) ?></strong></div>
+    <div class="hr-hero<?= $in ? ' done' : '' ?>">
+      <div class="who"><?= $in ? '⬇ Received from' : '⬆ Paid to' ?> <?= $pay['party_id'] ? '<b>' . e($pay['party_name']) . '</b>' : 'walk-in / no party' ?></div>
+      <div class="clock">₹<?= money($pay['amount']) ?></div>
+      <div class="meta">
+        <span><?= icon('receipt', 14) ?> <?= $no ?></span>
+        <span><?= icon('calendar', 14) ?> <?= dmy($pay['pay_date']) ?></span>
+        <span><?= icon('card', 14) ?> <?= e(strtoupper($pay['mode'])) ?><?= $more['bank_name'] ? ' · ' . e($more['bank_name']) : '' ?></span>
+        <span style="background:rgba(255,255,255,.92)"><?= paylink_chip($pay['st'], $free) ?></span>
       </div>
     </div>
 
-    <div class="card list-card">
-      <div class="list-row" style="cursor:default"><div class="list-row-main"><strong>On these bills</strong></div></div>
+    <div class="pay-actions">
+      <?php if ($canEditPay): ?><a class="pay-act" href="payments.php?action=edit&amp;id=<?= $id ?>"><?= icon('edit', 22) ?><span>Edit</span></a><?php endif; ?>
+      <?php if ($canDel): ?>
+      <form method="post" class="pay-act-f" onsubmit="return confirm('Delete payment <?= $no ?> of ₹<?= money($pay['amount']) ?>?\n\nAny bill it paid shows as unpaid again and the party balance changes. This cannot be undone.')">
+        <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $id ?>"><input type="hidden" name="back" value="ledger">
+        <button class="pay-act bad" type="submit"><?= icon('x', 22) ?><span>Delete</span></button></form>
+      <?php endif; ?>
+      <?php if ($pay['party_id']): ?><a class="pay-act" href="parties.php?action=ledger&amp;id=<?= (int)$pay['party_id'] ?>"><?= icon('book', 22) ?><span>Ledger</span></a><?php endif; ?>
+      <a class="pay-act" href="payments.php#recent"><?= icon('wallet', 22) ?><span>Payments</span></a>
+    </div>
+    <?php if ($locked): ?><div class="flash flash-warn">🔒 This date is in a locked period — editing and deleting are blocked until the lock date is moved.</div><?php endif; ?>
+    <?php if ($pay['mode'] === 'contra'): ?><div class="flash flash-info">🔄 Contra settlement (no cash moved). To change it, delete it and record a fresh one.</div><?php endif; ?>
+    <?php if ($pay['mode'] === 'discount'): ?><div class="flash flash-info">🏷️ Settlement discount (no cash moved). To change it, delete it and record a fresh one.</div><?php endif; ?>
+
+    <div class="hr-tiles">
+      <div class="hr-tile"><div class="ic"><?= icon('rupee', 20) ?></div><div><div class="v">₹<?= money($pay['amount']) ?></div><div class="l">Payment</div></div></div>
+      <div class="hr-tile ok"><div class="ic"><?= icon('check', 20) ?></div><div><div class="v">₹<?= money($pay['linked']) ?></div><div class="l">On bills</div></div></div>
+      <div class="hr-tile <?= $free > 0.009 ? 'warn' : '' ?>"><div class="ic"><?= icon('link', 20) ?></div><div><div class="v">₹<?= money($free) ?></div><div class="l">Free to link</div></div></div>
+      <div class="hr-tile"><div class="ic"><?= icon('users', 20) ?></div><div style="min-width:0"><div class="v" style="font-size:15px"><?= e($more['by_name'] ?? '—') ?></div><div class="l">Recorded by</div></div></div>
+    </div>
+    <?php if (trim((string)$pay['notes']) !== ''): ?><div class="hr-card"><h3 style="margin-bottom:4px"><span><?= icon('book', 18) ?> Note</span></h3><div style="overflow-wrap:anywhere"><?= e($pay['notes']) ?></div></div><?php endif; ?>
+
+    <div class="hr-card">
+      <h3><span><?= icon('receipt', 18) ?> On these bills</span><?php if ($links): ?><span class="hr-chip"><?= count($links) ?></span><?php endif; ?></h3>
+      <div class="hr-list">
       <?php foreach ($links as $lk): ?>
-        <div class="list-row" style="cursor:default">
-          <div class="list-row-main">
-            <?php if ($lk['ref_type'] === 'opening'): ?>📜 Opening balance
-            <?php else: ?><a href="<?= $lk['ref_type'] === 'sale' ? 'sale_view' : 'purchase_view' ?>.php?id=<?= $lk['ref_id'] ?>"><?= e($lk['no']) ?></a><?php endif; ?>
-            <div class="list-row-sub muted"><?= $lk['date'] ? dmy($lk['date']) . ' · ' : '' ?><?= $lk['total'] !== null ? 'bill ₹' . money($lk['total']) . ' · paid ₹' . money($lk['paid']) . ' · left ₹' . money($lk['total'] - $lk['paid']) : '' ?><?= $lk['kind'] === 'direct' ? ' · taken with the bill' : '' ?></div>
+        <div class="hr-row">
+          <div class="hr-date"><?php if ($lk['date']): ?><b><?= (int)substr($lk['date'], 8) ?></b><span><?= date('M', strtotime($lk['date'])) ?></span><?php else: ?><b>📜</b><?php endif; ?></div>
+          <div class="hr-main">
+            <div class="t"><?php if ($lk['ref_type'] === 'opening'): ?>Opening balance<?php else: ?><a href="<?= $lk['ref_type'] === 'sale' ? 'sale_view' : 'purchase_view' ?>.php?id=<?= (int)$lk['ref_id'] ?>"><?= e($lk['no']) ?></a><?php endif; ?></div>
+            <div class="s"><?= $lk['total'] !== null ? 'bill ₹' . money($lk['total']) . ' · paid ₹' . money($lk['paid']) . ' · left ₹' . money($lk['total'] - $lk['paid']) : '' ?><?= $lk['kind'] === 'direct' ? ' · taken with the bill' : '' ?></div>
           </div>
-          <div class="list-row-val">₹<?= money($lk['amount']) ?>
-            <?php if ($canEdit): ?>
-            <form method="post" style="display:inline" onsubmit="return confirm('Unlink ₹<?= money($lk['amount']) ?> from <?= e($lk['no']) ?>? The bill will show it as unpaid again; the payment itself stays as it is.')">
+          <div class="hr-end"><b>₹<?= money($lk['amount']) ?></b>
+            <?php if ($canLink && !$locked): ?>
+            <form method="post" onsubmit="return confirm('Unlink ₹<?= money($lk['amount']) ?> from <?= e($lk['no']) ?>? The bill shows it as unpaid again; the payment itself stays as it is.')">
               <?= csrf_field() ?><input type="hidden" name="do" value="unlink"><input type="hidden" name="id" value="<?= $id ?>"><input type="hidden" name="link" value="<?= (int)$lk['id'] ?>">
-              <button class="btn btn-sm btn-outline" type="submit">Unlink</button></form>
-            <?php endif; ?>
-          </div>
+              <button class="hr-mini" type="submit">Unlink</button></form>
+            <?php endif; ?></div>
         </div>
-      <?php endforeach; if (!$links): ?><div class="list-row" style="cursor:default"><div class="list-row-main muted">Not on any bill yet.</div></div><?php endif; ?>
+      <?php endforeach; if (!$links): ?><div class="hr-empty">Not on any bill yet.</div><?php endif; ?></div>
     </div>
 
-    <?php if ($canEdit && $free > 0.009): ?>
-    <form method="post" class="card" id="linkForm">
+    <?php if ($canLink && $free > 0.009 && !$locked): ?>
+    <form method="post" class="hr-card" id="linkForm">
       <?= csrf_field() ?><input type="hidden" name="do" value="link"><input type="hidden" name="id" value="<?= $id ?>">
-      <h3 style="margin-top:0">Put ₹<?= money($free) ?> on bills</h3>
-      <?php if (!$open): ?><p class="muted">This party has no unpaid <?= $pay['direction'] === 'in' ? 'sale' : 'purchase' ?> bills. Keep it as an advance below.</p><?php endif; ?>
-      <?php foreach ($open as $k => $b): ?>
-        <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-          <div style="flex:1;min-width:0">
-            <strong><?= e($b['no']) ?></strong> <span class="muted" style="font-size:13px"><?= $b['date'] ? dmy($b['date']) : '' ?></span>
-            <div class="muted" style="font-size:13px">bill ₹<?= money($b['total']) ?> · paid ₹<?= money($b['paid']) ?> · <b style="color:var(--bad)">left ₹<?= money($b['left']) ?></b></div>
-          </div>
-          <input type="hidden" name="bill[]" value="<?= e($b['ref']) ?>">
-          <input type="number" name="amt[]" class="pl-amt" data-left="<?= $b['left'] ?>" min="0" step="0.01" max="<?= min($b['left'], $free) ?>" inputmode="decimal" placeholder="0" style="width:110px">
-          <button type="button" class="btn btn-sm btn-outline pl-fill" title="Fill what this bill still owes">Full</button>
+      <h3><span><?= icon('link', 18) ?> Put ₹<?= money($free) ?> on bills</span></h3>
+      <?php if (!$open): ?><div class="hr-empty">This party has no unpaid <?= $in ? 'sale' : 'purchase' ?> bills — keep it as an advance below.</div><?php endif; ?>
+      <div class="hr-list">
+      <?php foreach ($open as $b): ?>
+        <div class="hr-row" style="grid-template-columns:minmax(0,1fr) auto">
+          <div class="hr-main"><div class="t"><?= e($b['no']) ?> <span class="muted" style="font-weight:400;font-size:12.5px"><?= $b['date'] ? dmy($b['date']) : '' ?></span></div>
+            <div class="s">bill ₹<?= money($b['total']) ?> · paid ₹<?= money($b['paid']) ?> · <b style="color:var(--bad)">left ₹<?= money($b['left']) ?></b></div></div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="hidden" name="bill[]" value="<?= e($b['ref']) ?>">
+            <input type="number" name="amt[]" class="pl-amt" data-left="<?= $b['left'] ?>" min="0" step="0.01" max="<?= min($b['left'], $free) ?>" inputmode="decimal" placeholder="₹" style="width:100px" aria-label="Amount for <?= e($b['no']) ?>">
+            <button type="button" class="hr-mini pl-fill" title="Fill what this bill still owes">Full</button></div>
         </div>
-      <?php endforeach; ?>
-      <p style="margin:10px 0" id="plSum">To link: ₹0.00 of ₹<?= money($free) ?></p>
-      <label class="check-inline"><input type="checkbox" name="rest_advance" value="1" <?= $pay['on_account'] ? 'checked' : '' ?>> Keep whatever is left as an advance (🔵)</label>
-      <div class="mt"><button class="btn" type="submit" id="plGo">🔗 Link</button></div>
+      <?php endforeach; ?></div>
+      <div id="plSum" style="margin:10px 0;font-weight:600">To link: ₹0.00 of ₹<?= money($free) ?></div>
+      <label class="hr-switch" style="font-weight:500"><input type="checkbox" name="rest_advance" value="1" <?= $pay['on_account'] ? 'checked' : '' ?>> Keep whatever is left as an advance 🔵</label>
+      <button class="btn btn-block" type="submit" id="plGo" style="min-height:48px;margin-top:12px">🔗 Link</button>
     </form>
     <script>
     (function () {
@@ -737,86 +764,10 @@ if ($action === 'link' && $id) {
       sum();
     })();
     </script>
-    <?php endif; ?>
-
-    <?php if ($canEdit && $free > 0.009): ?>
-    <form method="post" class="card"><?= csrf_field() ?><input type="hidden" name="do" value="advance"><input type="hidden" name="id" value="<?= $id ?>">
+    <form method="post" class="hr-card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><?= csrf_field() ?><input type="hidden" name="do" value="advance"><input type="hidden" name="id" value="<?= $id ?>">
       <input type="hidden" name="on" value="<?= $pay['on_account'] ? '0' : '1' ?>">
-      <p style="margin-top:0"><?= $pay['on_account'] ? '🔵 The free ₹' . money($free) . ' is kept as an advance, to put on a later bill.' : 'Not putting it on a bill now? Mark the free ₹' . money($free) . ' as an advance (🔵) so it is not counted as forgotten.' ?></p>
-      <button class="btn btn-sm btn-outline" type="submit"><?= $pay['on_account'] ? 'Remove the advance mark' : '🔵 Keep as advance' ?></button></form>
-    <?php endif; ?>
-    <?php include __DIR__ . '/includes/footer.php'; exit;
-}
-
-if ($action === 'view' && $id) {
-    $pay = row('SELECT p.*, pt.name party_name, pt.id party_ref, u2.name by_name, ba.account_name bank_name
-                FROM payments p LEFT JOIN parties pt ON pt.id = p.party_id
-                JOIN users u2 ON u2.id = p.created_by
-                LEFT JOIN bank_accounts ba ON ba.id = p.bank_account_id
-                WHERE p.id = ?', [$id]);
-    if (!$pay) { flash('Payment not found.', 'error'); redirect('payments.php'); }
-    // bills this payment settled (structured allocations + any direct bill link)
-    $links = [];
-    foreach (all('SELECT * FROM payment_allocations WHERE payment_id = ?', [$id]) as $a) {
-        if ($a['ref_type'] === 'opening') {
-            $links[] = ['label' => '📜 Opening balance / old account', 'amt' => $a['amount'],
-                        'link' => 'parties.php?action=ledger&id=' . $a['ref_id']];
-            continue;
-        }
-        $t = $a['ref_type'] === 'sale' ? 'sales' : 'purchases';
-        $noCol = $a['ref_type'] === 'sale' ? 'invoice_no' : 'bill_no';
-        $b = row("SELECT $noCol no FROM $t WHERE id = ?", [$a['ref_id']]);
-        $links[] = ['label' => ucfirst($a['ref_type']) . ' ' . ($b['no'] ?? '#' . $a['ref_id']), 'amt' => $a['amount'],
-                    'link' => ($a['ref_type'] === 'sale' ? 'sale_view.php?id=' : 'purchase_view.php?id=') . $a['ref_id']];
-    }
-    if ($pay['ref_type'] && $pay['ref_id'] && !$links) {
-        $t = $pay['ref_type'] === 'sale' ? 'sales' : 'purchases';
-        $noCol = $pay['ref_type'] === 'sale' ? 'invoice_no' : 'bill_no';
-        $b = row("SELECT $noCol no FROM $t WHERE id = ?", [$pay['ref_id']]);
-        $links[] = ['label' => ucfirst($pay['ref_type']) . ' ' . ($b['no'] ?? '#' . $pay['ref_id']), 'amt' => $pay['amount'],
-                    'link' => ($pay['ref_type'] === 'sale' ? 'sale_view.php?id=' : 'purchase_view.php?id=') . $pay['ref_id']];
-    }
-    $page_title = 'Payment P-' . str_pad($id, 5, '0', STR_PAD_LEFT);
-    include __DIR__ . '/includes/header.php';
-    ?>
-    <div class="page-actions no-print">
-      <a class="btn btn-outline" href="<?= $pay['party_ref'] ? 'parties.php?action=ledger&id=' . $pay['party_ref'] : 'payments.php' ?>">← Back</a>
-      <?php if ($pay['party_ref'] && $pay['mode'] !== 'contra'): ?><a class="btn" href="payments.php?action=link&id=<?= $id ?>">🔗 Link to bills</a><?php endif; ?>
-      <?php if ($pay['mode'] !== 'contra' && $pay['mode'] !== 'discount' && can('payments.edit')): ?>
-      <a class="btn" href="payments.php?action=edit&id=<?= $id ?>">✏️ Edit</a>
-      <?php endif; ?>
-      <?php if (can('payments.delete')): ?>
-      <form method="post" onsubmit="return confirm('Delete this payment? Any bill it was linked to will have its paid amount reversed.')" style="display:inline">
-        <?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $id ?>">
-        <button class="btn btn-danger" type="submit">🗑️ Delete</button></form>
-      <?php endif; ?>
-    </div>
-    <div class="card">
-      <h2><?= $pay['direction'] === 'in' ? '⬇ Payment-In (Received)' : '⬆ Payment-Out (Paid)' ?></h2>
-      <div style="font-size:30px;font-weight:800;color:<?= $pay['direction'] === 'in' ? 'var(--ok)' : 'var(--bad)' ?>">₹<?= money($pay['amount']) ?></div>
-      <?php $plp = paylink_get($id); ?>
-      <p class="muted">Receipt P-<?= str_pad($id, 5, '0', STR_PAD_LEFT) ?> · <?= dmy($pay['pay_date']) ?> <?= paylink_chip($plp['st'], $plp['amount'] - $plp['linked']) ?></p>
-      <table class="table-sm mt">
-        <tr><td class="muted">Party</td><td><?= $pay['party_ref'] ? '<a href="parties.php?action=ledger&id=' . $pay['party_ref'] . '">' . e($pay['party_name']) . '</a>' : '<span class="muted">Walk-in / none</span>' ?></td></tr>
-        <tr><td class="muted">Mode</td><td><?= e(strtoupper($pay['mode'])) ?><?= $pay['bank_name'] ? ' · ' . e($pay['bank_name']) : '' ?></td></tr>
-        <tr><td class="muted">Notes</td><td><?= e($pay['notes']) ?: '<span class="muted">—</span>' ?></td></tr>
-        <tr><td class="muted">Recorded by</td><td><?= e($pay['by_name']) ?></td></tr>
-      </table>
-      <?php if ($pay['mode'] === 'contra'): ?><p class="muted mt">🔄 This is a contra settlement (no cash moved). To change it, delete it and record a fresh one.</p><?php endif; ?>
-      <?php if ($pay['mode'] === 'discount'): ?><p class="muted mt">🏷️ Settlement discount (no cash moved) — it only clears the party's balance. To change it, delete it and record a fresh one.</p><?php endif; ?>
-    </div>
-    <?php if ($links): ?>
-    <div class="card list-card">
-      <div class="list-row" style="cursor:default"><div class="list-row-main"><strong>Settles these bills</strong></div></div>
-      <?php foreach ($links as $lk): ?>
-      <a class="list-row" href="<?= e($lk['link']) ?>">
-        <div class="list-row-main"><?= e($lk['label']) ?></div>
-        <div class="list-row-val">₹<?= money($lk['amt']) ?> <span class="muted" style="font-size:15px">›</span></div>
-      </a>
-      <?php endforeach; ?>
-    </div>
-    <?php else: ?>
-    <div class="card"><p class="muted">Not linked to a specific bill — it sits on the party's account as an advance / on-account amount.</p></div>
+      <div style="flex:1;min-width:200px;font-size:14px"><?= $pay['on_account'] ? '🔵 The free ₹' . money($free) . ' is kept as an advance, for a later bill.' : 'Not putting it on a bill now? Mark the free ₹' . money($free) . ' as an advance 🔵.' ?></div>
+      <button class="hr-mini" type="submit"><?= $pay['on_account'] ? 'Remove the advance mark' : '🔵 Keep as advance' ?></button></form>
     <?php endif; ?>
     <?php include __DIR__ . '/includes/footer.php'; exit;
 }
@@ -960,7 +911,7 @@ $pgMax = max(1, (int)ceil($recTotal / $per));
 if ($pg > $pgMax) $pg = $pgMax;
 $recent = all("SELECT p.*, pt.name party_name, u2.name by_name, " . paylink_linked_sql('p') . " linked, " . paylink_status_sql('p') . " st FROM payments p
                LEFT JOIN parties pt ON pt.id = p.party_id JOIN users u2 ON u2.id = p.created_by
-               WHERE $rwSql ORDER BY p.id DESC LIMIT $per OFFSET " . (($pg - 1) * $per), $ra);
+               WHERE $rwSql ORDER BY p.pay_date DESC, p.id DESC LIMIT $per OFFSET " . (($pg - 1) * $per), $ra);
 // status IN ('due','partial') rather than <> 'paid': the column is a NOT NULL
 // enum of exactly those three values, so the two are identical - but only the
 // IN form can use idx_sale_status_due, which is what makes this list fast

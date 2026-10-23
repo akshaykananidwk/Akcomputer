@@ -1372,19 +1372,22 @@ if ($r === 'general_ledger' && can('reports.accounting')) {
             echo '<p class="muted">Every party\'s entries. Each party is netted on its own: those who owe you make Receivable, those you owe make Payable - see each party\'s ledger for one party.</p>';
         echo '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead><tbody>';
         $bal = in_array($glAcc['code'], ['1200', '2000'], true) ? (float)val("SELECT COALESCE(SUM(dr - cr), 0) FROM " . ledger_sql() . " x WHERE (acct = 'P' OR acct = ?) AND d <= ?", [$glAcc['code'], $openTo]) : $opening;
-        echo '<tr style="font-weight:600;background:var(--card-alt,rgba(0,0,0,.03))"><td colspan="4">Opening Balance (' . dmy($from) . ')</td><td class="num">₹' . money(abs($bal)) . ' ' . ($bal < 0 ? 'Cr' : 'Dr') . '</td></tr>';
-        $totDr = 0; $totCr = 0;
-        foreach ($glRows as $row) {
-            $bal += $row['debit'] - $row['credit'];
-            $totDr += $row['debit']; $totCr += $row['credit'];
+        // the balance is worked out oldest-first, then shown newest-first:
+        // closing on top, today's lines next, the opening at the bottom
+        $openBal = $bal; $totDr = 0; $totCr = 0;
+        foreach ($glRows as &$row) { $bal += $row['debit'] - $row['credit']; $row['bal'] = $bal; $totDr += $row['debit']; $totCr += $row['credit']; }
+        unset($row);
+        $drcr = fn($v) => '₹' . money(abs($v)) . ' ' . ($v < 0 ? 'Cr' : 'Dr');
+        echo '<tr style="font-weight:600;border-bottom:2px solid var(--text)"><td colspan="2">Closing balance (' . dmy($to) . ') · period total</td><td class="num">₹' . money($totDr) . '</td><td class="num">₹' . money($totCr) . '</td>'
+           . '<td class="num">' . $drcr($bal) . '</td></tr>';
+        foreach (array_reverse($glRows) as $row) {
             echo '<tr><td>' . dmy($row['date']) . '</td><td>' . ($row['link'] ? '<a href="' . e($row['link']) . '">' . e($row['desc']) . '</a>' : e($row['desc'])) . '</td>'
                . '<td class="num">' . ($row['debit'] ? '₹' . money($row['debit']) : '') . '</td>'
                . '<td class="num">' . ($row['credit'] ? '₹' . money($row['credit']) : '') . '</td>'
-               . '<td class="num">₹' . money(abs($bal)) . ' ' . ($bal < 0 ? 'Cr' : 'Dr') . '</td></tr>';
+               . '<td class="num">' . $drcr($row['bal']) . '</td></tr>';
         }
         if (!$glRows) echo '<tr><td colspan="5" class="muted">No transactions in this period.</td></tr>';
-        echo '<tr style="font-weight:600;border-top:2px solid var(--text)"><td colspan="2">Period Total</td><td class="num">₹' . money($totDr) . '</td><td class="num">₹' . money($totCr) . '</td>'
-           . '<td class="num">₹' . money(abs($bal)) . ' ' . ($bal < 0 ? 'Cr' : 'Dr') . '</td></tr>';
+        echo '<tr style="font-weight:600;background:var(--card-alt,rgba(0,0,0,.03))"><td colspan="4">Opening Balance (' . dmy($from) . ')</td><td class="num">' . $drcr($openBal) . '</td></tr>';
         echo '</tbody></table></div></div>';
     }
 }

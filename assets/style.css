@@ -1985,3 +1985,11 @@ details.hr-tools > .in { padding: 0 14px 14px; display: grid; gap: 10px; }
   .fu-row .fu-what .who-m { display: inline-flex; }
 }
 .fu-what .who-m { display: none; }
+
+/* Payment page: big action buttons under the hero */
+.pay-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: -4px 0 14px; }
+.pay-act-f { margin: 0; display: contents; }
+.pay-act { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 64px; padding: 8px 4px; border-radius: 14px;
+  background: var(--card); border: 1px solid var(--line); color: var(--primary); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; width: 100%; }
+.pay-act.bad { color: var(--bad); }
+.pay-act:active { transform: scale(.97); }

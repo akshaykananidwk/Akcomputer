@@ -488,7 +488,7 @@ $to = get('to', today());
 $purchases = all("SELECT p.*, pt.name party_name FROM purchases p
                   JOIN parties pt ON pt.id = p.party_id
                   WHERE p.purchase_date BETWEEN ? AND ? $scope
-                  ORDER BY p.id DESC LIMIT 500", array_merge([$from, $to], $params));
+                  ORDER BY p.purchase_date DESC, p.id DESC LIMIT 500", array_merge([$from, $to], $params));
 $sumDueP = (float)val("SELECT COALESCE(SUM(total - paid),0) FROM purchases p WHERE p.status <> 'paid' AND p.is_cancelled = 0 " . $scope, $params);
 $page_title = 'Purchases';
 include __DIR__ . '/includes/header.php';

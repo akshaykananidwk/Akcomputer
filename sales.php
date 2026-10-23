@@ -1316,7 +1316,7 @@ $sales = all("SELECT s.*, c.name AS company_name, u2.name AS staff_name
               JOIN companies c ON c.id = s.company_id
               JOIN users u2 ON u2.id = s.created_by
               WHERE $where
-              ORDER BY s.id DESC LIMIT $per OFFSET " . (($page - 1) * $per), $a);
+              ORDER BY s.sale_date DESC, s.id DESC LIMIT $per OFFSET " . (($page - 1) * $per), $a);
 
 // every filter except the one being drawn, so a link keeps the rest of them
 $keep = function (array $over = []) use ($from, $to, $qs, $stF, $coF) {

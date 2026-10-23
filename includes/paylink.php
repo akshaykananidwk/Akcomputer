@@ -175,7 +175,7 @@ function paylink_bill($type, $billId) {
     $links = all("SELECT p.id pay_id, p.pay_date, p.mode, p.amount pay_amount, x.amount, x.link_id FROM (
                     SELECT payment_id, amount, id link_id FROM payment_allocations WHERE ref_type = ? AND ref_id = ?
                     UNION ALL SELECT id payment_id, amount, 0 link_id FROM payments WHERE ref_type = ? AND ref_id = ?
-                  ) x JOIN payments p ON p.id = x.payment_id ORDER BY p.pay_date, p.id", [$type, (int)$billId, $type, (int)$billId]);
+                  ) x JOIN payments p ON p.id = x.payment_id ORDER BY p.pay_date DESC, p.id DESC", [$type, (int)$billId, $type, (int)$billId]);
     $linked = money_r(array_sum(array_column($links, 'amount')));
     $free = [];
     if ($b['party_id'])

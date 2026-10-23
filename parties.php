@@ -369,11 +369,8 @@ if ($action === 'ledger' && $id) {
     </div>
     <?php endif; ?>
     <div class="card list-card">
-      <div class="list-row" style="cursor:default">
-        <div class="list-row-main"><strong>Opening Balance</strong></div>
-        <div class="list-row-val"><span class="muted">₹<?= money($openingBal) ?></span></div>
-      </div>
-      <?php foreach ($entries as $en): $bal += $en['dr'] - $en['cr'];
+      <?php // newest on top, the opening balance at the (oldest) bottom
+      foreach (array_reverse($entries) as $en): $bal += $en['dr'] - $en['cr'];
             $isZero = abs((float)$en['dr']) < 0.005 && abs((float)$en['cr']) < 0.005;
             if ($isZero && !$showZero) continue; ?>
       <a class="list-row" href="<?= e($en['link']) ?>">
@@ -399,6 +396,10 @@ if ($action === 'ledger' && $id) {
         </div>
       </div>
       <?php endif; ?>
+      <div class="list-row" style="cursor:default;background:var(--card-alt)">
+        <div class="list-row-main"><strong>Opening Balance</strong><div class="muted list-row-sub">before the first entry</div></div>
+        <div class="list-row-val"><span class="muted">₹<?= money($openingBal) ?></span></div>
+      </div>
     </div>
     <?php if ($timeline): ?>
     <div class="card">
