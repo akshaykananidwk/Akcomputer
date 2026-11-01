@@ -1823,3 +1823,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // installable as an app (manifest.php gives each shop its own name and logo)
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(function () {});
+
+// A number box must never change because the mouse wheel turned over it: in a
+// stock count (or a bill) scrolling the page with the cursor on a quantity
+// quietly changed the count. Letting go of the box first means the wheel
+// scrolls the page, as anyone expects, and the typed figure stays.
+document.addEventListener('wheel', function (e) {
+  var t = e.target;
+  if (t && t.tagName === 'INPUT' && t.type === 'number' && document.activeElement === t) t.blur();
+}, { passive: true });

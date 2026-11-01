@@ -522,6 +522,8 @@ body { padding-bottom: 90px; background: var(--bg); }
 <?php endif; ?>
 
 <?php if ($homeView): ?>
+<!-- the front page's promotions; hidden while the customer is searching -->
+<div id="homePromo">
 <!-- rotating hero banners (owner-editable in Settings > Online Store) -->
 <div class="heroSlider" id="heroSlider">
   <div class="slides" id="heroSlides">
@@ -574,6 +576,7 @@ body { padding-bottom: 90px; background: var(--bg); }
   <?php foreach ($brandTop as $bn): ?><a class="brandPill" href="<?= e(seo_brand_url($bn)) ?>"><?= e($bn) ?></a><?php endforeach; ?>
 </div>
 <?php endif; ?>
+</div>
 <?php endif; ?>
 
 <?php if ($orderOk): ?>
@@ -674,6 +677,7 @@ if (!isset($catGroups)) {
 </div>
 
   <?php if ($homeView): ?>
+  <div id="homeExtras">
   <?php if ($testis): ?>
   <section class="secWrap"><h2 class="sec-h"><span>💬</span> What customers say</h2>
     <div class="testiGrid">
@@ -700,6 +704,7 @@ if (!isset($catGroups)) {
     <a class="btn ctaBtn" href="https://wa.me/<?= e($waShop) ?>?text=catalog" target="_blank" rel="noopener">💬 Open WhatsApp</a>
   </section>
   <?php endif; ?>
+  </div>
   <?php endif; ?>
 
   <div class="cartbar" id="cartBar"><span id="cartInfo"></span><span>Place Order →</span></div>
@@ -984,8 +989,24 @@ function applyFilter() {
     c.style.display = okQ && okC ? '' : 'none';
   });
   applyWishFilter(); // ♥ filter stacks on top of search + category
+  // while searching, only the results: no banners, deals, best sellers, new
+  // arrivals, reviews or FAQ in the way. An empty box brings the front page back.
+  var searching = q.trim() !== '';
+  ['homePromo', 'homeExtras'].forEach(function (id) { var el = document.getElementById(id); if (el) el.hidden = searching; });
+  var h = document.getElementById('allProducts');
+  if (h) h.innerHTML = searching ? '<span>🔍</span> Results for “' + q.trim().replace(/[<>&"]/g, '') + '” · ' + document.querySelectorAll('#cGrid .cat-card:not([style*="none"])').length : '<span>🏪</span> All Products';
 }
-if (filterInp) filterInp.addEventListener('input', applyFilter);
+if (filterInp) {
+  filterInp.addEventListener('input', applyFilter);
+  // on the first letters, jump to the results so they are what the customer sees
+  var jumped = false;
+  filterInp.addEventListener('input', function () {
+    if (filterInp.value.trim() === '') { jumped = false; return; }
+    if (jumped) return; jumped = true;
+    var h = document.getElementById('allProducts');
+    if (h) window.scrollTo({ top: h.getBoundingClientRect().top + window.pageYOffset - 140, behavior: 'smooth' });
+  });
+}
 // sort: reorder the cards inside the grid (works together with search + category)
 var sortSel = document.getElementById('cSort');
 if (sortSel) sortSel.addEventListener('change', function () {

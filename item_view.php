@@ -135,7 +135,17 @@ $suppHist = (!$isService && can('items.cost')) ? all(
 // Should this item be reordered? Same arithmetic the Purchase Intelligence
 // screen uses, for this one product - so the answer on the item page and the
 // answer on the order list can never disagree.
-$reorder = (!$isService && can('purchases.view') && can('items.cost')) ? pi_item_reorder($id) : null;
+// Who bought this item. Services never touch stock_ledger, so the Transactions
+// list below stays empty for them; this reads the bills directly. Revenue and
+// cost use the same rule as the Item-wise Profit report (profit_cost_sql).
+$soldTo = can('sales.view') ? all("SELECT s.id, s.invoice_no, s.sale_date, COALESCE(p.name, s.customer_name) cust,
+        si.qty, si.price, si.total, " . profit_cost_sql() . " cost
+    FROM sale_items si JOIN sales s ON s.id = si.sale_id JOIN items i ON i.id = si.item_id
+    LEFT JOIN parties p ON p.id = s.party_id
+    WHERE si.item_id = ? AND s.is_cancelled = 0 ORDER BY s.sale_date DESC, s.id DESC LIMIT 500", [$id]) : [];
+$soldSum = ['bills' => count($soldTo), 'qty' => 0, 'rev' => 0, 'cost' => 0];
+foreach ($soldTo as $r) { $soldSum['qty'] += $r['qty']; $soldSum['rev'] += $r['total']; $soldSum['cost'] += $r['cost']; }
+$reorder = (!$isService &&can('purchases.view') && can('items.cost')) ? pi_item_reorder($id) : null;
 
 $page_title = $item['name'];
 include __DIR__ . '/includes/header.php';
@@ -284,6 +294,38 @@ include __DIR__ . '/includes/header.php';
       </tr>
     <?php endforeach; ?>
     <?php if (!$serials): ?><tr><td colspan="6" class="muted">No serial numbers recorded yet.</td></tr><?php endif; ?>
+    </tbody>
+  </table>
+  </div>
+</div>
+<?php endif; ?>
+
+<?php if (can('sales.view')): $showCost = can('items.cost'); ?>
+<div class="card">
+  <h3>Sold to</h3>
+  <div class="grid-stats">
+    <div class="stat"><div class="stat-label">Bills</div><div class="stat-value"><?= $soldSum['bills'] ?></div></div>
+    <div class="stat"><div class="stat-label">Qty sold</div><div class="stat-value"><?= (float)$soldSum['qty'] ?> <?= e($item['unit']) ?></div></div>
+    <div class="stat"><div class="stat-label">Sales</div><div class="stat-value">₹<?= money($soldSum['rev']) ?></div></div>
+    <?php if ($showCost): $pf = $soldSum['rev'] - $soldSum['cost']; ?>
+    <div class="stat"><div class="stat-label">Profit</div><div class="stat-value" style="color:<?= $pf >= 0 ? 'var(--ok)' : 'var(--bad)' ?>">₹<?= money($pf) ?></div></div>
+    <?php endif; ?>
+  </div>
+  <div class="table-wrap" style="box-shadow:none">
+  <table>
+    <thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Total</th><?php if ($showCost): ?><th class="num">Profit</th><?php endif; ?></tr></thead>
+    <tbody>
+    <?php foreach ($soldTo as $r): $p = $r['total'] - $r['cost']; ?>
+    <tr style="cursor:pointer" onclick="location.href='sale_view.php?id=<?= (int)$r['id'] ?>'">
+      <td><?= dmy($r['sale_date']) ?></td>
+      <td><a href="sale_view.php?id=<?= (int)$r['id'] ?>"><?= e($r['invoice_no'] ?: '-') ?></a></td>
+      <td><?= e($r['cust'] ?: '-') ?></td>
+      <td class="num"><?= (float)$r['qty'] ?></td>
+      <td class="num">₹<?= money($r['price']) ?></td>
+      <td class="num">₹<?= money($r['total']) ?></td>
+      <?php if ($showCost): ?><td class="num" style="color:<?= $p >= 0 ? 'var(--ok)' : 'var(--bad)' ?>">₹<?= money($p) ?></td><?php endif; ?>
+    </tr>
+    <?php endforeach; if (!$soldTo): ?><tr><td colspan="7" class="muted">Not sold yet.</td></tr><?php endif; ?>
     </tbody>
   </table>
   </div>
