@@ -753,6 +753,7 @@ if (!isset($catGroups)) {
   <?php if (!current_user()): ?><p class="muted mt" style="font-size:12px"><a href="login.php" style="color:inherit">Staff Login</a></p><?php endif; ?>
   <?php if (current_user() && can('items.edit')): $hidden = (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 0'); ?>
     <?php if ($hidden): ?><p class="muted mt">ℹ️ (Admin: <?= $hidden ?> items are OFF on the website — turn them ON via 🌐 on the Items page.)</p><?php endif; ?>
+    <?php $noPhoto = count(array_filter($items, fn($x) => ($x['photo'] ?? '') === '')); if ($noPhoto): ?><p class="muted mt">📷 (Admin: <?= $noPhoto ?> items on the website have no photo — <a href="items.php?f_web=on&amp;f_photo=none">upload photos</a>.)</p><?php endif; ?>
   <?php endif; ?>
 </footer>
 

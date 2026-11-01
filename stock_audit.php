@@ -17,6 +17,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
     // one OPEN sheet per location: starting a second one by mistake would
     // split the same physical count across two sheets - reuse the open one
     $already = row("SELECT id, count_no FROM stock_counts WHERE location_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1", [$locId]);
+    // an open sheet with NO lines holds nothing to lose - it was started with
+    // filters that matched no item. Cancel it so a fresh one can start.
+    if ($already && !val('SELECT COUNT(*) FROM stock_count_items WHERE count_id = ?', [$already['id']])) {
+        q("UPDATE stock_counts SET status = 'cancelled' WHERE id = ?", [$already['id']]);
+        $already = null;
+    }
     if ($already) {
         flash('An audit for this location ' . $already['count_no'] . ' is already open — that one has been opened. (To start a new one, post or cancel this first.)', 'error');
         redirect('stock_audit.php?action=count&id=' . $already['id']);
@@ -40,6 +46,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'start') {
         if (!$includeZero && abs($sysQ) < 0.001) continue;
         q('INSERT INTO stock_count_items (count_id, item_id, system_qty) VALUES (?,?,?)', [$cid, $iid, $sysQ]);
         $added++;
+    }
+    // no empty sheets: say why nothing matched and let them pick again
+    if (!$added) {
+        $pdo->rollBack();
+        flash('No item matched, so no count sheet was started. '
+            . ($onlyLow ? 'No item at this location is below its minimum stock - untick "Only items below minimum stock" to count everything.'
+                        : 'This location has no stock - tick "Include items with zero stock" to list every item.'), 'error');
+        redirect('stock_audit.php?action=new');
     }
     $pdo->commit();
     log_activity('stock_audit_start', doc_no('AUD', $cid));

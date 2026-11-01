@@ -284,6 +284,9 @@ if (!$showAll) $w[] = 'i.is_active = 1';
 if ($fCat) $w[] = 'i.category_id = ' . $fCat;
 if ($fWeb === 'on') $w[] = 'i.show_on_website = 1';
 if ($fWeb === 'off') $w[] = 'i.show_on_website = 0';
+// photo filter: items still waiting for a photo (the online store shows a blank card for them)
+$fPhoto = get('f_photo');   // '', 'none'
+if ($fPhoto === 'none') $w[] = "COALESCE(i.photo, '') = ''";
 // with a location picked, the Stock column and the stock filters both work
 // on THAT location's quantity - "ગોડાઉનin What પડ્યું છે" in one tap
 $stockExpr = $fLoc ? 'COALESCE(SUM(CASE WHEN s.location_id = ' . $fLoc . ' THEN s.qty END),0)' : 'COALESCE(SUM(s.qty),0)';
@@ -338,7 +341,15 @@ include __DIR__ . '/includes/header.php';
     <option value="on" <?= $fWeb === 'on' ? 'selected' : '' ?>>Website ON</option>
     <option value="off" <?= $fWeb === 'off' ? 'selected' : '' ?>>Website OFF</option>
   </select></div>
+  <div><select name="f_photo" onchange="this.form.submit()">
+    <option value="">Photo: all</option>
+    <option value="none" <?= $fPhoto === 'none' ? 'selected' : '' ?>>📷 No photo</option>
+  </select></div>
 </form>
+<?php $noPhoto = (int)val("SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 1 AND COALESCE(photo, '') = ''");
+if ($noPhoto && !($fPhoto === 'none' && $fWeb === 'on')): ?>
+<div class="flash flash-warn no-print">📷 <strong><?= $noPhoto ?></strong> item(s) on the online store have no photo. <a href="items.php?f_web=on&amp;f_photo=none">Show them</a> and upload a photo (Edit → Photo).</div>
+<?php endif; ?>
 <div class="list-count"><?= count($items) ?> items<?= $fLocName ? ' · 📍 Stock @ <strong>' . e($fLocName) . '</strong>' : '' ?></div>
 <div class="table-wrap">
 <table id="itemTable">
