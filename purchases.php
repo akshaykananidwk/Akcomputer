@@ -2,12 +2,31 @@
 // Purchases - stock in, serial number entry, credit terms
 require_once __DIR__ . '/includes/init.php';
 require_perm('purchases.view');
+require_once __DIR__ . '/includes/bill_file.php';
 $u = current_user();
+
+// attach / replace the supplier's original bill on a saved purchase. Only the
+// file link changes - amounts, stock and accounts are not touched.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'attach_bill') {
+    require_perm('purchases.edit');
+    $pid = (int)post('id');
+    if (!val('SELECT id FROM purchases WHERE id = ?', [$pid])) { flash('Purchase not found.', 'error'); redirect('purchases.php'); }
+    try {
+        $name = bill_file_save();
+        if ($name) {
+            q('UPDATE purchases SET bill_photo = ? WHERE id = ?', [$name, $pid]);
+            log_activity('purchase_bill_file', "purchase=$pid $name");
+            flash('Bill file attached.');
+        } else flash('Choose a PDF or photo of the bill first.', 'error');
+    } catch (RuntimeException $ex) { flash($ex->getMessage(), 'error'); }
+    redirect('purchase_view.php?id=' . $pid);
+}
 $action = get('action', 'list');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     require_perm('purchases.add');
     try {
+        if ($bf = bill_file_save()) $_POST['bill_photo'] = $bf;   // optional original bill
         $res = purchase_save_form($u);
     } catch (Exception $ex) {
         flash(($ex instanceof SaleRefused ? '' : 'Error: ') . plain_error($ex), 'error');
@@ -66,6 +85,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $purchase = row('SELECT * FROM purchases WHERE id = ?', [$pid]);
     if (!$purchase) { flash('Purchase not found.', 'error'); redirect('purchases.php'); }
     if ($purchase['is_cancelled']) { flash('A cancelled bill cannot be edited.', 'error'); redirect('purchase_view.php?id=' . $pid); }
+    // a bill file chosen on the edit screen is attached right away (it is a
+    // document, not an amount, so it never waits for edit approval)
+    try {
+        if ($bf = bill_file_save()) { q('UPDATE purchases SET bill_photo = ? WHERE id = ?', [$bf, $pid]); log_activity('purchase_bill_file', "purchase=$pid $bf"); }
+    } catch (RuntimeException $ex) { flash($ex->getMessage(), 'error'); redirect('purchases.php?action=edit&id=' . $pid); }
     if (is_period_locked($purchase['purchase_date']) || is_period_locked(post('purchase_date', $purchase['purchase_date']))) {
         flash(period_lock_message(), 'error'); redirect('purchase_view.php?id=' . $pid);
     }
@@ -263,7 +287,7 @@ if ($action === 'new' || $action === 'edit') {
     <?php if ($isEdit && !empty($editUntracked)): ?><div class="flash flash-warn">Some serial-tracked items on this bill were saved without serial numbers (<?= array_sum($editUntracked) ?> unit<?= array_sum($editUntracked) === 1 ? '' : 's' ?>). Add them if you have them, or leave them blank — the bill saves either way.</div>
     <?php elseif ($isEdit && array_filter($editItems, fn($it) => $it['serial_tracked'])): ?><div class="flash flash-info">Serial-tracked items' serial numbers are pre-filled - you can change them if needed.</div><?php endif; ?>
     <?php if ($isEdit && !is_full_admin() && strtotime($editPurchase['created_at']) < time() - 86400): ?><div class="flash flash-info">⏳ This bill is more than 24 hours old — saving will not apply the change directly, it goes for admin approval.</div><?php endif; ?>
-    <form method="post">
+    <form method="post" enctype="multipart/form-data">
       <?= csrf_field() ?>
       <input type="hidden" name="do" value="<?= $isEdit ? 'update' : 'save' ?>">
       <?php if ($isEdit): ?><input type="hidden" name="id" value="<?= $editPurchase['id'] ?>"><?php endif; ?>
@@ -285,8 +309,10 @@ if ($action === 'new' || $action === 'edit') {
           <div><label>Firm / Company</label>
             <select name="company_id" id="company_id"><?php foreach ($companies as $c): ?><option value="<?= $c['id'] ?>" data-gst="<?= $c['is_gst'] ?>"><?= e($c['name']) ?><?= $c['is_gst'] ? ' (GST)' : '' ?></option><?php endforeach; ?></select></div>
           <div><label>Supplier bill no.</label><input type="text" name="bill_no" id="bill_no" value="<?= $isEdit ? e($editPurchase['bill_no']) : '' ?>">
+            <label class="mt">📎 Original bill <span class="muted" style="font-weight:normal">(optional · PDF or photo)</span></label>
+            <input type="file" name="bill_file" accept=".pdf,application/pdf,image/jpeg,image/png,image/webp">
             <?php if ($isEdit && !empty($editPurchase['bill_photo'])): ?>
-            <p class="muted mt"><a href="<?= e(up_rel('purchase_scans')) ?>/<?= e($editPurchase['bill_photo']) ?>" target="_blank">📎 View scanned bill photo</a></p>
+            <p class="muted mt"><a href="purchase_view.php?id=<?= (int)$editPurchase['id'] ?>&amp;bill=1" target="_blank">📎 View attached bill</a> · choosing a new file replaces it</p>
             <?php endif; ?>
           </div>
           <div><label>Date</label><input type="date" name="purchase_date" id="purchase_date" value="<?= $isEdit ? e($editPurchase['purchase_date']) : today() ?>"></div>

@@ -10,6 +10,20 @@ $p = row('SELECT p.*, pt.name party_name, pt.mobile party_mobile, l.name loc_nam
 if (!$p) die('Purchase not found.');
 if (!can('purchases.all') && $p['created_by'] != current_user()['id']) die('Access denied.');
 
+// the supplier's original bill, handed out only past the checks above
+require_once __DIR__ . '/includes/bill_file.php';
+$billFile = bill_file_path($p['bill_photo'] ?? '');
+if (get('bill') === '1') {
+    if (!$billFile) die('No bill file attached.');
+    $ext = strtolower(pathinfo($billFile, PATHINFO_EXTENSION));
+    $mime = ['pdf' => 'application/pdf', 'png' => 'image/png', 'webp' => 'image/webp', 'gif' => 'image/gif'][$ext] ?? 'image/jpeg';
+    if (!in_array($ext, ['pdf', 'png', 'webp', 'gif', 'jpg', 'jpeg'], true)) $mime = 'application/octet-stream';
+    header('Content-Type: ' . $mime);
+    header('Content-Disposition: inline; filename="bill-' . $id . '.' . $ext . '"');
+    header('Cache-Control: private, no-store'); header('X-Content-Type-Options: nosniff');
+    readfile($billFile); exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pay' && can('payments.add')) {
     // same guard as sale_view: no payments onto a cancelled bill
     if ($p['is_cancelled']) { flash('This purchase bill is cancelled - no payment can be recorded on it.', 'error'); redirect('purchase_view.php?id=' . $id); }
@@ -69,6 +83,17 @@ if ($pendEditReq) {
   <p><strong><?= e($p['party_name']) ?></strong> · <?= e($p['party_mobile']) ?><br>
   Bill no: <?= e($p['bill_no'] ?: '-') ?> · Date: <?= dmy($p['purchase_date']) ?> · Location: <?= e($p['loc_name']) ?><br>
   Credit: <?= (int)$p['credit_days'] ?> days <?= $p['due_date'] ? '(due ' . dmy($p['due_date']) . ')' : '' ?></p>
+  <div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+    <?php if ($billFile): ?><a class="btn btn-sm btn-outline" href="purchase_view.php?id=<?= $id ?>&amp;bill=1" target="_blank">📎 View original bill</a>
+    <?php else: ?><span class="muted">📎 No original bill attached</span><?php endif; ?>
+    <?php if (can('purchases.edit')): ?>
+    <form method="post" action="purchases.php" enctype="multipart/form-data" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <?= csrf_field() ?><input type="hidden" name="do" value="attach_bill"><input type="hidden" name="id" value="<?= $id ?>">
+      <input type="file" name="bill_file" accept=".pdf,application/pdf,image/jpeg,image/png,image/webp" required style="max-width:230px">
+      <button class="btn btn-sm" type="submit"><?= $billFile ? 'Replace' : 'Attach' ?> bill</button>
+    </form>
+    <?php endif; ?>
+  </div>
 </div>
 <div class="table-wrap">
 <table>
