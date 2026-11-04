@@ -315,7 +315,7 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="page-actions">
   <?php if (can('items.add')): ?><a class="btn" href="items.php?action=new">+ New Item</a><?php endif; ?>
-  <?php if (can('items.edit')): ?><a class="btn btn-outline" href="ai_categorize.php">🤖 AI Categories</a><?php endif; ?>
+  <?php if (can('items.edit')): ?><a class="btn btn-outline" href="categories_arrange.php">🗂 Arrange Categories</a><a class="btn btn-outline" href="ai_categorize.php">🤖 AI Categories</a><?php endif; ?>
   <a class="btn btn-outline" href="items.php<?= $showAll ? '' : '?show=all' ?>"><?= $showAll ? 'Show Active only' : 'Show Inactive too' ?></a>
 </div>
 <form method="get" class="filterbar no-print">
