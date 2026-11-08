@@ -91,6 +91,7 @@ include __DIR__ . '/includes/header.php';
     <div><label>Date</label><input type="text" value="<?= e(dmy($edit['exp_date'] ?? today())) ?>" readonly title="Only the admin can change the date" style="background:var(--bg,#f3f4f6)"></div>
     <?php endif; ?>
     <div><label>Category</label><select name="category" id="exp_category">
+      <?php if (!$edit): ?><option value="">— from the note —</option><?php endif; ?>
       <?php foreach ($catGroups as $grp => $list): ?>
         <optgroup label="<?= e($grp) ?>">
         <?php foreach ($list as $c): ?><option <?= ($edit['category'] ?? '') === $c ? 'selected' : '' ?>><?= e($c) ?></option><?php endforeach; ?>

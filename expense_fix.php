@@ -34,7 +34,7 @@ include __DIR__ . '/includes/header.php';
 <div class="card">
   <h2>🤖 Fix expense categories</h2>
   <p class="muted">These saved expenses have a note that points to a different category. Untick any that are wrong, then press Apply.
-    Only the category changes — amount, date and cash/bank stay as they are. The last 300 entries with a note are checked; locked periods are skipped.</p>
+    Only the category changes — amount, date and cash/bank stay as they are. Every entry with a note is checked (entries without a note stay as they are); locked periods are skipped.</p>
   <?php if (!$haveAi): ?><div class="flash flash-info">Only the keyword list was used. Add a Gemini key in Settings → Invoice &amp; Payment for AI to read every note.</div><?php endif; ?>
   <?php if ($undo): ?>
   <form method="post" onsubmit="return confirm('Put the <?= count($undo['rows']) ?> expenses back in their old category?')" style="margin-top:8px">

@@ -281,6 +281,7 @@ function expense_save_form(array $u, $clientUuid = null) {
         require_once __DIR__ . '/expense_ai.php';
         if ($g = expense_guess(post('notes'))) $_POST['category'] = $g['category'];
     }
+    if (trim((string)post('category')) === '') $_POST['category'] = 'Business Miscellaneous';   // nothing picked, nothing in the note
     $amt = round((float)post('amount'), 2);
     if ($amt <= 0) throw new SaleRefused('Enter the amount.');
     if (is_period_locked(post('exp_date', today()))) throw new SaleRefused(period_lock_message());

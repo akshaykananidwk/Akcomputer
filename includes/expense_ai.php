@@ -17,11 +17,24 @@ function expense_guess_keywords($text) {
         $ok = array_flip(expense_categories());
         $rules = array_values(array_filter($rules, fn($r) => isset($ok[$r['category']])));
     }
+    $word = fn($k) => preg_match('/(?<![\p{L}\p{M}\p{N}])' . preg_quote($k, '/') . '(?![\p{L}\p{M}\p{N}])/u', $text);
+    $hit = null;
     foreach ($rules as $r) {
-        $k = preg_quote(mb_strtolower(trim($r['keyword'])), '/');
-        if ($k !== '' && preg_match('/(?<![\p{L}\p{M}\p{N}])' . $k . '(?![\p{L}\p{M}\p{N}])/u', $text)) return $r['category'];
+        $k = mb_strtolower(trim($r['keyword']));
+        if ($k !== '' && $word($k)) { $hit = $r['category']; break; }
     }
-    return null;
+    // the same spending for the house: "nasto home", "pani home", "home light
+    // bill", "papa recharge", "me and pooja trip" belong with household money
+    $homeOf = ['Food & Meals' => 'Home Groceries', 'Tea & Water' => 'Home Gas & Water', 'Office Rent' => 'Home Rent',
+               'Electricity' => 'Home Electricity', 'Internet & Telecom' => 'Home Mobile & DTH',
+               'Petrol & Vehicle' => 'Personal Vehicle & Petrol', 'Office Maintenance' => 'Home Repair & Maintenance',
+               'Business Travel' => 'Personal Miscellaneous', 'Business Miscellaneous' => 'Personal Miscellaneous'];
+    if ($hit && isset($homeOf[$hit]) && !$word('office') && !$word('shop')) {
+        foreach (['home', 'ghar', 'ghare', 'mom', 'papa', 'pooja', 'puja', 'family', 'wife', 'ઘર', 'ઘરે'] as $m) {
+            if ($word($m)) return $homeOf[$hit];
+        }
+    }
+    return $hit;
 }
 
 /** Gemini, for many notes at once: [key => note] in, [key => category] out.
@@ -72,7 +85,7 @@ function expense_guess($text) {
 
 /** Old expenses whose note points to another category than the one saved.
  *  Only entries with a note, outside locked periods, newest first. */
-function expense_fix_candidates($limit = 300) {
+function expense_fix_candidates($limit = 5000) {
     $rows = all("SELECT e.id, e.exp_date, e.category, e.amount, e.notes, u.name staff
                  FROM expenses e LEFT JOIN users u ON u.id = e.created_by
                  WHERE e.notes <> '' ORDER BY e.exp_date DESC, e.id DESC LIMIT " . (int)$limit);
@@ -83,7 +96,7 @@ function expense_fix_candidates($limit = 300) {
         $g = expense_guess_keywords($r['notes']);
         if ($g) $guess[$r['id']] = [$g, 'keyword']; else $ask[$r['id']] = $r['notes'];
     }
-    foreach (array_chunk($ask, 60, true) as $part) {
+    foreach (array_chunk(array_slice($ask, 0, 300, true), 60, true) as $part) {   // at most 5 AI calls per page
         foreach (expense_guess_ai($part) as $id => $c) $guess[$id] = [$c, 'ai'];
     }
     $out = [];
