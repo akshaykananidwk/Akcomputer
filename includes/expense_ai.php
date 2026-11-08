@@ -85,10 +85,13 @@ function expense_guess($text) {
 
 /** Old expenses whose note points to another category than the one saved.
  *  Only entries with a note, outside locked periods, newest first. */
-function expense_fix_candidates($limit = 5000) {
+function expense_fix_candidates($from = null, $to = null, $useAi = false) {
+    $w = "e.notes <> ''"; $p = [];
+    if ($from) { $w .= ' AND e.exp_date >= ?'; $p[] = $from; }
+    if ($to) { $w .= ' AND e.exp_date <= ?'; $p[] = $to; }
     $rows = all("SELECT e.id, e.exp_date, e.category, e.amount, e.notes, u.name staff
                  FROM expenses e LEFT JOIN users u ON u.id = e.created_by
-                 WHERE e.notes <> '' ORDER BY e.exp_date DESC, e.id DESC LIMIT " . (int)$limit);
+                 WHERE $w ORDER BY e.exp_date DESC, e.id DESC", $p);
     $rows = array_values(array_filter($rows, fn($r) => !is_period_locked($r['exp_date'])));
     $guess = [];
     $ask = [];
@@ -96,7 +99,8 @@ function expense_fix_candidates($limit = 5000) {
         $g = expense_guess_keywords($r['notes']);
         if ($g) $guess[$r['id']] = [$g, 'keyword']; else $ask[$r['id']] = $r['notes'];
     }
-    foreach (array_chunk(array_slice($ask, 0, 300, true), 60, true) as $part) {   // at most 5 AI calls per page
+    // AI only when asked for, and at most 2 calls (120 notes) so the page answers quickly
+    if ($useAi) foreach (array_chunk(array_slice($ask, 0, 120, true), 60, true) as $part) {
         foreach (expense_guess_ai($part) as $id => $c) $guess[$id] = [$c, 'ai'];
     }
     $out = [];
@@ -105,6 +109,18 @@ function expense_fix_candidates($limit = 5000) {
         if ($c && $c !== $r['category']) $out[] = $r + ['suggest' => $c, 'by' => $by];
     }
     return $out;
+}
+
+/** Once, at the first Update after the owner asked for it (09-11-2026): file
+ *  every old expense by its note with the keyword list. Undo stays on
+ *  Expenses -> Fix categories. Never runs twice. */
+function expense_fix_once() {
+    if (setting('expense_fix_once_done') !== '') return 0;
+    $c = expense_fix_candidates();
+    $n = $c ? expense_fix_apply(array_column($c, 'suggest', 'id')) : 0;
+    set_setting('expense_fix_once_done', date('Y-m-d H:i:s') . " ($n)");
+    log_activity('expense_fix_once', "$n expenses filed by their note");
+    return $n;
 }
 
 /** Moves the chosen expenses: [id => new category]. Keeps an Undo snapshot. */

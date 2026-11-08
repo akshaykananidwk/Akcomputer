@@ -69,4 +69,17 @@ t_eq('...to the right category', val('SELECT category FROM expenses WHERE id = ?
 t_eq('...amount, date and mode untouched', row('SELECT exp_date, amount, mode FROM expenses WHERE id = ?', [$eid]), $before);
 expense_fix_undo();
 t_eq('Undo puts it back', val('SELECT category FROM expenses WHERE id = ?', [$eid]), 'Tea & Water');
+$lastMonth = date('Y-m-d', strtotime(date('Y-m-01') . ' -1 month'));
+q("INSERT INTO expenses (exp_date, category, amount, mode, notes, created_by, location_id) VALUES (?, 'Office Rent', 20, 'cash', 'Pani ni botal', ?, ?)", [$lastMonth, $staff['id'], $staff['location_id']]);
+$old = (int)val('SELECT MAX(id) FROM expenses');
+$ids = fn($c) => array_map('intval', array_column($c, 'id'));
+t_ok("this month's list does not drag in last month's entries", !in_array($old, $ids(expense_fix_candidates(date('Y-m-01'), date('Y-m-t')))));
+t_ok("last month's list has it", in_array($old, $ids(expense_fix_candidates($lastMonth, date('Y-m-t', strtotime($lastMonth))))));
+set_setting('expense_fix_once_done', '');
+t_ok('the one-time fix at Update files old entries by their note', expense_fix_once() >= 2);
+t_eq('...the water bottle left Office Rent', val('SELECT category FROM expenses WHERE id = ?', [$old]), 'Tea & Water');
+t_eq('...and it never runs a second time', expense_fix_once(), 0);
+t_ok('...and Undo is still there for it', setting('expense_fix_undo') !== '');
+$src = file_get_contents(__DIR__ . '/../includes/dbmigrate.php');
+t_ok('Update (run all migrations) runs it', strpos($src, 'expense_fix_once();') !== false);
 $_POST = [];
