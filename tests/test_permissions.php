@@ -126,3 +126,12 @@ $payPage = file_get_contents(dirname(__DIR__) . '/pay.php');
 t_ok('it compares the share token', strpos($payPage, "hash_equals(\$sale['share_token'], \$token)") !== false);
 t_ok('...and refuses without one', strpos($payPage, "!\$sale['share_token']") !== false);
 t_ok('...with a 404, not a bill', strpos($payPage, 'http_response_code(404)') !== false);
+
+t_group('Login as a staff member keeps the admin logged in');
+// the session remembers a fingerprint of the logged-in password (a password
+// change elsewhere ends the login). "Login as" switched the user but kept the
+// admin's fingerprint, so the very next page saw a mismatch and logged out.
+$src = file_get_contents(__DIR__ . '/../users.php');
+t_ok('Login as takes the staff member\'s password fingerprint', strpos($src, "\$_SESSION['pwd_fp'] = pwd_fingerprint((string)\$target['password']);") !== false);
+t_ok('...and keeps the admin\'s to give back', strpos($src, "\$_SESSION['impersonator_pwd_fp'] = \$_SESSION['pwd_fp'];") !== false);
+t_ok('Back to Admin restores the admin\'s fingerprint', strpos($src, "\$_SESSION['pwd_fp'] = \$_SESSION['impersonator_pwd_fp'];") !== false);

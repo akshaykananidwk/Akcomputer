@@ -14,7 +14,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'stop_impersonate' &
     $wasUser = current_user();
     session_regenerate_id(true);
     $_SESSION['user_id'] = $_SESSION['impersonator_id'];
-    unset($_SESSION['impersonator_id']);
+    // the admin's own password check comes back with the admin
+    if (isset($_SESSION['impersonator_pwd_fp'])) $_SESSION['pwd_fp'] = $_SESSION['impersonator_pwd_fp']; else unset($_SESSION['pwd_fp']);
+    unset($_SESSION['impersonator_id'], $_SESSION['impersonator_pwd_fp']);
     log_activity('impersonate_stop', 'back from ' . ($wasUser['name'] ?? '?'));
     flash('Back to Admin.');
     redirect('users.php');
@@ -147,6 +149,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'impersonate') {
     session_regenerate_id(true);
     $_SESSION['impersonator_id'] = current_user()['id'];
     $_SESSION['user_id'] = $target['id'];
+    // The session holds a fingerprint of the logged-in password, so a password
+    // change elsewhere ends the login. Left as the admin's, it never matched
+    // the staff member's password and "Login as" logged the admin straight out.
+    if (isset($_SESSION['pwd_fp'])) $_SESSION['impersonator_pwd_fp'] = $_SESSION['pwd_fp'];
+    $_SESSION['pwd_fp'] = pwd_fingerprint((string)$target['password']);
     redirect('index.php');
 }
 
