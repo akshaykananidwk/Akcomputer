@@ -7,6 +7,9 @@ $u = current_user();
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $eid = (int)post('id');
     require_perm($eid ? 'expenses.edit' : 'expenses.add');
+    // staff cannot move an expense to another day: new ones are today's,
+    // an edit keeps the date it was saved with. Only the admin changes dates.
+    if (!is_full_admin()) $_POST['exp_date'] = $eid ? (string)val('SELECT exp_date FROM expenses WHERE id = ?', [$eid]) : today();
     if (is_period_locked(post('exp_date', today()))) { flash(period_lock_message(), 'error'); redirect('expenses.php'); }
     $amt = (float)post('amount');
     // the bank dropdown is hidden for cash-type modes but still posts a
@@ -82,7 +85,11 @@ include __DIR__ . '/includes/header.php';
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="save">
     <input type="hidden" name="id" value="<?= (int)($edit['id'] ?? 0) ?>">
+    <?php if (is_full_admin()): ?>
     <div><label>Date</label><input type="date" name="exp_date" value="<?= e($edit['exp_date'] ?? today()) ?>"></div>
+    <?php else: ?>
+    <div><label>Date</label><input type="text" value="<?= e(dmy($edit['exp_date'] ?? today())) ?>" readonly title="Only the admin can change the date" style="background:var(--bg,#f3f4f6)"></div>
+    <?php endif; ?>
     <div><label>Category</label><select name="category" id="exp_category">
       <?php foreach ($catGroups as $grp => $list): ?>
         <optgroup label="<?= e($grp) ?>">
@@ -96,7 +103,7 @@ include __DIR__ . '/includes/header.php';
     </select></div>
     <div id="exp_bank" style="<?= $editModeType === 'bank' ? '' : 'display:none' ?>"><label>Bank Account</label>
       <select name="bank_account_id"><?php foreach ($banks as $b): ?><option value="<?= $b['id'] ?>" <?= (int)($edit['bank_account_id'] ?? 0) === (int)$b['id'] ? 'selected' : '' ?>><?= e($b['account_name']) ?></option><?php endforeach; ?></select></div>
-    <div><label>Notes <span class="muted" style="font-weight:normal">(category auto-suggested as you type)</span></label><input type="text" name="notes" id="exp_notes" value="<?= e($edit['notes'] ?? '') ?>"></div>
+    <div><label>Notes <span class="muted" style="font-weight:normal" id="exp_ai_hint">(category picked automatically as you type)</span></label><input type="text" name="notes" id="exp_notes" value="<?= e($edit['notes'] ?? '') ?>"></div>
     <button class="btn btn-sm" type="submit"><?= $edit ? 'Update' : 'Save' ?></button>
     <?php if ($edit): ?><a class="btn btn-sm btn-muted" href="expenses.php">Cancel</a><?php endif; ?>
   </form>
@@ -113,16 +120,19 @@ include __DIR__ . '/includes/header.php';
     if (!text || catTouched) return;
     t = setTimeout(function () {
       fetch('ajax.php?a=suggest_category&text=' + encodeURIComponent(text)).then(function (r) { return r.json(); }).then(function (d) {
-        if (!d.category) return;
+        if (!d.category || catTouched) return;
         for (var i = 0; i < cat.options.length; i++) {
           if (cat.options[i].value === d.category) { cat.selectedIndex = i; break; }
         }
+        var h = document.getElementById('exp_ai_hint');
+        if (h) h.textContent = (d.by === 'ai' ? '🤖 AI picked: ' : '✓ Picked: ') + d.category + ' — change it if wrong';
       });
-    }, 400);
+    }, 700);
   });
 })();
 </script>
 <?php endif; ?>
+<?php if (is_full_admin()): ?><p class="no-print"><a class="btn btn-sm btn-outline" href="expense_fix.php">🤖 Fix wrong categories in old expenses</a></p><?php endif; ?>
 <form method="get" class="filterbar">
   <div><label>From</label><input type="date" name="from" value="<?= e($from) ?>"></div>
   <div><label>To</label><input type="date" name="to" value="<?= e($to) ?>"></div>

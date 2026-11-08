@@ -273,6 +273,14 @@ function payment_save_form(array $u, $clientUuid = null) {
  *  would quietly change the profit. Nothing exists in the books until it is
  *  approved. Returns [id, pending, over (budget messages)]. */
 function expense_save_form(array $u, $clientUuid = null) {
+    $isAdmin = in_array('*', (array)($u['perms'] ?? []), true);
+    // staff record today's spending only - the date is the admin's to change
+    if (!$isAdmin) $_POST['exp_date'] = today();
+    // no category picked (or the catch-all) but a note says what it was: let the note decide
+    if (in_array(post('category'), ['', 'General', 'Business Miscellaneous'], true) && trim((string)post('notes')) !== '') {
+        require_once __DIR__ . '/expense_ai.php';
+        if ($g = expense_guess(post('notes'))) $_POST['category'] = $g['category'];
+    }
     $amt = round((float)post('amount'), 2);
     if ($amt <= 0) throw new SaleRefused('Enter the amount.');
     if (is_period_locked(post('exp_date', today()))) throw new SaleRefused(period_lock_message());
@@ -280,8 +288,7 @@ function expense_save_form(array $u, $clientUuid = null) {
     // value - resolve_payment_target() keeps a cash expense from carrying
     // a stray bank id into the bank ledger (same guard as on bills)
     [$pmId, $bankId] = resolve_payment_target(post('mode', 'cash'), (int)post('bank_account_id'));
-    $limit = (float)setting('expense_approval_above', '0');
-    $isAdmin = in_array('*', (array)($u['perms'] ?? []), true);   // the admin is not stopped by it
+    $limit = (float)setting('expense_approval_above', '0');   // the admin is not stopped by it
     if ($limit > 0.009 && $amt > $limit && !$isAdmin) {
         q('INSERT INTO expense_requests (amount, category, exp_date, payload, reason, requested_by, client_uuid)
            VALUES (?,?,?,?,?,?,?)',

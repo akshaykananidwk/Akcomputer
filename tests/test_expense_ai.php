@@ -1,0 +1,51 @@
+<?php
+if (PHP_SAPI !== 'cli') { http_response_code(403); die('CLI only'); }
+// ============================================================================
+//  EXPENSES - staff record today's spending only (no date change), the note
+//  picks the category, and the owner can correct old wrong categories with
+//  Undo. Only the category ever changes on an old entry.
+// ============================================================================
+require_once __DIR__ . '/../includes/expense_ai.php';
+require_once __DIR__ . '/../includes/entry_save.php';
+
+t_group('Expense note picks the category');
+t_eq('petrol for the bike is vehicle spending', expense_guess_keywords('Petrol bike 200'), 'Petrol & Vehicle');
+t_eq('a Gujarati note works too', expense_guess_keywords('દુકાન ભાડું નવેમ્બર'), 'Office Rent');
+t_eq('salary is salary', expense_guess_keywords('Ramesh salary October'), 'Salary & Wages');
+t_eq('"pen" inside another word does not fire', expense_guess_keywords('open box expense'), null);
+t_eq('the longer keyword wins (ghar bhadu is home rent, not money home)', expense_guess_keywords('ghar bhadu'), 'Home Rent');
+t_eq('a two-letter note is too short to guess', expense_guess('ok'), null);
+
+t_group('Staff cannot change the expense date');
+$staff = ['id' => (int)val('SELECT MIN(id) FROM users'), 'perms' => ['expenses.add'], 'location_id' => (int)val('SELECT MIN(id) FROM locations')];
+$admin = ['perms' => ['*']] + $staff;
+$old = date('Y-m-d', strtotime('-5 days'));
+$_POST = ['exp_date' => $old, 'category' => 'Tea & Water', 'amount' => '30', 'mode' => 'cash', 'notes' => 'chai'];
+$r = expense_save_form($staff);
+t_eq('a staff entry dated 5 days back is saved with today\'s date', val('SELECT exp_date FROM expenses WHERE id = ?', [$r['id']]), today());
+$_POST = ['exp_date' => $old, 'category' => 'Tea & Water', 'amount' => '30', 'mode' => 'cash', 'notes' => 'chai'];
+$r = expense_save_form($admin);
+t_eq('the admin can still save on another date', val('SELECT exp_date FROM expenses WHERE id = ?', [$r['id']]), $old);
+$_POST = ['exp_date' => today(), 'category' => 'General', 'amount' => '500', 'mode' => 'cash', 'notes' => 'petrol bike'];
+$r = expense_save_form($staff);
+t_eq('no category picked: the note decides', val('SELECT category FROM expenses WHERE id = ?', [$r['id']]), 'Petrol & Vehicle');
+$_POST = ['exp_date' => today(), 'category' => 'Food & Meals', 'amount' => '120', 'mode' => 'cash', 'notes' => 'chai'];
+$r = expense_save_form($staff);
+t_eq('a category the staff picked is kept as picked', val('SELECT category FROM expenses WHERE id = ?', [$r['id']]), 'Food & Meals');
+$src = file_get_contents(__DIR__ . '/../expenses.php');
+t_ok('an edit by staff keeps the saved date', strpos($src, "if (!is_full_admin()) \$_POST['exp_date'] = \$eid ? (string)val('SELECT exp_date FROM expenses WHERE id = ?', [\$eid]) : today();") !== false);
+
+t_group('Old wrong categories: owner applies, Undo restores, only the category moves');
+q("INSERT INTO expenses (exp_date, category, amount, mode, notes, created_by, location_id) VALUES (?, 'Tea & Water', 7000, 'cash', 'Mahesh salary', ?, ?)", [today(), $staff['id'], $staff['location_id']]);
+$eid = (int)val('SELECT MAX(id) FROM expenses');
+$before = row('SELECT exp_date, amount, mode FROM expenses WHERE id = ?', [$eid]);
+$cand = array_values(array_filter(expense_fix_candidates(), fn($c) => (int)$c['id'] === $eid));
+t_eq('the wrongly filed salary is proposed for Salary & Wages', $cand[0]['suggest'] ?? null, 'Salary & Wages');
+t_eq('nothing changed just by looking', val('SELECT category FROM expenses WHERE id = ?', [$eid]), 'Tea & Water');
+t_eq('an unknown category is refused', expense_fix_apply([$eid => 'Made Up']), 0);
+t_eq('Apply moves it', expense_fix_apply([$eid => 'Salary & Wages']), 1);
+t_eq('...to the right category', val('SELECT category FROM expenses WHERE id = ?', [$eid]), 'Salary & Wages');
+t_eq('...amount, date and mode untouched', row('SELECT exp_date, amount, mode FROM expenses WHERE id = ?', [$eid]), $before);
+expense_fix_undo();
+t_eq('Undo puts it back', val('SELECT category FROM expenses WHERE id = ?', [$eid]), 'Tea & Water');
+$_POST = [];

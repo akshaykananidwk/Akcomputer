@@ -264,7 +264,9 @@ if ($a === 'serial_lookup' && (can('warranty.view') || can('sales.view'))) {
 }
 
 if ($a === 'suggest_category' && can('expenses.add')) {
-    echo json_encode(['category' => suggest_expense_category(get('text'))]);
+    require_once __DIR__ . '/includes/expense_ai.php';
+    $g = expense_guess(get('text'));
+    echo json_encode(['category' => $g['category'] ?? null, 'by' => $g['by'] ?? null]);
     exit;
 }
 
