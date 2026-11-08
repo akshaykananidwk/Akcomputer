@@ -4,6 +4,12 @@ require_once __DIR__ . '/includes/init.php';
 require_perm('expenses.view');
 $u = current_user();
 
+// Staff may change or delete an expense only on the day they saved it - from
+// midnight on it is closed (amount, note, category, everything). The admin can
+// always correct it.
+$canChange = fn($e) => is_full_admin() || ($e && substr((string)$e['created_at'], 0, 10) === today());
+$closedMsg = 'This expense was saved on an earlier day — after midnight only the admin can change or delete it.';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
     $eid = (int)post('id');
     require_perm($eid ? 'expenses.edit' : 'expenses.add');
@@ -20,6 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
         $old = row('SELECT * FROM expenses WHERE id = ?', [$eid]);
         if (!$old) { flash('Expense not found.', 'error'); redirect('expenses.php'); }
         if (!is_full_admin() && (int)$old['created_by'] !== (int)$u['id']) { flash('You can only edit your own expenses.', 'error'); redirect('expenses.php'); }
+        if (!$canChange($old)) { flash($closedMsg, 'error'); redirect('expenses.php'); }
         if (is_period_locked($old['exp_date'])) { flash(period_lock_message(), 'error'); redirect('expenses.php'); }
         q('UPDATE expenses SET exp_date=?, category=?, amount=?, mode=?, bank_account_id=?, payment_method_id=?, notes=? WHERE id=?',
           [post('exp_date', today()), post('category', 'General'), $amt, post('mode', 'cash'), $bankId, $pmId, post('notes'), $eid]);
@@ -37,6 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     require_perm('expenses.delete');
     $exp = row('SELECT * FROM expenses WHERE id = ?', [(int)post('id')]);
     if ($exp && !is_full_admin() && (int)$exp['created_by'] !== (int)$u['id']) { flash('You can only delete your own expenses.', 'error'); redirect('expenses.php'); }
+    if ($exp && !$canChange($exp)) { flash($closedMsg, 'error'); redirect('expenses.php'); }
     if ($exp && is_period_locked($exp['exp_date'])) { flash(period_lock_message(), 'error'); redirect('expenses.php'); }
     q('DELETE FROM expenses WHERE id = ?', [(int)post('id')]);
     flash('Expense deleted.');
@@ -63,6 +71,7 @@ $catGroups = expense_category_groups();
 $cats = expense_categories();
 $edit = (int)get('edit') && can('expenses.edit') ? row('SELECT * FROM expenses WHERE id = ?', [(int)get('edit')]) : null;
 if ($edit && !$seeAllExp && (int)$edit['created_by'] !== (int)$u['id']) $edit = null; // never open someone else's expense
+if ($edit && !$canChange($edit)) { flash($closedMsg, 'error'); $edit = null; }
 // an older entry whose category is no longer on the list stays editable
 if ($edit && $edit['category'] && !in_array($edit['category'], $cats, true)) {
     $cats[] = $edit['category'];
@@ -172,12 +181,12 @@ foreach ($rows as $rw) { if (expense_is_home($rw['category'])) $homeTot += (floa
       <td><?= e(ucfirst((string)$x['mode'])) ?></td>
       <td><?= e($x['by_name']) ?></td>
       <td class="rl-note"><?= e($x['notes']) ?></td>
-      <td class="rl-act" style="white-space:nowrap"><?php if (can('expenses.edit')): ?>
+      <td class="rl-act" style="white-space:nowrap"><?php if (!$canChange($x)): ?><span class="muted" title="<?= e($closedMsg) ?>">🔒</span><?php else: ?><?php if (can('expenses.edit')): ?>
         <a class="btn btn-sm btn-outline" href="expenses.php?edit=<?= $x['id'] ?>">✏️ Edit</a><?php endif; ?>
         <?php if (can('expenses.delete')): ?>
         <form method="post" style="display:inline" onsubmit="return confirm('Delete?')"><?= csrf_field() ?>
         <input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $x['id'] ?>">
-        <button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?></td>
+        <button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?><?php endif; ?></td>
     </tr>
   <?php endforeach; if (!$rows): ?><tr><td colspan="7" class="muted">No expenses in this period.</td></tr><?php endif; ?></tbody>
 </table>

@@ -83,3 +83,11 @@ t_ok('...and Undo is still there for it', setting('expense_fix_undo') !== '');
 $src = file_get_contents(__DIR__ . '/../includes/dbmigrate.php');
 t_ok('Update (run all migrations) runs it', strpos($src, 'expense_fix_once();') !== false);
 $_POST = [];
+
+t_group('Staff can change an expense only on the day it was saved');
+$src = file_get_contents(__DIR__ . '/../expenses.php');
+t_ok('the rule: admin always, staff only while created_at is today', strpos($src, "\$canChange = fn(\$e) => is_full_admin() || (\$e && substr((string)\$e['created_at'], 0, 10) === today());") !== false);
+t_ok('saving a change is refused after midnight', strpos($src, "if (!\$canChange(\$old)) { flash(\$closedMsg, 'error'); redirect('expenses.php'); }") !== false);
+t_ok('deleting is refused after midnight', strpos($src, "if (\$exp && !\$canChange(\$exp)) { flash(\$closedMsg, 'error'); redirect('expenses.php'); }") !== false);
+t_ok('the edit form does not open for a closed entry', strpos($src, "if (\$edit && !\$canChange(\$edit)) { flash(\$closedMsg, 'error'); \$edit = null; }") !== false);
+t_ok('a closed entry shows a lock instead of Edit / Delete', strpos($src, '<?php if (!$canChange($x)): ?><span class="muted"') !== false);
