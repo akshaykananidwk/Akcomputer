@@ -348,7 +348,7 @@ include __DIR__ . '/includes/header.php';
 </form>
 <?php $noPhoto = (int)val("SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 1 AND COALESCE(photo, '') = ''");
 if ($noPhoto && !($fPhoto === 'none' && $fWeb === 'on')): ?>
-<div class="flash flash-warn no-print">📷 <strong><?= $noPhoto ?></strong> item(s) on the online store have no photo. <a href="items.php?f_web=on&amp;f_photo=none">Show them</a> and upload a photo (Edit → Photo).</div>
+<div class="flash flash-warn no-print">📷 <strong><?= $noPhoto ?></strong> item(s) on the online store have no photo. <a href="items.php?f_web=on&amp;f_photo=none">Show them</a> and upload a photo (Edit → Photo), or let <a href="ai_enrich.php"><strong>🤖 AI Auto-Fill</strong></a> find the brand's official photos.</div>
 <?php endif; ?>
 <div class="list-count"><?= count($items) ?> items<?= $fLocName ? ' · 📍 Stock @ <strong>' . e($fLocName) . '</strong>' : '' ?></div>
 <div class="table-wrap">

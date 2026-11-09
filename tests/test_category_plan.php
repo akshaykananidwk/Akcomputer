@@ -126,6 +126,13 @@ $cases = [
     ['ACS ACR122U NFC Contactless Smart Card Reader/Writer (USB, 13.56MHz) (ACR122U-A9)', 'Biometric & Access Control', 'Security > Biometrics'],
     ['BAOFENG BF-888S UHF FM Portable Two-Way Radio (Li-ion Battery, Flashlight, Noise Reduction) (BF-888S)', 'Other Accessories', 'Telecom > Telephone Set'],
     ['Astronaut Galaxy Projector Light for Bedroom with Remote Control and Timer', 'Other Accessories', 'Mobility > Utility'],
+    ['MSI PRO 21.5-Inch FHD IPS Display Monitor (100Hz, 1ms, Anti-Glare, HDMI) (PRO MP225 E 12VL)', 'Monitor', 'Display > LED | Monitor'],
+    ['Canon PIXMA G2012 Ink Tank All-in-One Multifunction Printer (Print, Scan & Copy) (G2012)', 'Ink Tank Printer', 'Printers & Scanners > Printer | Scanner'],
+    ['Canon PIXMA MegaTank GI-790 BLACK Printer Ink Bottle (GI-790M)', '-', 'Printers & Scanners > Ink Bottle'],
+    ['CP PLUS IP 2MP DUAL LIGHT AUDIO DOME (CP-UNC-DA21L3C-LQ-2.8MM)', '-', 'Security > IP Camera'],
+    ['POE Extender Switch (1 Input, 2 Output Ports, Ethernet Network Extension)', '-', 'Networking > POE Switch'],
+    ['RockLight Gabbar S834 50W Wireless Bluetooth Speaker with Wireless Mic offering crystal-clear sound and easy portability', 'Speaker & Headphone', 'Peripherals > Speaker'],
+    ['ELERTA 32-inch Full HD Smart LED TV (32 RS-SMART LED)', 'Monitor', 'Display > Television'],
     ['47-in-1 Electric Screwdriver Set with Cordless Drill Machine | Portable Rechargeable Drill Driver Kit with Multiple Screwdriver Bits Compact DIY Home Improvement Tool', 'Other Accessories', 'Networking > Tools'],
 ];
 $wrong = [];

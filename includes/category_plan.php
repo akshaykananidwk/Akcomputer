@@ -11,7 +11,7 @@ const CP_SEP = ' > ';
 /** [regex on lower-case "name brand model", 'Main > Sub'] - first match wins,
  *  so the specific rules sit above the general ones. */
 function category_plan_rules() {
-    $cam = '(camera|\bcam\b)';
+    $cam = '(camera|\bcam\b|\bdome\b|\bbullet\b|eyeball)';
     return [
         // --- things whose names also contain a "bigger" word: settle them first
         ['/video door|door ?bell|\bvdp\b/', 'Security > Video Door Phones (VDP)'],
@@ -31,6 +31,8 @@ function category_plan_rules() {
 
         // --- CCTV
         ['/surveillance|skyhawk|\bpurple\b|cctv.*(hdd|hard)/', 'Storage > Surveillance Hard Disk'],
+        ['/monitor(?!.*cable)|\bled display\b/', 'Display > LED | Monitor'],
+        ['/(ink tank|multifunction|laser|receipt|thermal).*printer|printer \((?!.*cable)|all-in-one.*printer/', 'Printers & Scanners > Printer | Scanner'],
         ['/\bnvr\b|network video recorder/', 'Security > IP NVR'],
         ['/\bdvr\b|digital video recorder|\bxvr\b/', 'Security > HD DVR'],
         ["/$cam.*(\\b4g\\b|wi-?fi|\\bpt\\b|ptz|pan ?(&|and) ?tilt|solar|robot)|(\\b4g\\b|wi-?fi|ptz|solar).*$cam/", 'Security > PTZ | PT | 4G | WIFI Camera'],
@@ -43,8 +45,8 @@ function category_plan_rules() {
         ['/router|access point|range extender|\beap\d|oc200|controller|\bcpe\d/', 'Networking > Router | Access Point | Range Extender'],
         ['/media converter|\bonu\b|\bolt\b|sfp module/', 'Networking > Fiber Accessories'],
         ['/converter|display ?port|\bdp\b to|to hdmi|to vga|hdmi.*to.*vga|sound card|capture|usb to|type-c to hdd|molex|sata power/', 'Connector & Converter > Converter'],
-        ['/extender|splitter|switch box|hdmi switch|vga switch|kvm/', 'Peripherals > Extender | Switcher | Splitter'],
         ['/\bpoe\b|power over ethernet/', 'Networking > POE Switch'],
+        ['/extender|splitter|switch box|hdmi switch|vga switch|kvm/', 'Peripherals > Extender | Switcher | Splitter'],
         ['/fib(er|re) cab/', 'Cables > Fiber Cables'],
         ['/usb.*(ethernet|lan) adapter|(ethernet|lan) adapter|usb lan/', 'Connector & Converter > Converter'],
         ['/wi-?fi adapter|wireless.*adapter|nano adapter|wi-?fi.*receiver|nano receiver(?!.*(mouse|keyboard))/', 'Networking > USB Wifi Adapter | Receiver'],
@@ -65,8 +67,8 @@ function category_plan_rules() {
         ['/earbuds|airdopes|\btws\b/', 'Mobility > Earbuds TWS'],
         ['/headphone|headset/', 'Mobility > Headphone'],
         ['/earphone|in-ear/', 'Mobility > Earphones'],
-        ['/microphone|\bmic\b/', 'Mobility > Audio Accessories'],
         ['/speaker|soundbar|sound bar/', 'Peripherals > Speaker'],
+        ['/microphone|\bmic\b/', 'Mobility > Audio Accessories'],
         ['/lightning|data (&|and) charging cable|charging.*cable|data cable|v8\)?.*cable|type-c cable|micro usb.*cable/', 'Mobility > Data Cable'],
         ['/hdmi/', 'Cables > HDMI Cables'],
         ['/vga/', 'Cables > VGA Cables'],
