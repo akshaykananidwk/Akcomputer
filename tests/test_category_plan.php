@@ -172,3 +172,31 @@ foreach ([
 $src = file_get_contents(__DIR__ . '/../ai_enrich.php');
 t_ok('Auto-Fill tries the brand site before the open web', strpos($src, 'gcs_image_search($label, 4, $site)') !== false);
 t_ok('...and every saved photo still has to pass the AI match check', strpos($src, '$v = gemini_verify_image($jpeg, $label);') !== false);
+
+t_group('Brand photos shipped with the update, and the online store switched on');
+require_once __DIR__ . '/../includes/item_photo_pack.php';
+foreach (item_photo_pack_map() as [, $file]) t_ok("$file is in the update", is_file(__DIR__ . '/../install/item_photos/' . $file));
+t_eq('a Myst White cabinet does not get the black Myst photo', item_photo_pack_for('Zebronics Myst White Mid-Tower PC Cabinet (Myst)'), null);
+t_eq('a 128GB card does not get the 64GB card photo', item_photo_pack_for('CP PLUS 128GB MicroSD Memory Card (CP-UM128C)'), null);
+$mk = function ($name, $price, $web, $photo = '', $type = 'product') {
+    q("INSERT INTO items (name, selling_price, purchase_price, is_active, item_type, show_on_website, photo) VALUES (?, ?, 1, 1, ?, ?, ?)", [$name, $price, $type, $web, $photo]);
+    return (int)val('SELECT MAX(id) FROM items');
+};
+$sw = $mk('TP-Link Omada 8-Port Gigabit Easy Managed Switch (Fanless, VLAN, QoS) (ES208G)', 2224, 0);
+$own = $mk('Ant Esports MK740 Wired Rainbow Gaming Keyboard (AEPP0396)', 820, 1, 'uploads/my_own.jpg');
+$free = $mk('ELERTA 32-inch Full HD Smart LED TV', 0, 0);
+$svc = $mk('Camera fitting charge', 500, 0, '', 'service');
+set_setting('item_photo_pack_done', '');
+item_photo_pack_once();
+$p = (string)val('SELECT photo FROM items WHERE id = ?', [$sw]);
+t_ok('the switch got its official photo', $p !== '' && is_file(__DIR__ . '/../' . $p));
+t_eq('a photo the owner already set is never replaced', val('SELECT photo FROM items WHERE id = ?', [$own]), 'uploads/my_own.jpg');
+t_eq('the switch is now ON on the website', (int)val('SELECT show_on_website FROM items WHERE id = ?', [$sw]), 1);
+t_eq('a ₹0 product stays OFF (it would show as free)', (int)val('SELECT show_on_website FROM items WHERE id = ?', [$free]), 0);
+t_eq('a service is not switched on', (int)val('SELECT show_on_website FROM items WHERE id = ?', [$svc]), 0);
+t_ok('the switched-on list is kept for undo', in_array($sw, json_decode(setting('item_web_on_undo'), true) ?: [], true));
+q("UPDATE items SET show_on_website = 0 WHERE id = ?", [$sw]);
+item_photo_pack_once();
+t_eq('it runs only once', (int)val('SELECT show_on_website FROM items WHERE id = ?', [$sw]), 0);
+if ($p !== '') @unlink(__DIR__ . '/../' . $p);
+t_ok('Update runs it', strpos(file_get_contents(__DIR__ . '/../includes/dbmigrate.php'), 'item_photo_pack_once();') !== false);
