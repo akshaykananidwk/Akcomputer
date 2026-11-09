@@ -188,14 +188,37 @@ function gemini_verify_image($jpegBytes, $productLabel) {
 }
 
 /** Google Custom Search (image mode). Returns [urls[], error|null]. */
-function gcs_image_search($query, $count = 4) {
+/** The maker's own website for a product name, or null. Photos are looked
+ *  for there first: the brand's official picture of the exact model. */
+function brand_official_site($label) {
+    $t = ' ' . mb_strtolower((string)$label) . ' ';
+    $map = [
+        'cp plus' => 'cpplusworld.com', 'cp-plus' => 'cpplusworld.com', 'cpplus' => 'cpplusworld.com', 'ezykam' => 'cpplusworld.com',
+        'hikvision' => 'hikvision.com', 'dahua' => 'dahuasecurity.com', 'imou' => 'imoulife.com', 'uniview' => 'uniview.com', ' unv ' => 'uniview.com',
+        'tp-link' => 'tp-link.com', 'tplink' => 'tp-link.com', 'omada' => 'tp-link.com', 'd-link' => 'dlink.com', 'tenda' => 'tendacn.com',
+        'mikrotik' => 'mikrotik.com', 'logitech' => 'logitech.com', 'zebronics' => 'zebronics.com', ' zeb-' => 'zebronics.com',
+        ' hp ' => 'hp.com', 'dell' => 'dell.com', 'lenovo' => 'lenovo.com', 'asus' => 'asus.com', 'acer' => 'acer.com',
+        'canon' => 'canon.co.in', 'epson' => 'epson.co.in', 'seagate' => 'seagate.com', 'western digital' => 'westerndigital.com',
+        ' wd ' => 'westerndigital.com', 'sandisk' => 'sandisk.com', 'toshiba' => 'toshiba-storage.com', 'samsung' => 'samsung.com',
+        'crucial' => 'crucial.in', 'micron' => 'micron.com', 'kingston' => 'kingston.com', 'intel' => 'intel.com', 'msi' => 'msi.com',
+        'gigabyte' => 'gigabyte.com', 'boat' => 'boat-lifestyle.com', 'iball' => 'iball.co.in', 'xiaomi' => 'mi.com',
+        'ant esports' => 'antesports.com', 'lapcare' => 'lapcare.com', 'quick heal' => 'quickheal.co.in', 'cyberpower' => 'cyberpowersystems.com',
+    ];
+    foreach ($map as $k => $site) {
+        $k = trim($k);
+        if (preg_match('/(?<![a-z0-9])' . preg_quote($k, '/') . (substr($k, -1) === '-' ? '' : '(?![a-z0-9])') . '/', $t)) return $site;
+    }
+    return null;
+}
+
+function gcs_image_search($query, $count = 4, $site = null) {
     $key = setting('gcs_api_key'); $cx = setting('gcs_cx');
     if (!$key || !$cx) return [[], 'Image search keys not set (Settings > Invoice & Payment).'];
     if (!function_exists('curl_init')) return [[], 'The server does not have curl.'];
     $url = 'https://www.googleapis.com/customsearch/v1?' . http_build_query([
         'key' => $key, 'cx' => $cx, 'q' => $query, 'searchType' => 'image',
         'num' => min(10, max(1, $count)), 'imgSize' => 'large', 'safe' => 'active',
-    ]);
+    ] + ($site ? ['siteSearch' => $site, 'siteSearchFilter' => 'i'] : []));
     $ch = curl_init($url);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_SSL_VERIFYPEER => true]);
     $resp = curl_exec($ch);

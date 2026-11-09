@@ -118,8 +118,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'run') {
         }
 
         if ($photoSrc === 'search' && !$photoStop && (string)$it['photo'] === '' && $it['item_type'] === 'product') {
-            list($urls, $err) = gcs_image_search($label . ' product photo', 4);
-            $searchCalls++;
+            // the brand's own website first (its official picture of this model),
+            // the open web only when the maker's site has nothing
+            $site = brand_official_site($label);
+            $urls = []; $err = null; $from = null;
+            if ($site) {
+                list($urls, $err) = gcs_image_search($label, 4, $site);
+                $searchCalls++;
+                if ($urls) $from = $site;
+            }
+            if (!$urls && !$err) {
+                list($urls, $err) = gcs_image_search($label . ' product photo', 4);
+                $searchCalls++;
+            }
             if ($err) {
                 // quota / keys — disable photos for the rest of the run but
                 // let the text side keep going
@@ -139,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'run') {
                         $path = up_rel() . '/item_ai_' . $it['id'] . '_' . time() . '.jpg';
                         file_put_contents(__DIR__ . '/' . $path, $jpeg);
                         q('UPDATE items SET photo = ? WHERE id = ?', [$path, $it['id']]);
-                        $r['notes'][] = 'photo ✔ (verified)';
+                        $r['notes'][] = 'photo ✔ (verified' . ($from ? ', from ' . $from : '') . ')';
                         $saved = true;
                         break;
                     }

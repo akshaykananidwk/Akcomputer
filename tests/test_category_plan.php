@@ -153,3 +153,15 @@ t_eq('no category name was made twice', (int)val("SELECT COUNT(*) FROM categorie
 category_plan_undo();
 t_eq('Undo put the camera back in its old category', (int)val('SELECT category_id FROM items WHERE id = ?', [$cam]), $oldCat);
 t_eq('Undo leaves nothing to undo twice', setting('category_plan_undo'), '');
+
+t_group('Product photos are looked for on the maker\'s own website first');
+foreach ([
+    'CP PLUS 2.4MP Dual Light Bullet CCTV Camera' => 'cpplusworld.com', 'TP-Link Omada ER605 Gigabit VPN Router' => 'tp-link.com',
+    'DAHUA 2MP HDCVI IR Eyeball CCTV Camera' => 'dahuasecurity.com', 'HP 110A Black Laser Toner Cartridge' => 'hp.com',
+    'ZEBRONICS ZEB-K65 Wired USB Keyboard' => 'zebronics.com', 'UNV 2MP Network Dome IP Camera' => 'uniview.com',
+    'Seagate Surveillance Hard Disk Skyhawk 4TB' => 'seagate.com', 'Smart Intelligent Dome Camera' => null,
+    'BNC PIN' => null, 'Model 5 Meter VGA Cable' => null,
+] as $name => $want) t_eq("$name → " . ($want ?? 'no brand site'), brand_official_site($name), $want);
+$src = file_get_contents(__DIR__ . '/../ai_enrich.php');
+t_ok('Auto-Fill tries the brand site before the open web', strpos($src, 'gcs_image_search($label, 4, $site)') !== false);
+t_ok('...and every saved photo still has to pass the AI match check', strpos($src, '$v = gemini_verify_image($jpeg, $label);') !== false);
