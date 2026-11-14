@@ -135,3 +135,10 @@ $src = file_get_contents(__DIR__ . '/../users.php');
 t_ok('Login as takes the staff member\'s password fingerprint', strpos($src, "\$_SESSION['pwd_fp'] = pwd_fingerprint((string)\$target['password']);") !== false);
 t_ok('...and keeps the admin\'s to give back', strpos($src, "\$_SESSION['impersonator_pwd_fp'] = \$_SESSION['pwd_fp'];") !== false);
 t_ok('Back to Admin restores the admin\'s fingerprint', strpos($src, "\$_SESSION['pwd_fp'] = \$_SESSION['impersonator_pwd_fp'];") !== false);
+
+t_group('Estimates can be edited while open');
+$src = file_get_contents(__DIR__ . '/../estimates.php');
+t_ok('saving with an id updates that estimate (edit permission needed)', strpos($src, "require_perm(\$editId ? 'estimates.edit' : 'estimates.add');") !== false);
+t_ok('a converted or cancelled estimate is never changed', strpos($src, "if (!\$old || \$old['status'] !== 'open') { flash('Only an open estimate can be edited.', 'error'); redirect('estimates.php'); }") !== false);
+t_ok('staff without estimates.all edit only their own', strpos($src, "list(\$sc, \$sp) = own_scope('estimates', 'created_by');") !== false);
+t_ok('items are rewritten in one transaction', strpos($src, "q('DELETE FROM estimate_items WHERE estimate_id = ?', [\$editId]);") !== false && strpos($src, '$pdo->commit();') !== false);
