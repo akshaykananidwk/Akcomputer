@@ -99,6 +99,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
     redirect('parties.php');
 }
 
+// Merge a duplicate party INTO another one: every bill, payment, return,
+// repair, cheque ... moves across unchanged (same number, same date, same
+// amount) and the duplicate is deleted. Two permissions, because it both
+// rewrites a ledger and removes a party.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'merge') {
+    require_perm('parties.edit');
+    require_perm('parties.delete');
+    require_once __DIR__ . '/includes/party_merge.php';
+    $fromId = (int)post('id');
+    $toId = (int)post('into');
+    $fromName = (string)val('SELECT name FROM parties WHERE id = ?', [$fromId]);
+    try {
+        $res = party_merge($fromId, $toId);
+        flash('"' . $fromName . '" merged - ' . $res['total'] . ' entries moved to this party with the same dates and amounts, and the old party was deleted.');
+        redirect('parties.php?action=ledger&id=' . $toId);
+    } catch (Throwable $e) {
+        flash('Merge failed: ' . plain_error($e), 'error');
+        redirect('parties.php?action=merge&id=' . $fromId);
+    }
+}
+
+if ($action === 'merge' && $id) {
+    require_perm('parties.edit');
+    require_perm('parties.delete');
+    require_once __DIR__ . '/includes/party_merge.php';
+    $p = row('SELECT * FROM parties WHERE id = ?', [$id]);
+    if (!$p) { flash('Party not found', 'error'); redirect('parties.php'); }
+    $counts = party_merge_preview($id);
+    $nice = ['sales' => 'Sale bills', 'purchases' => 'Purchase bills', 'payments' => 'Payments', 'sales_returns' => 'Sales returns',
+             'purchase_returns' => 'Purchase returns', 'estimates' => 'Estimates', 'challans' => 'Challans', 'repairs' => 'Repair jobs',
+             'warranty_claims' => 'Warranty claims', 'cheques' => 'Cheques', 'tasks' => 'Field tasks', 'amc_contracts' => 'AMC contracts',
+             'purchase_orders' => 'Purchase orders', 'loyalty_ledger' => 'Loyalty entries'];
+    $others = all('SELECT id, name, mobile FROM parties WHERE id <> ? ORDER BY is_active DESC, name', [$id]);
+    $pBal = party_balance($id);
+    $page_title = 'Merge Party';
+    include __DIR__ . '/includes/header.php';
+    ?>
+    <div class="card">
+      <h2>🔀 Merge "<?= e($p['name']) ?>" into another party</h2>
+      <p class="muted"><?= e(show_mobile($p['mobile'])) ?> · Balance ₹<?= money(abs($pBal)) ?> <?= $pBal > 0.009 ? '(to receive)' : ($pBal < -0.009 ? '(to pay)' : '') ?>
+        <?= abs((float)$p['opening_balance']) > 0.009 ? ' · Opening ₹' . money($p['opening_balance']) : '' ?></p>
+      <?php if ($counts): ?>
+      <p><strong>These will move to the party you pick — same bill numbers, same dates, same amounts:</strong></p>
+      <ul>
+        <?php foreach ($counts as $t => $n): ?>
+        <li><?= e($nice[$t] ?? ucwords(str_replace(['_', '.'], [' ', ' / '], $t))) ?>: <strong><?= (int)$n ?></strong></li>
+        <?php endforeach; ?>
+      </ul>
+      <?php else: ?>
+      <p class="muted">This party has no entries — merging just deletes it<?= abs((float)$p['opening_balance']) > 0.009 ? ' (its opening balance is added to the other party)' : '' ?>.</p>
+      <?php endif; ?>
+      <p class="muted" style="font-size:13px">Opening balance and loyalty points are added to the other party. Its mobile, GSTIN, address etc. stay — they are only filled in where the other party has them blank. After the merge "<?= e($p['name']) ?>" is <strong>deleted</strong>.</p>
+      <form method="post" data-from="<?= e($p['name']) ?>" onsubmit="var s=this.into, f=this.getAttribute('data-from'); if(!s.value){alert('Pick the party to keep');return false;} return confirm('Move everything of \u201c' + f + '\u201d into \u201c' + s.options[s.selectedIndex].text + '\u201d and delete \u201c' + f + '\u201d?\n\nThis cannot be undone.')">
+        <?= csrf_field() ?>
+        <input type="hidden" name="do" value="merge">
+        <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
+        <label>Keep this party (everything goes here) *</label>
+        <select name="into" required>
+          <option value="">— pick a party —</option>
+          <?php foreach ($others as $o): ?>
+          <option value="<?= (int)$o['id'] ?>"><?= e($o['name']) ?><?= $o['mobile'] ? ' · ' . e(show_mobile($o['mobile'])) : '' ?></option>
+          <?php endforeach; ?>
+        </select>
+        <div class="mt">
+          <button class="btn btn-danger" type="submit">🔀 Merge &amp; delete "<?= e($p['name']) ?>"</button>
+          <a class="btn btn-muted" href="parties.php?action=ledger&id=<?= (int)$p['id'] ?>">Cancel</a>
+        </div>
+      </form>
+    </div>
+    <?php
+    include __DIR__ . '/includes/footer.php';
+    exit;
+}
+
 $terms = all('SELECT * FROM credit_terms ORDER BY days');
 
 if ($action === 'new' || $action === 'edit') {
@@ -299,6 +373,7 @@ if ($action === 'ledger' && $id) {
           <?= voice_bridge_button($p['id'], 'parties.php?action=ledger&id=' . $p['id']) ?>
           <a class="btn btn-sm btn-outline" href="customer.php?id=<?= $p['id'] ?>">👤 Customer 360</a>
           <?php if (can('parties.edit')): ?><a class="btn btn-sm btn-outline" href="parties.php?action=edit&id=<?= $p['id'] ?>">✏️ Edit</a><?php endif; ?>
+          <?php if (can('parties.edit') && can('parties.delete')): ?><a class="btn btn-sm btn-outline" href="parties.php?action=merge&id=<?= $p['id'] ?>" title="Move all this party's bills and payments into another party, then delete this one">🔀 Merge</a><?php endif; ?>
           <?php if (can('parties.delete')): ?><form method="post" style="display:inline" onsubmit="return confirm('Delete this party? If it has transactions, it will just be made inactive.')"><?= csrf_field() ?><input type="hidden" name="do" value="delete"><input type="hidden" name="id" value="<?= $p['id'] ?>"><button class="btn btn-sm btn-danger" type="submit">✕</button></form><?php endif; ?>
         </span>
       </div>
