@@ -18,6 +18,7 @@ return simple_filter_menu(plan_filter_menu([
     ['link', 'index.php', 'home', 'Dashboard', 'dashboard.view'],
     ['group', 'parties', 'users', 'Parties', [
         ['parties.php', 'All Parties', 'parties.view', 'parties.php?action=new', 'parties.add'],
+        ['party_merge.php', 'Merge Duplicate Parties', 'parties.edit', null, null],
         ['payments.php', 'Party Payments', 'payments.view', null, null],
         ['collection.php', '📮 Collection Queue', 'payments.view', null, null],
         ['voice_calls.php', '📞 Calls (in & out)', 'payments.view', null, null],

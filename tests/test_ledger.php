@@ -12,7 +12,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(403); die('CLI only'); }
 t_group('Double entry — every entry keeps debit = credit and moves the right accounts');
 $T = '2099-12-31';
 $u = row('SELECT u.*, l.name location_name FROM users u JOIN locations l ON l.id = u.location_id ORDER BY u.id LIMIT 1'); $u['perms'] = ['*'];
-$co = (int)val('SELECT id FROM companies ORDER BY id LIMIT 1');
+$co = (int)val('SELECT id FROM companies ORDER BY is_gst DESC, id LIMIT 1');   // a GST firm: the steps below expect GST on the bills
 $loc = (int)$u['location_id'];
 // debit − credit can only ever be what unbalanced manual journals leave (none, normally)
 $unbal = fn() => round((float)val('SELECT COALESCE(SUM(debit - credit), 0) FROM journal_lines'), 2);

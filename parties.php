@@ -276,6 +276,7 @@ if ($action === 'ledger' && $id) {
             <button class="btn btn-sm btn-wa" type="submit">📲 Statement WhatsApp</button>
           </form>
           <?php endif; ?>
+          <?php if (is_full_admin() && can('parties.edit')): ?><a class="btn btn-sm btn-outline" href="party_merge.php?keep=<?= (int)$p['id'] ?>">🔀 Merge a duplicate into this</a><?php endif; ?>
           <?php
           // Reminder is offered only when there is really something to ask
           // for - a party who owes nothing must never get one by accident
@@ -527,6 +528,7 @@ include __DIR__ . '/includes/header.php';
 <?php endif; ?>
 <div class="page-actions">
   <?php if (can('parties.add') && !$balFilter): ?><a class="btn" href="parties.php?action=new">+ New Party</a><?php endif; ?>
+  <?php if (is_full_admin() && can('parties.edit') && !$balFilter): ?><a class="btn btn-outline" href="party_merge.php">🔀 Merge duplicates</a><?php endif; ?>
   <select class="btn btn-outline" style="cursor:pointer;margin-left:auto" onchange="var u=new URL(location.href);u.searchParams.set('sort',this.value);location.href=u;">
     <option value="name" <?= $sortBy === 'name' ? 'selected' : '' ?>>Sort: Name-wise</option>
     <option value="amount" <?= $sortBy === 'amount' ? 'selected' : '' ?>>Sort: Amount-wise</option>
