@@ -154,8 +154,18 @@ if ($a === 'staff_serials' && can('items.view')) {
 if ($a === 'party_add' && can('parties.add') && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = post('name');
     if ($name === '') { echo json_encode(['error' => 'Name required']); exit; }
+    // the same mobile (typed any way: +91, spaces, 0) is the same person -
+    // hand back the party already saved instead of making a second ledger
+    $mob = post('mobile');
+    if (strlen(mobile10($mob)) === 10) $mob = mobile10($mob);
+    if ($same = party_by_mobile($mob)) {
+        if (!(int)$same['is_active']) q('UPDATE parties SET is_active = 1 WHERE id = ?', [(int)$same['id']]);
+        if ($same['type'] !== 'both' && $same['type'] !== post('type', 'customer')) q("UPDATE parties SET type = 'both' WHERE id = ?", [(int)$same['id']]);
+        echo json_encode(['id' => (int)$same['id'], 'name' => $same['name'], 'mobile' => $same['mobile'], 'existing' => true]);
+        exit;
+    }
     q('INSERT INTO parties (name, type, mobile, gstin, credit_days) VALUES (?, ?, ?, ?, ?)',
-      [$name, post('type', 'customer'), post('mobile'), post('gstin'), (int)post('credit_days', 0)]);
+      [$name, post('type', 'customer'), $mob, post('gstin'), (int)post('credit_days', 0)]);
     $id = insert_id();
     log_activity('party_add', "Quick add party #$id $name");
     echo json_encode(['id' => $id, 'name' => $name]);

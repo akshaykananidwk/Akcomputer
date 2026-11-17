@@ -2340,6 +2340,25 @@ function consent_record($partyId, $kind, $given, $source) {
     } catch (Exception $e) { /* before v89 */ }
 }
 
+/** The 10-digit Indian mobile inside however it was typed: "+91 90999 61124",
+ *  "090999 61124", "91-9099961124" and "9099961124" are all 9099961124.
+ *  Anything shorter than 10 digits comes back as its digits, unchanged. */
+function mobile10($m) {
+    $d = preg_replace('/\D/', '', (string)$m);
+    return strlen($d) > 10 ? substr($d, -10) : $d;
+}
+
+/** The party already saved under this mobile, however either was typed.
+ *  Active parties first, then the one with the most bills. null if none. */
+function party_by_mobile($m) {
+    $m10 = mobile10($m);
+    if (strlen($m10) !== 10) return null;
+    return row("SELECT p.* FROM parties p
+                WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(p.mobile,' ',''),'-',''),'+',''),'(',''),')',''),10) = ?
+                ORDER BY p.is_active DESC, (SELECT COUNT(*) FROM sales s WHERE s.party_id = p.id) DESC, p.id
+                LIMIT 1", [$m10]);
+}
+
 /** A customer's mobile for the screen: in full for staff who may see contacts
  *  (permission "parties.contact"), otherwise 98•••••210. */
 function show_mobile($m) {
