@@ -491,6 +491,9 @@ if ($action === 'new' || $action === 'edit') {
           .then(r => r.json()).then(function (d) {
             if (d.error) { alert(d.error); return; }
             var sel = document.getElementById('party_id');
+            var had = sel.querySelector('option[value="' + d.id + '"]');
+            if (d.existing) alert('This mobile number is already saved as "' + d.name + '" - that party is picked.');
+            if (had) { sel.value = d.id; sel.dispatchEvent(new Event('change')); document.getElementById('qpModal').style.display = 'none'; return; }
             var o = document.createElement('option');
             o.value = d.id; o.textContent = d.name; o.selected = true;
             o.dataset.mobile = document.getElementById('qp_mobile').value; o.dataset.credit = 0;

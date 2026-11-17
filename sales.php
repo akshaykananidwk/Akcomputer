@@ -268,8 +268,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
     $party_id = (int)post('party_id') ?: null;
     $custMobile = post('customer_mobile');
     $custName = post('customer_name');
+    // the number is matched however it was typed (+91, spaces, a leading 0) -
+    // the same person must land on their own ledger, not get a second party
+    if (strlen(mobile10($custMobile)) === 10) $custMobile = mobile10($custMobile);
     if (!$party_id && $custMobile !== '') {
-        $existing = row('SELECT id, type FROM parties WHERE mobile = ? LIMIT 1', [$custMobile]);
+        $existing = party_by_mobile($custMobile);
         if ($existing) {
             $party_id = (int)$existing['id'];
             if ($existing['type'] === 'supplier') q("UPDATE parties SET type = 'both' WHERE id = ?", [$party_id]);
@@ -376,7 +379,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'update') {
         q('UPDATE sales SET company_id=?, party_id=?, customer_name=?, customer_mobile=?, location_id=?, sale_date=?, price_type=?,
            credit_days=?, due_date=?, subtotal=?, discount=?, discount_type=?, discount_pct=?, tax_amount=?, shipping=?, adjustment=?, round_off=?, total=?, paid=?,
            payment_mode=?, payment_method_id=?, bank_account_id=?, status=?, notes=?, delivery_address=?, trade_in=? WHERE id=?',
-          [$company['id'], $party_id, post('customer_name'), post('customer_mobile'), $loc_id,
+          [$company['id'], $party_id, post('customer_name'), $custMobile, $loc_id,
            $sale_date, post('price_type', 'retail'), $credit_days,
            preg_match('/^\d{4}-\d{2}-\d{2}$/', post('due_date')) ? post('due_date')
                : ($credit_days ? date('Y-m-d', strtotime("$sale_date +$credit_days days")) : null),
@@ -553,6 +556,53 @@ if ($action === 'new' || $action === 'edit') {
       </div>
 
       <div class="bf-grid">
+        <?php /* The mobile number comes FIRST: it is the one thing that finds
+                 the customer for certain. Typed in any shape (+91, spaces, a
+                 leading 0), a number already saved picks its party and fills
+                 the name on its own - no second party for the same person. */ ?>
+        <div class="bf-card" style="border:2px solid var(--primary,#1a56db)">
+          <div class="bf-t"><span class="bf-ico i-green">📞</span>Mobile Number <span class="muted" style="font-weight:400;font-size:12px">— type this first</span></div>
+          <input type="tel" name="customer_mobile" id="customer_mobile" inputmode="tel" autocomplete="off" placeholder="Customer's mobile number">
+          <div id="mobMatch" class="muted" style="font-size:12.5px;margin-top:5px;min-height:1em"></div>
+        </div>
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico i-green">🙋</span>Customer Name</div>
+          <input type="text" name="customer_name" id="customer_name" placeholder="Customer name (blank = walk-in)">
+        </div>
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico i-orange">🏷️</span>Price Type</div>
+          <select name="price_type" id="price_type"><option value="retail">Retail</option><option value="b2b">B2B</option></select>
+        </div>
+        <div class="bf-card">
+          <div class="bf-t"><span class="bf-ico">👥</span>Party
+            <span class="bf-req" id="partyReqHint" style="display:none">— required for a Credit bill</span>
+            <?php if (can('parties.add')): ?><a href="#" onclick="document.getElementById('qpModal').style.display='block';document.getElementById('qp_name').focus();return false" style="margin-left:auto;font-weight:600;font-size:12.5px">+ New party</a><?php endif; ?>
+          </div>
+          <select name="party_id" id="party_id">
+            <option value="">-- Walk-in customer --</option>
+            <?php foreach ($parties as $p): ?>
+            <option value="<?= $p['id'] ?>" data-mobile="<?= e($p['mobile']) ?>" data-credit="<?= $p['credit_days'] ?>" data-points="<?= (int)$p['loyalty_points'] ?>"><?= e($p['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      </div>
+      <?php if (can('parties.add')): ?>
+      <div id="qpModal" class="bf-card" style="display:none;margin-bottom:12px">
+        <div class="bf-t"><span class="bf-ico">➕</span>Quick add a new party</div>
+        <div class="form-row cols-3">
+          <div><input type="text" id="qp_name" placeholder="Party name *"></div>
+          <div><input type="tel" id="qp_mobile" placeholder="Mobile"></div>
+          <div><input type="text" id="qp_gstin" placeholder="GSTIN (optional)"></div>
+        </div>
+        <div class="page-actions" style="margin-top:10px">
+          <button type="button" class="btn btn-sm" onclick="quickParty()">Add &amp; select</button>
+          <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('qpModal').style.display='none'">Cancel</button>
+        </div>
+      </div>
+      <?php endif; ?>
+      <div id="partyWarn" class="flash flash-info no-print" style="display:none;margin:0 0 12px"></div>
+
+      <div class="bf-grid">
         <div class="bf-card">
           <div class="bf-t"><span class="bf-ico">🏢</span>Firm Name</div>
           <select name="company_id" id="company_id">
@@ -588,47 +638,6 @@ if ($action === 'new' || $action === 'edit') {
         </div>
       </div>
 
-      <div class="bf-grid">
-        <div class="bf-card">
-          <div class="bf-t"><span class="bf-ico i-orange">🏷️</span>Price Type</div>
-          <select name="price_type" id="price_type"><option value="retail">Retail</option><option value="b2b">B2B</option></select>
-        </div>
-        <div class="bf-card">
-          <div class="bf-t"><span class="bf-ico">👥</span>Party
-            <span class="bf-req" id="partyReqHint" style="display:none">— required for a Credit bill</span>
-            <?php if (can('parties.add')): ?><a href="#" onclick="document.getElementById('qpModal').style.display='block';document.getElementById('qp_name').focus();return false" style="margin-left:auto;font-weight:600;font-size:12.5px">+ New party</a><?php endif; ?>
-          </div>
-          <select name="party_id" id="party_id">
-            <option value="">-- Walk-in customer --</option>
-            <?php foreach ($parties as $p): ?>
-            <option value="<?= $p['id'] ?>" data-mobile="<?= e($p['mobile']) ?>" data-credit="<?= $p['credit_days'] ?>" data-points="<?= (int)$p['loyalty_points'] ?>"><?= e($p['name']) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-        <div class="bf-card">
-          <div class="bf-t"><span class="bf-ico i-green">🙋</span>Customer</div>
-          <input type="text" name="customer_name" id="customer_name" placeholder="Customer name (blank = walk-in)">
-        </div>
-        <div class="bf-card">
-          <div class="bf-t"><span class="bf-ico i-green">📞</span>Phone Number</div>
-          <input type="tel" name="customer_mobile" id="customer_mobile" placeholder="WhatsApp number (optional)">
-        </div>
-      </div>
-      <?php if (can('parties.add')): ?>
-      <div id="qpModal" class="bf-card" style="display:none;margin-bottom:12px">
-        <div class="bf-t"><span class="bf-ico">➕</span>Quick add a new party</div>
-        <div class="form-row cols-3">
-          <div><input type="text" id="qp_name" placeholder="Party name *"></div>
-          <div><input type="tel" id="qp_mobile" placeholder="Mobile"></div>
-          <div><input type="text" id="qp_gstin" placeholder="GSTIN (optional)"></div>
-        </div>
-        <div class="page-actions" style="margin-top:10px">
-          <button type="button" class="btn btn-sm" onclick="quickParty()">Add &amp; select</button>
-          <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('qpModal').style.display='none'">Cancel</button>
-        </div>
-      </div>
-      <?php endif; ?>
-      <div id="partyWarn" class="flash flash-info no-print" style="display:none;margin:0 0 12px"></div>
 
       <div class="bf-card bf-items" style="margin-bottom:12px">
         <div class="bf-head-row">
@@ -1056,6 +1065,9 @@ if ($action === 'new' || $action === 'edit') {
           .then(function (d) {
             if (d.error) { alert(d.error); return; }
             var sel = document.getElementById('party_id');
+            var had = sel.querySelector('option[value="' + d.id + '"]');
+            if (d.existing) alert('This mobile number is already saved as "' + d.name + '" - that party is picked.');
+            if (had) { sel.value = d.id; sel.dispatchEvent(new Event('change')); document.getElementById('qpModal').style.display = 'none'; return; }
             var o = document.createElement('option');
             o.value = d.id; o.textContent = d.name; o.dataset.mobile = document.getElementById('qp_mobile').value; o.dataset.credit = 0; o.dataset.points = 0;
             o.selected = true; sel.appendChild(o);
@@ -1184,6 +1196,67 @@ if ($action === 'new' || $action === 'edit') {
       // type-to-search over the party list (hundreds of them now) - the select
       // itself is untouched, so everything below still reads it the same way
       SearchPick.init('party_id', 'Type a customer name or mobile…');
+
+      // Mobile number first: as soon as 10 digits are in the box - however
+      // they were typed, "+91 90999 61124", "090999-61124", "9099961124" -
+      // the party saved under that number is picked and its name filled in.
+      // Two parties on one number (an old duplicate) are both offered, so the
+      // right ledger is chosen instead of guessed.
+      (function () {
+        var mob = document.getElementById('customer_mobile');
+        var sel = document.getElementById('party_id');
+        var box = document.getElementById('mobMatch');
+        var nameIn = document.getElementById('customer_name');
+        if (!mob || !sel || !box) return;
+        function ten(v) { var d = String(v || '').replace(/\D/g, ''); return d.length > 10 ? d.slice(-10) : d; }
+        function pick(o) {
+          sel.value = o.value;
+          sel.dispatchEvent(new Event('change', { bubbles: true }));   // name, credit days, points, warnings
+          box.innerHTML = '✅ <b>' + o.textContent.trim().replace(/</g, '&lt;') + '</b> — saved party, picked';
+        }
+        // a party picked for a DIFFERENT number is let go, with its name
+        function clearOther(m) {
+          if (sel.value && ten(sel.options[sel.selectedIndex].dataset.mobile) !== m) {
+            sel.value = ''; sel.dispatchEvent(new Event('change', { bubbles: true }));
+            if (nameIn) nameIn.value = '';
+          }
+        }
+        function look() {
+          var m = ten(mob.value);
+          box.textContent = '';
+          if (m.length !== 10) return;
+          var hits = [];
+          for (var i = 0; i < sel.options.length; i++) {
+            var o = sel.options[i];
+            if (o.value && ten(o.dataset.mobile) === m) hits.push(o);
+          }
+          if (hits.length === 1) {
+            if (sel.value !== hits[0].value) pick(hits[0]);
+            else box.innerHTML = '✅ <b>' + hits[0].textContent.trim().replace(/</g, '&lt;') + '</b>';
+          } else if (hits.length > 1) {
+            clearOther(m);
+            box.innerHTML = '⚠️ ' + hits.length + ' parties have this number — tap the right one: ';
+            hits.forEach(function (o) {
+              var b = document.createElement('button');
+              b.type = 'button'; b.className = 'btn btn-sm btn-outline'; b.style.margin = '3px 4px 0 0';
+              b.textContent = o.textContent.trim();
+              b.onclick = function () { pick(o); };
+              box.appendChild(b);
+            });
+          } else {
+            // a new customer: leave the party as walk-in (it is created from
+            // this number and name when the bill is saved) and ask the name
+            clearOther(m);
+            box.innerHTML = '🆕 New customer — type the name below';
+            if (nameIn && !nameIn.value) nameIn.focus();
+          }
+        }
+        // 'input' only: a 'change' on blur would redraw the choice buttons
+        // under the finger that is tapping one of them
+        mob.addEventListener('input', look);
+        // a fresh bill starts on the mobile box
+        if (!sel.value && !mob.value && !<?= json_encode(!empty($est) || !empty($preSale)) ?>) setTimeout(function () { mob.focus(); }, 50);
+      })();
       document.getElementById('party_id').addEventListener('change', function () {
         var o = this.options[this.selectedIndex];
         if (this.value) {

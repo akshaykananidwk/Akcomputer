@@ -137,8 +137,13 @@ function sale_save_form(array $u, $clientUuid = null) {
     $party_id = (int)post('party_id') ?: null;
     $custMobile = post('customer_mobile');
     $custName = post('customer_name');
+    // matched however it was typed (+91, spaces, a leading 0), so the same
+    // person lands on their own ledger instead of getting a second party
+    if (strlen(mobile10($custMobile)) === 10) $custMobile = mobile10($custMobile);
     if (!$party_id && $custMobile !== '') {
-        $existing = row('SELECT id, type FROM parties WHERE mobile = ? LIMIT 1', [$custMobile]);
+        $existing = party_by_mobile($custMobile);
+        // an old inactive party under this number is brought back, not duplicated
+        if ($existing && !(int)$existing['is_active']) q('UPDATE parties SET is_active = 1 WHERE id = ?', [(int)$existing['id']]);
         if ($existing) {
             $party_id = (int)$existing['id'];
             if ($existing['type'] === 'supplier') q("UPDATE parties SET type = 'both' WHERE id = ?", [$party_id]);
@@ -160,7 +165,7 @@ function sale_save_form(array $u, $clientUuid = null) {
            credit_days, due_date, subtotal, discount, loyalty_points_used, loyalty_discount, discount_type, discount_pct, tax_amount, shipping, adjustment, round_off, total, paid, payment_mode,
            bank_account_id, payment_method_id, status, notes, created_by, share_token, delivery_address, trade_in, client_uuid)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-          [$company['id'], $party_id, post('customer_name'), post('customer_mobile'), $loc_id,
+          [$company['id'], $party_id, post('customer_name'), $custMobile, $loc_id,
            post('sale_date', today()), post('price_type', 'retail'), $credit_days,
            // custom promised date wins; otherwise sale date + credit days
            preg_match('/^\d{4}-\d{2}-\d{2}$/', post('due_date')) ? post('due_date')
