@@ -54,7 +54,7 @@ $after = $books(); $diff = [];
 foreach (array_unique(array_merge(array_keys($after), array_keys($before[1]))) as $c) { $x = round(($after[$c] ?? 0) - ($before[1][$c] ?? 0), 2); if (abs($x) > 0.004) $diff[$c] = $x; }
 // one customer now: the advance one duplicate held (₹240, "you'll give") is set
 // against what the others owed ("you'll get") - net money is the same
-t_eq('only receivable and payable move, by the same amount (advance set against dues)', [array_keys($diff), round(array_sum($diff), 2)], [[1200, 2000], 0.0]);
+t_eq('only receivable and payable move, by the same amount (advance set against dues)', [(function ($k) { sort($k); return $k; })(array_keys($diff)), round(array_sum($diff), 2)], [[1200, 2000], 0.0]);
 t_eq('...and the amount is exactly the advance that was sitting on the duplicate', $diff[2000] ?? 0, 240.0);
 t_ok('moving into a closed party is refused', (function () use ($keep, $d1) { try { party_merge_apply($keep, $d1, 1); return false; } catch (RuntimeException $e) { return true; } })());
 
