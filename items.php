@@ -295,62 +295,53 @@ if ($fStock === 'in') $having = 'HAVING total_stock > 0';
 if ($fStock === 'zero') $having = 'HAVING total_stock = 0';
 if ($fStock === 'neg') $having = 'HAVING total_stock < 0';
 if ($fStock === 'low') $having = 'HAVING i.min_stock > 0 AND total_stock < i.min_stock';
-$items = all('SELECT i.*, c.name AS cat_name, ' . $stockExpr . ' AS total_stock
-              FROM items i
+// The search runs HERE, in the database, not over a table already drawn in
+// the browser. A shop with a few thousand items was sending every one of
+// them - photo, two forms and all - to the phone at once: megabytes of page
+// that took many seconds to open and froze on every key typed in Search.
+// Now one page of matches is sent, and the search box asks for the rest.
+$qs = trim((string)get('q'));
+$wa = [];
+foreach (array_slice(preg_split('/\s+/', $qs, -1, PREG_SPLIT_NO_EMPTY), 0, 8) as $wd) {
+    // word-wise, any order: "ultra curved" finds "Ultra HD ... Curved Display"
+    $w[] = "CONCAT_WS(' ', i.name, i.brand, i.model, i.barcode, i.hsn, i.variant, c.name) LIKE ?";
+    $wa[] = '%' . addcslashes($wd, '%_\\') . '%';
+}
+$fromSql = 'FROM items i
               LEFT JOIN categories c ON c.id = i.category_id
               LEFT JOIN stock s ON s.item_id = i.id
               ' . ($w ? 'WHERE ' . implode(' AND ', $w) : '') . '
-              GROUP BY i.id ' . $having . '
-              ORDER BY (i.item_type = \'service\' OR ' . $stockExpr . ' > 0) DESC, i.name');
-// per-location split shown under every stock figure (all-locations view)
+              GROUP BY i.id ' . $having;
+$nAll = (int)val('SELECT COUNT(*) FROM (SELECT i.id, i.min_stock, ' . $stockExpr . ' AS total_stock ' . $fromSql . ') x', $wa);
+$per = 50;
+$pages = max(1, (int)ceil($nAll / $per));
+$page = min(max(1, (int)get('p', 1)), $pages);
+$items = all('SELECT i.*, c.name AS cat_name, ' . $stockExpr . ' AS total_stock
+              ' . $fromSql . '
+              ORDER BY (i.item_type = \'service\' OR ' . $stockExpr . ' > 0) DESC, i.name'
+              . ' LIMIT ' . $per . ' OFFSET ' . (($page - 1) * $per), $wa);
+// per-location split shown under every stock figure (all-locations view) -
+// only for the items on this page, not the whole stock table
 $locSplit = [];
-if (count($locsAll) > 1) {
-    foreach (all('SELECT s.item_id, l.name loc, s.qty FROM stock s JOIN locations l ON l.id = s.location_id WHERE s.qty <> 0') as $ls) {
+if (count($locsAll) > 1 && $items) {
+    $ids = implode(',', array_map('intval', array_column($items, 'id')));
+    foreach (all("SELECT s.item_id, l.name loc, s.qty FROM stock s JOIN locations l ON l.id = s.location_id WHERE s.qty <> 0 AND s.item_id IN ($ids)") as $ls) {
         $locSplit[$ls['item_id']][] = $ls['loc'] . ': ' . (float)$ls['qty'];
     }
 }
+// a link to this same list with some filters changed (paging keeps the search)
+$keep = function (array $over = []) {
+    $g = array_merge($_GET, $over);
+    unset($g['part']);
+    $g = array_filter($g, fn($v) => $v !== '' && $v !== null);
+    return 'items.php' . ($g ? '?' . http_build_query($g) : '');
+};
 $fLocName = $fLoc ? (string)val('SELECT name FROM locations WHERE id = ?', [$fLoc]) : '';
-$page_title = 'Items';
-include __DIR__ . '/includes/header.php';
 ?>
-<div class="page-actions">
-  <?php if (can('items.add')): ?><a class="btn" href="items.php?action=new">+ New Item</a><?php endif; ?>
-  <?php if (can('items.edit')): ?><a class="btn btn-outline" href="categories_arrange.php">🗂 Arrange Categories</a><a class="btn btn-outline" href="ai_categorize.php">🤖 AI Categories</a><?php endif; ?>
-  <a class="btn btn-outline" href="items.php<?= $showAll ? '' : '?show=all' ?>"><?= $showAll ? 'Show Active only' : 'Show Inactive too' ?></a>
-</div>
-<form method="get" class="filterbar no-print">
-  <?php if ($showAll): ?><input type="hidden" name="show" value="all"><?php endif; ?>
-  <div style="flex:1;min-width:170px"><input type="text" id="itemFilter" placeholder="🔍 Search items..."></div>
-  <div><select name="f_cat" onchange="this.form.submit()">
-    <option value="">All categories</option>
-    <?php foreach ($cats as $c): ?><option value="<?= $c['id'] ?>" <?= $fCat == $c['id'] ? 'selected' : '' ?>><?= e($c['label']) ?></option><?php endforeach; ?>
-  </select></div>
-  <div><select name="f_stock" onchange="this.form.submit()">
-    <option value="">All stock</option>
-    <option value="in" <?= $fStock === 'in' ? 'selected' : '' ?>>In stock</option>
-    <option value="zero" <?= $fStock === 'zero' ? 'selected' : '' ?>>Zero stock</option>
-    <option value="neg" <?= $fStock === 'neg' ? 'selected' : '' ?>>Negative (minus)</option>
-    <option value="low" <?= $fStock === 'low' ? 'selected' : '' ?>>Low stock</option>
-  </select></div>
-  <div><select name="f_loc" onchange="this.form.submit()">
-    <option value="">📍 All locations</option>
-    <?php foreach ($locsAll as $l): ?><option value="<?= $l['id'] ?>" <?= $fLoc == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option><?php endforeach; ?>
-  </select></div>
-  <div><select name="f_web" onchange="this.form.submit()">
-    <option value="">Website: all</option>
-    <option value="on" <?= $fWeb === 'on' ? 'selected' : '' ?>>Website ON</option>
-    <option value="off" <?= $fWeb === 'off' ? 'selected' : '' ?>>Website OFF</option>
-  </select></div>
-  <div><select name="f_photo" onchange="this.form.submit()">
-    <option value="">Photo: all</option>
-    <option value="none" <?= $fPhoto === 'none' ? 'selected' : '' ?>>📷 No photo</option>
-  </select></div>
-</form>
-<?php $noPhoto = (int)val("SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 1 AND COALESCE(photo, '') = ''");
-if ($noPhoto && !($fPhoto === 'none' && $fWeb === 'on')): ?>
-<div class="flash flash-warn no-print">📷 <strong><?= $noPhoto ?></strong> item(s) on the online store have no photo. <a href="items.php?f_web=on&amp;f_photo=none">Show them</a> and upload a photo (Edit → Photo), or let <a href="ai_enrich.php"><strong>🤖 AI Auto-Fill</strong></a> find the brand's official photos.</div>
-<?php endif; ?>
-<div class="list-count"><?= count($items) ?> items<?= $fLocName ? ' · 📍 Stock @ <strong>' . e($fLocName) . '</strong>' : '' ?></div>
+<?php
+// the list itself - drawn into the page, and on its own for the search box
+$renderList = function () use ($items, $nAll, $qs, $page, $pages, $per, $fLoc, $fLocName, $locSplit, $keep) { ?>
+<div class="list-count"><?= $nAll ?> items<?= $qs !== '' ? ' for “' . e($qs) . '”' : '' ?><?= $pages > 1 ? ' · showing ' . (($page - 1) * $per + 1) . '–' . min($nAll, $page * $per) : '' ?><?= $fLocName ? ' · 📍 Stock @ <strong>' . e($fLocName) . '</strong>' : '' ?></div>
 <div class="table-wrap">
 <table id="itemTable">
   <thead><tr><th>Item</th><th>Category</th><?php if (can('items.cost')): ?><th class="num">Purchase</th><?php endif; ?><th class="num">Retail</th><th class="num">B2B</th><th class="num">Stock</th><th>Flags</th><th></th></tr></thead>
@@ -358,7 +349,7 @@ if ($noPhoto && !($fPhoto === 'none' && $fWeb === 'on')): ?>
   <?php foreach ($items as $it): ?>
     <tr>
       <td>
-        <?php if ($it['photo']): ?><img src="<?= e($it['photo']) ?>" class="photo-thumb" alt=""> <?php endif; ?>
+        <?php if ($it['photo']): ?><img src="<?= e($it['photo']) ?>" class="photo-thumb" alt="" loading="lazy" decoding="async" width="44" height="44"> <?php endif; ?>
         <a href="item_view.php?id=<?= $it['id'] ?>"><strong><?= e($it['name']) ?></strong></a>
         <?php if (!$it['is_active']): ?> <span class="badge badge-bad">INACTIVE</span><?php endif; ?>
         <?php if ($it['brand'] || $it['model']): ?><br><span class="muted"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></span><?php endif; ?>
@@ -397,5 +388,83 @@ if ($noPhoto && !($fPhoto === 'none' && $fWeb === 'on')): ?>
   </tbody>
 </table>
 </div>
-<script>tableFilter('itemFilter', 'itemTable');</script>
+<?php if (!$items): ?><p class="muted" style="padding:14px">No items match<?= $qs !== '' ? ' “' . e($qs) . '”' : '' ?>.</p><?php endif; ?>
+<?php if ($pages > 1): ?>
+<div class="page-actions no-print" style="justify-content:center;margin-top:10px">
+  <?php if ($page > 1): ?><a class="btn btn-sm btn-outline" href="<?= e($keep(['p' => $page - 1])) ?>">‹ Previous</a><?php endif; ?>
+  <span class="muted" style="align-self:center">Page <?= $page ?> of <?= $pages ?></span>
+  <?php if ($page < $pages): ?><a class="btn btn-sm btn-outline" href="<?= e($keep(['p' => $page + 1])) ?>">Next ›</a><?php endif; ?>
+</div>
+<?php endif; ?>
+<?php };
+if (get('part') === '1') { $renderList(); exit; }
+$page_title = 'Items';
+include __DIR__ . '/includes/header.php';
+?>
+<div class="page-actions">
+  <?php if (can('items.add')): ?><a class="btn" href="items.php?action=new">+ New Item</a><?php endif; ?>
+  <?php if (can('items.edit')): ?><a class="btn btn-outline" href="categories_arrange.php">🗂 Arrange Categories</a><a class="btn btn-outline" href="ai_categorize.php">🤖 AI Categories</a><?php endif; ?>
+  <a class="btn btn-outline" href="items.php<?= $showAll ? '' : '?show=all' ?>"><?= $showAll ? 'Show Active only' : 'Show Inactive too' ?></a>
+</div>
+<form method="get" class="filterbar no-print">
+  <?php if ($showAll): ?><input type="hidden" name="show" value="all"><?php endif; ?>
+  <div style="flex:1;min-width:170px"><input type="search" name="q" id="itemFilter" value="<?= e($qs) ?>" placeholder="🔍 Search items (name, brand, model, barcode)…" autocomplete="off"></div>
+  <div><select name="f_cat" onchange="this.form.submit()">
+    <option value="">All categories</option>
+    <?php foreach ($cats as $c): ?><option value="<?= $c['id'] ?>" <?= $fCat == $c['id'] ? 'selected' : '' ?>><?= e($c['label']) ?></option><?php endforeach; ?>
+  </select></div>
+  <div><select name="f_stock" onchange="this.form.submit()">
+    <option value="">All stock</option>
+    <option value="in" <?= $fStock === 'in' ? 'selected' : '' ?>>In stock</option>
+    <option value="zero" <?= $fStock === 'zero' ? 'selected' : '' ?>>Zero stock</option>
+    <option value="neg" <?= $fStock === 'neg' ? 'selected' : '' ?>>Negative (minus)</option>
+    <option value="low" <?= $fStock === 'low' ? 'selected' : '' ?>>Low stock</option>
+  </select></div>
+  <div><select name="f_loc" onchange="this.form.submit()">
+    <option value="">📍 All locations</option>
+    <?php foreach ($locsAll as $l): ?><option value="<?= $l['id'] ?>" <?= $fLoc == $l['id'] ? 'selected' : '' ?>><?= e($l['name']) ?></option><?php endforeach; ?>
+  </select></div>
+  <div><select name="f_web" onchange="this.form.submit()">
+    <option value="">Website: all</option>
+    <option value="on" <?= $fWeb === 'on' ? 'selected' : '' ?>>Website ON</option>
+    <option value="off" <?= $fWeb === 'off' ? 'selected' : '' ?>>Website OFF</option>
+  </select></div>
+  <div><select name="f_photo" onchange="this.form.submit()">
+    <option value="">Photo: all</option>
+    <option value="none" <?= $fPhoto === 'none' ? 'selected' : '' ?>>📷 No photo</option>
+  </select></div>
+</form>
+<?php $noPhoto = (int)val("SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 1 AND COALESCE(photo, '') = ''");
+if ($noPhoto && !($fPhoto === 'none' && $fWeb === 'on')): ?>
+<div class="flash flash-warn no-print">📷 <strong><?= $noPhoto ?></strong> item(s) on the online store have no photo. <a href="items.php?f_web=on&amp;f_photo=none">Show them</a> and upload a photo (Edit → Photo), or let <a href="ai_enrich.php"><strong>🤖 AI Auto-Fill</strong></a> find the brand's official photos.</div>
+<?php endif; ?>
+<div id="itemList"><?php $renderList(); ?></div>
+<script>
+// Search as you type - the database finds the matches and sends back just
+// that list, so the page never holds thousands of rows. A pause of a third
+// of a second between keys sends one request, not one per letter; an older
+// answer arriving late is thrown away so the list always matches the box.
+(function () {
+  var box = document.getElementById('itemFilter'), list = document.getElementById('itemList');
+  if (!box || !list) return;
+  var form = box.form, timer = null, seq = 0;
+  function url(part) {
+    var fd = new FormData(form), qs = [];
+    fd.forEach(function (v, k) { if (v !== '') qs.push(encodeURIComponent(k) + '=' + encodeURIComponent(v)); });
+    if (part) qs.push('part=1');
+    return 'items.php' + (qs.length ? '?' + qs.join('&') : '');
+  }
+  function run() {
+    var my = ++seq;
+    list.style.opacity = '.55';
+    fetch(url(true), { credentials: 'same-origin' }).then(function (r) { return r.text(); }).then(function (html) {
+      if (my !== seq) return;
+      list.innerHTML = html; list.style.opacity = '';
+      try { history.replaceState(null, '', url(false)); } catch (e) {}
+    }).catch(function () { list.style.opacity = ''; });
+  }
+  box.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(run, 300); });
+  form.addEventListener('submit', function (ev) { if (document.activeElement === box) { ev.preventDefault(); clearTimeout(timer); run(); } });
+})();
+</script>
 <?php include __DIR__ . '/includes/footer.php'; ?>
