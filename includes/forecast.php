@@ -46,7 +46,7 @@ function fc_rules() {
 function fc_opening_cash() {
     $cash = total_cash_in_hand();
     $bank = 0.0;
-    foreach (all('SELECT id FROM bank_accounts WHERE is_active = 1') as $b) $bank += bank_account_balance((int)$b['id']);
+    foreach (all("SELECT id FROM bank_accounts WHERE is_active = 1 AND account_type <> 'credit_card'") as $b) $bank += bank_account_balance((int)$b['id']);
     return ['cash' => money_r($cash), 'bank' => money_r($bank), 'total' => money_r($cash + $bank)];
 }
 

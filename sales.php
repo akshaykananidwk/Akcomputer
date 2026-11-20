@@ -685,7 +685,7 @@ if ($action === 'new' || $action === 'edit') {
         </div>
       </div>
 
-      <?php $pms = active_payment_methods(); $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name'); ?>
+      <?php $pms = active_payment_methods(); $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, account_name"); ?>
       <div class="bf-grid c4">
         <div class="bf-card">
           <div class="bf-t"><span class="bf-ico i-orange">🏷️</span>Discount</div>

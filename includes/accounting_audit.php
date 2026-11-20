@@ -162,12 +162,17 @@ function acct_checks($from, $to) {
     $banks = all('SELECT * FROM bank_accounts ORDER BY id');
     foreach ($banks as $b) {
         $led = round(bank_account_balance($b['id']), 2);   // the Bank Ledger / Cash & Bank figure (all dates)
-        if ($b['is_active']) $sumActive += $led;
+        if ($b['is_active'] && ($b['account_type'] ?? 'bank') !== 'credit_card') $sumActive += $led;   // a card is checked on its own line
     }
-    $inactiveBal = round(array_sum(array_map(fn($b) => $b['is_active'] ? 0 : bank_account_balance($b['id']), $banks)), 2);
+    $inactiveBal = round(array_sum(array_map(fn($b) => ($b['is_active'] || ($b['account_type'] ?? 'bank') === 'credit_card') ? 0 : bank_account_balance($b['id']), $banks)), 2);
     $orphan = $v("SELECT COALESCE(SUM(IF(direction='in',1,-1) * amount),0) FROM payments WHERE bank_account_id IS NOT NULL AND pay_date <= ? AND bank_account_id NOT IN (SELECT id FROM bank_accounts)", [$to])
             - $v("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE bank_account_id IS NOT NULL AND exp_date <= ? AND bank_account_id NOT IN (SELECT id FROM bank_accounts)", [$to]);
-    $future = round(array_sum(array_map(fn($b) => bank_account_balance($b['id']), $banks)) - coa_bank_balance($to), 2) + $orphan;
+    $future = round(array_sum(array_map(fn($b) => ($b['account_type'] ?? 'bank') === 'credit_card' ? 0 : bank_account_balance($b['id']), $banks)) - coa_bank_balance($to), 2) + $orphan;
+    // the credit cards: what the books owe on 2300 = what the cards' own pages say is owed
+    $cardOwed = -round(array_sum(array_map(fn($b) => ($b['account_type'] ?? 'bank') === 'credit_card' ? bank_account_balance($b['id']) : 0, $banks)), 2);
+    $bookCard = -round(ledger_balances($to)['2300'] ?? 0, 2);
+    $add('bank', abs($bookCard - $cardOwed) < 0.01, 'Credit cards: owed in the books vs the cards\' own pages', round($bookCard - $cardOwed, 2),
+         sprintf('Books (2300) ₹%s · credit card pages ₹%s.', money($bookCard), money($cardOwed)), 'entry');
     $jBank = round(journal_balance((int)val("SELECT id FROM chart_of_accounts WHERE code = '1100'"), '0001-01-01', $to), 2);
     $newBank = round(ledger_balances($to)['1100'] ?? 0, 2);
     $dbl = $v("SELECT COALESCE(SUM(IF(direction='in',1,-1) * amount),0) FROM payments WHERE pay_date <= ? AND mode = 'cash' AND bank_account_id IS NOT NULL", [$to]);

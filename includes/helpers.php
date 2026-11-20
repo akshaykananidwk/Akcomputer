@@ -711,7 +711,24 @@ function cash_denom_parse($s) {
     return $out;
 }
 
-/** One bank account's live balance, transfers and adjustments included. */
+/** Credit cards and admin-only accounts are seen by the main admin alone.
+ *  Add to any bank-account list a person picks from or reads. $neverCards:
+ *  for defaults (invoice QR, POS, auto-picked bank) a card is never chosen. */
+function bank_hide_sql($neverCards = false, $alias = '', $isAdmin = null) {
+    $a = $alias !== '' ? $alias . '.' : '';
+    $sql = $neverCards ? " AND {$a}account_type <> 'credit_card'" : '';
+    $isAdmin = $isAdmin ?? (current_user() && is_full_admin());
+    if (!$isAdmin) $sql .= " AND {$a}admin_only = 0 AND {$a}account_type <> 'credit_card'";
+    return $sql;
+}
+
+/** SQL list of the credit-card account ids, for sums that must leave them out. */
+function bank_card_ids_sql() {
+    return "(SELECT id FROM bank_accounts WHERE account_type = 'credit_card')";
+}
+
+/** One bank account's live balance, transfers and adjustments included.
+ *  For a credit card it is minus what is owed on the card. */
 function bank_account_balance($bankId) {
     $bid = (int)$bankId;
     return (float)val("SELECT b.opening_balance
@@ -833,7 +850,7 @@ function feedback_link($ref_type, $ref_id, $customer_name, $mobile) {
 // ---------- Bank accounts / payment methods / QR ----------
 function default_bank_account() {
     static $b = false;
-    if ($b === false) $b = row('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1');
+    if ($b === false) $b = row('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql(true) . ' ORDER BY is_default DESC, id LIMIT 1');
     return $b;
 }
 function active_payment_methods() {
@@ -882,7 +899,10 @@ function resolve_payment_target($modeCode, $postedBankId) {
     $pmId = $pm ? (int)$pm['id'] : null;
     $bank = null;
     if ($pm && $pm['type'] === 'bank') {
-        $bank = (int)$postedBankId ?: ((int)val('SELECT id FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1') ?: null);
+        $bank = (int)$postedBankId;
+        // an account this person may not see (the admin's credit card) is never taken from a form
+        if ($bank && !val('SELECT id FROM bank_accounts WHERE id = ?' . bank_hide_sql(), [$bank])) $bank = 0;
+        $bank = $bank ?: ((int)val('SELECT id FROM bank_accounts WHERE is_active = 1' . bank_hide_sql(true) . ' ORDER BY is_default DESC, id LIMIT 1') ?: null);
     }
     return [$pmId, $bank];
 }

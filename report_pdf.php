@@ -73,7 +73,7 @@ $filterBits = [];
 if ($fCompany) { $c = row('SELECT name FROM companies WHERE id=?', [$fCompany]); if ($c) $filterBits[] = 'Firm: ' . $c['name']; }
 if ($fParty) { $p = row('SELECT name FROM parties WHERE id=?', [$fParty]); if ($p) $filterBits[] = 'Party: ' . $p['name']; }
 if ($fStatus) $filterBits[] = 'Status: ' . ucfirst($fStatus);
-if ($r === 'bank_ledger' && $bankId) { $b = row('SELECT account_name, bank_name FROM bank_accounts WHERE id=?', [$bankId]); if ($b) $filterBits[] = 'Bank: ' . $b['account_name'] . ' - ' . $b['bank_name']; }
+if ($r === 'bank_ledger' && $bankId) { $b = row('SELECT account_name, bank_name FROM bank_accounts WHERE id=?' . bank_hide_sql(), [$bankId]); if ($b) $filterBits[] = 'Bank: ' . $b['account_name'] . ' - ' . $b['bank_name']; }
 if ($r === 'all_txn' && get('types') !== '') $filterBits[] = 'Records: ' . str_replace(',', ', ', get('types'));
 if ($filterBits) { $pdf->text($M, $y, 9, 'Filters: ' . implode(' | ', $filterBits), '', [0.4, 0.4, 0.4]); $y += 14; }
 $y += 6;

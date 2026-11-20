@@ -15,7 +15,7 @@ $items = all("SELECT i.id, i.name, i.selling_price price, i.tax_rate tax, i.unit
               ORDER BY COALESCE(pop.n, 0) DESC, i.name LIMIT 300");
 $cats = array_values(array_unique(array_filter(array_column($items, 'cat'))));
 $pms = array_values(array_filter(active_payment_methods(), fn($p) => in_array($p['code'], ['cash', 'upi', 'card'], true)));
-$bank = val('SELECT id FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1');
+$bank = val('SELECT id FROM bank_accounts WHERE is_active = 1' . bank_hide_sql(true) . ' ORDER BY is_default DESC, id LIMIT 1');
 $page_title = 'Counter';
 include __DIR__ . '/includes/header.php';
 ?>

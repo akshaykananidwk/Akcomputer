@@ -31,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'adjust') {
     $walletUser = (int)post('wallet_user') ?: $u['id'];
     if ($amount <= 0) { flash('Amount must be more than zero.', 'error'); redirect('cash_bank.php'); }
     if ($kind === 'bank_adjust' && !$bankId) { flash('Pick the bank account.', 'error'); redirect('cash_bank.php'); }
+    if ($bankId && !val('SELECT id FROM bank_accounts WHERE id = ?' . bank_hide_sql(), [$bankId])) { flash('Pick the bank account.', 'error'); redirect('cash_bank.php'); }
     $counter = isset(ledger_adjust_kinds()[post('counter')]) ? post('counter') : null;
     q('INSERT INTO money_transfers (txn_type, amount, adjust_dir, from_user_id, to_bank_id, txn_date, notes, status, created_by, counter)
        VALUES (?,?,?,?,?,?,?,\'done\',?,?)',
@@ -51,6 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'transfer') {
     $fromBank = (int)post('from_bank_id') ?: null;
     $toBank = (int)post('to_bank_id') ?: null;
     $walletUser = (int)post('wallet_user') ?: $u['id'];
+    foreach ([$fromBank, $toBank] as $bk) if ($bk && !val('SELECT id FROM bank_accounts WHERE id = ?' . bank_hide_sql(), [$bk])) { flash('Pick the bank account.', 'error'); redirect('cash_bank.php'); }
     if ($type !== 'cash_to_bank' && !$fromBank && $type !== 'bank_to_cash') { /* covered below */ }
     if (in_array($type, ['bank_to_cash', 'bank_to_bank'], true) && !$fromBank) { flash('Pick the FROM bank account.', 'error'); redirect('cash_bank.php'); }
     if (in_array($type, ['cash_to_bank', 'bank_to_bank'], true) && !$toBank) { flash('Pick the TO bank account.', 'error'); redirect('cash_bank.php'); }
@@ -393,9 +395,11 @@ foreach (all('SELECT id, name, is_active FROM users ORDER BY name') as $s) {
 // into somebody's wallet, because it is not theirs.
 $unassigned = $seeAll ? money_r($cashInHand - $walletSum) : 0.0;
 
-$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
+$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, account_name");
 $totalBankBal = 0;
-foreach ($banks as &$b) { $b['balance'] = bank_account_balance($b['id']); $totalBankBal += $b['balance']; }
+$cardOwed = 0;
+// money in the bank only; a credit card is what is owed on it and is shown on its own
+foreach ($banks as &$b) { $b['balance'] = bank_account_balance($b['id']); if ($b['account_type'] === 'credit_card') $cardOwed += max(0, -$b['balance']); else $totalBankBal += $b['balance']; }
 unset($b);
 
 $ownMt = $seeAll ? '' : ' AND (mt.from_user_id = ' . (int)$u['id'] . ' OR mt.to_user_id = ' . (int)$u['id'] . ')';
@@ -452,7 +456,7 @@ include __DIR__ . '/includes/header.php';
   <a class="kpi k-info" href="reports.php?r=bank_ledger">
     <div class="kpi-top">🏦 Total Bank Balance</div>
     <div class="kpi-val">₹<?= money($totalBankBal) ?></div>
-    <div class="kpi-sub"><?= count($banks) ?> account<?= count($banks) === 1 ? '' : 's' ?> · view the passbook →</div>
+    <div class="kpi-sub"><?php $nb = count(array_filter($banks, fn($x) => $x['account_type'] !== 'credit_card')); ?><?= $nb ?> account<?= $nb === 1 ? '' : 's' ?> · view the passbook →<?= $cardOwed > 0.009 ? ' · 💳 owed on cards ₹' . money($cardOwed) : '' ?></div>
   </a>
   <?php
   // NOT a second copy of "Cash in Hand" - that is the same rupees said twice
@@ -586,11 +590,12 @@ include __DIR__ . '/includes/header.php';
     <table class="rowlist rl-scan">
       <thead><tr><th>Account</th><th class="num">Balance</th><th>Bank</th></tr></thead>
       <tbody>
-      <?php foreach ($banks as $b): ?>
+      <?php foreach ($banks as $b): $card = $b['account_type'] === 'credit_card'; ?>
         <tr>
-          <td class="rl-main"><a href="reports.php?r=bank_ledger&bank_id=<?= $b['id'] ?>"><?= e($b['account_name']) ?></a>
+          <td class="rl-main"><?= $card ? '💳 ' : '' ?><a href="reports.php?r=bank_ledger&bank_id=<?= $b['id'] ?>"><?= e($b['account_name']) ?></a>
             <?= $b['is_default'] ? ' <span class="badge badge-ok">DEFAULT</span>' : '' ?></td>
-          <td class="num" style="font-weight:700;color:<?= $b['balance'] < -0.009 ? 'var(--bad)' : 'inherit' ?>">₹<?= money($b['balance']) ?></td>
+          <?php if ($card): ?><td class="num" style="font-weight:700;color:var(--bad)">Owed ₹<?= money(max(0, -$b['balance'])) ?></td>
+          <?php else: ?><td class="num" style="font-weight:700;color:<?= $b['balance'] < -0.009 ? 'var(--bad)' : 'inherit' ?>">₹<?= money($b['balance']) ?></td><?php endif; ?>
           <td><?= e($b['bank_name']) ?></td>
         </tr>
       <?php endforeach; ?>
@@ -811,5 +816,15 @@ function cbShowTransfer(type) {
   document.getElementById('tWalletRow').style.display = (type === 'bank_to_bank') ? 'none' : '';
   cbShow('cbTransfer');
 }
+<?php if ((int)get('pay_card')): ?>
+// "Pay card bill": from a bank, into the card
+(function () {
+  cbShowTransfer('bank_to_bank');
+  var to = document.querySelector('#cbTransfer select[name=to_bank_id]'), from = document.querySelector('#cbTransfer select[name=from_bank_id]');
+  if (to) to.value = '<?= (int)get('pay_card') ?>';
+  if (from && from.value === '<?= (int)get('pay_card') ?>') for (var i = 0; i < from.options.length; i++) if (from.options[i].value !== '<?= (int)get('pay_card') ?>') { from.selectedIndex = i; break; }
+  document.getElementById('cbTransferTitle').textContent = '💳 Pay credit card bill';
+})();
+<?php endif; ?>
 </script>
 <?php include __DIR__ . '/includes/footer.php'; ?>

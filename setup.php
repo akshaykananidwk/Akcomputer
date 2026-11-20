@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $upi = trim((string)post('upi_id'));
         if ($upi !== '') {
             if (!preg_match('/^[\w.\-]{2,}@[a-zA-Z]{2,}$/', $upi)) { flash('A UPI ID looks like name@okhdfcbank.', 'error'); redirect('setup.php?step=2'); }
-            $bank = row('SELECT id FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id LIMIT 1');
+            $bank = row('SELECT id FROM bank_accounts WHERE is_active = 1' . bank_hide_sql(true) . ' ORDER BY is_default DESC, id LIMIT 1');
             if ($bank) q('UPDATE bank_accounts SET upi_id = ? WHERE id = ?', [$upi, $bank['id']]);
             else q("INSERT INTO bank_accounts (account_name, bank_name, account_number, ifsc, branch, upi_id, opening_balance, is_default, is_active) VALUES (?, 'UPI', '', '', '', ?, 0, 1, 1)", [setting('app_name', 'Shop'), $upi]);
         }
@@ -96,7 +96,7 @@ include __DIR__ . '/includes/header.php';
 </form>
 
 <?php elseif ($step === 2): $gstCo = row('SELECT gstin FROM companies WHERE is_gst = 1 AND is_active = 1 LIMIT 1');
-  $upi = val("SELECT upi_id FROM bank_accounts WHERE is_active = 1 AND upi_id <> '' ORDER BY is_default DESC, id LIMIT 1"); ?>
+  $upi = val("SELECT upi_id FROM bank_accounts WHERE is_active = 1 AND upi_id <> ''" . bank_hide_sql(true) . " ORDER BY is_default DESC, id LIMIT 1"); ?>
 <form method="post" class="card"><?= csrf_field() ?><input type="hidden" name="do" value="money">
   <div class="field"><label>GSTIN <span class="muted">(leave empty if you have no GST)</span></label><input type="text" name="gstin" value="<?= e($gstCo['gstin'] ?? '') ?>" maxlength="15" autocapitalize="characters" placeholder="24ABCDE1234F1Z5"></div>
   <div class="field"><label>UPI ID <span class="muted">(a QR to pay is printed on the bill)</span></label><input type="text" name="upi_id" value="<?= e($upi ?: '') ?>" placeholder="yourname@okhdfcbank"></div>

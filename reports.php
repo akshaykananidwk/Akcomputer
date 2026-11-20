@@ -132,7 +132,7 @@ $fCompany = (int)get('f_company');
 $fParty = (int)get('f_party');
 $fStatus = get('f_status'); // '', 'paid', 'partial', 'due', 'cancelled', 'overdue'
 $fUser = (int)get('f_user'); // filter a report by the staff member who made the entry
-$banksAll = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
+$banksAll = all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, account_name");
 $bankId = (int)get('bank_id') ?: (int)($banksAll[0]['id'] ?? 0);
 $coaAll = can('reports.accounting') ? coa_all() : [];
 $glAccount = (int)get('gl_account') ?: (int)($coaAll[0]['id'] ?? 0);

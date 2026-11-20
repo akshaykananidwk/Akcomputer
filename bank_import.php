@@ -6,8 +6,9 @@
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/connect.php';
 require_perm('accounting.view');
-$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
+$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, account_name");
 $bank = (int)(get('bank') ?: post('bank') ?: ($banks[0]['id'] ?? 0));
+if ($bank && !in_array($bank, array_map('intval', array_column($banks, 'id')), true)) $bank = (int)($banks[0]['id'] ?? 0);   // never another person's card
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'upload') {
     require_perm('accounting.edit');

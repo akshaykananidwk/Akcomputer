@@ -331,7 +331,7 @@ if ($r === 'sync' && $method === 'GET') {
         'expense_categories' => array_values(array_unique(array_map('strval', expense_categories()))),
         'categories' => all('SELECT id, name FROM categories ORDER BY name'),
         'settings' => array_combine(API_SETTINGS, array_map(fn($k) => (string)setting($k, in_array($k, ['round_off_default', 'allow_negative_stock'], true) ? '1' : ''), API_SETTINGS)),
-        'banks' => api_can('payments.view') ? all('SELECT id, account_name name, bank_name FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id') : [],
+        'banks' => api_can('payments.view') ? all('SELECT id, account_name name, bank_name FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, id") : [],
     ]);
 }
 
@@ -400,7 +400,7 @@ if ($r === 'pull' && $method === 'GET') {
                            'stock_value' => api_can('items.cost') ? round(coa_stock_value(), 2) : null,
                            'banks' => array_map(fn($b) => ['id' => (int)$b['id'], 'name' => $b['account_name'] . ($b['bank_name'] ? ' · ' . $b['bank_name'] : ''),
                                                            'balance' => round(bank_account_balance($b['id']), 2)],
-                                                all('SELECT id, account_name, bank_name FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, id'))];
+                                                all('SELECT id, account_name, bank_name FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, id"))];
     }
     api_json($out);
 }

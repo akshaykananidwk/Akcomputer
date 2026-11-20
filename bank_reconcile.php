@@ -35,11 +35,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'unreconcile') {
     redirect('bank_reconcile.php?bank_account_id=' . $bankId);
 }
 
-$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
+$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, account_name");
 $bankId = (int)get('bank_account_id') ?: (int)($banks[0]['id'] ?? 0);
 $statementDate = get('statement_date', today());
 $statementBalance = get('statement_balance', '');
-$bank = $bankId ? row('SELECT * FROM bank_accounts WHERE id = ?', [$bankId]) : null;
+$bank = $bankId ? row('SELECT * FROM bank_accounts WHERE id = ?' . bank_hide_sql(), [$bankId]) : null;
 
 $unreconciled = []; $reconciledBalance = 0;
 if ($bank) {

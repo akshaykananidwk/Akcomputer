@@ -281,7 +281,7 @@ if ($action === 'view') {
 if ($action === 'new') {
     require_perm('purchase_return.add');
     $suppliers = all("SELECT id, name, mobile FROM parties WHERE is_active = 1 ORDER BY name");
-    $banks = all('SELECT id, account_name, bank_name, is_default FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
+    $banks = all('SELECT id, account_name, bank_name, is_default FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, account_name");
     $locations = all('SELECT * FROM locations WHERE is_active = 1 ORDER BY name');
     $page_title = 'New Purchase Return';
     include __DIR__ . '/includes/header.php';

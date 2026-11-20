@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'delete') {
 
 $pm = $id ? row('SELECT * FROM payment_methods WHERE id = ?', [$id]) : null;
 $methods = all('SELECT pm.*, b.account_name FROM payment_methods pm LEFT JOIN bank_accounts b ON b.id = pm.bank_account_id ORDER BY pm.sort_order, pm.id');
-$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY account_name');
+$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', account_name");
 $page_title = 'Payment Methods';
 include __DIR__ . '/includes/header.php';
 ?>

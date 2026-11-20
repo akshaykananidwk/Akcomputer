@@ -245,7 +245,7 @@ function copyPay() {
 </div>
 <?php if ($due > 0.009 && can('payments.add')):
   $pms = active_payment_methods();
-  $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name'); ?>
+  $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, account_name"); ?>
 <div class="card no-print">
   <h3>Record payment (due Rs <?= money($due) ?>)</h3>
   <form method="post" class="filterbar">

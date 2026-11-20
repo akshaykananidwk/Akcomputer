@@ -675,7 +675,7 @@ function wa_bot_owner_answer($text, &$usedAi, $staffUser = null) {
     if ($seesMoney && $has('cash', 'કેશ', 'રોકડ', 'bank', 'બેંક')) {
         $cash = function_exists('total_cash_in_hand') ? total_cash_in_hand() : 0;
         $out = "💵 *$shop*\nTotal cash: *Rs " . money($cash) . "*";
-        foreach (all('SELECT * FROM bank_accounts WHERE is_active = 1') as $b) {
+        foreach (all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql(true)) as $b) {
             $out .= "\n🏦 " . $b['account_name'] . ": ₹" . money(bank_account_balance($b['id']));
         }
         return $out;

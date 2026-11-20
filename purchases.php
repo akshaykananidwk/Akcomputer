@@ -339,7 +339,7 @@ if ($action === 'new' || $action === 'edit') {
       </div>
 
       <div class="card">
-        <?php $pms = active_payment_methods(); $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name'); ?>
+        <?php $pms = active_payment_methods(); $banks = all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, account_name"); ?>
         <div class="form-row cols-4">
           <div><label>Discount</label>
             <div style="display:flex;gap:6px">

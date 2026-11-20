@@ -78,7 +78,7 @@ if ($edit && $edit['category'] && !in_array($edit['category'], $cats, true)) {
     $catGroups['Older notes'] = [$edit['category']];
 }
 $pms = active_payment_methods();
-$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
+$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, account_name");
 $page_title = 'Expenses';
 include __DIR__ . '/includes/header.php';
 ?>

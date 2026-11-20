@@ -6,7 +6,7 @@
 require_once __DIR__ . '/includes/init.php';
 require_perm('sales.add');
 $name = setting('app_name', '');
-$upi = val("SELECT upi_id FROM bank_accounts WHERE is_active = 1 AND upi_id <> '' ORDER BY is_default DESC, id LIMIT 1");
+$upi = val("SELECT upi_id FROM bank_accounts WHERE is_active = 1 AND upi_id <> ''" . bank_hide_sql(true) . " ORDER BY is_default DESC, id LIMIT 1");
 ?><!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Customer screen</title>
 <style>
 body{margin:0;background:#0b1220;color:#f8fafc;font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans Gujarati',sans-serif;min-height:100vh;display:flex;flex-direction:column}

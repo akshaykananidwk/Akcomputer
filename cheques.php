@@ -93,7 +93,7 @@ $inHand = (float)val("SELECT COALESCE(SUM(amount),0) FROM cheques WHERE directio
 $outHand = (float)val("SELECT COALESCE(SUM(amount),0) FROM cheques WHERE direction = 'out' AND status IN ('in_hand','deposited')");
 $bounced = (int)val("SELECT COUNT(*) FROM cheques WHERE status = 'bounced'");
 $parties = all('SELECT id, name FROM parties WHERE is_active = 1 ORDER BY name');
-$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
+$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, account_name");
 
 $page_title = 'Cheque register';
 include __DIR__ . '/includes/header.php';

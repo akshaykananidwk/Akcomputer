@@ -31,6 +31,7 @@ function ledger_accounts() {
         '2000' => ['Accounts Payable', 'liability'],
         '2100' => ['GST collected (on sales)', 'liability'],
         '2200' => ['Loans', 'liability'],
+        '2300' => ['Credit Card (owed on the card)', 'liability'],
         '3000' => ['Owner\'s Capital', 'equity'],
         '3010' => ['Opening balances', 'equity'],
         '3090' => ['Cash / bank adjustments - not yet classified', 'equity'],
@@ -79,11 +80,13 @@ function ledger_sql() {
     $party = "IF(EXISTS (SELECT 1 FROM parties pp WHERE pp.id = %1\$s.party_id), 'P', '1210')";
     $pid = "IF(EXISTS (SELECT 1 FROM parties pp WHERE pp.id = %1\$s.party_id), %1\$s.party_id, NULL)";
     $P = fn($a) => sprintf($party, $a) . ' acct, ' . sprintf($pid, $a) . ' party';
+    // a credit card is a debt, not bank money: its entries go to 2300
+    $bankAcct = fn($col) => "IF(EXISTS (SELECT 1 FROM bank_accounts cc WHERE cc.id = $col AND cc.account_type = 'credit_card'), '2300', '1100')";
     // where the money went / came from
-    $money = "CASE WHEN %1\$s.mode = 'cash' THEN '1000' WHEN %1\$s.bank_account_id IS NOT NULL THEN '1100'
+    $money = "CASE WHEN %1\$s.mode = 'cash' THEN '1000' WHEN %1\$s.bank_account_id IS NOT NULL THEN " . $bankAcct('%1$s.bank_account_id') . "
                    WHEN %1\$s.mode = 'discount' THEN IF(%1\$s.direction = 'in', '5200', '4400')
                    WHEN %1\$s.mode = 'contra' THEN '1900' WHEN %1\$s.mode = 'credit_note' THEN '4300' ELSE '1150' END";
-    $expMoney = "CASE WHEN x.mode = 'cash' THEN '1000' WHEN x.bank_account_id IS NOT NULL THEN '1100' ELSE '1150' END";
+    $expMoney = "CASE WHEN x.mode = 'cash' THEN '1000' WHEN x.bank_account_id IS NOT NULL THEN " . $bankAcct('x.bank_account_id') . " ELSE '1150' END";
     $home = implode(',', array_map($quote, expense_category_groups()[expense_home_group()]));
     $retCost = "(SELECT COALESCE(SUM(ri.qty * IF(i.item_type = 'service', 0, COALESCE(NULLIF((SELECT si.cost_price FROM sale_items si WHERE si.sale_id = r.sale_id AND si.item_id = ri.item_id LIMIT 1), 0), i.purchase_price))), 0)
                  FROM sales_return_items ri JOIN items i ON i.id = ri.item_id WHERE ri.return_id = r.id)";
@@ -141,14 +144,14 @@ function ledger_sql() {
         "SELECT l.start_date, '2200', NULL, 0, l.principal, 'loan', l.id, l.lender FROM loans l",
         "SELECT l.start_date, '3010', NULL, l.principal, 0, 'loan', l.id, l.lender FROM loans l",
         // CASH <-> BANK, and ADJUSTMENTS against what the owner says they were
-        "SELECT t.txn_date, IF(t.txn_type = 'cash_to_bank', '1100', '1000'), NULL, t.amount, 0, 'transfer', t.id, t.txn_type FROM money_transfers t WHERE t.status = 'done' AND t.txn_type IN ('cash_to_bank','bank_to_cash')",
-        "SELECT t.txn_date, IF(t.txn_type = 'cash_to_bank', '1000', '1100'), NULL, 0, t.amount, 'transfer', t.id, t.txn_type FROM money_transfers t WHERE t.status = 'done' AND t.txn_type IN ('cash_to_bank','bank_to_cash')",
-        "SELECT t.txn_date, IF(t.txn_type = 'cash_adjust', '1000', '1100'), NULL, IF(t.adjust_dir = 'add', t.amount, 0), IF(t.adjust_dir = 'add', 0, t.amount), 'adjust', t.id, t.notes FROM money_transfers t WHERE t.status = 'done' AND t.txn_type IN ('cash_adjust','bank_adjust')",
+        "SELECT t.txn_date, IF(t.txn_type = 'bank_to_cash', '1000', " . $bankAcct('t.to_bank_id') . "), NULL, t.amount, 0, 'transfer', t.id, t.txn_type FROM money_transfers t WHERE t.status = 'done' AND t.txn_type IN ('cash_to_bank','bank_to_cash','bank_to_bank')",
+        "SELECT t.txn_date, IF(t.txn_type = 'cash_to_bank', '1000', " . $bankAcct('t.from_bank_id') . "), NULL, 0, t.amount, 'transfer', t.id, t.txn_type FROM money_transfers t WHERE t.status = 'done' AND t.txn_type IN ('cash_to_bank','bank_to_cash','bank_to_bank')",
+        "SELECT t.txn_date, IF(t.txn_type = 'cash_adjust', '1000', " . $bankAcct('t.to_bank_id') . "), NULL, IF(t.adjust_dir = 'add', t.amount, 0), IF(t.adjust_dir = 'add', 0, t.amount), 'adjust', t.id, t.notes FROM money_transfers t WHERE t.status = 'done' AND t.txn_type IN ('cash_adjust','bank_adjust')",
         "SELECT t.txn_date, $adjAcct, NULL, IF(t.adjust_dir = 'add', 0, t.amount), IF(t.adjust_dir = 'add', t.amount, 0), 'adjust', t.id, t.notes FROM money_transfers t WHERE t.status = 'done' AND t.txn_type IN ('cash_adjust','bank_adjust')",
         // OPENING balances: parties and banks, against Opening balances
         "SELECT '0001-01-01', 'P', p.id, GREATEST(p.opening_balance, 0), GREATEST(-p.opening_balance, 0), 'opening', p.id, p.name FROM parties p WHERE p.opening_balance <> 0",
         "SELECT '0001-01-01', '3010', NULL, GREATEST(-p.opening_balance, 0), GREATEST(p.opening_balance, 0), 'opening', p.id, p.name FROM parties p WHERE p.opening_balance <> 0",
-        "SELECT '0001-01-01', '1100', NULL, GREATEST(b.opening_balance, 0), GREATEST(-b.opening_balance, 0), 'bank_opening', b.id, b.account_name FROM bank_accounts b WHERE b.opening_balance <> 0",
+        "SELECT '0001-01-01', IF(b.account_type = 'credit_card', '2300', '1100'), NULL, GREATEST(b.opening_balance, 0), GREATEST(-b.opening_balance, 0), 'bank_opening', b.id, b.account_name FROM bank_accounts b WHERE b.opening_balance <> 0",
         "SELECT '0001-01-01', '3010', NULL, GREATEST(-b.opening_balance, 0), GREATEST(b.opening_balance, 0), 'bank_opening', b.id, b.account_name FROM bank_accounts b WHERE b.opening_balance <> 0",
         // STOCK that came or went outside a bill: opening stock, counts, corrections
         "SELECT DATE(sl.created_at), '1300', NULL, GREATEST(sl.change_qty * i.purchase_price, 0), GREATEST(-sl.change_qty * i.purchase_price, 0), 'stock', sl.id, sl.ref_type

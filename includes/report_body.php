@@ -757,7 +757,7 @@ if ($r === 'cashbook') {
 // and customer/party/category name so it reads like a real bank statement
 // instead of a raw payments dump.
 if ($r === 'bank_ledger' && can('payments.view')) {
-    $bank = $bankId ? row('SELECT * FROM bank_accounts WHERE id = ?', [$bankId]) : null;
+    $bank = $bankId ? row('SELECT * FROM bank_accounts WHERE id = ?' . bank_hide_sql(), [$bankId]) : null;
     if (!$bank) {
         echo '<p class="muted">First add a bank account from Settings &gt; Bank Accounts.</p>';
     } else {

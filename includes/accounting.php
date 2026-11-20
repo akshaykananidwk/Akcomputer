@@ -57,14 +57,20 @@ function coa_cash_balance($to) {
  *  mirrors bank_account_balance() summed over all accounts (bank-to-bank
  *  moves cancel out inside the total, so they are skipped). */
 function coa_bank_balance($to) {
-    return (float)val("SELECT COALESCE(SUM(opening_balance),0) FROM bank_accounts")
-         + (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE bank_account_id IS NOT NULL AND direction='in' AND pay_date <= ?", [$to])
-         - (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE bank_account_id IS NOT NULL AND direction='out' AND pay_date <= ?", [$to])
-         - (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE bank_account_id IS NOT NULL AND exp_date <= ?", [$to])
-         + (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='cash_to_bank' AND txn_date <= ?", [$to])
-         - (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_to_cash' AND txn_date <= ?", [$to])
-         + (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_adjust' AND adjust_dir='add' AND txn_date <= ?", [$to])
-         - (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_adjust' AND adjust_dir='reduce' AND txn_date <= ?", [$to]);
+    // bank money only: a credit card is a debt and is counted on its own (2300)
+    $cards = bank_card_ids_sql();
+    $notCard = fn($col) => " AND ($col IS NULL OR $col NOT IN $cards)";
+    return (float)val("SELECT COALESCE(SUM(opening_balance),0) FROM bank_accounts WHERE account_type <> 'credit_card'")
+         + (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE bank_account_id IS NOT NULL AND direction='in' AND pay_date <= ?" . $notCard('bank_account_id'), [$to])
+         - (float)val("SELECT COALESCE(SUM(amount),0) FROM payments WHERE bank_account_id IS NOT NULL AND direction='out' AND pay_date <= ?" . $notCard('bank_account_id'), [$to])
+         - (float)val("SELECT COALESCE(SUM(amount),0) FROM expenses WHERE bank_account_id IS NOT NULL AND exp_date <= ?" . $notCard('bank_account_id'), [$to])
+         + (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='cash_to_bank' AND txn_date <= ?" . $notCard('to_bank_id'), [$to])
+         - (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_to_cash' AND txn_date <= ?" . $notCard('from_bank_id'), [$to])
+         + (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_adjust' AND adjust_dir='add' AND txn_date <= ?" . $notCard('to_bank_id'), [$to])
+         - (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_adjust' AND adjust_dir='reduce' AND txn_date <= ?" . $notCard('to_bank_id'), [$to])
+         // a bank paying the card bill (or a card paying into a bank) moves real bank money
+         - (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_to_bank' AND txn_date <= ? AND to_bank_id IN $cards" . $notCard('from_bank_id'), [$to])
+         + (float)val("SELECT COALESCE(SUM(amount),0) FROM money_transfers WHERE status='done' AND txn_type='bank_to_bank' AND txn_date <= ? AND from_bank_id IN $cards" . $notCard('to_bank_id'), [$to]);
 }
 /** Accounts Receivable / Accounts Payable through $to, on a net-per-party
  *  basis (a party who is both customer and supplier nets to one balance -

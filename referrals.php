@@ -61,7 +61,7 @@ $partners = all("SELECT r.*,
     (SELECT COUNT(*) FROM referral_earnings WHERE referrer_id = r.id) orders_cnt
     FROM referrers r ORDER BY approved_amt DESC, r.id DESC");
 $recent = all('SELECT re.*, r.name r_name FROM referral_earnings re JOIN referrers r ON r.id = re.referrer_id ORDER BY re.id DESC LIMIT 30');
-$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1 ORDER BY is_default DESC, account_name');
+$banks = all('SELECT * FROM bank_accounts WHERE is_active = 1' . bank_hide_sql() . " ORDER BY account_type = 'credit_card', is_default DESC, account_name");
 $totApproved = array_sum(array_column($partners, 'approved_amt'));
 
 $page_title = 'Referral Partners';
