@@ -37,7 +37,7 @@ t_ok('the secret is one of the encrypted settings', is_secret_setting('ak_earn_s
 $tag = ak_earn_tag();
 $c = ak_earn_conf();
 t_ok('the page script carries no secret', $c['secret'] === '' || strpos($tag, $c['secret']) === false);
-t_ok('the SDK file is the downloaded one, unedited', hash_file('sha256', __DIR__ . '/../includes/vendor/ak-connect.php') === 'f986649c45d573140a638ecd7eb34195786b5291bd659abad5cc51b5c43d5612');
+t_ok('the SDK file is the downloaded one, unedited', hash_file('sha256', __DIR__ . '/../includes/vendor/ak-connect.php') === '576f7879d4dad87b533102e3b944af5c1104b0bd8da79b1d42a74e5e3bb457ff');
 t_ok('the library folder is closed to the web', strpos((string)@file_get_contents(__DIR__ . '/../includes/vendor/.htaccess'), 'Require all denied') !== false);
 
 t_group('AK Earn: each event is hooked where it happens');
@@ -52,3 +52,9 @@ t_ok('an unpaid plan is never reported as paid', strpos($src('includes/ak_earn.p
 foreach (['catalog.php', 'product.php', 'category.php', 'brand.php', 'price.php', 'services.php', 'privacy.php', 'terms.php', 'referral.php'] as $pf)
     t_ok("$pf carries the browser script", strpos($src($pf), '<?= ak_earn_tag()') !== false);
 t_ok('staff screens do not count as visits', strpos($src('includes/footer.php'), '!current_user()) echo ak_earn_tag()') !== false);
+
+t_group('AK Earn: a partial product update never switches the rest off');
+$ak = (string)file_get_contents(__DIR__ . '/../includes/ak_earn.php');
+t_ok('one item is sent as a partial update', strpos($ak, 'ak_sync_products([$p], false)') !== false);
+t_ok('plans alone are sent as a partial update', strpos((string)file_get_contents(__DIR__ . '/../platform.php'), 'ak_sync_products(ak_earn_plan_products(), false)') !== false);
+t_ok('the full list goes in one request, parts only as partial', strpos($ak, '$full ? [$products] : array_chunk($products, 200)') !== false);

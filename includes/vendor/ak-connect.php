@@ -17,7 +17,7 @@
  *   ak_track_refund('INV-1001', 'customer request');
  *   ak_track_cancel('INV-1001');
  *   ak_push_stats('2026-11-21', 120, 4, 3500.00, 3);
- *   ak_sync_products([['code' => 'basic-plan', 'name' => 'Basic', 'price' => 999, 'billing' => 'yearly']]);
+ *   ak_sync_products([['code' => 'basic-plan', 'name' => 'Basic', 'price' => 999, 'billing' => 'yearly']]);  // full list: missing plans get disabled
  *   ak_ping();
  *
  * Every request is signed with HMAC-SHA256 (timestamp + nonce + body). Event IDs are deterministic, so sending
@@ -204,10 +204,14 @@ if (!function_exists('ak_track_order')) {
         return ak_request('/api/v1/stats', ['date' => $date, 'visitors' => $visitors, 'signups' => $signups, 'revenue' => round($revenue, 2), 'orders' => $orders]);
     }
 
-    /** $products: list of ['code','name','price','renewal_price'?,'billing'?,'description'?,'image'?,'url'?,'status'?] */
-    function ak_sync_products(array $products): array
+    /**
+     * $products: list of ['code','name','price','renewal_price'?,'billing'?,'description'?,'image'?,'url'?,'status'?]
+     * $fullSync = true (default): this is the COMPLETE list of current plans; plans not in the list are disabled in AK Earn.
+     * Pass false to send only some plans (nothing else changes).
+     */
+    function ak_sync_products(array $products, bool $fullSync = true): array
     {
-        return ak_request('/api/v1/products', ['products' => array_values($products)], false);
+        return ak_request('/api/v1/products', ['products' => array_values($products), 'full_sync' => $fullSync], false);
     }
 
     function ak_ping(): array

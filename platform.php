@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,99)', array_merge($vals, [$code]));
         }
         log_activity('platform_plan_save', post('name'));
-        ak_earn(fn() => ak_sync_products(ak_earn_plan_products()), 'plan_sync', 'platform');
+        ak_earn(fn() => ak_sync_products(ak_earn_plan_products(), false), 'plan_sync', 'platform');   // plans only: the items stay
         flash('Plan saved.');
         redirect($back('plans'));
     }

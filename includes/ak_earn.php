@@ -215,7 +215,7 @@ function ak_earn_sync_item($itemId, $force = false) {
         if ($it && !(int)$it['show_on_website'] && !$force) return null;
         $p = $it ? ak_earn_item_product($it)
                  : ['code' => ak_earn_item_code($itemId), 'name' => 'Item ' . (int)$itemId, 'price' => 0, 'billing' => 'one_time', 'status' => 'inactive'];
-        return ak_sync_products([$p]);
+        return ak_sync_products([$p], false);   // just this one - everything else stays as it is
     }, 'product_sync');
 }
 
@@ -228,9 +228,15 @@ function ak_earn_sync_all() {
         foreach (all('SELECT * FROM items WHERE is_active = 1 AND show_on_website = 1 ORDER BY id') as $it) $products[] = ak_earn_item_product($it);
     }
     $products = array_merge($products, ak_earn_plan_products());
+    // A FULL list switches off, in AK Earn, every product it does not
+    // contain - so the whole list goes in one request. Only a catalogue too
+    // big for one request goes in parts, and then as partial updates (a part
+    // must never switch off what is in the other parts).
     $synced = 0; $errors = [];
-    foreach (array_chunk($products, 100) as $chunk) {
-        $r = ak_sync_products($chunk);
+    $full = count($products) <= 1000;
+    foreach ($full ? [$products] : array_chunk($products, 200) as $chunk) {
+        if (!$chunk) continue;
+        $r = ak_sync_products($chunk, $full);
         $synced += (int)($r['synced'] ?? 0);
         if (($r['status'] ?? '') !== 'ok') $errors[] = (string)($r['message'] ?? 'error');
         foreach ((array)($r['errors'] ?? []) as $e) $errors[] = is_string($e) ? $e : json_encode($e);
