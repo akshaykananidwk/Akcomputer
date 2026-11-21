@@ -37,6 +37,7 @@ require_once __DIR__ . '/accounting.php';
 require_once __DIR__ . '/custom_reports.php';
 require_once __DIR__ . '/api_auth.php';
 require_once __DIR__ . '/webhooks.php';
+require_once __DIR__ . '/ak_earn.php'; // AK Earn partner tracking (sends only after the page is done)
 require_once __DIR__ . '/xlsx_writer.php';
 require_once __DIR__ . '/ai_insights.php';
 require_once __DIR__ . '/dashboard.php'; // needs money.php + ai_insights' trend_direction()

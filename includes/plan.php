@@ -166,6 +166,7 @@ function platform_payment_link(array $t, array $plan, $months) {
     $resp = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
     $data = json_decode((string)$resp, true);
     if ($code >= 300 || empty($data['short_url'])) { pq("UPDATE tenant_payments SET status = 'failed' WHERE ref = ?", [$ref]); return ''; }
+    if (function_exists('ak_earn_plan_created')) ak_earn_plan_created($ref);   // AK Earn: plan ordered, not paid yet
     return $data['short_url'];
 }
 

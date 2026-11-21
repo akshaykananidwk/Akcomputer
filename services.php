@@ -99,5 +99,6 @@ $metaDesc = $sv ? $sv['desc'] : 'Computer repair, laptop repair, CCTV installati
 <?php endif; ?>
 </div>
 <?= seo_footer() ?>
+<?= ak_earn_tag() /* AK Earn: ?ref= partner cookie + page view (public key only) */ ?>
 </body>
 </html>

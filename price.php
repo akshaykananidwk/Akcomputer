@@ -132,5 +132,6 @@ $metaDesc = $it['name'] . ' price in ' . shop_place() . ': ₹' . money($dp) . '
   </div>
 </div>
 <?= seo_footer() ?>
+<?= ak_earn_tag() /* AK Earn: ?ref= partner cookie + page view (public key only) */ ?>
 </body>
 </html>

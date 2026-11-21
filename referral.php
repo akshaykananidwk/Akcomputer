@@ -134,5 +134,6 @@ $statusLabel = ['pending' => '⏳ Orders pending', 'approved' => '✅ Credited (
   <p class="mt" style="text-align:center"><a class="btn btn-sm btn-outline" href="catalog.php">← Go to the store</a></p>
 <?php endif; ?>
 </div>
+<?= ak_earn_tag() /* AK Earn: ?ref= partner cookie + page view (public key only) */ ?>
 </body>
 </html>

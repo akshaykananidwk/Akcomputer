@@ -148,6 +148,7 @@ return simple_filter_menu(plan_filter_menu([
     ]],
     ['link', 'recycle.php', 'archive', 'Recycle bin', 'settings.edit'],
     ['link', 'connections.php', 'link', 'Connections (Sheets, UPI, courier…)', 'settings.edit'],
+    ...(function_exists('tenant_active') && tenant_active() ? [] : [['link', 'ak_earn.php', 'users', 'AK Earn (partners)', 'settings.edit']]),
     ['link', 'settings.php', 'gear', 'Settings', 'settings.view'],
     ['link', 'help.php', 'book', 'Help', null],
 ]));

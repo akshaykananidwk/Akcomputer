@@ -64,6 +64,7 @@ if ($step === 'make') {
         $done = provision_tenant($in);
         unset($_SESSION['signup'], $_SESSION['signup_otp'], $_SESSION['signup_sent']);
         log_activity('shop_signup', $done['slug'] . ' (' . $done['name'] . ')');
+        ak_earn_shop_signup($done);   // AK Earn: a new customer account for the software
         if ($in['owner_email'] !== '') {
             $loginUrl = ((defined('BASE_URL') && BASE_URL ? (parse_url(BASE_URL, PHP_URL_SCHEME) ?: 'https') : 'https') . '://' . $done['domain'] . '/login.php');
             send_mail($in['owner_email'], 'Your shop software is ready — ' . $done['name'], mail_html('Welcome! Your software is ready',

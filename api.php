@@ -218,6 +218,7 @@ if (in_array($r, ['catalog', 'wlogin', 'worder'], true)) {
         $oid = insert_id();
         $ono = doc_no('WEB', $oid);
         q('UPDATE web_orders SET order_no = ? WHERE id = ?', [$ono, $oid]);
+        ak_earn_order_created($oid);   // AK Earn: order placed, not paid yet
         $waShop = setting('shop_whatsapp', setting('shop_mobile', ''));
         if ($waShop) {
             send_whatsapp($waShop, wa_template('weborder', [
