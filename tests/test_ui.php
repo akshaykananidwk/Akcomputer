@@ -17,6 +17,17 @@ t_eq('minus nothing is just nothing', money(-0.001), '0.00');
 t_group('Display: amount in words');
 t_eq('rupees and paise', amount_in_words(2868.58), 'Two Thousand Eight Hundred Sixty Eight Rupees and Fifty Eight Paise Only');
 t_eq('lakh', amount_in_words(150000), 'One Lakh Fifty Thousand Rupees Only');
+// bill INV-26-27-00452 (21-11-2026): edited three times, the words stayed at "Seven Hundred Seventy Six"
+t_eq('Rs 51,820.57 in words', amount_in_words(51820.57), 'Fifty One Thousand Eight Hundred Twenty Rupees and Fifty Seven Paise Only');
+t_eq('Rs 58,218.66 in words', amount_in_words(58218.66), 'Fifty Eight Thousand Two Hundred Eighteen Rupees and Sixty Six Paise Only');
+t_eq('Rs 58,500.00 in words', amount_in_words('58500.00'), 'Fifty Eight Thousand Five Hundred Rupees Only');
+t_eq('a total with commas is read whole, not as 58', amount_in_words('58,500.00'), 'Fifty Eight Thousand Five Hundred Rupees Only');
+t_eq('paise alone say Zero Rupees', amount_in_words(0.5), 'Zero Rupees and Fifty Paise Only');
+t_eq('crores', amount_in_words(25071999.99), 'Two Crore Fifty Lakh Seventy One Thousand Nine Hundred Ninety Nine Rupees and Ninety Nine Paise Only');
+$wbad = 0; mt_srand(452);
+for ($i = 0; $i < 20000; $i++) { $pz = $i < 10000 ? $i * 7 : mt_rand(0, 99999999999); if (amount_words_value(amount_in_words($pz / 100)) !== $pz) $wbad++; }
+t_eq('20,000 amounts: the words always read back to the same paise', $wbad, 0);
+t_eq('words that disagree with the figure are never returned', amount_words_value('Seven Hundred Seventy Six Rupees Only') === 5850000, false);
 
 t_group('Display: Gujarati / Hindi words on the screen');
 $bad = [];
@@ -53,3 +64,6 @@ t_ok('the total and the balance are on it', (bool)array_filter($lines, fn($l) =>
      && (bool)array_filter($lines, fn($l) => strpos($l, 'Balance due') === 0 && strpos($l, '23,456.50') !== false));
 t_ok('words are not cut in half', !array_filter(explode(' ', amount_in_words(123456.5)), fn($w) => !array_filter($lines, fn($l) => preg_match('/\\b' . $w . '\\b/', $l))));
 t_ok('80 mm paper takes 48', max(array_map('strlen', receipt_lines($rs, 48))) <= 48);
+$upd = file_get_contents(__DIR__ . '/../includes/gh_updater.php');
+t_ok('Update checks every file it writes', strpos($upd, '@file_put_contents($dest, $body) === strlen($body)') !== false);
+t_ok('...and a file it could not write stops the version moving on and is named to the owner', strpos($upd, "if (\$notWritten) {") !== false && strpos($upd, 'still run the OLD code') !== false);

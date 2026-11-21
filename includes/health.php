@@ -125,6 +125,17 @@ function health_checks() {
         all("SELECT MIN(s.id) id, s.invoice_no no, COUNT(*) amount FROM sales s WHERE s.is_cancelled=0 AND s.invoice_no <> ''
              GROUP BY s.invoice_no HAVING COUNT(*) > 1 LIMIT 10"));
 
+    // the amount in words printed on the last 2,000 bills, read back and compared with each total
+    $wordsBad = [];
+    foreach (all('SELECT id, invoice_no no, sale_date d, total FROM sales WHERE is_cancelled = 0 ORDER BY id DESC LIMIT 2000') as $s) {
+        $w = amount_in_words($s['total']);
+        if (amount_words_value($w) !== (int)round((float)$s['total'] * 100)) $wordsBad[] = $s + ['who' => $w];
+        if (count($wordsBad) >= 10) break;
+    }
+    $add('Bill: amount in words does not match the total',
+        'The words printed on the bill say a different amount from the figure — the bill now prints the figure instead. Run Settings → Update; if this stays, the server is not running the updated files.',
+        $wordsBad);
+
     return array_merge($checks, health_system_checks());
 }
 

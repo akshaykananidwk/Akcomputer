@@ -88,6 +88,13 @@ $selfTests = [
      'want' => 'Two Thousand Eight Hundred Sixty Eight Rupees and Fifty Eight Paise Only'],
     ['label' => 'amount_in_words(3374.80)', 'got' => amount_in_words(3374.80),
      'want' => 'Three Thousand Three Hundred Seventy Four Rupees and Eighty Paise Only'],
+    // bill INV-26-27-00452, reported 21-11-2026 as "Seven Hundred Seventy Six Rupees ..." after each edit
+    ['label' => 'amount_in_words(51820.57)', 'got' => amount_in_words(51820.57),
+     'want' => 'Fifty One Thousand Eight Hundred Twenty Rupees and Fifty Seven Paise Only'],
+    ['label' => 'amount_in_words(58218.66)', 'got' => amount_in_words(58218.66),
+     'want' => 'Fifty Eight Thousand Two Hundred Eighteen Rupees and Sixty Six Paise Only'],
+    ['label' => 'amount_in_words(58500.00)', 'got' => amount_in_words(58500.00),
+     'want' => 'Fifty Eight Thousand Five Hundred Rupees Only'],
 ];
 $selfTestOk = true;
 foreach ($selfTests as $t) if ($t['got'] !== $t['want']) $selfTestOk = false;

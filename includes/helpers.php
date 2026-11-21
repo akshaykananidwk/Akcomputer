@@ -593,27 +593,65 @@ function verify_otp($purpose, $target, $code) {
 }
 
 // ---------- Amount in words (Indian system) ----------
+/** "Fifty Eight Thousand Five Hundred Rupees Only". Worked in whole paise so
+ *  no float can shift a rupee, and read back before it is returned: if the
+ *  words do not say the same amount as the figure (reported on a printed bill,
+ *  21-11-2026: Rs 58,500.00 printed as "Seven Hundred Seventy Six Rupees"),
+ *  the bill shows the amount in figures instead and the mismatch is logged -
+ *  a customer is never handed words that disagree with the total. */
 function amount_in_words($num) {
-    $num = round((float)$num, 2);
-    $paise = round(($num - floor($num)) * 100);
-    $num = (int)floor($num);
-    if ($num == 0 && $paise == 0) return 'Zero Rupees Only';
+    if (is_string($num)) $num = str_replace([',', ' ', '₹', 'Rs'], '', $num);   // "58,500.00" is 58500, not 58
+    $p = (int)round(round((float)$num, 2) * 100);
+    $words = amount_words_build(intdiv(abs($p), 100), abs($p) % 100);
+    if (amount_words_value($words) !== abs($p)) {
+        error_log('amount_in_words mismatch: ' . var_export($num, true) . ' -> ' . $words);
+        return 'Rupees ' . money(abs($p) / 100) . ' Only';
+    }
+    return $words;
+}
+
+function amount_words_build($rupees, $paise) {
+    if ($rupees === 0 && $paise === 0) return 'Zero Rupees Only';
     $ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve',
              'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
     $tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-    $two = function ($n) use ($ones, $tens) {
-        if ($n < 20) return $ones[$n];
-        return trim($tens[intdiv($n, 10)] . ' ' . $ones[$n % 10]);
-    };
+    $two = fn($n) => $n < 20 ? $ones[$n] : trim($tens[intdiv($n, 10)] . ' ' . $ones[$n % 10]);
     $out = '';
-    if ($num >= 10000000) { $out .= $two(intdiv($num, 10000000)) . ' Crore '; $num %= 10000000; }
-    if ($num >= 100000) { $out .= $two(intdiv($num, 100000)) . ' Lakh '; $num %= 100000; }
-    if ($num >= 1000) { $out .= $two(intdiv($num, 1000)) . ' Thousand '; $num %= 1000; }
-    if ($num >= 100) { $out .= $ones[intdiv($num, 100)] . ' Hundred '; $num %= 100; }
-    if ($num > 0) $out .= $two($num) . ' ';
-    $out = trim($out) . ' Rupees';
+    $n = $rupees;
+    if ($n >= 10000000) { $out .= preg_replace('/ Rupees Only$/', '', amount_words_build(intdiv($n, 10000000), 0)) . ' Crore '; $n %= 10000000; }   // 100 crore and up read as "One Hundred Crore"
+    if ($n >= 100000) { $out .= $two(intdiv($n, 100000)) . ' Lakh '; $n %= 100000; }
+    if ($n >= 1000) { $out .= $two(intdiv($n, 1000)) . ' Thousand '; $n %= 1000; }
+    if ($n >= 100) { $out .= $ones[intdiv($n, 100)] . ' Hundred '; $n %= 100; }
+    if ($n > 0) $out .= $two($n) . ' ';
+    $out = trim(($rupees === 0 ? 'Zero' : trim($out)) . ' Rupees');
     if ($paise > 0) $out .= ' and ' . $two($paise) . ' Paise';
     return trim($out) . ' Only';
+}
+
+/** The words read back as paise (58,500.00 -> 5850000), or -1 if unreadable. */
+function amount_words_value($words) {
+    static $v = null;
+    if ($v === null) {
+        $v = ['zero' => 0, 'one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5, 'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9,
+              'ten' => 10, 'eleven' => 11, 'twelve' => 12, 'thirteen' => 13, 'fourteen' => 14, 'fifteen' => 15, 'sixteen' => 16,
+              'seventeen' => 17, 'eighteen' => 18, 'nineteen' => 19, 'twenty' => 20, 'thirty' => 30, 'forty' => 40, 'fifty' => 50,
+              'sixty' => 60, 'seventy' => 70, 'eighty' => 80, 'ninety' => 90];
+    }
+    $read = function ($part) use ($v) {
+        $total = 0; $cur = 0;
+        foreach (preg_split('/\s+/', strtolower(trim($part)), -1, PREG_SPLIT_NO_EMPTY) as $w) {
+            if (isset($v[$w])) $cur += $v[$w];
+            elseif ($w === 'hundred') $cur *= 100;
+            elseif ($w === 'thousand') { $total += $cur * 1000; $cur = 0; }
+            elseif ($w === 'lakh') { $total += $cur * 100000; $cur = 0; }
+            elseif ($w === 'crore') { $total = ($total + $cur) * 10000000; $cur = 0; }
+            else return -1;
+        }
+        return $total + $cur;
+    };
+    if (!preg_match('/^(.*) Rupees(?: and (.+) Paise)? Only$/', trim((string)$words), $m)) return -1;
+    $r = $read($m[1]); $pz = isset($m[2]) ? $read($m[2]) : 0;
+    return ($r < 0 || $pz < 0) ? -1 : $r * 100 + $pz;
 }
 
 // ---------- Party running-account balance ----------

@@ -195,6 +195,7 @@ function gh_apply_update($sha) {
 
     $root = dirname(__DIR__);
     $applied = 0;
+    $notWritten = [];   // a file the server would not let us overwrite keeps its OLD code - say so
     for ($i = 0; $i < $zip->numFiles; $i++) {
         $name = $zip->getNameIndex($i);
         if (substr($name, -1) === '/') continue; // directory entry
@@ -206,9 +207,10 @@ function gh_apply_update($sha) {
         // anyway; uploads/ and updates/ hold live shop data, never touched.
         if ($rel === 'config.php' || strpos($rel, 'uploads/') === 0 || strpos($rel, 'updates/') === 0) continue;
         $dest = $root . '/' . $rel;
-        if (!is_dir(dirname($dest))) mkdir(dirname($dest), 0755, true);
-        file_put_contents($dest, $zip->getFromIndex($i));
-        $applied++;
+        if (!is_dir(dirname($dest))) @mkdir(dirname($dest), 0755, true);
+        $body = $zip->getFromIndex($i);
+        if (@file_put_contents($dest, $body) === strlen($body)) $applied++;
+        else $notWritten[] = $rel;
     }
     $zip->close();
     @unlink($tmpZip);
@@ -228,6 +230,13 @@ function gh_apply_update($sha) {
     foreach ($shops as $slug => $tot) if (!empty($tot['error']) || !empty($tot['failed']))
         log_activity('tenant_migrate_fail', $slug . ': ' . ($tot['error'] ?? $tot['failed'] . ' statements'));
 
+    if ($notWritten) {
+        // the version number is NOT moved on: the server is still partly running the old code
+        log_activity('gh_update_partial', substr($sha, 0, 7) . ': ' . count($notWritten) . ' files not written: ' . implode(', ', array_slice($notWritten, 0, 30)));
+        return [false, '⚠️ Update ' . substr($sha, 0, 7) . ' only partly applied: ' . count($notWritten) . ' file(s) could not be written, so they still run the OLD code: '
+            . implode(', ', array_slice($notWritten, 0, 8)) . (count($notWritten) > 8 ? ' …' : '')
+            . '. Ask your hosting to give PHP write permission on the app folder (or fix the file owner), then press Update again.'];
+    }
     set_setting('gh_last_sha', $sha);
     set_setting('app_version', substr($sha, 0, 7));
 
