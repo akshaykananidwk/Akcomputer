@@ -49,7 +49,22 @@ function cron_jobs() {
         'voice_balance' => ['📞 Reminder-call Balance', 'Warns the owner before the Vobiz balance runs out and calls stop going through', 360,
             fn() => (int)setting('voice_enabled', 0) === 1],
         'housekeeping' => ['🧹 Log Cleanup', 'Trims every log table past its keep-for period — never business data (see Scaling)', 1440, null],
+        'ak_earn' => ['🤝 AK Earn sync', 'Re-sends AK Earn events that could not go through, and refreshes the product list once a day', 60,
+            fn() => !tenant_active() && ak_earn_ready()],
     ];
+}
+
+/** AK Earn: retry what failed, then the daily product list. */
+function cron_job_ak_earn() {
+    if (!ak_earn_boot()) return 'not set up';
+    $sent = ak_flush_queue(200);
+    $out = $sent . ' queued event(s) re-sent';
+    if (substr((string)setting('ak_earn_synced_at', ''), 0, 10) !== today()) {
+        $r = ak_earn_sync_all();
+        if ($r['status'] !== 'ok') throw new Exception('product sync: ' . implode('; ', $r['errors']));
+        $out .= ', ' . $r['sent'] . ' product(s) synced';
+    }
+    return $out;
 }
 
 /** Last recorded run of one job (from cron_runs). */

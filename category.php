@@ -81,5 +81,6 @@ foreach (array_slice($items, 0, 30) as $pos => $i) {
   </div>
 </div>
 <?= seo_footer() ?>
+<?= ak_earn_tag() /* AK Earn: ?ref= partner cookie + page view (public key only) */ ?>
 </body>
 </html>

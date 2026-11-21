@@ -32,8 +32,11 @@ $linkId = $data['payload']['payment_link']['entity']['id'] ?? '';
 // A shop paying for its plan (the owner's own Razorpay, the owner's address)
 $refId = (string)($data['payload']['payment_link']['entity']['reference_id'] ?? '');
 if (strncmp($refId, 'PLT-', 4) === 0 && !tenant_active()) {
-    exit(platform_payment_paid($refId, (string)($data['payload']['payment']['entity']['id'] ?? ''),
-                               (float)($data['payload']['payment']['entity']['amount'] ?? 0)));
+    $res = platform_payment_paid($refId, (string)($data['payload']['payment']['entity']['id'] ?? ''),
+                                 (float)($data['payload']['payment']['entity']['amount'] ?? 0));
+    // AK Earn: only the delivery that really marked it paid reports it
+    if ($res === 'ok') ak_earn_plan_paid($refId);
+    exit($res);
 }
 $payId = $data['payload']['payment']['entity']['id'] ?? '';
 $payAmountPaise = (float)($data['payload']['payment']['entity']['amount'] ?? 0);

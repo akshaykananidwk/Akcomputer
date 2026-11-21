@@ -33,5 +33,8 @@
   <?php endif; ?>
 </nav>
 <?php endif; ?>
+<?php // AK Earn browser script on the public pages that use this footer (sign-up, demo, feedback...) -
+      // never for logged-in staff, whose screens are not visits
+      if (function_exists('ak_earn_tag') && !current_user()) echo ak_earn_tag(); ?>
 </body>
 </html>

@@ -8,6 +8,7 @@
 
 if (PHP_SAPI !== 'cli') { http_response_code(403); die('CLI only'); }
 
+define('AK_EARN_DRY_RUN', true);   // never send test data to the real AK Earn master
 require_once __DIR__ . '/../includes/init.php';
 require_once __DIR__ . '/lib.php';
 
@@ -18,7 +19,7 @@ $pdo = db();
 $pdo->beginTransaction();
 
 try {
-    foreach (['money', 'payments', 'stock', 'permissions', 'health', 'settlement', 'dashboard', 'customer', 'purchase', 'ai', 'market', 'campaign', 'forecast', 'scaling', 'reports', 'api', 'voice', 'wa_buttons', 'tenant', 'biz', 'ui', 'hr', 'books', 'security2', 'connect', 'mail', 'accounting_audit', 'paylink', 'ledger', 'item_limits', 'attendance_rules', 'category_plan', 'expense_ai', 'party_merge', 'mobile_first', 'items_list', 'credit_card'] as $suite) {
+    foreach (['money', 'payments', 'stock', 'permissions', 'health', 'settlement', 'dashboard', 'customer', 'purchase', 'ai', 'market', 'campaign', 'forecast', 'scaling', 'reports', 'api', 'voice', 'wa_buttons', 'tenant', 'biz', 'ui', 'hr', 'books', 'security2', 'connect', 'mail', 'accounting_audit', 'paylink', 'ledger', 'item_limits', 'attendance_rules', 'category_plan', 'expense_ai', 'party_merge', 'mobile_first', 'items_list', 'credit_card', 'ak_earn'] as $suite) {
         require __DIR__ . '/test_' . $suite . '.php';
     }
 } catch (Throwable $e) {

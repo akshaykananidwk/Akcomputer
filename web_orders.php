@@ -7,7 +7,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'status') {
     require_perm('weborders.edit');
     $oid = (int)post('id');
     $newStatus = post('status');
+    $oldStatus = (string)val('SELECT status FROM web_orders WHERE id = ?', [$oid]);
     q('UPDATE web_orders SET status = ? WHERE id = ?', [$newStatus, $oid]);
+    // AK Earn: completed = paid (the commission event), cancelled = cancel / refund
+    ak_earn_order_status($oid, $oldStatus, $newStatus);
     // Referral commission follows the order automatically:
     // completed -> APPROVED (credited to the partner's balance, WhatsApp sent),
     // cancelled -> cancelled, back to new/contacted -> pending again.

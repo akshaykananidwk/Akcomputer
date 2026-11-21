@@ -90,6 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // photo-upload work log: feeds Reports > Photo Upload Log (daily
         // counts + minutes-per-photo per staff member)
         if ($made = biz_item_save_extras($id)) flash("$made size/colour items made — each keeps its own stock.");
+        if ($id) ak_earn_sync_item($id);   // AK Earn product list (website items only, sent after the page)
         if ($photoUploaded) log_activity('item_photo', $id . '|' . post('name'));
         log_activity('item_save', post('name'));
         redirect('items.php');
@@ -118,6 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('Item deleted.', 'success', $undo);
             log_activity('item_delete', "#$iid");
         }
+        ak_earn_sync_item($iid, true);   // AK Earn: no longer sold
         redirect('items.php' . (get('show') === 'all' ? '?show=all' : ''));
     }
     if (post('do') === 'toggle_web') {
@@ -125,6 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         q('UPDATE items SET show_on_website = 1 - show_on_website WHERE id = ?', [(int)post('id')]);
         $on = val('SELECT show_on_website FROM items WHERE id = ?', [(int)post('id')]);
         flash($on ? 'Item will now show on the website ✔' : 'Item removed from the website.');
+        ak_earn_sync_item((int)post('id'), true);   // AK Earn product list
         redirect('items.php');
     }
 }

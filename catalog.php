@@ -58,6 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wregister') {
     } else {
         q('INSERT INTO web_accounts (name, mobile, password_hash, discount_pct, is_active, self_registered) VALUES (?,?,?,0,0,1)',
           [$rname, $rmobile, password_hash(post('rpassword'), PASSWORD_DEFAULT)]);
+        ak_earn(fn() => ak_track_signup($rname, mobile10($rmobile), null, ['kind' => 'dealer_account']), 'signup');
         if ($waShop) send_whatsapp($waShop, "🆕 *Dealer registration*\n\n$rname ($rmobile) has asked for a dealer account on the website.\nApprove: " . base_url('web_customers.php'));
         $wregDone = true;
     }
@@ -98,6 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'order') {
                $webAcct ? (int)$webAcct['id'] : null]);
             $oid = insert_id();
             q('UPDATE web_orders SET order_no = ? WHERE id = ?', [doc_no('WEB', $oid), $oid]);
+            ak_earn_order_created($oid);   // AK Earn: order placed, not paid yet
             // partner commission books itself as PENDING right away; it turns
             // into an approved (payable) balance when the shop marks the order
             // completed, and cancels if the order cancels
@@ -1041,5 +1043,6 @@ document.querySelectorAll('.cat-link').forEach(function (ch) {
 </script>
 <?= seo_footer() ?>
 <script src="assets/searchselect.js?v=<?= asset_v('searchselect.js') ?>"></script>
+<?= ak_earn_tag() /* AK Earn: ?ref= partner cookie + page view (public key only) */ ?>
 </body>
 </html>
