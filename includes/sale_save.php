@@ -56,7 +56,8 @@ function sale_save_form(array $u, $clientUuid = null) {
         // quantity (each serial = one physical unit). So 4 serials with qty
         // left at 1 is treated as qty 4 automatically instead of erroring.
         $rowSerials = array_values(array_filter(array_map('trim', (array)($serialSel[$n] ?? []))));
-        if ($rowSerials) $qty = count($rowSerials);
+        // ...but never fewer pieces than typed: 6 typed with 3 serials picked is 6 pieces
+        if ($rowSerials) $qty = max($qty, count(array_unique($rowSerials)));
         if (!$iid || $qty <= 0) continue;
         $price = (float)($prices[$i] ?? 0);
         $tr = $company['is_gst'] && !biz_on('gst_composition') ? (float)($taxes[$i] ?? 0) : 0;   // a composition dealer may not charge GST
@@ -195,14 +196,12 @@ function sale_save_form(array $u, $clientUuid = null) {
         $allowNeg = setting('allow_negative_stock', '1') === '1';
         foreach ($rows as $r) {
             $item = row('SELECT * FROM items WHERE id = ?', [$r['item_id']]);
-            $serials = array_values(array_filter(array_map('trim', (array)($serialSel[$r['n']] ?? []))));
-            // serial items: serials must match qty, except when selling without
-            // stock (advance billing) - then bill passes with no serials selected
-            if ($item['serial_tracked'] && count($serials) > 0 && count($serials) != $r['qty']) {
-                throw new Exception("Select {$r['qty']} serial number(s) for {$item['name']} (or none for advance billing).");
-            }
-            if ($item['serial_tracked'] && !$serials && !$allowNeg) {
-                throw new Exception("Select serial number(s) for {$item['name']}.");
+            $serials = array_values(array_unique(array_filter(array_map('trim', (array)($serialSel[$r['n']] ?? [])))));
+            // serial items: pick all, some or none of the serials - the bill saves either
+            // way (the shop asked for no "Select 6 serial(s)" stop, 27-11-2026). Only more
+            // serials than pieces is impossible.
+            if ($item['serial_tracked'] && count($serials) > $r['qty']) {
+                throw new Exception(count($serials) . " serial numbers picked for {$r['qty']} piece(s) of {$item['name']} - remove the extra ones.");
             }
             // FIFO/weighted-average costing (Settings > Inventory) is
             // opt-in and additive - stock_layer_consume() returns null

@@ -40,9 +40,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'save') {
 
         foreach ($rows as $r) {
             $item = row('SELECT * FROM items WHERE id = ?', [$r['item_id']]);
-            $serials = array_values(array_filter(array_map('trim', (array)($serialSel[$r['n']] ?? []))));
-            if ($item['serial_tracked'] && count($serials) != $r['qty']) {
-                throw new Exception("Select {$r['qty']} serial(s) for {$item['name']}.");
+            $serials = array_values(array_unique(array_filter(array_map('trim', (array)($serialSel[$r['n']] ?? [])))));
+            // serials are optional: pick all, some or none - the pieces move either way.
+            // Only more serials than pieces is impossible.
+            if ($item['serial_tracked'] && count($serials) > $r['qty']) {
+                throw new Exception(count($serials) . " serials picked for {$r['qty']} piece(s) of {$item['name']} - remove the extra ones.");
             }
             if (stock_qty($r['item_id'], $loc_id) < $r['qty']) {
                 throw new Exception("Not enough stock of {$item['name']}.");
