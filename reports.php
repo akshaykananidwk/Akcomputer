@@ -154,7 +154,7 @@ $tabs = [
     'bank_ledger' => '🏦 Bank Ledger',
     'expense' => '🧾 Expenses', 'gst' => '🧮 GST', 'profit' => '💹 Product-wise Profit',
     'party_profit' => '🏅 Party-wise Profit',
-    'bill_profit' => '🧮 Bill Profit', 'branch_staff' => '📊 Branch / Staff Comparison', 'staff' => '🎒 Staff Stock',
+    'bill_profit' => '🧮 Bill Profit', 'sold_on_day' => '📆 Sold On The Day (entry date)', 'branch_staff' => '📊 Branch / Staff Comparison', 'staff' => '🎒 Staff Stock',
     'web_visits' => '🌐 Website Visitors',
     'repair_tat' => '🛠️ Repair TAT', 'warranty_tat' => '🛡️ Warranty TAT', 'tech_sla' => '⏱️ Technician SLA',
     'photo_log' => '📸 Photo Upload Log',
@@ -168,7 +168,7 @@ $tabs = [
 if (!is_full_admin()) unset($tabs['health']);
 if (!can('reports.gst')) unset($tabs['gst']);
 if (!can('purchases.view')) unset($tabs['payables']);
-if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['party_profit']); unset($tabs['bill_profit']); unset($tabs['stockval']); unset($tabs['business']); unset($tabs['dead_stock']); unset($tabs['branch_staff']); }
+if (!can('reports.profit')) { unset($tabs['profit']); unset($tabs['party_profit']); unset($tabs['bill_profit']); unset($tabs['sold_on_day']); unset($tabs['stockval']); unset($tabs['business']); unset($tabs['dead_stock']); unset($tabs['branch_staff']); }
 if (!can('expenses.view')) unset($tabs['expense']);
 if (!can('users.view')) { unset($tabs['activity']); unset($tabs['login_history']); unset($tabs['photo_log']); }
 if (!can('payments.view')) unset($tabs['bank_ledger']);
@@ -178,7 +178,7 @@ if (!can('cashbank.viewall')) { unset($tabs['bank_ledger']); unset($tabs['cashbo
 if (!can('reports.accounting')) { unset($tabs['general_ledger']); unset($tabs['trial_balance']); unset($tabs['balance_sheet']); unset($tabs['profit_loss']); }
 if (!can('reports.builder')) unset($tabs['custom']);
 if ($r === 'business' && !can('reports.profit')) $r = 'daily';
-if ($r === 'branch_staff' && !can('reports.profit')) $r = 'daily';
+if (in_array($r, ['branch_staff', 'sold_on_day'], true) && !can('reports.profit')) $r = 'daily';
 if (in_array($r, ['activity', 'login_history', 'photo_log'], true) && !can('users.view')) $r = 'daily';
 if ($r === 'bank_ledger' && !can('payments.view')) $r = 'daily';
 if (in_array($r, ['bank_ledger', 'cashbook'], true) && !can('cashbank.viewall')) $r = 'daily';
@@ -191,7 +191,7 @@ if ($r === 'payables' && !can('purchases.view')) $r = 'daily';
 // a vertical, categorized list (not a horizontal scrolling tab strip) so
 // nothing is hidden off-screen to the side.
 $tabCategories = [
-    'Transaction' => ['business', 'all_txn', 'daily', 'sales', 'purchase', 'payables'],
+    'Transaction' => ['business', 'all_txn', 'daily', 'sold_on_day', 'sales', 'purchase', 'payables'],
     'Party Reports' => ['party_sales', 'aging', 'vendor_perf'],
     'GST' => ['gst'],
     'Item / Stock Reports' => ['stockval', 'low', 'purchase_reco', 'dead_stock', 'forecast'],
@@ -205,7 +205,7 @@ $tabCategories = [
 ?>
 <?php
 $filterExtra = '&f_company=' . $fCompany . '&f_party=' . $fParty . '&f_status=' . e($fStatus) . '&f_user=' . $fUser . '&bank_id=' . $bankId . '&gl_account=' . $glAccount . '&stock_loc=' . $stockLoc . '&types=' . e(get('types'));
-$filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchase', 'vendor_perf', 'gst', 'profit', 'party_profit', 'bill_profit'], true);
+$filterFamily = in_array($r, ['daily', 'sales', 'party_sales', 'aging', 'purchase', 'vendor_perf', 'gst', 'profit', 'party_profit', 'bill_profit', 'sold_on_day'], true);
 $curLabel = preg_replace('/^\S+\s/u', '', $tabs[$r] ?? 'Report');
 ?>
 <div class="page-actions no-print" style="flex-wrap:wrap;align-items:center">

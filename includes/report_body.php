@@ -936,6 +936,40 @@ if ($r === 'bill_profit' && can('reports.profit')) {
     echo '<p class="muted">Profit = items (sale − cost) − discount − loyalty points ± adjustment/round-off. GST is not counted as profit. Cost = the purchase price at the time of the bill; for old bills, the current purchase price is used.</p>';
 }
 
+// ---------------- sold on the day (by when the item was put on a bill) ----------------
+if ($r === 'sold_on_day' && can('reports.profit')) {
+    require_once __DIR__ . '/sold_on_day.php';
+    list($ew, $ep) = report_extra_where('s', $fCompany, $fParty, $fStatus, $fUser);
+    $sod = sold_on_day_rows($from, $to, $ew, $ep);
+    $days = sold_on_day_totals($sod);
+    $tR = array_sum(array_column($days, 'rev')); $tC = array_sum(array_column($days, 'cost')); $tL = array_sum(array_column($days, 'late'));
+    if (empty($reportPdf)) {
+        echo '<div class="grid-stats mb">';
+        echo '<div class="stat"><div class="stat-label">💰 Sold in this period</div><div class="stat-value">₹' . money($tR) . '</div></div>';
+        echo '<div class="stat ' . ($tR - $tC >= 0 ? 's-ok' : 's-bad') . '"><div class="stat-label">📈 Profit</div><div class="stat-value">₹' . money($tR - $tC) . '</div></div>';
+        echo '<div class="stat s-warn"><div class="stat-label">➕ Added to older bills</div><div class="stat-value">₹' . money($tL) . '</div></div>';
+        echo '</div>';
+    }
+    echo '<div class="table-wrap"><table><thead><tr><th>Day</th><th class="num">Bills</th><th class="num">Pieces</th><th class="num">Sold ₹</th><th class="num">Cost ₹</th><th class="num">Profit ₹</th><th class="num">of it on older bills ₹</th></tr></thead><tbody>';
+    foreach ($days as $d => $x) {
+        $pf = $x['rev'] - $x['cost'];
+        echo '<tr><td><a href="reports.php?r=sold_on_day&from=' . e($d) . '&to=' . e($d) . '">' . dmy($d) . '</a></td><td class="num">' . count($x['bills']) . '</td><td class="num">' . (float)round($x['units'], 2)
+           . '</td><td class="num">' . money($x['rev']) . '</td><td class="num">' . money($x['cost']) . '</td><td class="num" style="color:' . ($pf >= 0 ? 'var(--ok)' : 'var(--bad)') . '">' . money($pf)
+           . '</td><td class="num">' . ($x['late'] ? money($x['late']) : '-') . '</td></tr>';
+    }
+    echo '<tr><td><strong>Total</strong></td><td></td><td></td><td class="num"><strong>' . money($tR) . '</strong></td><td class="num"><strong>' . money($tC) . '</strong></td><td class="num"><strong>' . money($tR - $tC) . '</strong></td><td class="num"><strong>' . money($tL) . '</strong></td></tr>';
+    echo '</tbody></table></div>';
+    // one day picked: every item behind that day's number
+    if ($from === $to && $sod) {
+        echo '<h3 class="mt">What was sold on ' . dmy($from) . '</h3><div class="table-wrap"><table><thead><tr><th>Bill</th><th>Bill date</th><th>Customer</th><th>Item</th><th class="num">Pieces</th><th class="num">Sold ₹</th><th class="num">Profit ₹</th></tr></thead><tbody>';
+        foreach ($sod as $x) echo '<tr><td><a href="sale_view.php?id=' . $x['sale_id'] . '">' . e($x['invoice_no']) . '</a></td><td>' . dmy($x['sale_date']) . ($x['sale_date'] < $x['d'] ? ' <span class="badge badge-warn">added later</span>' : '')
+           . '</td><td>' . e($x['customer'] ?: 'Walk-in') . '</td><td>' . e($x['item']) . '</td><td class="num">' . (float)round($x['units'], 2) . '</td><td class="num">' . money($x['rev']) . '</td><td class="num">' . money($x['rev'] - $x['cost']) . '</td></tr>';
+        echo '</tbody></table></div>';
+    }
+    echo '<p class="muted">Counted on the day each item was really put on a bill — an item added on the 10th to a bill dated the 1st is the 10th\'s sale. A piece taken off a bill shows as minus on that day.'
+       . ' Value is the bill\'s price less its share of the bill discount; GST is not counted. Services count on the day the bill was entered. The Daily Sales report still goes by the bill date.</p>';
+}
+
 // ---------------- website visitors (daily unique) ----------------
 if ($r === 'web_visits') {
     $rows = all('SELECT visit_date d, COUNT(*) uniq_visitors, SUM(views) views FROM site_visits
