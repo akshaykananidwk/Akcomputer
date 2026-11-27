@@ -166,7 +166,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'post_variance') {
     $lines = all('SELECT * FROM stock_count_items WHERE count_id = ? AND counted_qty IS NOT NULL', [$cid]);
     $posted = 0;
     foreach ($lines as $l) {
-        $variance = (float)$l['counted_qty'] - (float)$l['system_qty'];
+        // the shelf is set to what was counted, from the stock as it is NOW -
+        // a sheet opened weeks ago has an old snapshot (sales, handovers since)
+        $now = stock_qty($l['item_id'], $count['location_id']);
+        q('UPDATE stock_count_items SET system_qty = ? WHERE id = ?', [$now, $l['id']]);
+        $variance = (float)$l['counted_qty'] - $now;
         if (abs($variance) > 0.009) {
             adjust_stock($l['item_id'], $count['location_id'], $variance, 'cycle_count', $cid, 'Stock audit ' . $count['count_no']);
             $posted++;
@@ -224,6 +228,13 @@ if ($action === 'count') {
     if (!$count) { flash('Count sheet not found.', 'error'); redirect('stock_audit.php'); }
     if (locked_location_id() && (int)$count['location_id'] !== locked_location_id()) { flash('This audit is not for your location.', 'error'); redirect('stock_audit.php'); }
     $lines = all('SELECT sci.*, i.name, i.unit FROM stock_count_items sci JOIN items i ON i.id = sci.item_id WHERE sci.count_id = ? ORDER BY i.name', [$cid]);
+    // an open sheet shows (and posts against) today's stock; the number at
+    // the start is kept beside it when it has moved since
+    if ($count['status'] === 'open') foreach ($lines as &$l) {
+        $l['start_qty'] = (float)$l['system_qty'];
+        $l['system_qty'] = stock_qty($l['item_id'], $count['location_id']);
+    } unset($l);
+    $oldDays = (int)floor((time() - strtotime($count['created_at'])) / 86400);
     // old count sheets made before the zero-skip existed: same relief via a
     // view-time toggle (?zeros=1 shows them back)
     $showZeros = get('zeros') === '1';
@@ -254,6 +265,10 @@ if ($action === 'count') {
         <?php endif; ?>
       </div>
       <p class="muted">started <?= dmyt($count['created_at']) ?><?= $count['notes'] ? ' · ' . e($count['notes']) : '' ?></p>
+      <?php if ($count['status'] === 'open' && $oldDays >= 2): ?>
+      <div class="flash flash-warn">⚠ This sheet was opened <?= $oldDays ?> days ago. "System qty" below is today's stock at <?= e($count['loc_name']) ?>, not the old number
+        (shown small where it changed). Counts typed long ago may be out of date — re-count, or cancel this sheet and start a fresh one.</div>
+      <?php endif; ?>
       <?php if ($zeroCount > 0 || $showZeros): ?>
       <p class="no-print"><a class="btn btn-sm btn-outline" href="stock_audit.php?action=count&id=<?= $cid ?><?= $showZeros ? '' : '&zeros=1' ?>">
         <?= $showZeros ? '🙈 Hide the zero ones again' : '👁 Zero-stock ones ' . $zeroCount . ' Show items too' ?></a></p>
@@ -283,7 +298,7 @@ if ($action === 'count') {
               $variance = $l['counted_qty'] !== null ? (float)$l['counted_qty'] - (float)$l['system_qty'] : null; ?>
           <tr>
             <td><?= e($l['name']) ?></td>
-            <td class="num"><?= (float)$l['system_qty'] ?> <?= e($l['unit']) ?></td>
+            <td class="num"><?= (float)$l['system_qty'] ?> <?= e($l['unit']) ?><?php if (abs($l['start_qty'] - (float)$l['system_qty']) > 0.009): ?><br><small class="muted">was <?= $l['start_qty'] ?> at start</small><?php endif; ?></td>
             <td class="num"><input type="number" step="any" name="counted[<?= $l['id'] ?>]" value="<?= e($l['counted_qty'] ?? '') ?>" style="width:100px;text-align:right"></td>
             <td class="num" style="color:<?= $variance === null ? 'inherit' : ($variance == 0 ? 'var(--ok)' : 'var(--bad)') ?>"><?= $variance === null ? '-' : ($variance > 0 ? '+' : '') . $variance ?></td>
           </tr>

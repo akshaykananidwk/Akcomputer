@@ -1080,3 +1080,10 @@ t_ok('the Items list puts stocked items on top too',
      preg_match("/ORDER BY \(i\.item_type = \\\\'service\\\\' OR ' \. \\\$stockExpr \. ' > 0\) DESC, i\.name/", $itemsSrc), 'items.php ORDER BY');
 t_ok('...and still sorts by name inside each group',
      strpos($itemsSrc, "> 0) DESC, i.name'") !== false);
+
+// AUD-00019 (27-11-2026): a sheet opened months ago kept its old "System qty";
+// posting added the old variance on top of today's stock. Now an open sheet
+// shows today's stock and posting sets the shelf to exactly what was counted.
+$sa = file_get_contents(__DIR__ . '/../stock_audit.php');
+t_ok('an old open audit posts against TODAY\'s stock, not the snapshot from when it was opened',
+     strpos($sa, "\$variance = (float)\$l['counted_qty'] - \$now;") !== false && strpos($sa, "\$l['system_qty'] = stock_qty(\$l['item_id'], \$count['location_id']);") !== false);
