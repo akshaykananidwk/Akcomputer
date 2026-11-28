@@ -97,83 +97,32 @@ function seo_faq_jsonld($qas) {
     return seo_jsonld(['@context' => 'https://schema.org', '@type' => 'FAQPage', 'mainEntity' => $main]);
 }
 
-/** Shared header + card CSS for the small public SEO pages. */
+/** Head part for the smaller public pages (services, price, privacy, terms):
+ *  the same store theme as every other public page (assets/store.css). */
 function seo_public_css() {
-    return '<style>
-:root { --acc1: #4f46e5; --acc2: #06b6d4; }
-body { background: var(--bg); }
-.shead { position: sticky; top: 0; z-index: 50; background: linear-gradient(100deg, var(--acc1), #2563eb 60%, var(--acc2)); color: #fff;
-  padding: 10px 14px; display: flex; align-items: center; gap: 10px; box-shadow: 0 2px 12px rgba(37,99,235,.35); }
-.shead .logo { font-size: 18px; font-weight: 800; color: #fff; text-decoration: none; }
-.shead .back { margin-left: auto; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.45); color: #fff;
-  border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 700; text-decoration: none; white-space: nowrap; }
-.swrap { max-width: 1100px; margin: 16px auto 30px; padding: 0 12px; }
-.scard { background: var(--card); color: var(--text); border-radius: 16px; padding: 20px 18px; box-shadow: 0 2px 10px rgba(0,0,0,.1); margin-bottom: 16px; }
-.scard h1 { font-size: 22px; } .scard h2 { font-size: 17px; margin-bottom: 8px; }
-.scard p { line-height: 1.6; margin-top: 8px; font-size: 14.5px; }
-.pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
-.pcard { background: var(--card); color: var(--text); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); text-decoration: none; display: block; transition: transform .15s; }
-.pcard:hover { transform: translateY(-3px); }
-.pcard img { width: 100%; height: 120px; object-fit: contain; background: #fff; padding: 4px; }
-.pcard .ph { height: 120px; display: flex; align-items: center; justify-content: center; font-size: 38px; background: var(--bg); }
-.pcard .pb { padding: 8px 10px; } .pcard .pn { font-size: 13px; font-weight: 600; } .pcard .pp { color: var(--primary); font-weight: 800; margin-top: 3px; }
-.crumbs { font-size: 12.5px; color: var(--muted); margin: 10px auto 0; max-width: 1100px; padding: 0 12px; }
-.crumbs a { color: var(--acc1); text-decoration: none; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.chips a { background: var(--bg); color: var(--text); border-radius: 999px; padding: 6px 13px; font-size: 13px; font-weight: 600; text-decoration: none; }
-.chips a:hover { background: var(--acc1); color: #fff; }
-.seofoot { background: var(--card); color: var(--text); margin-top: 24px; padding: 22px 14px 80px; font-size: 13.5px; border-top: 1px solid rgba(128,128,128,.15); }
-.seofoot .in { max-width: 1100px; margin: 0 auto; display: grid; gap: 18px; grid-template-columns: 1fr; }
-@media (min-width: 800px) { .seofoot .in { grid-template-columns: 1fr 1fr 1fr 1.2fr; } }
-.seofoot h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); margin-bottom: 8px; }
-.seofoot a { display: block; color: var(--text); text-decoration: none; padding: 3px 0; }
-.seofoot a:hover { color: var(--acc1); }
-.seofoot .cop { max-width: 1100px; margin: 16px auto 0; color: var(--muted); font-size: 12px; }
-.ptable { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
-.ptable th, .ptable td { text-align: left; padding: 9px 10px; border-bottom: 1px solid rgba(128,128,128,.18); }
-.ptable td.num, .ptable th.num { text-align: right; white-space: nowrap; }
-.ptable a { color: var(--acc1); text-decoration: none; font-weight: 600; }
-.faq details { margin-top: 8px; background: var(--bg); border-radius: 10px; padding: 10px 12px; }
-.faq summary { font-weight: 700; cursor: pointer; font-size: 14px; }
-.faq p { margin-top: 6px; }
-</style>';
+    return '<meta name="theme-color" content="#e11d2e"><link rel="manifest" href="' . e(base_url('store_manifest.php')) . '">'
+         . '<link rel="stylesheet" href="' . e(base_url('assets/store.css')) . '?v=' . asset_v('store.css') . '">'
+         . '<script>try{var t=localStorage.getItem("akcTheme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>';
 }
 
-function seo_public_header() {
-    $app = setting('app_name', 'AK Computer');
-    return '<header class="shead"><a class="logo" href="' . e(base_url('catalog.php')) . '">🖥️ ' . e($app) . '</a>'
-         . '<a class="back" href="' . e(base_url('catalog.php')) . '">🛒 Store</a></header>';
+/** The store header (icons, back arrow, search, cart) + category bar. */
+function seo_public_header($title = '') {
+    require_once __DIR__ . '/store_ui.php';
+    ob_start();
+    echo store_sprite();
+    store_header('back', $title !== '' ? $title : setting('app_name', 'AK Computer'));
+    store_nav(store_groups(store_items()));
+    return ob_get_clean();
 }
 
-/** Crawlable footer with links to every category / brand / service page -
- *  this internal linking is what lets Google find all 1000+ pages. */
+/** Crawlable footer (every category / brand / service) plus the store's cart,
+ *  bottom navigation and scripts, for the smaller public pages. */
 function seo_footer() {
-    $co = seo_company();
-    $app = setting('app_name', 'AK Computer');
-    $wa = wa_normalize_number(setting('wa_shop_number'));
-    $h = '<footer class="seofoot"><div class="in">';
-    $h .= '<div><h3>Categories</h3>';
-    foreach (seo_cats() as $c) {
-        if (seo_slug($c['name']) === '') continue;
-        $h .= '<a href="' . e(seo_cat_url($c['name'])) . '">' . e(cat_icon($c['name']) . ' ' . $c['name']) . ' (' . (int)$c['n'] . ')</a>';
-    }
-    $h .= '</div><div><h3>Brands</h3>';
-    foreach (array_slice(seo_brands(), 0, 20) as $b) {
-        if (seo_slug($b['name']) === '') continue;
-        $h .= '<a href="' . e(seo_brand_url($b['name'])) . '">' . e($b['name']) . '</a>';
-    }
-    $h .= '</div><div><h3>Services</h3>';
-    foreach (seo_services() as $slug => $sv) {
-        $h .= '<a href="' . e(seo_service_url($slug)) . '">' . $sv['emoji'] . ' ' . e($sv['name']) . '</a>';
-    }
-    $h .= '</div><div><h3>' . e($app) . ' — ' . e(shop_place()) . '</h3>';
-    $h .= '<p>📍 ' . e($co['address'] ?: shop_place()) . '</p>';
-    if ($co['phone']) $h .= '<p>📞 <a href="tel:' . e(preg_replace('/\D/', '', $co['phone'])) . '" style="display:inline">' . e($co['phone']) . '</a></p>';
-    if ($wa && strlen($wa) >= 12) $h .= '<p>💬 <a href="https://wa.me/' . e($wa) . '" style="display:inline" rel="noopener">WhatsApp Order</a></p>';
-    if (setting('business_type', tenant_active() ? 'general' : 'computer') === 'computer') $h .= '<p style="margin-top:8px">Computer, Laptop, CCTV Camera, Printer — sales, repair &amp; installation in ' . e(shop_place()) . '. Genuine products with warranty &amp; doorstep service.</p>';
-    $h .= '</div></div>';
-    $h .= '<div class="cop">© ' . date('Y') . ' ' . e($app) . ', ' . e(shop_city()) . ' · <a style="display:inline" href="' . e(base_url('') . '/') . '">Online Store</a> · <a style="display:inline" href="' . e(seo_service_url('cctv-installation')) . '">CCTV Installation</a> · <a style="display:inline" href="' . e(seo_service_url('computer-repair')) . '">Computer Repair</a> · <a style="display:inline" href="' . e(base_url('privacy.php')) . '">Privacy Policy</a> · <a style="display:inline" href="' . e(base_url('terms.php')) . '">Terms</a></div>';
-    return $h . '</footer>';
+    require_once __DIR__ . '/store_ui.php';
+    ob_start();
+    store_footer();
+    store_tail('home');
+    return ob_get_clean();
 }
 
 /** Local-service landing pages: real content, one page per service keyword. */

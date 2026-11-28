@@ -33,7 +33,6 @@ $metaDesc = $sv ? $sv['desc'] : 'Computer repair, laptop repair, CCTV installati
 <meta property="og:description" content="<?= e(mb_substr($metaDesc, 0, 200)) ?>">
 <meta property="og:url" content="<?= e($curl) ?>">
 <link rel="icon" href="<?= e(base_url('assets/icon.svg')) ?>" type="image/svg+xml">
-<link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=<?= asset_v('style.css') ?>">
 <?= seo_public_css() ?>
 <?= seo_localbusiness_jsonld() ?>
 <?php if ($sv): ?>
@@ -50,7 +49,7 @@ $metaDesc = $sv ? $sv['desc'] : 'Computer repair, laptop repair, CCTV installati
 <?php endif; ?>
 </head>
 <body>
-<?= seo_public_header() ?>
+<?= seo_public_header('Services') ?>
 <div class="crumbs"><a href="<?= e(base_url('catalog.php')) ?>">Store</a> › <?php if ($sv): ?><a href="<?= e(base_url('services.php')) ?>">Services</a> › <?= e($sv['name']) ?><?php else: ?>Services<?php endif; ?></div>
 
 <div class="swrap">

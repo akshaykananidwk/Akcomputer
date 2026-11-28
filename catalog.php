@@ -113,6 +113,14 @@ if (!empty($_SESSION['web_account_id'])) {
 }
 $waPct = $webAcct ? (float)$webAcct['discount_pct'] : 0;
 
+// ---------- customer accounts (login, register, code login, profile, addresses, wishlist) ----------
+require_once __DIR__ . '/includes/store_account.php';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($scRes = sc_handle_post())) {
+    flash($scRes[0], $scRes[1] ? 'error' : 'success');
+    redirect($scRes[2]);
+}
+$cust = sc_current();
+
 // ---------- place order ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'order') {
     $cart = json_decode(post('cart_json'), true) ?: [];
@@ -145,6 +153,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'order') {
                $webAcct ? (int)$webAcct['id'] : null]);
             $oid = insert_id();
             q('UPDATE web_orders SET order_no = ? WHERE id = ?', [doc_no('WEB', $oid), $oid]);
+            if ($cust) {   // a logged-in customer: the order is on their account; the address can be kept for next time
+                q('UPDATE web_orders SET store_customer_id = ? WHERE id = ?', [(int)$cust['id'], $oid]);
+                if (post('save_addr') && $fulfil !== 'Shop pickup' && trim(post('address')) !== ''
+                    && !val('SELECT id FROM store_addresses WHERE customer_id = ? AND address = ?', [(int)$cust['id'], trim(post('address'))])) {
+                    q('INSERT INTO store_addresses (customer_id, label, name, mobile, address, area, pincode, is_default) VALUES (?,?,?,?,?,?,?,?)',
+                      [(int)$cust['id'], 'Home', $name, preg_replace('/\D/', '', $mobile), mb_substr(trim(post('address')), 0, 255), mb_substr(trim(post('area')), 0, 120), preg_replace('/\D/', '', post('pincode')),
+                       val('SELECT COUNT(*) FROM store_addresses WHERE customer_id = ?', [(int)$cust['id']]) ? 0 : 1]);
+                }
+            }
             ak_earn_order_created($oid);   // AK Earn: order placed, not paid yet
             // partner commission books itself as PENDING right away; it turns
             // into an approved (payable) balance when the shop marks the order
@@ -178,8 +195,16 @@ $groups = store_groups($items);
 $ownShop = $c['own'];
 $view = get('view');
 if (!in_array($view, ['all', 'cats', 'wish', 'account'], true)) $view = '';
-$authView = !$webAcct && ($view === 'account' || get('dlogin') === '1' || get('dregister') === '1' || !empty($wloginError) || !empty($wregError) || $wregDone || $trackRes || $trackErr !== '');
-$authTab = (get('dlogin') === '1' || get('dregister') === '1' || !empty($wloginError) || !empty($wregError) || $wregDone || get('tab') === 'dealer') ? 'dealer' : 'track';
+// Account: customer (default), dealer B2B, or tracking a guest order
+$authTab = (get('dlogin') === '1' || get('dregister') === '1' || !empty($wloginError) || !empty($wregError) || $wregDone || get('tab') === 'dealer') ? 'dealer'
+         : ((get('tab') === 'track' || $trackRes || $trackErr !== '') ? 'track' : 'customer');
+$acctMode = '';
+if ($view === 'account' || $authTab !== 'customer' && (get('dlogin') === '1' || get('dregister') === '1' || $wregDone || !empty($wloginError) || !empty($wregError) || $trackRes || $trackErr !== '')) {
+    if ($authTab === 'dealer') $acctMode = $webAcct ? 'dealer_home' : 'auth';
+    elseif ($authTab === 'track') $acctMode = 'auth';
+    else $acctMode = $cust ? 'cust_home' : ($webAcct && get('a') === '' ? 'dealer_home' : 'auth');
+}
+$authView = $acctMode === 'auth';
 $ranked = store_sort($items);
 $stats = store_sales_stats();
 $rows = [];   // home page collections
@@ -346,14 +371,21 @@ $tileHtml = function ($t) { ?>
     <?php if ($wregDone): ?>
       <div class="empty"><?= store_icon('check') ?><h3>Registration received</h3><p>You get a WhatsApp once the shop approves your account. Log in after that to see your dealer prices.</p><a class="btn" href="catalog.php">Back to the store</a></div>
     <?php else: ?>
-    <h1><span><?= get('dregister') === '1' || !empty($wregError) ? 'Register' : ($authTab === 'dealer' ? 'Login' : 'Track') ?></span> <?= get('dregister') === '1' || !empty($wregError) ? 'as a Dealer' : ($authTab === 'dealer' ? 'to Your Account' : 'Your Order') ?></h1>
-    <p class="sub"><?= $authTab === 'dealer' ? 'Dealer prices, your orders and quotations' : 'No account needed — use your order number and mobile' ?></p>
+    <?php $scA = in_array(get('a'), ['login', 'otp', 'register', 'reset'], true) ? get('a') : 'login';
+    $isDReg = get('dregister') === '1' || !empty($wregError);
+    [$h1a, $h1b, $hsub] = $authTab === 'track' ? ['Track', 'Your Order', 'No account needed — use your order number and mobile']
+        : ($authTab === 'dealer' ? ($isDReg ? ['Register', 'as a Dealer', 'Wholesale prices for dealers, electricians and installers'] : ['Dealer', 'Login (B2B)', 'Dealer prices, your orders and quotations'])
+        : ($scA === 'register' ? ['Create', 'Your Account', 'Save addresses, track every order, keep your wishlist'] : ($scA === 'reset' ? ['Reset', 'Your Password', 'We send a code to your mobile or e-mail'] : ['Login', 'to Your Account', 'Access your orders, addresses and wishlist']))); ?>
+    <h1><span><?= e($h1a) ?></span> <?= e($h1b) ?></h1>
+    <p class="sub"><?= e($hsub) ?></p>
     <div class="tabs" role="tablist">
-      <a href="catalog.php?view=account" class="<?= $authTab === 'track' ? 'on' : '' ?>" role="tab"><?= store_icon('receipt') ?>Track Order</a>
-      <a href="catalog.php?view=account&amp;tab=dealer" class="<?= $authTab === 'dealer' ? 'on' : '' ?>" role="tab"><?= store_icon('store') ?>Dealer Login (B2B)</a>
+      <a href="catalog.php?view=account" class="<?= $authTab !== 'dealer' ? 'on' : '' ?>" role="tab"><?= store_icon('user') ?>Customer</a>
+      <a href="catalog.php?view=account&amp;tab=dealer" class="<?= $authTab === 'dealer' ? 'on' : '' ?>" role="tab"><?= store_icon('store') ?>Dealer (B2B)</a>
     </div>
+    <?php foreach (get_flashes() as $f): ?><p class="note <?= $f['type'] === 'error' ? 'bad' : 'ok' ?>" style="margin-bottom:12px"><?= e($f['msg']) ?></p><?php endforeach; ?>
 
-    <?php if ($authTab === 'track'): ?>
+    <?php if ($authTab === 'customer'): sc_auth_body($scA, (string)get('step')); ?>
+    <?php elseif ($authTab === 'track'): ?>
       <?php if ($trackErr !== ''): ?><p class="note bad" style="margin-bottom:12px"><?= e($trackErr) ?></p><?php endif; ?>
       <?php if ($trackRes): $tItems = json_decode((string)$trackRes['items_json'], true) ?: []; ?>
       <div class="panel" style="margin-bottom:14px">
@@ -363,12 +395,13 @@ $tileHtml = function ($t) { ?>
         <div class="tot"><span>Total</span><span>₹<?= money($trackRes['total']) ?></span></div>
       </div>
       <?php endif; ?>
-      <form method="post" action="catalog.php?view=account"><?= csrf_field() ?><input type="hidden" name="do" value="track">
+      <form method="post" action="catalog.php?view=account&amp;tab=track"><?= csrf_field() ?><input type="hidden" name="do" value="track">
         <div class="ifield"><?= store_icon('receipt') ?><input name="torder" required placeholder="Order number, e.g. WEB-00012" autocapitalize="characters" aria-label="Order number" value="<?= e(post('torder')) ?>"></div>
         <div class="ifield"><?= store_icon('phone') ?><input name="tmobile" type="tel" inputmode="numeric" required placeholder="Mobile used for the order" aria-label="Mobile" value="<?= e(post('tmobile')) ?>"></div>
         <button class="btn block" type="submit"><?= store_icon('search') ?>Track order</button>
       </form>
       <?php if ($c['wa']): ?><a class="btn ghost block" style="margin-top:8px" href="https://wa.me/<?= e($c['wa']) ?>?text=<?= rawurlencode('Hello! I want to know the status of my order.') ?>" target="_blank" rel="noopener"><?= store_icon('wa') ?>Ask on WhatsApp</a><?php endif; ?>
+      <p class="muted" style="font-size:13px;text-align:center;margin-top:12px">Have an account? <a style="color:var(--brand);font-weight:700" href="catalog.php?view=account">Log in</a> to see all your orders.</p>
 
     <?php elseif (get('dregister') === '1' || !empty($wregError)): ?>
       <?php if (!empty($wregError)): ?><p class="note bad" style="margin-bottom:12px"><?= e($wregError) ?></p><?php endif; ?>
@@ -399,7 +432,11 @@ $tileHtml = function ($t) { ?>
     <?php endif; ?>
   </div>
 
-<?php elseif ($view === 'account'): $myOrders = all('SELECT order_no, created_at, total, status FROM web_orders WHERE web_account_id = ? ORDER BY id DESC LIMIT 20', [(int)$webAcct['id']]); ?>
+<?php elseif ($acctMode === 'cust_home'): ?>
+  <?php foreach (get_flashes() as $f): ?><div class="sec" style="max-width:820px"><p class="note <?= $f['type'] === 'error' ? 'bad' : 'ok' ?>"><?= e($f['msg']) ?></p></div><?php endforeach; ?>
+  <?php sc_account_body($cust); ?>
+
+<?php elseif ($acctMode === 'dealer_home'): $myOrders = all('SELECT order_no, created_at, total, status FROM web_orders WHERE web_account_id = ? ORDER BY id DESC LIMIT 20', [(int)$webAcct['id']]); ?>
   <section class="sec" style="max-width:720px">
     <div class="panel" style="display:flex;align-items:center;gap:12px">
       <span class="mark" style="width:48px;height:48px;border-radius:50%;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center"><?= store_icon('user') ?></span>
@@ -479,7 +516,7 @@ $tileHtml = function ($t) { ?>
       <input type="hidden" name="view" value="all"><?php foreach (['q' => $fQ, 'sort' => $fSort === 'popular' ? '' : $fSort] as $k => $v) if ($v !== '') echo '<input type="hidden" name="' . $k . '" value="' . e($v) . '">'; ?>
       <div class="field"><label for="fg">Category</label><select id="fg" name="g"><option value="">All categories</option><?php foreach ($groups as $g): ?><option <?= $fG === $g['name'] ? 'selected' : '' ?>><?= e($g['name']) ?></option><?php endforeach; ?></select></div>
       <?php if ($brandsHere): ?><div class="field"><label for="fb">Brand</label><select id="fb" name="brand"><option value="">All brands</option><?php foreach (array_keys($brandsHere) as $bn): ?><option <?= strcasecmp($fBrand, $bn) === 0 ? 'selected' : '' ?>><?= e($bn) ?></option><?php endforeach; ?></select></div><?php endif; ?>
-      <div class="seg" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+      <div class="two">
         <div class="field" style="margin:0"><label for="fmin">Min price ₹</label><input id="fmin" name="min" inputmode="numeric" value="<?= $fMin ?: '' ?>"></div>
         <div class="field" style="margin:0"><label for="fmax">Max price ₹</label><input id="fmax" name="max" inputmode="numeric" value="<?= $fMax ?: '' ?>"></div>
       </div>
@@ -491,6 +528,7 @@ $tileHtml = function ($t) { ?>
   <div class="sheet-bg" data-close></div>
 
 <?php else: /* ---------------- home ---------------- */ ?>
+  <?php foreach (get_flashes() as $f): ?><div class="sec"><p class="note <?= $f['type'] === 'error' ? 'bad' : 'ok' ?>"><?= e($f['msg']) ?></p></div><?php endforeach; ?>
   <?php if ($webAcct): ?><div class="sec"><p class="note ok">Welcome, <?= e($webAcct['name']) ?> — your dealer prices are on.</p></div><?php endif; ?>
   <div class="sec" style="margin-top:10px"><div class="install" data-install><?= store_icon('store') ?><span><b>Install the <?= e($c['app']) ?> app</b><br><span class="muted">Opens like an app, right from your home screen.</span></span>
     <button class="btn" type="button" data-install-go>Install</button><button class="hbtn" type="button" data-install-no aria-label="Not now"><?= store_icon('x') ?></button></div></div>

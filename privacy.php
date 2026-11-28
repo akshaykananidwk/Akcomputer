@@ -35,11 +35,10 @@ $page = [
 <meta property="og:title" content="Privacy Policy | <?= e($app_name) ?>">
 <meta property="og:url" content="<?= e($curl) ?>">
 <link rel="icon" href="<?= e(base_url('assets/icon.svg')) ?>" type="image/svg+xml">
-<link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=<?= asset_v('style.css') ?>">
 <?= seo_public_css() ?>
 </head>
 <body>
-<?= seo_public_header() ?>
+<?= seo_public_header('Privacy Policy') ?>
 <div class="crumbs"><a href="<?= e(base_url('catalog.php')) ?>">Store</a> › Privacy Policy</div>
 <div class="swrap">
   <div class="scard">

@@ -462,3 +462,43 @@ p { margin: 0; }
 .hdr .logo.desk { display: none; }
 @media (min-width: 960px) { .hdr .logo.desk { display: flex; margin-right: 8px; } .hdr-title { text-align: left; flex: 0 1 auto; color: var(--muted); font-size: 14px; } }
 .ft-store details summary { cursor: pointer; font-weight: 700; color: var(--muted); font-size: 12.5px; padding: 6px 0; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.two .field { margin: 0; }
+/* order tracker: Placed → Confirmed → Packed → Delivered */
+.track { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); margin: 14px 0 6px; padding: 0; counter-reset: st; }
+.track li { position: relative; text-align: center; font-size: 11.5px; font-weight: 600; color: var(--muted); padding-top: 30px; counter-increment: st; }
+.track li::before { content: counter(st); position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 24px; height: 24px; border-radius: 50%; background: var(--bg); border: 2px solid var(--line); display: grid; place-items: center; font-size: 11px; z-index: 1; }
+.track li::after { content: ""; position: absolute; top: 11px; left: -50%; width: 100%; height: 2px; background: var(--line); }
+.track li:first-child::after { display: none; }
+.track li.done { color: var(--text); }
+.track li.done::before { content: "✓"; background: var(--ok); border-color: var(--ok); color: #fff; }
+.track li.done::after { background: var(--ok); }
+details.panel > summary::-webkit-details-marker { display: none; }
+
+/* ---------- the smaller public pages (services, price, privacy, terms) ---------- */
+.swrap { max-width: 1100px; margin: 14px auto 0; padding: 0 14px; }
+.scard { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 16px; margin-bottom: 14px; }
+.scard h1 { font-size: 22px; font-weight: 900; letter-spacing: -.3px; } .scard h2 { font-size: 17px; margin-bottom: 8px; } .scard h3 { font-size: 15px; margin: 12px 0 4px; }
+.scard p, .scard li { line-height: 1.65; font-size: 14.5px; } .scard p { margin-top: 8px; } .scard ul, .scard ol { padding-left: 20px; margin: 8px 0 0; }
+.scard a { color: var(--brand); font-weight: 600; }
+.crumbs { font-size: 12.5px; color: var(--muted); max-width: 1100px; margin: 12px auto 0; padding: 0 14px; }
+.crumbs a { color: var(--brand); font-weight: 600; }
+.chips a:not(.chip) { flex: none; display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); font-size: 13.5px; font-weight: 600; white-space: nowrap; color: var(--text); }
+.chips a:not(.chip):hover { background: var(--brand); border-color: var(--brand); color: #fff; }
+.scard .chips { flex-wrap: wrap; }
+.pgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+@media (min-width: 640px) { .pgrid { grid-template-columns: repeat(3, 1fr); } } @media (min-width: 960px) { .pgrid { grid-template-columns: repeat(5, 1fr); } }
+.pcard { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; display: block; transition: box-shadow .2s, transform .2s; }
+.pcard:hover { box-shadow: var(--shadow); transform: translateY(-2px); }
+.pcard img { width: 100%; aspect-ratio: 1 / .86; object-fit: contain; background: #fff; padding: 10px; }
+.pcard .ph { aspect-ratio: 1 / .86; display: grid; place-items: center; font-size: 38px; background: var(--tile); }
+.pcard .pb { padding: 10px; border-top: 1px solid var(--line); } .pcard .pn { font-size: 13.5px; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; } .pcard .pp { font-weight: 800; margin-top: 4px; }
+.ptable { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+.ptable th, .ptable td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+.ptable th { color: var(--muted); font-weight: 600; } .ptable td.num, .ptable th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ptable a { color: var(--brand); font-weight: 600; }
+.scard.faq details, .faq details { background: var(--bg); }
+.btn-wa, .btn-success { background: #1fa855 !important; color: #fff !important; }
+.btn-block { width: 100%; }
+.btn-outline { background: var(--card); color: var(--text); border: 1.5px solid var(--line); }
+.scard a.btn { color: #fff; } .scard a.btn.btn-outline { color: var(--text); }

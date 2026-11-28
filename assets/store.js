@@ -270,3 +270,19 @@ document.addEventListener('click', function (e) {
   var b = e.target.closest('[data-eye]'); if (!b) return;
   var i = b.parentNode.querySelector('[data-pw]'); if (i) i.type = i.type === 'password' ? 'text' : 'password';
 });
+// a logged-in customer's wishlist lives on the account: merge the phone's list once, then keep them the same
+(function () {
+  var A = window.AKC || {}; if (!A.cust || !window.fetch) return;
+  function sync(mode) {
+    var fd = new FormData(); fd.append('do', 'wish_sync'); fd.append('mode', mode); fd.append('csrf', A.csrf);
+    try { fd.append('ids', localStorage.getItem('akcWish') || '[]'); } catch (e) { fd.append('ids', '[]'); }
+    return fetch(A.base + '/catalog.php', { method: 'POST', body: fd, credentials: 'same-origin' }).then(function (r) { return r.json(); });
+  }
+  var first = false; try { first = !sessionStorage.getItem('akcWishSynced'); } catch (e) {}
+  if (first) sync('merge').then(function (j) {
+    if (!j.ok) return;
+    try { localStorage.setItem('akcWish', JSON.stringify(j.ids.map(String))); sessionStorage.setItem('akcWishSynced', '1'); } catch (e) {}
+    if (j.ids.length) location.pathname.indexOf('catalog.php') > -1 && /view=wish/.test(location.search) && location.reload();
+  });
+  document.addEventListener('click', function (e) { if (e.target.closest('[data-wish]')) setTimeout(function () { sync('replace'); }, 50); });
+})();

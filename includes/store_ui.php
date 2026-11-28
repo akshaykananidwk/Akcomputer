@@ -5,6 +5,7 @@
 // discounts (there is no MRP column, so no "% OFF"), no invented ratings, no
 // stock that is not on the shelf.
 require_once __DIR__ . '/seo.php';
+require_once __DIR__ . '/store_account.php';
 
 /** Everything a store page needs about the shop and the visitor, read once. */
 function store_ctx() {
@@ -19,6 +20,7 @@ function store_ctx() {
         'pct' => $acct ? (float)$acct['discount_pct'] : 0, 'co' => $co, 'own' => !tenant_active(),
         'logo' => $logo !== '' && is_file(__DIR__ . '/../' . $logo) ? base_url($logo) : '',
         'stock' => web_stock_map(), 'showQty' => web_show_qty(), 'admin' => (bool)(current_user() && can('items.edit')),
+        'cust' => sc_current(),
     ];
 }
 
@@ -292,8 +294,8 @@ function store_header($mode = 'home', $title = '', $q = '') {
     <a class="logo desk" href="<?= e(base_url('catalog.php')) ?>"><span class="mark"><?= e(mb_strtoupper(mb_substr(preg_replace('/[^\p{L}]/u', '', $c['app']), 0, 2))) ?></span><span class="nm"><?= e($c['app']) ?></span></a>
     <div class="hdr-title"><?= e($title) ?></div>
     <?php endif; ?>
-    <?php if ($c['acct']): ?>
-    <a class="hbtn" href="<?= e(base_url('catalog.php?view=account')) ?>" aria-label="My account"><?= store_icon('user') ?><span class="lbl"><?= e(mb_substr($c['acct']['name'], 0, 14)) ?></span></a>
+    <?php if ($c['acct'] || $c['cust']): ?>
+    <a class="hbtn" href="<?= e(base_url('catalog.php?view=account' . ($c['cust'] ? '' : '&tab=dealer'))) ?>" aria-label="My account" data-desk style="display:none"><?= store_icon('user') ?><span class="lbl"><?= e(mb_substr(($c['cust'] ?: $c['acct'])['name'], 0, 14)) ?></span></a>
     <?php else: ?>
     <a class="hbtn" href="<?= e(base_url('catalog.php?view=account')) ?>" aria-label="Account" style="display:none" data-desk><?= store_icon('user') ?><span class="lbl">Login</span></a>
     <?php endif; ?>
@@ -326,8 +328,10 @@ function store_nav(array $groups, $active = '') {
 <aside class="drawer" id="drawer" aria-label="Menu">
   <div class="drawer-h">
     <div class="logo"><span class="mark"><?= e(mb_strtoupper(mb_substr(preg_replace('/[^\p{L}]/u', '', $c['app']), 0, 2))) ?></span><span class="nm"><?= e($c['app']) ?></span></div>
-    <?php if ($c['acct']): ?>
-    <a class="acct" href="<?= e(base_url('catalog.php?view=account')) ?>"><?= store_icon('user') ?><span><?= e($c['acct']['name']) ?><small>Dealer prices are on · My account</small></span></a>
+    <?php if ($c['cust']): ?>
+    <a class="acct" href="<?= e(base_url('catalog.php?view=account')) ?>"><?= store_icon('user') ?><span><?= e($c['cust']['name']) ?><small>My orders · addresses · wishlist</small></span></a>
+    <?php elseif ($c['acct']): ?>
+    <a class="acct" href="<?= e(base_url('catalog.php?view=account&tab=dealer')) ?>"><?= store_icon('user') ?><span><?= e($c['acct']['name']) ?><small>Dealer prices are on · My account</small></span></a>
     <?php else: ?>
     <a class="acct" href="<?= e(base_url('catalog.php?view=account')) ?>"><?= store_icon('user') ?><span>Login / Register<small>Wholesale prices for dealers &amp; electricians</small></span></a>
     <?php endif; ?>
@@ -414,7 +418,10 @@ function store_card($it, $layout = 'grid', $tag = '') {
  *  re-prices every line from the database - the browser's price is never used. */
 function store_cart_sheet() {
     $c = store_ctx();
-    $pickup = trim((string)($c['co']['address'] ?? '')) ?: shop_place(); ?>
+    $pickup = trim((string)($c['co']['address'] ?? '')) ?: shop_place();
+    $cu = $c['cust']; $da = $cu ? (sc_addresses($cu['id'])[0] ?? null) : null;
+    $pre = ['name' => $da['name'] ?? ($cu['name'] ?? ($c['acct']['name'] ?? '')), 'mobile' => $da['mobile'] ?? ($cu['mobile'] ?? ($c['acct']['mobile'] ?? '')),
+            'address' => $da['address'] ?? '', 'area' => $da['area'] ?? shop_city(), 'pincode' => $da['pincode'] ?? '']; ?>
 <section class="sheet" id="cart" aria-label="Cart" aria-modal="true" role="dialog">
   <div class="sheet-h"><h2>Your Cart</h2><button class="hbtn" type="button" data-close aria-label="Close"><?= store_icon('x') ?></button></div>
   <div data-cart-lines></div>
@@ -423,23 +430,25 @@ function store_cart_sheet() {
     <?= csrf_field() ?>
     <input type="hidden" name="do" value="order"><input type="hidden" name="cart_json" data-cart-json>
     <div class="tot"><span>Total</span><span data-cart-total>₹0</span></div>
-    <div class="field"><label for="co_n">Your name *</label><input id="co_n" name="customer_name" required autocomplete="name" value="<?= e($c['acct']['name'] ?? '') ?>"></div>
-    <div class="field"><label for="co_m">Mobile (WhatsApp) *</label><input id="co_m" name="mobile" type="tel" inputmode="numeric" required pattern="[0-9+ ]{10,15}" autocomplete="tel" value="<?= e($c['acct']['mobile'] ?? '') ?>"></div>
+    <div class="field"><label for="co_n">Your name *</label><input id="co_n" name="customer_name" required autocomplete="name" value="<?= e($pre['name']) ?>"></div>
+    <div class="field"><label for="co_m">Mobile (WhatsApp) *</label><input id="co_m" name="mobile" type="tel" inputmode="numeric" required pattern="[0-9+ ]{10,15}" autocomplete="tel" value="<?= e($pre['mobile']) ?>"></div>
     <div class="field"><label>Delivery or pickup</label>
       <div class="seg"><input type="radio" name="fulfil" id="f_d" value="Home delivery" checked><label for="f_d"><?= store_icon('truck') ?>Delivery</label>
         <input type="radio" name="fulfil" id="f_p" value="Shop pickup"><label for="f_p"><?= store_icon('store') ?>Shop pickup</label></div></div>
     <div data-addr>
-      <div class="field"><label for="co_a">Address</label><input id="co_a" name="address" autocomplete="street-address"></div>
-      <div class="seg" style="grid-template-columns:1.4fr 1fr;margin-bottom:12px">
-        <div class="field" style="margin:0"><label for="co_c">Area / City</label><input id="co_c" name="area" autocomplete="address-level2" value="<?= e(shop_city()) ?>"></div>
-        <div class="field" style="margin:0"><label for="co_p">Pincode</label><input id="co_p" name="pincode" inputmode="numeric" pattern="[0-9]{6}" autocomplete="postal-code"></div>
+      <div class="field"><label for="co_a">Address</label><input id="co_a" name="address" autocomplete="street-address" value="<?= e($pre['address']) ?>"></div>
+      <div class="two" style="grid-template-columns:1.4fr 1fr">
+        <div class="field" style="margin:0"><label for="co_c">Area / City</label><input id="co_c" name="area" autocomplete="address-level2" value="<?= e($pre['area']) ?>"></div>
+        <div class="field" style="margin:0"><label for="co_p">Pincode</label><input id="co_p" name="pincode" inputmode="numeric" pattern="[0-9]{6}" autocomplete="postal-code" value="<?= e($pre['pincode']) ?>"></div>
       </div>
+      <?php if ($cu && !$da): ?><label class="chip" style="margin-bottom:12px"><input type="checkbox" name="save_addr" value="1" checked> Save this address to my account</label><?php endif; ?>
     </div>
     <p class="muted" data-pickup hidden style="font-size:13px;margin:-4px 0 12px">Pick up at: <?= e($pickup) ?></p>
     <div class="field"><label for="co_pay">Payment</label><select id="co_pay" name="pay_method"><option>UPI</option><option>Cash on delivery / at shop</option><option>Bank transfer</option></select></div>
     <div class="field"><label for="co_o">Order notes</label><input id="co_o" name="order_notes" placeholder="Anything we should know"></div>
     <button class="btn block" type="submit"><?= store_icon('check') ?>Place Order</button>
     <?php if ($c['wa']): ?><button class="btn wa block" type="button" data-wa-order style="margin-top:8px"><?= store_icon('wa') ?>Order on WhatsApp instead</button><?php endif; ?>
+    <?php if (!$cu && !$c['acct']): ?><p class="muted" style="font-size:12.5px;text-align:center;margin-top:10px">Ordering as a guest — <a style="color:var(--brand);font-weight:700" href="<?= e(base_url('catalog.php?view=account')) ?>">log in</a> to keep your orders and addresses.</p><?php endif; ?>
     <p class="muted" style="font-size:12px;text-align:center;margin-top:10px">We confirm every order on WhatsApp or a call before it is packed. Prices are checked again by the shop.</p>
   </form>
 </section>
@@ -489,18 +498,23 @@ function store_footer() {
 
 /** Closing part of every store page: menu, cart, nav, WhatsApp button, scripts. */
 function store_end($active = 'home', $index = null) {
+    store_tail($active, $index); ?>
+<?= ak_earn_tag() ?>
+</body>
+</html>
+<?php }
+
+/** Cart sheet, bottom navigation, WhatsApp button and the store scripts. */
+function store_tail($active = 'home', $index = null) {
     $c = store_ctx();
     store_cart_sheet();
     store_bottom_nav($active);
     if ($c['wa']): ?><a class="fab-wa" href="https://wa.me/<?= e($c['wa']) ?>?text=<?= rawurlencode('Hello ' . $c['app'] . '!') ?>" target="_blank" rel="noopener" aria-label="WhatsApp"><?= store_icon('wa') ?></a><?php endif; ?>
 <div class="toast" data-toast role="status"></div>
 <script>window.AKC = <?= json_encode(['wa' => $c['wa'], 'app' => $c['app'], 'base' => base_url(''), 'idx' => base_url('catalog.php?index=1'),
-    'syn' => store_synonyms(), 'csrf' => csrf_token(), 'admin' => $c['admin'], 'place' => shop_city()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    'syn' => store_synonyms(), 'csrf' => csrf_token(), 'admin' => $c['admin'], 'place' => shop_city(), 'cust' => (bool)$c['cust']], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 <?php if ($index !== null): ?>window.AKC_IDX = <?= json_encode($index, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;<?php endif; ?></script>
 <script src="<?= e(base_url('assets/store.js')) ?>?v=<?= asset_v('store.js') ?>" defer></script>
-<?= ak_earn_tag() ?>
-</body>
-</html>
 <?php }
 
 /** A category or brand landing page (/c/..., /b/...): real H1, intro from the

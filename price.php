@@ -63,7 +63,6 @@ $metaDesc = $it['name'] . ' price in ' . shop_place() . ': ₹' . money($dp) . '
 <?php if ($it['photo']): ?><meta property="og:image" content="<?= e(base_url($it['photo'])) ?>"><?php endif; ?>
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="<?= e(base_url('assets/icon.svg')) ?>" type="image/svg+xml">
-<link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=<?= asset_v('style.css') ?>">
 <?= seo_public_css() ?>
 <?= seo_jsonld([
     '@context' => 'https://schema.org', '@type' => 'Product',
@@ -88,7 +87,7 @@ $metaDesc = $it['name'] . ' price in ' . shop_place() . ': ₹' . money($dp) . '
 </style>
 </head>
 <body>
-<?= seo_public_header() ?>
+<?= seo_public_header('Price') ?>
 <div class="crumbs"><a href="<?= e(base_url('catalog.php')) ?>">Store</a> ›
   <?php if ($it['cat_name']): ?><a href="<?= e(seo_cat_url($it['cat_name'])) ?>"><?= e($it['cat_name']) ?></a> ›<?php endif; ?>
   <?= e($it['name']) ?> Price</div>
@@ -101,7 +100,7 @@ $metaDesc = $it['name'] . ' price in ' . shop_place() . ': ₹' . money($dp) . '
       <div class="amt">₹<?= money($dp) ?></div>
       <div class="upd">✔ Updated: <?= e($monthYear) ?> · <?= $inStock ? '✅ In stock at ' . e($app_name) . ', ' . e(shop_city()) : '📦 Available on order' ?></div>
       <div class="pbtns">
-        <a class="btn btn-block" href="<?= e($prodUrl) ?>" style="background:linear-gradient(100deg,#4f46e5,#2563eb);border:0">🛒 View Product &amp; Order</a>
+        <a class="btn btn-block" href="<?= e($prodUrl) ?>">🛒 View Product &amp; Order</a>
         <?php if ($waShop): ?>
         <a class="btn btn-success btn-block" href="https://wa.me/<?= e($waShop) ?>?text=<?= rawurlencode("Hello! " . $label . " priced Rs " . money($dp) . " — I would like more detail.\n" . $purl) ?>" rel="noopener">💬 Confirm the price on WhatsApp</a>
         <?php endif; ?>
