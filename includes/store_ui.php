@@ -350,7 +350,7 @@ function store_nav(array $groups, $active = '') {
     <?php if ($c['wa']): ?><a href="https://wa.me/<?= e($c['wa']) ?>" target="_blank" rel="noopener"><?= store_icon('wa') ?>WhatsApp us</a><?php endif; ?>
     <?php if (!empty($c['co']['phone'])): ?><a href="tel:<?= e(preg_replace('/[^\d+]/', '', $c['co']['phone'])) ?>"><?= store_icon('phone') ?>Call <?= e($c['co']['phone']) ?></a><?php endif; ?>
     <a href="<?= e(base_url('referral.php')) ?>"><?= store_icon('tag') ?>Refer &amp; Earn</a>
-    <?php if (current_user()): ?><a href="<?= e(base_url('index.php')) ?>"><?= store_icon('store') ?>Shop Dashboard</a><?php else: ?><a href="<?= e(base_url('login.php')) ?>"><?= store_icon('store') ?>Staff Login</a><?php endif; ?>
+    <?php if (current_user()): ?><a href="<?= e(base_url('index.php')) ?>"><?= store_icon('store') ?>Shop Dashboard</a><?php else: ?><a href="<?= e(base_url('catalog.php?view=account&tab=staff')) ?>"><?= store_icon('store') ?>Staff Login</a><?php endif; ?>
   </nav>
 </aside>
 <div class="sheet-bg" data-close></div>
@@ -485,7 +485,7 @@ function store_footer() {
     <div><h3>Help</h3>
       <a href="<?= e(base_url('catalog.php?dregister=1')) ?>">Dealer Registration</a><a href="<?= e(base_url('referral.php')) ?>">Refer &amp; Earn</a>
       <a href="<?= e(base_url('privacy.php')) ?>">Privacy Policy</a><a href="<?= e(base_url('terms.php')) ?>">Terms &amp; Conditions</a>
-      <?php if (!current_user()): ?><a href="<?= e(base_url('login.php')) ?>">Staff Login</a><?php endif; ?></div>
+      <?php if (!current_user()): ?><a href="<?= e(base_url('catalog.php?view=account&tab=staff')) ?>">Staff Login</a><?php endif; ?></div>
   </div>
   <details style="margin-top:14px"><summary>All brands &amp; categories</summary>
   <div class="cop" style="border:0;margin-top:4px;padding-top:4px">

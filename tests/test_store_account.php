@@ -61,3 +61,6 @@ $src = file_get_contents(__DIR__ . '/../includes/store_ui.php');
 t_ok('a customer login never brings dealer prices (they come only from the dealer login)', strpos($src, "'pct' => \$acct ? (float)\$acct['discount_pct'] : 0") !== false && strpos($src, "\$acct = !empty(\$_SESSION['web_account_id'])") !== false);
 t_ok('guest checkout still works without any login', strpos(file_get_contents(__DIR__ . '/../catalog.php'), "if (\$name && \$mobile && \$cart) {") !== false);
 unset($_SESSION['store_cust_id']);
+$catSrc = file_get_contents(__DIR__ . '/../catalog.php');
+t_ok('the Staff tab signs in through login.php itself (2-step code, lock-out and IP rules all still apply)',
+     strpos($catSrc, '<form method="post" action="<?= e(base_url(\'login.php\')) ?>">') !== false && strpos($catSrc, 'establish_session(') === false);

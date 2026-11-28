@@ -197,11 +197,11 @@ $view = get('view');
 if (!in_array($view, ['all', 'cats', 'wish', 'account'], true)) $view = '';
 // Account: customer (default), dealer B2B, or tracking a guest order
 $authTab = (get('dlogin') === '1' || get('dregister') === '1' || !empty($wloginError) || !empty($wregError) || $wregDone || get('tab') === 'dealer') ? 'dealer'
-         : ((get('tab') === 'track' || $trackRes || $trackErr !== '') ? 'track' : 'customer');
+         : (get('tab') === 'staff' ? 'staff' : ((get('tab') === 'track' || $trackRes || $trackErr !== '') ? 'track' : 'customer'));
 $acctMode = '';
 if ($view === 'account' || $authTab !== 'customer' && (get('dlogin') === '1' || get('dregister') === '1' || $wregDone || !empty($wloginError) || !empty($wregError) || $trackRes || $trackErr !== '')) {
     if ($authTab === 'dealer') $acctMode = $webAcct ? 'dealer_home' : 'auth';
-    elseif ($authTab === 'track') $acctMode = 'auth';
+    elseif ($authTab === 'track' || $authTab === 'staff') $acctMode = 'auth';
     else $acctMode = $cust ? 'cust_home' : ($webAcct && get('a') === '' ? 'dealer_home' : 'auth');
 }
 $authView = $acctMode === 'auth';
@@ -373,18 +373,36 @@ $tileHtml = function ($t) { ?>
     <?php else: ?>
     <?php $scA = in_array(get('a'), ['login', 'otp', 'register', 'reset'], true) ? get('a') : 'login';
     $isDReg = get('dregister') === '1' || !empty($wregError);
-    [$h1a, $h1b, $hsub] = $authTab === 'track' ? ['Track', 'Your Order', 'No account needed — use your order number and mobile']
+    [$h1a, $h1b, $hsub] = $authTab === 'staff' ? ['Staff', 'Login', 'For the shop team — billing, stock and the dashboard']
+        : ($authTab === 'track' ? ['Track', 'Your Order', 'No account needed — use your order number and mobile']
         : ($authTab === 'dealer' ? ($isDReg ? ['Register', 'as a Dealer', 'Wholesale prices for dealers, electricians and installers'] : ['Dealer', 'Login (B2B)', 'Dealer prices, your orders and quotations'])
-        : ($scA === 'register' ? ['Create', 'Your Account', 'Save addresses, track every order, keep your wishlist'] : ($scA === 'reset' ? ['Reset', 'Your Password', 'We send a code to your mobile or e-mail'] : ['Login', 'to Your Account', 'Access your orders, addresses and wishlist']))); ?>
+        : ($scA === 'register' ? ['Create', 'Your Account', 'Save addresses, track every order, keep your wishlist'] : ($scA === 'reset' ? ['Reset', 'Your Password', 'We send a code to your mobile or e-mail'] : ['Login', 'to Your Account', 'Access your orders, addresses and wishlist'])))); ?>
     <h1><span><?= e($h1a) ?></span> <?= e($h1b) ?></h1>
     <p class="sub"><?= e($hsub) ?></p>
-    <div class="tabs" role="tablist">
-      <a href="catalog.php?view=account" class="<?= $authTab !== 'dealer' ? 'on' : '' ?>" role="tab"><?= store_icon('user') ?>Customer</a>
-      <a href="catalog.php?view=account&amp;tab=dealer" class="<?= $authTab === 'dealer' ? 'on' : '' ?>" role="tab"><?= store_icon('store') ?>Dealer (B2B)</a>
+    <div class="tabs" role="tablist" style="grid-template-columns:repeat(3,1fr)">
+      <a href="catalog.php?view=account" class="<?= in_array($authTab, ['customer', 'track'], true) ? 'on' : '' ?>" role="tab"><?= store_icon('user') ?>Customer</a>
+      <a href="catalog.php?view=account&amp;tab=dealer" class="<?= $authTab === 'dealer' ? 'on' : '' ?>" role="tab"><?= store_icon('store') ?>Dealer</a>
+      <a href="catalog.php?view=account&amp;tab=staff" class="<?= $authTab === 'staff' ? 'on' : '' ?>" role="tab"><?= store_icon('lock') ?>Staff</a>
     </div>
     <?php foreach (get_flashes() as $f): ?><p class="note <?= $f['type'] === 'error' ? 'bad' : 'ok' ?>" style="margin-bottom:12px"><?= e($f['msg']) ?></p><?php endforeach; ?>
 
-    <?php if ($authTab === 'customer'): sc_auth_body($scA, (string)get('step')); ?>
+    <?php if ($authTab === 'staff'): ?>
+      <?php if (current_user()): ?>
+      <div class="empty" style="padding:10px 0"><?= store_icon('check') ?><h3>Logged in as <?= e(current_user()['name'] ?? current_user()['username'] ?? '') ?></h3><p>Open the shop software.</p><a class="btn" href="<?= e(base_url('index.php')) ?>"><?= store_icon('store') ?>Open Dashboard</a></div>
+      <?php else: ?>
+      <!-- the shop's own login page does the checking (2-step code, lock-out after wrong tries, IP rules) -->
+      <form method="post" action="<?= e(base_url('login.php')) ?>"><?= csrf_field() ?>
+        <div class="ifield"><?= store_icon('user') ?><input name="username" required autocapitalize="none" autocomplete="username" placeholder="Username or e-mail" aria-label="Username or e-mail"></div>
+        <div class="ifield"><?= store_icon('lock') ?><input type="password" name="password" required autocomplete="current-password" placeholder="Password" aria-label="Password" data-pw>
+          <button class="hbtn eye" type="button" data-eye aria-label="Show password"><?= store_icon('eye') ?></button></div>
+        <button class="btn block" type="submit"><?= store_icon('next') ?>Staff Login</button>
+      </form>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:13px">
+        <a style="color:var(--brand);font-weight:700" href="<?= e(base_url('login.php')) ?>">Log in with fingerprint / face</a>
+        <a style="color:var(--brand);font-weight:700" href="<?= e(base_url('forgot_password.php')) ?>">Forgot password?</a>
+      </div>
+      <?php endif; ?>
+    <?php elseif ($authTab === 'customer'): sc_auth_body($scA, (string)get('step')); ?>
     <?php elseif ($authTab === 'track'): ?>
       <?php if ($trackErr !== ''): ?><p class="note bad" style="margin-bottom:12px"><?= e($trackErr) ?></p><?php endif; ?>
       <?php if ($trackRes): $tItems = json_decode((string)$trackRes['items_json'], true) ?: []; ?>
