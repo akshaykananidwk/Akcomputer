@@ -91,7 +91,8 @@ $_uiClass = trim(($_ui['text'] !== 'normal' ? 't-' . $_ui['text'] : '') . ($_ui[
       <div class="avatar-panel" id="avatarPanel">
         <div class="avatar-panel-name"><?= e($u['name']) ?><span><?= e($u['role_name']) ?> · <?= e($u['location_name']) ?></span></div>
         <a href="my_account.php"><?= icon('gear', 16) ?> My Account</a>
-        <a href="my_account.php?tab=display">🌐 <span>Display &amp; language</span></a>
+        <!-- the live online store's home page (Display & language is under My Account) -->
+        <a href="catalog.php" target="_blank" rel="noopener">🌐 <span>Live Website</span></a>
         <button type="button" id="themeToggleBtn" data-theme="<?= e($_theme) ?>"><?= icon('moon', 16) ?> <span id="themeToggleLabel"><?= $_theme === 'dark' ? 'Light Mode' : ($_theme === 'light' ? 'Auto Theme' : 'Dark Mode') ?></span></button>
         <a href="logout.php" onclick="return confirm('Logout?')"><?= icon('log-out', 16) ?> Logout</a>
       </div>
