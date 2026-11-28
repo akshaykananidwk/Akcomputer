@@ -11,20 +11,23 @@ const CP_SEP = ' > ';
 /** [regex on lower-case "name brand model", 'Main > Sub'] - first match wins,
  *  so the specific rules sit above the general ones. */
 function category_plan_rules() {
-    $cam = '(camera|\bcam\b|\bdome\b|\bbullet\b|eyeball)';
+    $cam = '(camera|\bcam\b|\bdome\b|\bbullet\b(?! series)|eyeball)';   // "UBON Bullet Series" earphones are no camera
     return [
         // --- things whose names also contain a "bigger" word: settle them first
         ['/motherboard|mother board/', 'Desktop > Motherboard'],   // "... M.2 NVMe SSD Support", "... HDMI, VGA"
         ['/hologram/', 'Mobility > Utility'],
         ['/(cctv|camera).*(power supply|smps)|(power supply|smps).*cctv/', 'Security > Power Supply | Adapter'],
-        ['/(mobile|wall|fast) charger|charger with/', 'Mobility > Chargers'],
-        ['/data (&|and) charging cable|charging cable|data cable/', 'Mobility > Data Cable'],   // "UBON Bullet Series ... cable" is no camera
+        ['/\btoner\b|\bcartridge\b/', 'Printers & Scanners > Toner | DMP Cartridge'],   // "... Toner Cartridge for HP Printers" is no printer
+        ['/printer.*cable|a to b cable|usb to printer/', 'Cables > Printer Cables'],
+        ['/(usb|kvm).*switch|switch selector|kvm/', 'Peripherals > Extender | Switcher | Splitter'],
+        ['/(mobile|wall|fast) charger|charger with|charging adapter|charger adapter/', 'Mobility > Chargers'],
+        ['/^(?!.*(hub|power cable|power cord)).*(data (&|and) charging cable|charging cable|data cable)/', 'Mobility > Data Cable'],   // "UBON Bullet Series ... cable" is no camera
         ['/video door|door ?bell|\bvdp\b/', 'Security > Video Door Phones (VDP)'],
         ['/web ?cam|web camera|usb.*camera.*plug/', 'Peripherals > Webcam'],
         ['/junction box|mounting rack|rack cabinet|\bdvr rack|\brack\b/', 'Security > Rack & Accessories'],
-        ['/keyboard.*mouse|mouse.*keyboard|\bcombo\b/', 'Peripherals > Keyboard | Combo'],
-        ['/\bmouse\b/', 'Peripherals > Mouse | Mousepad'],
-        ['/(?<!laptop )keyboard(?!.*laptop)/', 'Peripherals > Keyboard | Combo'],   // "... 1.2m Cable" stays a keyboard
+        ['/^(?!.*convert).*(keyboard.*mouse|mouse.*keyboard|\bcombo\b)/', 'Peripherals > Keyboard | Combo'],
+        ['/^(?!.*convert).*\bmouse\b/', 'Peripherals > Mouse | Mousepad'],
+        ['/^(?!.*convert).*(?<!laptop )keyboard(?!.*laptop)/', 'Peripherals > Keyboard | Combo'],   // "... 1.2m Cable" stays a keyboard
         ['/laptop.*(adapter|adaptor|charger)|(adapter|adaptor|charger).*laptop/', 'Laptop > Laptop Adaptor'],
         ['/laptop.*keyboard|keyboard.*laptop/', 'Laptop > Laptop Keyboard'],
         ['/laptop.*(cooling|cooler)|cooling (pad|stand)/', 'Laptop > Laptop Cooling Pad'],
@@ -70,7 +73,7 @@ function category_plan_rules() {
         ['/power ?bank/', 'Mobility > Power Bank'],
         ['/smart ?watch|\bwatch\b(?!.*battery)/', 'Mobility > Smart Watch'],
         ['/neckband/', 'Mobility > Neckband'],
-        ['/earbuds|airdopes|\btws\b/', 'Mobility > Earbuds TWS'],
+        ['/^(?!.*speaker).*(earbuds|airdopes|\btws\b)/', 'Mobility > Earbuds TWS'],
         ['/headphone|headset/', 'Mobility > Headphone'],
         ['/earphone|in-ear/', 'Mobility > Earphones'],
         ['/speaker|soundbar|sound bar/', 'Peripherals > Speaker'],

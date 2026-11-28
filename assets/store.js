@@ -246,6 +246,8 @@
   });
 
   // ---------- filter sheet: apply on change ----------
+  // filter panel: on a wide screen it is always open, so each tap applies at once
+  $$('[data-fsubmit]').forEach(function (f) { f.addEventListener('change', function (e) { if (matchMedia('(min-width: 1100px)').matches && e.target.matches('select, input[type=checkbox], input[type=radio]')) f.submit(); }); });
   $$('[data-autosubmit]').forEach(function (f) { f.addEventListener('change', function (e) { if (e.target.matches('select, input[type=checkbox], input[type=radio]')) f.submit(); }); });
 
   // ---------- installable app ----------

@@ -60,21 +60,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             post('is_active') ? 1 : 0, post('description'),
         ];
         $mrpIn = (float)post('mrp');
+        // newer columns, each on its own so an older DB still saves the rest
+        $saveExtra = function ($id) use ($mrpIn) {
+            // the printed MRP - the website shows "% OFF" only from a real one
+            try { q('UPDATE items SET mrp = ? WHERE id = ?', [$mrpIn > 0 ? $mrpIn : null, $id]); } catch (Exception $e) { /* before v101 */ }
+            try { q('UPDATE items SET search_keywords = ? WHERE id = ?', [mb_substr(trim((string)post('search_keywords')), 0, 8000), $id]); } catch (Exception $e) { /* before v103 */ }
+            try { q('UPDATE items SET specs = ? WHERE id = ?', [mb_substr(trim((string)post('specs')), 0, 8000), $id]); } catch (Exception $e) { /* before v105 */ }
+            try { require_once __DIR__ . '/includes/item_content.php'; ic_refresh((int)$id); } catch (Throwable $e) { /* before v103 */ }
+        };
         if ($id) {
             q('UPDATE items SET name=?, category_id=?, brand=?, model=?, unit=?, hsn=?, tax_rate=?, purchase_price=?,
                selling_price=?, b2b_price=?, serial_tracked=?, margin_pct=?, item_type=?, warranty_months=?, min_stock=?, show_on_website=?,
                photo=?, barcode=?, is_active=?, description=? WHERE id=?', array_merge($data, [$id]));
-            // the printed MRP - the website shows "% OFF" only from a real one
-            try { q('UPDATE items SET mrp = ? WHERE id = ?', [$mrpIn > 0 ? $mrpIn : null, $id]); } catch (Exception $e) { /* before v101 */ }
-            try { q('UPDATE items SET search_keywords = ? WHERE id = ?', [mb_substr(trim((string)post('search_keywords')), 0, 8000), $id]); } catch (Exception $e) { /* before v103 */ }
+            $saveExtra($id);
             flash('Item updated.');
         } else {
             q('INSERT INTO items (name, category_id, brand, model, unit, hsn, tax_rate, purchase_price, selling_price,
                b2b_price, serial_tracked, margin_pct, item_type, warranty_months, min_stock, show_on_website, photo, barcode, is_active, description)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', $data);
             $id = insert_id();
-            try { q('UPDATE items SET mrp = ? WHERE id = ?', [$mrpIn > 0 ? $mrpIn : null, $id]); } catch (Exception $e) { /* before v101 */ }
-            try { q('UPDATE items SET search_keywords = ? WHERE id = ?', [mb_substr(trim((string)post('search_keywords')), 0, 8000), $id]); } catch (Exception $e) { /* before v103 */ }
+            $saveExtra($id);
             flash('Item added.');
             // no category picked -> AI files the new product right away (one
             // tiny call); any failure just leaves it uncategorized as before
@@ -148,6 +153,7 @@ try {
 }
 foreach ($cats as &$c) $c['label'] = ($c['parent_name'] ?? '') !== '' && $c['parent_name'] !== null ? $c['parent_name'] . ' › ' . $c['name'] : $c['name'];
 unset($c);
+$catLabel = array_column($cats, 'label', 'id');   // list shows "Security › HD DVR", not just "HD DVR"
 
 if ($action === 'new' || $action === 'edit') {
     require_perm($action === 'new' ? 'items.add' : 'items.edit');
@@ -213,6 +219,8 @@ if ($action === 'new' || $action === 'edit') {
         <?php endif; ?>
         <div class="field"><label>Description (shows on the website; AI Auto-Fill can write this)</label>
           <textarea name="description" rows="3"><?= e($it['description'] ?? '') ?></textarea></div>
+        <div class="field"><label>Specifications <span class="muted">(paste the table from the box / datasheet: "Resolution: 4MP" per line, or label and value on alternate lines — shows as the spec table and filters on the website)</span></label>
+          <textarea name="specs" rows="4" placeholder="Model: CP-UNC-DA41L3C-LQ&#10;Resolution: 4MP (2688×1520)&#10;Lens: 3.6mm F1.6&#10;Power: 12V DC / PoE"><?= e($it['specs'] ?? '') ?></textarea></div>
         <div class="field"><label>Search words (customers' words for this product, comma separated — used by the website search)</label>
           <textarea name="search_keywords" rows="2" placeholder="e.g. cctv camera, cc camera, 2mp camera, સીસીટીવી કેમેરા"><?= e($it['search_keywords'] ?? '') ?></textarea></div>
         <div class="form-row cols-3">
@@ -370,7 +378,7 @@ $renderList = function () use ($items, $nAll, $qs, $page, $pages, $per, $fLoc, $
         <?php if (!$it['is_active']): ?> <span class="badge badge-bad">INACTIVE</span><?php endif; ?>
         <?php if ($it['brand'] || $it['model']): ?><br><span class="muted"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></span><?php endif; ?>
       </td>
-      <td><?= e($it['cat_name'] ?? '-') ?></td>
+      <td><?= e($catLabel[$it['category_id']] ?? ($it['cat_name'] ?? '-')) ?></td>
       <?php if (can('items.cost')): ?><td class="num"><?= money($it['purchase_price']) ?></td><?php endif; ?>
       <td class="num"><?= money($it['selling_price']) ?></td>
       <td class="num"><?= money($it['b2b_price']) ?></td>

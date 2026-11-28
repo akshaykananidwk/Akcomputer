@@ -134,7 +134,8 @@ store_head($seoTitle, $metaDesc, $purl, $head);
 store_header('back', $it['cat_name'] ?: 'Product');
 store_nav(store_groups(store_items()), $grp);
 $waMsg = "Hello! I would like this product:\n" . $label . ($it['model'] ? ' (' . $it['model'] . ')' : '') . "\nPrice: ₹" . money($dp) . "\n" . $purl;
-$factRows = array_map(fn($f) => [$f[0], $f[1]], array_filter(ic_facts($it), fn($f) => !in_array($f[0], ['Brand', 'Model', 'Warranty'], true)));
+// the owner's pasted Specifications first, then what the name tells us
+$factRows = array_values(array_filter(ic_spec_rows($it), fn($f) => !in_array($f[0], ['Brand', 'Model', 'Warranty'], true)));
 $specRows = array_filter([['Brand', $it['brand']], ['Model', $it['model']], ['SKU', $it['barcode']], ['Category', $it['cat_name']], ['Variant', $it['variant'] ?? ''],
     ['Warranty', (int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' months' : ''], ['Unit', $it['unit']], ['Condition', ['NewCondition' => 'New', 'UsedCondition' => 'Used / old stock', 'RefurbishedCondition' => 'Refurbished'][$cond]]],
     fn($r) => trim((string)$r[1]) !== '');

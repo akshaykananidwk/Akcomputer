@@ -182,7 +182,7 @@ function store_synonyms() {
     ];
 }
 function store_hay($it) {
-    return mb_strtolower(implode(' ', [$it['name'], $it['brand'], $it['model'], $it['barcode'], $it['cat_name'] ?? '', store_group($it), $it['variant'] ?? '', $it['search_keywords'] ?? '']));
+    return mb_strtolower(implode(' ', [$it['name'], $it['brand'], $it['model'], $it['barcode'], $it['cat_name'] ?? '', store_group($it), $it['variant'] ?? '', $it['search_keywords'] ?? '', $it['specs'] ?? '']));
 }
 function store_search(array $items, $q) {
     $words = array_slice(preg_split('/\s+/u', mb_strtolower(trim($q)), -1, PREG_SPLIT_NO_EMPTY), 0, 8);

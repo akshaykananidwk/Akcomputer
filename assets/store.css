@@ -510,3 +510,30 @@ details.panel > summary::-webkit-details-marker { display: none; }
 .ic p { font-size: 14.5px; line-height: 1.6; margin-top: 6px; }
 .ic .ic-h { font-size: 14.5px; margin: 14px 0 4px; }
 .ic .ic-ul { margin: 4px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.65; }
+
+/* ---- product filters: chips that show what is on, a count on the button, and
+   on a wide screen the filter panel stays open as a column on the left ---- */
+.fbtn { position: relative; }
+.fbtn b { position: absolute; top: -2px; right: -2px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--brand); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+.chips.act { margin-bottom: 8px; }
+.chips.act .chip svg { width: 14px; height: 14px; }
+.chip svg { width: 15px; height: 15px; }
+.chip.clr { border-style: dashed; color: var(--brand); background: transparent; }
+.chip.clr:hover { color: #fff; }
+.fch { flex-wrap: wrap; overflow: visible; }
+.fch .chip { position: relative; height: 34px; }
+.fch .chip input { position: absolute; opacity: 0; pointer-events: none; }
+.fch .chip:has(input:checked) { background: var(--brand); border-color: var(--brand); color: #fff; }
+.fch .chip:has(input:focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }
+#filters .field > label { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.fgo { position: sticky; bottom: calc(-18px - env(safe-area-inset-bottom)); background: var(--card); padding: 10px 0 4px; }
+@media (min-width: 1100px) {
+  .flt { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 24px; align-items: start; max-width: 1240px; margin: 0 auto; padding: 0 14px; }
+  .flt > .sec { margin-left: 0; margin-right: 0; padding: 0; max-width: none; width: auto; }
+  .flt > .sheet { order: -1; position: sticky; top: 84px; left: auto; right: auto; bottom: auto; width: auto; max-height: calc(100vh - 100px); transform: none; visibility: visible; border: 1px solid var(--line); border-radius: 18px; margin-top: 14px; padding: 14px 16px; z-index: 1; transition: none; }
+  .flt > .sheet::before, .flt > .sheet [data-close], .flt .fbtn, .flt .fgo .btn[type=submit] { display: none; }
+  .flt .fgo { position: static; padding: 0; }
+  .flt .qrow { display: none; }   /* the panel on the left already has these */
+  .flt > .sheet .two { grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .flt > .sheet .two input { width: 100%; min-width: 0; }
+}

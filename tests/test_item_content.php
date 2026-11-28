@@ -57,3 +57,39 @@ t_eq('every CCTV item goes under Security (cameras, recorders, disks, cable, acc
 t_eq('a motherboard "with M.2 NVMe SSD / HDMI" is a motherboard; a keyboard "with cable" is a keyboard; a "Bullet Series" cable is a cable',
      [$cat('POWERX H110 Desktop Motherboard (LGA1151, DDR4, M.2 NVMe SSD Support)'), $cat('Zebronics H81S M2 LGA1150 DDR3 Micro ATX Motherboard (M.2 Slot, HDMI, VGA, Gigabit LAN) (ZEB-H81S M2)'), $cat('ZEBRONICS ZEB-K65 Wired USB Keyboard (104 Keys, UV Coated Keys, Retractable Stand, 1.2m Cable) (ZEB-K65)'), $cat('UBON Black Bullet Series 22W USB to Type-C Data & Charging Cable (High Speed) (WR-560)')],
      ['Desktop > Motherboard', 'Desktop > Motherboard', 'Peripherals > Keyboard | Combo', 'Mobility > Data Cable']);
+t_eq('the last category mistakes: toner, neckband, karaoke speaker, printer cable, hub, power cable, charging adapter, PS/2 converter, USB switch, DVR/NVR',
+     [$cat('137A Black Laser Toner Cartridge for HP Compatible Printers (H-W137A)'), $cat('UBON Black Bullet Series Bluetooth Wireless Neckband Earphones (CL-35)'),
+      $cat('HAMMOK Duet 5W Bluetooth Karaoke Speaker with Wireless Microphone (Bluetooth v5.3, RGB LED, TWS, USB) (DUET)'), $cat('USB to Printer Cable 3 Meter'),
+      $cat('Data Cables 4 Port USB 2.0 Hub with Micro USB Power Input (1.2 Meter Cable)'), $cat('Data Cables Computer Power Cable (5 Meter)'),
+      $cat('Bali 67W USB Fast Charging Adapter with Type-C Cable (BA-WC26)'), $cat('DI USB to Dual PS/2 Keyboard & Mouse Converter Cable (Heavy Duty) (P7020)'),
+      $cat('2-Port USB 2.0 Manual Switch Selector (1 Input, 2 Output Ports, Push Button Control)'), $cat('CP PLUS 4 Channel HD Digital Video Recorder (1 SATA Port, Without Hard Disk) (CP-UVR-0401E1V-I)'),
+      $cat('DAHUA 16 Channel 4K Network Video Recorder (NVR, H.265+, 4K HDMI Output) (DHI-NVR2116HS-4KS3)')],
+     ['Printers & Scanners > Toner | DMP Cartridge', 'Mobility > Neckband', 'Peripherals > Speaker', 'Cables > Printer Cables', 'Peripherals > USB | Type C Hub', 'Cables > Power Cables',
+      'Mobility > Chargers', 'Connector & Converter > Converter', 'Peripherals > Extender | Switcher | Splitter', 'Security > HD DVR', 'Security > IP NVR']);
+
+t_group('Product content: the owner\'s pasted Specifications');
+$tbl = "Specifications\nFeature\nDescription\nModel\nCP-UNC-DA41L3C-LQ\nResolution\n4MP (2688×1520)\nLens\n3.6mm F1.6 M12\nIllumination\nIR & Warm Light 30m\nImage Sensor\n1/2.9\" CMOS\nAudio\nBuilt-in Mic\nVideo Compression\nH.265/H.264/MJPEG\nIP Rating\nIP67\nPower\n12V DC / PoE (802.3af)\nOperating Temp.\n–40°C to +60°C";
+$ps = ic_specs_parse($tbl);
+t_eq('a table copied from a website (label and value on alternate lines, header skipped) is read row by row', [count($ps), $ps[0], $ps[1], $ps[9]],
+     [10, ['Model', 'CP-UNC-DA41L3C-LQ'], ['Resolution', '4MP (2688×1520)'], ['Operating Temp.', '–40°C to +60°C']]);
+t_eq('"Key: Value", tab and "|" lines work too (a ":" inside a value is kept)', ic_specs_parse("Feature\tDescription\nLens\t3.6mm\nPower: 12V DC\nIP Rating | IP67\nAspect: 16:9"),
+     [['Lens', '3.6mm'], ['Power', '12V DC'], ['IP Rating', 'IP67'], ['Aspect', '16:9']]);
+$sit = ['id' => 9, 'name' => 'CP PLUS 4MP IP Dome Camera (CP-UNC-DA41L3C-LQ)', 'brand' => 'CP PLUS', 'model' => 'CP-UNC-DA41L3C-LQ', 'specs' => $tbl];
+$rows = ic_spec_rows($sit); $labs = array_column($rows, 0);
+t_ok('spec table: the owner\'s rows come first, in their order and words', array_slice($labs, 0, 3) === ['Model', 'Resolution', 'Lens']);
+t_ok('...and what we read from the name is not shown twice (no second Resolution / Night vision / Weatherproof)', count(array_keys($labs, 'Resolution')) === 1 && !in_array('Night vision', $labs, true) && !in_array('Weatherproof', $labs, true), implode(', ', $labs));
+$fm = ic_facet_map([$sit]);
+t_eq('the website filters read the pasted specs too (audio, IP67 outdoor, IR + warm light = dual light)', [$fm[9]['audio'] ?? null, $fm[9]['place'] ?? null, $fm[9]['night'] ?? null], ['With audio', 'Outdoor', 'Dual light']);
+$fm = ic_facet_map([['id' => 8, 'name' => 'X 2MP Dome Camera', 'specs' => "Audio: No\nIllumination: IR 20m"]]);
+t_eq('an "Audio: No" row does not make it an audio camera', [$fm[8]['audio'] ?? null, $fm[8]['night'] ?? null], [null, 'IR night']);
+t_ok('the description\'s Key features list has the owner\'s specs', strpos(ic_description($sit), '• Image Sensor: 1/2.9" CMOS') !== false);
+q("INSERT INTO items (name, brand, selling_price, purchase_price, tax_rate, is_active, item_type) VALUES ('IC Spec Dome Camera 4MP', 'X', 1500, 1000, 18, 1, 'product')");
+$s1 = (int)val('SELECT MAX(id) FROM items');
+ic_apply();
+q('UPDATE items SET specs = ? WHERE id = ?', ["Image Sensor: 1/2.8\" Sony CMOS", $s1]);
+ic_refresh($s1);
+t_ok('saving new specs re-writes a description we wrote (and nobody changed)', strpos((string)val('SELECT description FROM items WHERE id = ?', [$s1]), 'Sony CMOS') !== false);
+q("UPDATE items SET description = 'Owner text', specs = 'Lens: 6mm' WHERE id = ?", [$s1]);
+ic_refresh($s1);
+t_eq('...but never the owner\'s own description', val('SELECT description FROM items WHERE id = ?', [$s1]), 'Owner text');
+t_ok('the one-time Update step is versioned, so new names / categories / descriptions run again once', strpos(file_get_contents(__DIR__ . '/../includes/item_content.php'), "setting('item_content_once_ver') === \$ver") !== false);

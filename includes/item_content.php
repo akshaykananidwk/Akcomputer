@@ -36,8 +36,42 @@ function ic_kind($it) {
 }
 
 /** Facts read from the name: [label, value, filter key or ''] in display order. */
+/** The owner's pasted Specifications (from a box / datasheet) -> [[label, value], ...].
+ *  Takes "Key: Value", "Key<TAB>Value", "Key | Value" lines, or label and value on
+ *  alternate lines (as copied from a website table). Header rows are skipped. */
+function ic_specs_parse($text) {
+    $lines = array_values(array_filter(array_map(fn($l) => trim(preg_replace('/[ \t]*\|[ \t]*$|^\|[ \t]*/', '', $l)), preg_split('/\R/', trim((string)$text))), 'strlen'));
+    $head = '/^(specifications?|specs|features?|feature\s*(\||\t|\s)\s*description|description|parameters?|details|key|value)$/i';
+    $lines = array_values(array_filter($lines, fn($l) => !preg_match($head, preg_replace('/\s+/', ' ', $l))));
+    $rows = [];
+    $sep = '/^([^:\t|]{2,40}?)\s*(?:\t+|\s*\|\s*|:\s+|\s*:\s*(?=\S))(.+)$/u';
+    $withSep = count(array_filter($lines, fn($l) => preg_match($sep, $l)));
+    if ($lines && $withSep >= count($lines) / 2) {
+        foreach ($lines as $l) if (preg_match($sep, $l, $m)) $rows[] = [trim($m[1]), trim($m[2])];
+    } else {
+        for ($i = 0; $i + 1 < count($lines); $i += 2) $rows[] = [$lines[$i], $lines[$i + 1]];
+    }
+    return array_values(array_filter($rows, fn($r) => mb_strlen($r[0]) <= 40 && $r[1] !== ''));
+}
+/** Spec table rows: the owner's own Specifications first, then what we read from
+ *  the name - skipping anything the owner already gave (Illumination = Night vision...). */
+function ic_spec_rows($it) {
+    $own = ic_specs_parse($it['specs'] ?? '');
+    $alias = ['night vision' => 'illumination|night|ir', 'weatherproof' => 'ip|protection|weather|ingress', 'compression' => 'compression|codec', 'power' => 'power', 'resolution' => 'resolution|pixel', 'lens' => 'lens', 'audio' => 'audio|mic', 'ir range' => 'illumination|ir', 'channels' => 'channel', 'technology' => 'type'];
+    $have = mb_strtolower(implode(' | ', array_column($own, 0)));
+    $auto = [];
+    foreach (ic_facts($it) as $f) {
+        $l = mb_strtolower($f[0]);
+        if (strpos($have, $l) !== false || (isset($alias[$l]) && preg_match('/\b(' . $alias[$l] . ')/', $have))) continue;
+        $auto[] = [$f[0], $f[1]];
+    }
+    return array_merge($own, $auto);
+}
+
 function ic_facts($it) {
-    $n = ' ' . preg_replace('/\s+/', ' ', ($it['name'] ?? '') . ' ' . ($it['variant'] ?? '')) . ' ';
+    $sp = '';   // the owner's specs feed the same readers (filters, keywords) - "No" rows say nothing
+    foreach (ic_specs_parse($it['specs'] ?? '') as [$k, $v]) if (!preg_match('/^(no|none|n\/?a|-|not supported)$/i', trim($v))) $sp .= " $k $v.";
+    $n = ' ' . preg_replace('/\s+/', ' ', ($it['name'] ?? '') . ' ' . ($it['variant'] ?? '') . $sp) . ' ';
     $f = [];
     $add = function ($label, $value, $key = '') use (&$f) { foreach ($f as $x) if ($x[0] === $label) return; $f[] = [$label, $value, $key]; };
     $kind = ic_kind($it);
@@ -53,8 +87,8 @@ function ic_facts($it) {
         foreach (['PTZ' => '/\bPTZ\b/i', 'Pan & Tilt (PT)' => '/\bPT\b|pan ?(&|and) ?tilt/i', 'Dome' => '/\bdome\b/i', 'Bullet' => '/\bbullet\b/i', 'Eyeball / Turret' => '/eyeball|turret/i', 'Robot (indoor)' => '/robot/i', 'Video door bell' => '/door ?bell/i'] as $t => $re)
             if (preg_match($re, $n)) { $add('Camera type', $t, 'ctype'); break; }
         $add('Technology', $kind === 'cam_ip' ? 'IP (network) camera' : ($kind === 'cam_4g' ? '4G SIM camera' : ($kind === 'cam_wifi' ? 'WiFi camera' : ($kind === 'doorbell' ? 'WiFi video door bell' : 'HD analog camera (for DVR)'))), 'tech');
-        if (preg_match('/full[- ]?colou?r|colou?r ?(night|vu|sense)|warm light|white light|starlight/i', $n)) $add('Night vision', preg_match('/dual light|smart dual/i', $n) ? 'Dual light (colour + IR)' : 'Colour night vision', 'night');
-        elseif (preg_match('/dual light/i', $n)) $add('Night vision', 'Dual light (colour + IR)', 'night');
+        if (preg_match('/full[- ]?colou?r|colou?r ?(night|vu|sense)|warm light|white light|starlight/i', $n)) $add('Night vision', preg_match('/dual light|smart dual|\bIR\b\s*(&|and|\+|\/)\s*(warm|white)/i', $n) ? 'Dual light (colour + IR)' : 'Colour night vision', 'night');
+        elseif (preg_match('/dual light|\bIR\b\s*(&|and|\+|\/)\s*(warm|white)/i', $n)) $add('Night vision', 'Dual light (colour + IR)', 'night');
         elseif (preg_match('/\bIR\b|night vision|infrared|day ?& ?night/i', $n)) $add('Night vision', 'IR night vision (black & white)', 'night');
         if (preg_match('/(\d+)\s?m(?:tr)?\s?IR\b|IR.{0,8}?(\d+)\s?m\b/i', $n, $m)) $add('IR range', ($m[1] ?: $m[2]) . ' m');
         if (preg_match('/two[- ]way (audio|talk)|2 ?way audio|mic(rophone)? (&|and) speaker/i', $n)) $add('Audio', 'Two-way audio (talk & listen)', 'audio');
@@ -191,12 +225,13 @@ function ic_description($it) {
     $app = setting('app_name', 'AK Computer'); $city = shop_city() ?: 'Dwarka';
     $kind = ic_kind($it); [$what, $uses, $how, $needs] = ic_kind_text($kind);
     $facts = array_values(array_filter(ic_facts($it), fn($f) => !in_array($f[0], ['Brand', 'Model'], true)));
+    $rows = array_values(array_filter(ic_spec_rows($it), fn($f) => !in_array($f[0], ['Brand', 'Model'], true)));
     $name = trim(preg_replace('/\s+/', ' ', $it['name']));
     $brand = trim((string)($it['brand'] ?? ''));
     $out = [];
     $out[] = $name . ' is ' . $what . ($brand !== '' && stripos($name, $brand) === false ? ' from ' . $brand : '') . '.'
         . ($facts ? ' ' . ic_summary($facts) : '') . ' Available at ' . $app . ', ' . $city . ', with ' . ((int)($it['warranty_months'] ?? 0) > 0 ? (int)$it['warranty_months'] . ' months warranty' : 'the company warranty') . '.';
-    if ($facts) { $out[] = 'Key features:'; foreach ($facts as $f) $out[] = '• ' . $f[0] . ': ' . $f[1]; }
+    if ($rows) { $out[] = 'Key features:'; foreach ($rows as $f) $out[] = '• ' . $f[0] . ': ' . $f[1]; }
     if ($uses) { $out[] = 'Where it is used:'; foreach ($uses as $x) $out[] = '• ' . $x; }
     if ($how !== '') { $out[] = 'How it works:'; $out[] = $how; }
     if ($needs) { $out[] = 'You may also need:'; foreach ($needs as $x) $out[] = '• ' . $x; }
@@ -286,6 +321,20 @@ function ic_apply() {
     } catch (Exception $e) { if ($own) $pdo->rollBack(); else $pdo->exec('ROLLBACK TO SAVEPOINT item_content'); throw $e; }
     return count($plan);
 }
+/** After the owner saves an item: a description / search words we wrote (and
+ *  nobody changed) are written again from the new name and Specifications. */
+function ic_refresh($id) {
+    $r = row("SELECT i.*, c.name cat_name FROM items i LEFT JOIN categories c ON c.id = i.category_id WHERE i.id = ?", [$id]);
+    $a = row('SELECT hd, hk FROM item_content_auto WHERE item_id = ?', [$id]);
+    if (!$r || !$a) return false;
+    $d = trim((string)$r['description']); $k = trim((string)($r['search_keywords'] ?? ''));
+    $mayD = $a['hd'] !== '' && $a['hd'] === md5($d); $mayK = $a['hk'] !== '' && $a['hk'] === md5($k);
+    if (!$mayD && !$mayK) return false;
+    $nd = $mayD ? ic_description($r) : $d; $nk = $mayK ? implode(', ', ic_keywords($r)) : $k;
+    q('UPDATE items SET description = ?, search_keywords = ? WHERE id = ?', [$nd, $nk, $id]);
+    q('UPDATE item_content_auto SET hd = ?, hk = ? WHERE item_id = ?', [$mayD ? md5($nd) : '', $mayK ? md5($nk) : '', $id]);
+    return true;
+}
 /** When the last Apply ran and how many products it changed, or null. */
 function ic_undo_info() { $r = row('SELECT COUNT(*) n, MAX(at) at FROM item_content_undo'); return $r && (int)$r['n'] ? $r : null; }
 function ic_undo() {
@@ -341,7 +390,11 @@ function ic_render($text) {
  *  under Security) and write descriptions + search words. Both keep an Undo
  *  (Items -> Arrange Categories / Product Descriptions & SEO). */
 function item_content_once() {
-    if (setting('item_content_once_done') !== '') return;
+    // bump $ver when names / category rules / descriptions improve, so the
+    // next Update runs them again (the first run's flag had no names step yet)
+    $ver = '2';
+    if (setting('item_content_once_ver') === $ver) return;
+    set_setting('item_content_once_ver', $ver);
     set_setting('item_content_once_done', date('Y-m-d H:i:s'));
     try { require_once __DIR__ . '/item_names.php'; $m = in_apply(); log_activity('item_names_apply', "$m names (update)"); } catch (Throwable $e) { error_log('item names once: ' . $e->getMessage()); }
     try { require_once __DIR__ . '/category_plan.php'; $c = category_plan_apply(); log_activity('category_plan_apply', "$c items moved (update)"); } catch (Throwable $e) { error_log('category plan once: ' . $e->getMessage()); }

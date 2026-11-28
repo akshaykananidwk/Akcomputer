@@ -496,11 +496,27 @@ $tileHtml = function ($t) { ?>
     <div class="panel empty" data-wish-empty hidden><?= store_icon('heart') ?><h3>Your wishlist is empty</h3><p>Tap the heart on any product to keep it here.</p><a class="btn" href="catalog.php?view=all">Browse products</a></div>
   </section>
 
-<?php elseif ($view === 'all'): ?>
+<?php elseif ($view === 'all'):
+  // what is switched on now, each with a link that takes just that one off
+  $active = [];
+  if ($fCat !== '') $active[] = [$fCat, $qsKeep(['cat' => '', 'page' => ''])];
+  if ($fBrand !== '') $active[] = [$fBrand, $qsKeep(['brand' => '', 'page' => ''])];
+  foreach ($fx as $k => $v) { $nfx = $fx; unset($nfx[$k]); $active[] = [ic_facet_labels()[$k] . ': ' . $v, $qsKeep(['fx' => $nfx, 'page' => ''])]; }
+  if ($fStock) $active[] = ['In stock', $qsKeep(['stock' => '', 'page' => ''])];
+  if ($fMin || $fMax) $active[] = ['₹' . ($fMin ? money($fMin) : '0') . ($fMax ? ' – ₹' . money($fMax) : '+'), $qsKeep(['min' => '', 'max' => '', 'page' => ''])];
+  $bands = [[0, 999, 'Under ₹1,000'], [1000, 5000, '₹1,000 – 5,000'], [5000, 15000, '₹5,000 – 15,000'], [15000, 0, 'Above ₹15,000']];
+?>
+  <div class="flt">
   <section class="sec" style="margin-top:4px">
     <div class="cathead"><span class="ti"><?php if ($catImg): ?><img src="<?= e($catImg) ?>" alt=""><?php else: ?><?= store_icon($fQ !== '' ? 'search' : store_cat_icon($catHead ?: 'box')) ?><?php endif; ?></span>
       <h1><?= e($fQ !== '' ? 'Results for “' . $fQ . '”' : ($catHead ?: 'All Products')) ?><small><?= $nList ?> product<?= $nList === 1 ? '' : 's' ?><?= $fBrand !== '' ? ' · ' . e($fBrand) : '' ?></small></h1>
-      <button class="hbtn" type="button" data-open="filters" aria-label="Filters"><?= store_icon('filter') ?></button></div>
+      <button class="hbtn fbtn" type="button" data-open="filters" aria-label="Filters"><?= store_icon('filter') ?><?php if ($active): ?><b><?= count($active) ?></b><?php endif; ?></button></div>
+    <?php if ($active): ?>
+    <div class="chips act" aria-label="Filters on">
+      <?php foreach ($active as [$lab, $url]): ?><a class="chip on" href="<?= e($url) ?>" aria-label="Remove <?= e($lab) ?>"><?= e($lab) ?> <?= store_icon('x') ?></a><?php endforeach; ?>
+      <a class="chip clr" href="<?= e($qsKeep(['cat' => '', 'brand' => '', 'fx' => '', 'stock' => '', 'min' => '', 'max' => '', 'page' => ''])) ?>">Clear all</a>
+    </div>
+    <?php endif; ?>
     <?php if ($catsHere && count($catsHere) > 1): ?>
     <div class="chips" style="margin-bottom:8px">
       <a class="chip <?= $fCat === '' ? 'on' : '' ?>" href="<?= e($qsKeep(['cat' => '', 'brand' => '', 'page' => ''])) ?>">All</a>
@@ -511,13 +527,13 @@ $tileHtml = function ($t) { ?>
         return '<a class="chip ' . ($on ? 'on' : '') . '" href="' . e($qsKeep(['fx' => $nfx, 'page' => ''])) . '">' . e($v) . '</a>'; };
     $quick = [];   // the few filters people use most, in this order: megapixels, audio, night vision ...
     foreach (['res', 'audio', 'night', 'ctype', 'cap', 'ddr', 'for', 'ptype', 'wired', 'screen', 'tech'] as $qk) if (isset($facets[$qk]) && count($quick) < 3) $quick[$qk] = $facets[$qk];
-    if ($quick): ?>
-    <div class="chips" style="margin-bottom:8px">
+    ?>
+    <div class="chips qrow" style="margin-bottom:8px">
+      <a class="chip <?= $fStock ? 'on' : '' ?>" href="<?= e($qsKeep(['stock' => $fStock ? '' : 1, 'page' => ''])) ?>"><?= store_icon('check') ?>In stock</a>
       <?php foreach ($quick as $k => $vals) foreach ($vals as $v => $n) echo $fxChip($k, (string)$v); ?>
     </div>
-    <?php endif; ?>
     <?php if (count($brandsHere) > 1): ?>
-    <div class="chips" style="margin-bottom:8px">
+    <div class="chips qrow" style="margin-bottom:8px">
       <a class="chip <?= $fBrand === '' ? 'on' : '' ?>" href="<?= e($qsKeep(['brand' => '', 'page' => ''])) ?>">All brands</a>
       <?php foreach (array_slice($brandsHere, 0, 20, true) as $bn => $n): ?><a class="chip <?= strcasecmp($fBrand, $bn) === 0 ? 'on' : '' ?>" href="<?= e($qsKeep(['brand' => strcasecmp($fBrand, $bn) === 0 ? '' : $bn, 'page' => ''])) ?>"><?= e($bn) ?></a><?php endforeach; ?>
     </div>
@@ -550,27 +566,31 @@ $tileHtml = function ($t) { ?>
   </section>
   <section class="sheet" id="filters" aria-label="Filters" role="dialog">
     <div class="sheet-h"><h2>Filters</h2><button class="hbtn" type="button" data-close aria-label="Close"><?= store_icon('x') ?></button></div>
-    <form method="get">
+    <form method="get" data-fsubmit>
       <input type="hidden" name="view" value="all"><?php foreach (['q' => $fQ, 'sort' => $fSort === 'popular' ? '' : $fSort] as $k => $v) if ($v !== '') echo '<input type="hidden" name="' . $k . '" value="' . e($v) . '">'; ?>
       <div class="field"><label for="fg">Category</label><select id="fg" name="g"><option value="">All categories</option><?php foreach ($groups as $g): ?><option <?= $fG === $g['name'] ? 'selected' : '' ?>><?= e($g['name']) ?></option><?php endforeach; ?></select></div>
       <?php if ($brandsHere): ?><div class="field"><label for="fb">Brand</label><select id="fb" name="brand"><option value="">All brands</option><?php foreach (array_keys($brandsHere) as $bn): ?><option <?= strcasecmp($fBrand, $bn) === 0 ? 'selected' : '' ?>><?= e($bn) ?></option><?php endforeach; ?></select></div><?php endif; ?>
+      <div class="field"><label>Price</label><div class="chips fch">
+        <?php foreach ($bands as [$lo, $hi, $lab]): ?><a class="chip <?= $fMin == $lo && $fMax == $hi && ($fMin || $fMax) ? 'on' : '' ?>" href="<?= e($qsKeep(['min' => $lo ?: '', 'max' => $hi ?: '', 'page' => ''])) ?>"><?= $lab ?></a><?php endforeach; ?>
+      </div></div>
       <div class="two">
         <div class="field" style="margin:0"><label for="fmin">Min price ₹</label><input id="fmin" name="min" inputmode="numeric" value="<?= $fMin ?: '' ?>"></div>
         <div class="field" style="margin:0"><label for="fmax">Max price ₹</label><input id="fmax" name="max" inputmode="numeric" value="<?= $fMax ?: '' ?>"></div>
       </div>
       <?php foreach ($facets as $k => $vals): ?>
       <div class="field"><label><?= e(ic_facet_labels()[$k]) ?></label>
-        <div class="chips" style="flex-wrap:wrap">
+        <div class="chips fch">
           <label class="chip"><input type="radio" name="fx[<?= e($k) ?>]" value="" <?= !isset($fx[$k]) ? 'checked' : '' ?>> Any</label>
           <?php foreach ($vals as $v => $n): ?><label class="chip"><input type="radio" name="fx[<?= e($k) ?>]" value="<?= e($v) ?>" <?= ($fx[$k] ?? '') === (string)$v ? 'checked' : '' ?>> <?= e($v) ?> <span class="n"><?= (int)$n ?></span></label><?php endforeach; ?>
         </div></div>
       <?php endforeach; ?>
       <?php if ($fCat !== ''): ?><input type="hidden" name="cat" value="<?= e($fCat) ?>"><?php endif; ?>
-      <label class="chip" style="width:100%;justify-content:flex-start;height:46px;margin-bottom:14px"><input type="checkbox" name="stock" value="1" <?= $fStock ? 'checked' : '' ?>> In stock only</label>
-      <button class="btn block" type="submit">Show products</button>
-      <a class="btn ghost block" style="margin-top:8px" href="catalog.php?view=all">Clear all</a>
+      <div class="chips fch" style="margin-bottom:14px"><label class="chip"><input type="checkbox" name="stock" value="1" <?= $fStock ? 'checked' : '' ?>> In stock only</label></div>
+      <div class="fgo"><button class="btn block" type="submit">Show <?= $nList ?> product<?= $nList === 1 ? '' : 's' ?></button>
+      <a class="btn ghost block" style="margin-top:8px" href="<?= e($fQ !== '' ? 'catalog.php?view=all&q=' . rawurlencode($fQ) : 'catalog.php?view=all') ?>">Clear all</a></div>
     </form>
   </section>
+  </div>
   <div class="sheet-bg" data-close></div>
 
 <?php else: /* ---------------- home ---------------- */ ?>
