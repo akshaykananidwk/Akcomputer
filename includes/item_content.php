@@ -343,6 +343,7 @@ function ic_render($text) {
 function item_content_once() {
     if (setting('item_content_once_done') !== '') return;
     set_setting('item_content_once_done', date('Y-m-d H:i:s'));
+    try { require_once __DIR__ . '/item_names.php'; $m = in_apply(); log_activity('item_names_apply', "$m names (update)"); } catch (Throwable $e) { error_log('item names once: ' . $e->getMessage()); }
     try { require_once __DIR__ . '/category_plan.php'; $c = category_plan_apply(); log_activity('category_plan_apply', "$c items moved (update)"); } catch (Throwable $e) { error_log('category plan once: ' . $e->getMessage()); }
     try { $n = ic_apply(); log_activity('item_content_apply', "$n products (update)"); } catch (Throwable $e) { error_log('item content once: ' . $e->getMessage()); }
 }

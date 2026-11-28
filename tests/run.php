@@ -19,7 +19,7 @@ $pdo = db();
 $pdo->beginTransaction();
 
 try {
-    foreach (['money', 'payments', 'stock', 'permissions', 'health', 'settlement', 'dashboard', 'customer', 'purchase', 'ai', 'market', 'campaign', 'forecast', 'scaling', 'reports', 'api', 'voice', 'wa_buttons', 'tenant', 'biz', 'ui', 'hr', 'books', 'security2', 'connect', 'mail', 'accounting_audit', 'paylink', 'ledger', 'item_limits', 'attendance_rules', 'category_plan', 'expense_ai', 'party_merge', 'mobile_first', 'items_list', 'credit_card', 'ak_earn', 'serial_optional', 'sold_on_day', 'store', 'store_account', 'item_content'] as $suite) {
+    foreach (['money', 'payments', 'stock', 'permissions', 'health', 'settlement', 'dashboard', 'customer', 'purchase', 'ai', 'market', 'campaign', 'forecast', 'scaling', 'reports', 'api', 'voice', 'wa_buttons', 'tenant', 'biz', 'ui', 'hr', 'books', 'security2', 'connect', 'mail', 'accounting_audit', 'paylink', 'ledger', 'item_limits', 'attendance_rules', 'category_plan', 'expense_ai', 'party_merge', 'mobile_first', 'items_list', 'credit_card', 'ak_earn', 'serial_optional', 'sold_on_day', 'store', 'store_account', 'item_content', 'item_names'] as $suite) {
         require __DIR__ . '/test_' . $suite . '.php';
     }
 } catch (Throwable $e) {
