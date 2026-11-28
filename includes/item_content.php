@@ -390,7 +390,7 @@ function ic_render($text) {
 function item_content_once() {
     // bump $ver when names / category rules / descriptions improve, so the
     // next Update runs them again (the first run's flag had no names step yet)
-    $ver = '3';
+    $ver = '4';
     if (setting('item_content_once_ver') === $ver) return;
     set_setting('item_content_once_ver', $ver);
     set_setting('item_content_once_done', date('Y-m-d H:i:s'));

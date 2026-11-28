@@ -22,6 +22,7 @@ t_eq('a broken pasted name is written out; a stray bracket and invisible charact
 t_eq('a nested model code stays whole', $c('SECURUS 4CH H.265 Digital Video Recorder with AI Human & Face Detection (HDMI/VGA 4K Output) (SS-8041-TPHD-M1(SF))'),
      'Securus 4CH H.265 Digital Video Recorder with AI Human & Face Detection (HDMI/VGA 4K Output) (SS-8041-TPHD-M1(SF))');
 t_eq('the brand column is written one way too', in_clean(['name' => 'CP-Plus 8ch DVR', 'brand' => 'Cp-plus', 'model' => ''])[1], 'CP PLUS');
+t_eq('an empty Brand is filled from the brand the name starts with (brand pages for Google); a set one is kept', [in_clean(['name' => 'Dahua 2MP Dome Camera', 'brand' => '', 'model' => ''])[1], in_clean(['name' => 'Data Cables Power Cable', 'brand' => '', 'model' => ''])[1], in_clean(['name' => 'Dahua 2MP Dome Camera', 'brand' => 'Imou', 'model' => ''])[1]], ['Dahua', '', 'IMOU']);
 t_eq('a good name is left alone', $c('Hi-Focus 4+2 PoE Switch (HF-S04E2-65WH)'), 'Hi-Focus 4+2 PoE Switch (HF-S04E2-65WH)');
 
 t_group('Clear names: Apply / Undo, prices and services untouched');

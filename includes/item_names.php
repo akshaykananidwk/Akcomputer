@@ -79,7 +79,7 @@ function in_clean(array $it) {
     $brand = trim((string)($it['brand'] ?? ''));
     foreach (in_brands() as $k => $v) {
         $re = '/^' . preg_quote($k, '/') . '(?=[\s,(]|$)/iu';
-        if (preg_match($re, $n)) { $n = preg_replace($re, $v, $n); break; }
+        if (preg_match($re, $n)) { $n = preg_replace($re, $v, $n); if ($brand === '') $brand = $v; break; }   // empty Brand: the one the name starts with (gives it a brand page)
     }
     $bk = mb_strtolower($brand);
     $brandNew = in_brands()[$bk] ?? ($brand !== '' && preg_match('/^[A-Z]{4,}$/', $brand) ? mb_convert_case(mb_strtolower($brand), MB_CASE_TITLE) : $brand);
