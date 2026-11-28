@@ -325,7 +325,11 @@ $fromSql = 'FROM items i
               ' . ($w ? 'WHERE ' . implode(' AND ', $w) : '') . '
               GROUP BY i.id ' . $having;
 $nAll = (int)val('SELECT COUNT(*) FROM (SELECT i.id, i.min_stock, ' . $stockExpr . ' AS total_stock ' . $fromSql . ') x', $wa);
-$per = 50;
+// items per page: 10 / 20 / 50 / 100 / 500 / all - the choice is remembered for this login (default 20)
+$perOpts = ['10' => '10', '20' => '20', '50' => '50', '100' => '100', '500' => '500', 'all' => 'All'];
+if (isset($perOpts[(string)get('per')])) $_SESSION['items_per'] = (string)get('per');
+$perSel = $_SESSION['items_per'] ?? '20';
+$per = $perSel === 'all' ? max(1, min($nAll, 5000)) : (int)$perSel;
 $pages = max(1, (int)ceil($nAll / $per));
 $page = min(max(1, (int)get('p', 1)), $pages);
 $items = all('SELECT i.*, c.name AS cat_name, ' . $stockExpr . ' AS total_stock
@@ -444,6 +448,9 @@ include __DIR__ . '/includes/header.php';
   <div><select name="f_photo" onchange="this.form.submit()">
     <option value="">Photo: all</option>
     <option value="none" <?= $fPhoto === 'none' ? 'selected' : '' ?>>📷 No photo</option>
+  </select></div>
+  <div><select name="per" onchange="this.form.submit()" title="Items per page">
+    <?php foreach ($perOpts as $k => $lab): ?><option value="<?= $k ?>" <?= $perSel === $k ? 'selected' : '' ?>><?= $k === 'all' ? 'Show all' : $lab . ' per page' ?></option><?php endforeach; ?>
   </select></div>
 </form>
 <?php $noPhoto = (int)val("SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 1 AND COALESCE(photo, '') = ''");

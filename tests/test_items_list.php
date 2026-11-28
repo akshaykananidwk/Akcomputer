@@ -5,7 +5,8 @@ if (PHP_SAPI !== 'cli') { http_response_code(403); die('CLI only'); }
 $src = file_get_contents(__DIR__ . '/../items.php');
 t_group('Items list sends one page, and searches in the database');
 t_ok('the list is cut to a page (LIMIT … OFFSET)', strpos($src, "LIMIT ' . \$per . ' OFFSET '") !== false);
-t_ok('a page is a sensible size', preg_match('/\$per = (\d+);/', $src, $m) && (int)$m[1] <= 100);
+t_ok('a page is a sensible size by default (20), the owner can pick 10 / 50 / 100 / 500 / all', strpos($src, "\$perSel = \$_SESSION['items_per'] ?? '20';") !== false && strpos($src, "'all' => 'All'") !== false);
+t_ok('"all" still has a ceiling, so a huge shop cannot freeze the phone', strpos($src, 'min($nAll, 5000)') !== false);
 t_ok('search words go to SQL as parameters, not into the query text', strpos($src, "\$wa[] = '%' . addcslashes(\$wd") !== false);
 t_ok('the search box asks the server for just the list', strpos($src, "get('part') === '1'") !== false && strpos($src, "part=1") !== false);
 t_ok('the old in-browser filter over every row is gone', strpos($src, "tableFilter('itemFilter'") === false);
