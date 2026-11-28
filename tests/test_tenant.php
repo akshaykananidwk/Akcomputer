@@ -174,7 +174,7 @@ t_eq('its bill stamp is unchanged', bill_stamp_name(), setting('bill_stamp_name'
 t_eq('...and its "we deal in" list', count(bill_deal_in()), setting('bill_deal_in', '') !== '' ? count(bill_deal_in()) : 6);
 t_eq('the owner\'s own bills carry no "Powered by"', powered_by_line(), '');
 $cat = file_get_contents(dirname(__DIR__) . '/catalog.php');
-t_ok('another shop never shows the owner\'s sample testimonials', strpos($cat, "if (\$testiLines === '' && \$ownShop) {") !== false);
+t_ok('no shop shows sample testimonials - only real approved reviews', strpos($cat, '$testiLines') === false && strpos($cat, "WHERE r.status = 'approved'") !== false);
 foreach (['sale_view.php', 'includes/invoice_card_d2.php', 'includes/pdf.php', 'includes/seo.php', 'includes/wa_bot.php', 'includes/ai.php', 'brand.php', 'category.php', 'product.php', 'price.php', 'services.php'] as $f)
     t_ok("$f has no hard-coded AK COMPUTER / Dwarka text left", !preg_match("/'AK COMPUTER'|>AK COMPUTER<|in Dwarka|Dwarka, Gujarat/", preg_replace('#^\s*(//|\*).*$#m', '', file_get_contents(dirname(__DIR__) . '/' . $f))));
 

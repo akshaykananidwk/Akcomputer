@@ -59,16 +59,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             (float)post('min_stock'), post('show_on_website') ? 1 : 0, $photo, post('barcode'),
             post('is_active') ? 1 : 0, post('description'),
         ];
+        $mrpIn = (float)post('mrp');
         if ($id) {
             q('UPDATE items SET name=?, category_id=?, brand=?, model=?, unit=?, hsn=?, tax_rate=?, purchase_price=?,
                selling_price=?, b2b_price=?, serial_tracked=?, margin_pct=?, item_type=?, warranty_months=?, min_stock=?, show_on_website=?,
                photo=?, barcode=?, is_active=?, description=? WHERE id=?', array_merge($data, [$id]));
+            // the printed MRP - the website shows "% OFF" only from a real one
+            try { q('UPDATE items SET mrp = ? WHERE id = ?', [$mrpIn > 0 ? $mrpIn : null, $id]); } catch (Exception $e) { /* before v101 */ }
             flash('Item updated.');
         } else {
             q('INSERT INTO items (name, category_id, brand, model, unit, hsn, tax_rate, purchase_price, selling_price,
                b2b_price, serial_tracked, margin_pct, item_type, warranty_months, min_stock, show_on_website, photo, barcode, is_active, description)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', $data);
             $id = insert_id();
+            try { q('UPDATE items SET mrp = ? WHERE id = ?', [$mrpIn > 0 ? $mrpIn : null, $id]); } catch (Exception $e) { /* before v101 */ }
             flash('Item added.');
             // no category picked -> AI files the new product right away (one
             // tiny call); any failure just leaves it uncategorized as before
@@ -176,6 +180,7 @@ if ($action === 'new' || $action === 'edit') {
           <?php if (can('items.cost')): ?><div><label>Purchase Price</label><input type="number" step="any" name="purchase_price" id="f_pp" value="<?= e($it['purchase_price'] ?? '0') ?>" oninput="mCalc()"></div><?php else: ?><input type="hidden" name="purchase_price" value="<?= e($it['purchase_price'] ?? '0') ?>"><?php endif; ?>
           <div id="marginBox"><label>Margin % (fill this and Selling auto-calculates)</label><input type="number" step="any" name="margin_pct" id="f_mg" value="<?= e($it['margin_pct'] ?? '0') ?>" oninput="mCalc()"></div>
           <div><label>Selling Price (Retail)</label><input type="number" step="any" name="selling_price" id="f_sp" value="<?= e($it['selling_price'] ?? '0') ?>"></div>
+          <div><label>MRP (printed, optional)</label><input type="number" step="any" min="0" name="mrp" value="<?= e(($it['mrp'] ?? null) > 0 ? $it['mrp'] : '') ?>" placeholder="Website shows the saving only if MRP is above the price"></div>
           <div><label>B2B Price</label><input type="number" step="any" name="b2b_price" value="<?= e($it['b2b_price'] ?? '0') ?>"></div>
         </div>
         <div class="form-row cols-4">

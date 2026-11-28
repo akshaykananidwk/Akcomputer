@@ -50,7 +50,8 @@ t_ok('software sign-up', strpos($src('signup.php'), 'ak_earn_shop_signup($done)'
 t_ok('plan paid only when the webhook really marked it paid', strpos($src('razorpay_webhook.php'), "if (\$res === 'ok') ak_earn_plan_paid(\$refId);") !== false);
 t_ok('an unpaid plan is never reported as paid', strpos($src('includes/ak_earn.php'), "if (\$p['status'] !== 'paid') return null;") !== false);
 foreach (['catalog.php', 'product.php', 'category.php', 'brand.php', 'price.php', 'services.php', 'privacy.php', 'terms.php', 'referral.php'] as $pf)
-    t_ok("$pf carries the browser script", strpos($src($pf), '<?= ak_earn_tag()') !== false);
+    t_ok("$pf carries the browser script", strpos($src($pf), '<?= ak_earn_tag()') !== false
+         || (preg_match('/store_end\(|store_landing\(/', $src($pf)) && strpos($src('includes/store_ui.php'), '<?= ak_earn_tag() ?>') !== false));
 t_ok('staff screens do not count as visits', strpos($src('includes/footer.php'), '!current_user()) echo ak_earn_tag()') !== false);
 
 t_group('AK Earn: a partial product update never switches the rest off');

@@ -1,6 +1,6 @@
 <?php
 // Public per-product page - one indexable URL per item for SEO (title, meta
-// description, OG tags, Product JSON-LD with price), dealer-aware pricing
+// description, OG tags, Product JSON-LD with price, stock, brand, model, SKU), dealer-aware pricing
 // (a logged-in dealer sees their own price directly, never the %), related
 // products, and Add-to-Cart that hands over to the catalog's cart.
 require_once __DIR__ . '/includes/init.php';
@@ -12,7 +12,15 @@ if (strlen($waShop) < 12) $waShop = '';
 
 $it = row('SELECT i.*, c.name cat_name FROM items i LEFT JOIN categories c ON c.id = i.category_id
            WHERE i.id = ? AND i.is_active = 1 AND i.show_on_website = 1', [(int)get('id')]);
-if (!$it) { header('HTTP/1.1 404 Not Found'); die('<meta charset="utf-8"><p style="font-family:sans-serif;text-align:center;margin-top:60px">Product not found. <a href="catalog.php">← Store</a></p>'); }
+if (!$it) {
+    // a product that is off the website: a real 404 page, with the way back
+    require_once __DIR__ . '/includes/store_ui.php';
+    http_response_code(404);
+    store_head('Product not available | ' . setting('app_name', 'AK Computer'), 'This product is not on the website right now.', '', '', 'noindex');
+    store_header('back', 'Not found');
+    echo '<main class="sec" style="max-width:520px"><div class="panel empty">' . store_icon('search') . '<h3>This product is not available</h3><p>It may be sold out or no longer listed. Search for something similar, or ask us.</p><a class="btn" href="' . e(base_url('catalog.php?view=all')) . '">Browse products</a></div></main>';
+    store_footer(); store_end('home'); exit;
+}
 
 // ---------- customer review submit ----------
 // Real reviews only: a review whose mobile matches an actual sale of THIS
@@ -71,210 +79,156 @@ $waPct = $webAcct ? (float)$webAcct['discount_pct'] : 0;
 $dp = dealer_price($it['selling_price'], $waPct);
 $label = trim($it['name'] . ($it['brand'] ? ' - ' . trim($it['brand'] . ' ' . $it['model']) : ''));
 $desc = $it['description'] ?: ($label . ' available at ' . $app_name . ', ' . shop_place() . '. Best price, genuine product, warranty & service. Price Rs ' . money($dp) . ' - order on WhatsApp.');
-$webQty = (float)val('SELECT COALESCE(SUM(qty),0) FROM stock WHERE item_id = ?', [$it['id']]);
-$inStock = $it['item_type'] === 'service' || $webQty > 0;
-// The SAME rule the catalogue cards use, so the two pages can never disagree
-// about what the customer is told.
-list($stkClass, $stkText, $stkNote) = web_stock_line($it, [(int)$it['id'] => $webQty], web_show_qty());
-$related = all('SELECT i.* FROM items i WHERE i.is_active = 1 AND i.show_on_website = 1 AND i.id <> ? AND i.category_id <=> ? ORDER BY RAND() LIMIT 4',
-               [$it['id'], $it['category_id']]);
 $purl = seo_product_url($it);
-?><!DOCTYPE html>
-<html lang="gu">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= e($label) ?> — ₹<?= money($dp) ?> | <?= e($app_name) ?> <?= e(shop_city()) ?></title>
-<meta name="description" content="<?= e(mb_substr($desc, 0, 300)) ?>">
-<meta name="keywords" content="<?= e($it['name']) ?>, <?= e($it['brand']) ?>, <?= e($it['cat_name']) ?>, dwarka, gujarat, price, <?= e($app_name) ?>">
-<link rel="canonical" href="<?= e($purl) ?>">
-<meta property="og:type" content="product">
-<meta property="og:site_name" content="<?= e($app_name) ?>">
-<meta name="twitter:card" content="summary_large_image">
-<meta property="og:title" content="<?= e($label) ?> — ₹<?= money($dp) ?>">
-<meta property="og:description" content="<?= e(mb_substr($desc, 0, 200)) ?>">
-<meta property="og:url" content="<?= e($purl) ?>">
-<?php if ($it['photo']): ?><meta property="og:image" content="<?= e(base_url($it['photo'])) ?>"><?php endif; ?>
-<!-- the page is served under /p/{id}/{slug}, so every URL must be absolute -->
-<link rel="icon" href="<?= e(base_url('assets/icon.svg')) ?>" type="image/svg+xml">
-<link rel="stylesheet" href="<?= e(base_url('assets/style.css')) ?>?v=<?= asset_v('style.css') ?>">
-<script type="application/ld+json">
-<?php
-// aggregateRating/review come ONLY from real approved customer reviews -
-// products without reviews simply omit the fields (Google treats that as a
-// non-critical note; it clears per-page as genuine reviews come in)
-$ld = [
-    '@context' => 'https://schema.org', '@type' => 'Product',
-    'name' => $it['name'],
-    'description' => mb_substr($desc, 0, 400),
-    'image' => $it['photo'] ? [base_url($it['photo'])] : [],
-    'brand' => $it['brand'] ? ['@type' => 'Brand', 'name' => $it['brand']] : null,
-    'category' => $it['cat_name'],
-    'offers' => [
-        '@type' => 'Offer', 'url' => $purl, 'priceCurrency' => 'INR',
-        'price' => (string)$dp,
-        'availability' => $inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-        'seller' => ['@type' => 'Organization', 'name' => $app_name],
-    ],
-];
+
+// ---------- the new store look (includes/store_ui.php) ----------
+require_once __DIR__ . '/includes/store_ui.php';
+$c = store_ctx();
+// similar = same category, in the store's smart order (not random)
+$related = array_slice(store_sort(array_values(array_filter(store_items(), fn($x) => (int)$x['id'] !== (int)$it['id'] && (int)$x['category_id'] === (int)$it['category_id']))), 0, 10);
+// bought together = other products on the same bills in the last year (real bills only)
+$together = [];
+try {
+    $tIds = array_map('intval', array_column(all("SELECT si2.item_id, COUNT(*) n FROM sale_items si JOIN sale_items si2 ON si2.sale_id = si.sale_id AND si2.item_id <> si.item_id
+                                                  JOIN sales s ON s.id = si.sale_id WHERE si.item_id = ? AND s.is_cancelled = 0 AND s.sale_date >= DATE_SUB(CURDATE(), INTERVAL 365 DAY)
+                                                  GROUP BY si2.item_id ORDER BY n DESC LIMIT 20", [$it['id']]), 'item_id'));
+    $byId = []; foreach (store_items() as $x) $byId[(int)$x['id']] = $x;
+    foreach ($tIds as $tid) if (isset($byId[$tid]) && store_promotable($byId[$tid])) $together[] = $byId[$tid];
+    $together = array_slice($together, 0, 8);
+} catch (Exception $e) {}
+[$sk, $st, $stNote] = store_stock($it);
+[$mrp, $off] = store_mrp($it, $dp);
+$specs = store_specs($it);
+$city = shop_city() ?: 'Dwarka';
+$grp = store_group($it);
+$cond = preg_match('/refurbish/i', $it['name']) ? 'RefurbishedCondition' : (preg_match('/\(old\)|\bused\b|second ?hand/i', $it['name']) ? 'UsedCondition' : 'NewCondition');
+$seoTitle = $it['name'] . ' | ' . $c['app'] . ' ' . $city;
+$metaDesc = 'Buy ' . $label . ' from ' . $c['app'] . ', ' . shop_place() . '.'
+    . ($specs ? ' ' . implode(', ', array_column($specs, 1)) . '.' : '')
+    . ' Price ₹' . money($dp) . ($sk === 'out' ? ', available on order' : ', in stock') . ((int)$it['warranty_months'] > 0 ? ', ' . (int)$it['warranty_months'] . ' months warranty' : '')
+    . '. ' . ($c['own'] ? 'Installation support and ' : '') . 'WhatsApp ordering.';
+if ($it['description']) $metaDesc = mb_substr(trim(preg_replace('/\s+/', ' ', $it['description'])), 0, 160) . ' — ₹' . money($dp) . ' at ' . $c['app'] . ', ' . $city . '.';
+
+// structured data: real values only - price, stock, brand, model, SKU; ratings only from approved reviews
+$ld = ['@context' => 'https://schema.org', '@type' => 'Product', 'name' => $it['name'], 'description' => mb_substr($desc, 0, 400),
+       'image' => $it['photo'] ? [base_url($it['photo'])] : [], 'sku' => (string)($it['barcode'] ?: 'AKC-' . $it['id']), 'category' => $it['cat_name'],
+       'offers' => ['@type' => 'Offer', 'url' => $purl, 'priceCurrency' => 'INR', 'price' => number_format($dp, 2, '.', ''),
+                    'availability' => $sk === 'out' ? 'https://schema.org/BackOrder' : 'https://schema.org/InStock', 'itemCondition' => 'https://schema.org/' . $cond,
+                    'seller' => ['@type' => 'Organization', 'name' => $c['app']]]];
+if ($it['brand']) $ld['brand'] = ['@type' => 'Brand', 'name' => $it['brand']];
+if ($it['model']) $ld['mpn'] = $it['model'];
+if ((int)$it['warranty_months'] > 0) $ld['offers']['warranty'] = ['@type' => 'WarrantyPromise', 'durationOfWarranty' => ['@type' => 'QuantitativeValue', 'value' => (int)$it['warranty_months'], 'unitCode' => 'MON']];
 if ($rvN > 0) {
     $ld['aggregateRating'] = ['@type' => 'AggregateRating', 'ratingValue' => (string)$rvAvg, 'reviewCount' => $rvN, 'bestRating' => '5', 'worstRating' => '1'];
-    $ld['review'] = array_map(fn($r) => [
-        '@type' => 'Review',
-        'author' => ['@type' => 'Person', 'name' => $r['customer_name'] ?: 'Customer'],
-        'datePublished' => date('Y-m-d', strtotime($r['created_at'])),
-        'reviewRating' => ['@type' => 'Rating', 'ratingValue' => (string)(int)$r['rating'], 'bestRating' => '5', 'worstRating' => '1'],
-        'reviewBody' => $r['comment'],
-    ], array_slice($revs, 0, 5));
+    $ld['review'] = array_map(fn($r) => ['@type' => 'Review', 'author' => ['@type' => 'Person', 'name' => $r['customer_name'] ?: 'Customer'],
+        'datePublished' => date('Y-m-d', strtotime($r['created_at'])), 'reviewRating' => ['@type' => 'Rating', 'ratingValue' => (string)(int)$r['rating'], 'bestRating' => '5', 'worstRating' => '1'],
+        'reviewBody' => $r['comment']], array_slice($revs, 0, 5));
 }
-echo json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$crumbs = [[$c['app'], base_url('') . '/']];
+if ($grp !== '' && $grp !== $it['cat_name']) $crumbs[] = [$grp, store_group_url($grp)];
+if ($it['cat_name']) $crumbs[] = [$it['cat_name'], seo_cat_url($it['cat_name'])];
+$crumbs[] = [$it['name']];
+$head = seo_jsonld($ld) . seo_breadcrumbs($crumbs) . ($it['photo'] ? '<meta property="og:image" content="' . e(base_url($it['photo'])) . '"><meta property="og:type" content="product">' : '');
+store_head($seoTitle, $metaDesc, $purl, $head);
+store_header('back', $it['cat_name'] ?: 'Product');
+store_nav(store_groups(store_items()), $grp);
+$waMsg = "Hello! I would like this product:\n" . $label . ($it['model'] ? ' (' . $it['model'] . ')' : '') . "\nPrice: ₹" . money($dp) . "\n" . $purl;
+$specRows = array_filter([['Brand', $it['brand']], ['Model', $it['model']], ['SKU', $it['barcode']], ['Category', $it['cat_name']], ['Variant', $it['variant'] ?? ''],
+    ['Warranty', (int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' months' : ''], ['Unit', $it['unit']], ['Condition', ['NewCondition' => 'New', 'UsedCondition' => 'Used / old stock', 'RefurbishedCondition' => 'Refurbished'][$cond]]],
+    fn($r) => trim((string)$r[1]) !== '');
 ?>
-</script>
-<?= seo_breadcrumbs([[$app_name, base_url('catalog.php')],
-                     $it['cat_name'] ? [$it['cat_name'], seo_cat_url($it['cat_name'])] : [$app_name . ' Store', base_url('catalog.php')],
-                     [$it['name']]]) ?>
-<?= seo_public_css() ?>
-<style>
-:root { --acc1: #4f46e5; --acc2: #06b6d4; }
-body { background: var(--bg); }
-.shead { position: sticky; top: 0; z-index: 50; background: linear-gradient(100deg, var(--acc1), #2563eb 60%, var(--acc2)); color: #fff;
-  padding: 10px 14px; display: flex; align-items: center; gap: 10px; box-shadow: 0 2px 12px rgba(37,99,235,.35); }
-.shead .logo { font-size: 18px; font-weight: 800; color: #fff; text-decoration: none; }
-.shead .back { margin-left: auto; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.45); color: #fff;
-  border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 700; text-decoration: none; }
-.pwrap { max-width: 980px; margin: 16px auto; padding: 0 12px; display: grid; grid-template-columns: 1fr; gap: 16px; }
-@media (min-width: 800px) { .pwrap { grid-template-columns: 1fr 1fr; align-items: start; } }
-.pimg { background: #fff; border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.1); display: flex; align-items: center; justify-content: center; min-height: 300px; }
-.pimg img { max-width: 100%; max-height: 420px; object-fit: contain; border-radius: 16px; padding: 12px; }
-.pimg .ph { font-size: 90px; }
-.pinfo { background: var(--card); color: var(--text); border-radius: 16px; padding: 20px 18px; box-shadow: 0 2px 10px rgba(0,0,0,.1); }
-.pinfo .ptag { color: var(--acc1); font-weight: 700; font-size: 12.5px; text-transform: uppercase; letter-spacing: .4px; }
-.pinfo h1 { font-size: 22px; margin-top: 4px; }
-.pinfo .pbrand { color: var(--muted); margin-top: 4px; }
-.pinfo .pprice { font-size: 30px; font-weight: 800; color: var(--primary); margin-top: 12px; }
-.pinfo .pstock { margin-top: 6px; font-weight: 700; font-size: 13.5px; }
-.pinfo .pdesc { margin-top: 12px; color: var(--text); line-height: 1.55; font-size: 14.5px; }
-.pinfo .facts { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px; }
-.pinfo .facts div { background: var(--bg); border-radius: 10px; padding: 8px 10px; }
-.pbtns { margin-top: 18px; display: flex; flex-direction: column; gap: 9px; }
-.rel { max-width: 980px; margin: 8px auto 30px; padding: 0 12px; }
-.rel h2 { font-size: 17px; margin-bottom: 10px; color: var(--text); }
-.rel .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-.rel .rcard { background: var(--card); color: var(--text); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); text-decoration: none; display: block; transition: transform .15s; }
-.rel .rcard:hover { transform: translateY(-3px); }
-.rel .rcard img { width: 100%; height: 110px; object-fit: contain; background: #fff; padding: 4px; }
-.rel .rcard .ph { height: 110px; display: flex; align-items: center; justify-content: center; font-size: 36px; background: var(--bg); }
-.rel .rcard .rb { padding: 8px 10px; }
-.rel .rcard .rn { font-size: 13px; font-weight: 600; }
-.rel .rcard .rp { color: var(--primary); font-weight: 800; margin-top: 3px; }
-</style>
-</head>
-<body>
-<header class="shead">
-  <a class="logo" href="<?= e(base_url('catalog.php')) ?>">🖥️ <?= e($app_name) ?></a>
-  <a class="back" href="<?= e(base_url('catalog.php')) ?>">← Store</a>
-</header>
-
-<div class="pwrap">
-  <div class="pimg">
-    <?php if ($it['photo']): ?><img src="<?= e(base_url($it['photo'])) ?>" alt="<?= e($label) ?>">
-    <?php else: ?><div class="ph"><?= e(cat_icon($it['cat_name'] ?? '')) ?></div><?php endif; ?>
-  </div>
-  <div class="pinfo">
-    <?php if ($it['cat_name']): ?><div class="ptag"><?= e(cat_icon($it['cat_name'])) ?> <?= e($it['cat_name']) ?></div><?php endif; ?>
-    <h1><?= e($it['name']) ?></h1>
-    <?php if ($it['brand'] || $it['model']): ?><div class="pbrand"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></div><?php endif; ?>
-    <div class="pprice">₹<?= money($dp) ?><?php if ($webAcct): ?> <span style="font-size:13px;color:#059669;font-weight:700">👷 Your price</span><?php endif; ?></div>
-    <div class="pstock" style="color:<?= $inStock ? '#059669' : '#dc2626' ?>">
-      <?= e($stkText) ?><?= $stkClass === 'in' ? ' — available today' : '' ?>
-      <?php if ($stkNote): ?><div class="muted" style="font-weight:500;font-size:12.5px"><?= e($stkNote) ?> — WhatsApp us</div><?php endif; ?>
+<main data-viewed="<?= (int)$it['id'] ?>">
+<div class="pd" data-card data-id="<?= (int)$it['id'] ?>" data-n="<?= e($it['name']) ?>" data-p="<?= e($dp) ?>" data-f="<?= e($it['photo'] ? base_url($it['photo']) : '') ?>" data-m="<?= e($it['model']) ?>">
+  <div class="gal">
+    <div class="main" style="position:relative">
+      <div><?php if ($it['photo']): ?><img src="<?= e(base_url($it['photo'])) ?>" alt="<?= e($label) ?>" fetchpriority="high" width="600" height="600"><?php else: ?><span class="noimg" style="width:70%;height:70%"><?= store_icon(store_cat_icon(($it['cat_name'] ?? '') . ' ' . $it['name'])) ?></span><?php endif; ?></div>
     </div>
-    <?php if ($rvN > 0): ?>
-    <a href="#reviews" style="display:inline-block;margin-top:6px;text-decoration:none;color:var(--text);font-weight:700;font-size:14px">
-      <span style="color:#f59e0b">★</span> <?= $rvAvg ?> <span class="muted" style="font-weight:500">(<?= $rvN ?> review<?= $rvN > 1 ? 's' : '' ?>)</span></a>
-    <?php endif; ?>
-    <?php if ($it['description']): ?><p class="pdesc"><?= nl2br(e($it['description'])) ?></p><?php endif; ?>
+  </div>
+  <div style="display:grid;gap:12px;align-content:start">
+    <nav class="crumb" aria-label="Breadcrumb"><a href="<?= e(base_url('') . '/') ?>">Home</a> › <?php if ($grp !== '' && $grp !== $it['cat_name']): ?><a href="<?= e(store_group_url($grp)) ?>"><?= e($grp) ?></a> › <?php endif; ?><?php if ($it['cat_name']): ?><a href="<?= e(seo_cat_url($it['cat_name'])) ?>"><?= e($it['cat_name']) ?></a><?php endif; ?></nav>
+    <div>
+      <?php if ($it['brand']): ?><a class="brl" href="<?= e(seo_brand_url($it['brand'])) ?>"><?= e($it['brand']) ?></a><?php endif; ?>
+      <h1><?= e($it['name']) ?></h1>
+      <?php if ($it['model']): ?><p class="muted" style="font-size:13px;margin-top:4px">Model: <?= e($it['model']) ?><?= $it['barcode'] ? ' · SKU: ' . e($it['barcode']) : '' ?></p><?php endif; ?>
+      <?php if ($rvN > 0): ?><a href="#reviews" style="display:inline-flex;gap:6px;align-items:center;margin-top:6px;font-weight:700;font-size:14px"><span class="stars">★</span><?= $rvAvg ?> <span class="muted" style="font-weight:500">(<?= $rvN ?> review<?= $rvN > 1 ? 's' : '' ?>)</span></a><?php endif; ?>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+      <span class="bigp">₹<?= money($dp) ?></span>
+      <?php if ($mrp): ?><s class="muted" style="font-size:16px">₹<?= money($mrp) ?></s><span class="tag" style="position:static">-<?= $off ?>%</span><?php endif; ?>
+      <?php if ($webAcct): ?><span class="note ok" style="padding:3px 10px;font-weight:700">Your dealer price</span><?php endif; ?>
+    </div>
+    <div><span class="stkbox <?= $sk ?>"><?= e($st) ?></span><?php if ($stNote): ?> <span class="muted" style="font-size:13px"><?= e($stNote) ?> — we get it for you</span><?php endif; ?></div>
+    <?php if ($specs): ?><div class="specs" style="gap:8px 14px"><?php foreach ($specs as $sp): ?><span style="font-size:13px"><?= store_icon($sp[0]) ?><?= e($sp[1]) ?></span><?php endforeach; ?></div><?php endif; ?>
+
+    <div class="buybar" data-buybar>
+      <span class="qsel"><button type="button" data-pq="-1" aria-label="One less">−</button><span data-pqn>1</span><button type="button" data-pq="1" aria-label="One more">+</button></span>
+      <button class="btn" type="button" data-padd><?= store_icon('cart') ?>Add to Cart</button>
+    </div>
+    <div class="buybar">
+      <button class="btn alt" type="button" data-buy><?= store_icon('bolt') ?>Buy Now</button>
+      <?php if ($c['wa']): ?><a class="btn wa" href="https://wa.me/<?= e($c['wa']) ?>?text=<?= rawurlencode($waMsg) ?>" target="_blank" rel="noopener"><?= store_icon('wa') ?>WhatsApp</a><?php endif; ?>
+    </div>
+    <div class="links">
+      <button type="button" data-wish="<?= (int)$it['id'] ?>" class="wl" style="position:static;width:auto;height:36px;border-radius:999px;padding:0 12px;box-shadow:none;border:1px solid var(--line);gap:6px;display:inline-flex"><?= store_icon('heart') ?>Wishlist</button>
+      <button type="button" data-share="<?= e($purl) ?>"><?= store_icon('share') ?>Share</button>
+      <?php if ($c['wa']): ?><a href="https://wa.me/<?= e($c['wa']) ?>?text=<?= rawurlencode("Hello! Please send a quotation for:\n" . $label . "\nQuantity: ") ?>" target="_blank" rel="noopener"><?= store_icon('receipt') ?>Get quote</a><?php endif; ?>
+      <a href="<?= e(seo_price_url($it)) ?>"><?= store_icon('tag') ?>Price details</a>
+    </div>
+
     <div class="facts">
-      <?php if ($it['warranty_months'] > 0): ?><div>🛡️ Warranty: <?= (int)$it['warranty_months'] ?> months</div><?php endif; ?>
-      <div>🏪 <?= e($app_name) ?><?= shop_city() !== '' ? ', ' . e(shop_city()) : '' ?></div>
-      <div>🛠️ Installation &amp; service available</div>
-      <div>✅ Genuine product</div>
+      <div><?= store_icon('shield') ?><?= (int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' months warranty' : 'Genuine product' ?></div>
+      <div><?= store_icon('truck') ?>Delivery in <?= e($city) ?> or shop pickup</div>
+      <?php if ($c['own']): ?><div><?= store_icon('tool') ?>Installation &amp; service</div><?php endif; ?>
+      <div><?= store_icon('wa') ?>Order confirmed on WhatsApp</div>
     </div>
-    <div class="chips" style="margin-top:12px">
-      <a href="<?= e(seo_price_url($it)) ?>">💰 <?= e($it['name']) ?> Price</a>
-      <?php if ($it['cat_name'] && seo_slug($it['cat_name']) !== ''): ?><a href="<?= e(seo_cat_url($it['cat_name'])) ?>"><?= e(cat_icon($it['cat_name'])) ?> All <?= e($it['cat_name']) ?></a><?php endif; ?>
-      <?php if ($it['brand'] && seo_slug($it['brand']) !== ''): ?><a href="<?= e(seo_brand_url($it['brand'])) ?>">🏷️ <?= e($it['brand']) ?> Products</a><?php endif; ?>
-    </div>
-    <div class="pbtns">
-      <a class="btn btn-block" href="<?= e(base_url('catalog.php?add=' . $it['id'])) ?>" style="background:linear-gradient(100deg,#4f46e5,#2563eb);border:0">🛒 Add to Cart</a>
-      <?php if ($waShop): ?>
-      <a class="btn btn-success btn-block" href="https://wa.me/<?= e($waShop) ?>?text=<?= rawurlencode("Hello! I would like this product:\n" . $label . " - ₹" . money($dp) . "\n" . $purl) ?>" target="_blank" rel="noopener">📲 Order on WhatsApp</a>
-      <?php endif; ?>
-    </div>
+
+    <?php if ($it['description']): ?><div class="panel"><h2 style="font-size:16px;margin-bottom:6px">About this product</h2><p style="font-size:14.5px;line-height:1.6"><?= nl2br(e($it['description'])) ?></p></div><?php endif; ?>
+    <div class="panel"><h2 style="font-size:16px;margin-bottom:4px">Specifications</h2>
+      <table class="spec"><tbody><?php foreach ($specRows as [$k, $v]): ?><tr><th scope="row"><?= e($k) ?></th><td><?= e($v) ?></td></tr><?php endforeach; ?></tbody></table></div>
+    <details class="panel faq" style="padding:0 16px"><summary>Delivery, returns &amp; warranty</summary>
+      <p>We deliver in <?= e($city) ?> and nearby, or keep it ready for pickup at the shop. Every order is confirmed on WhatsApp or a call first.<?= (int)$it['warranty_months'] > 0 ? ' Warranty: ' . (int)$it['warranty_months'] . ' months as per the company.' : '' ?> For a return or a warranty claim, bring the product with its bill.</p></details>
   </div>
 </div>
 
-<div class="rel" id="reviews">
-  <h2>⭐ Reviews<?= $rvN ? " — $rvAvg★ ($rvN)" : '' ?></h2>
-  <?php foreach (get_flashes() as $f): ?>
-  <div style="background:<?= $f['type'] === 'error' ? '#fee2e2;color:#991b1b' : '#dcfce7;color:#166534' ?>;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:14px"><?= e($f['msg']) ?></div>
-  <?php endforeach; ?>
-  <?php foreach ($revs as $r): ?>
-  <div style="background:var(--card);border-radius:12px;padding:12px 14px;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.08)">
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <strong style="font-size:14px"><?= e($r['customer_name'] ?: 'Customer') ?></strong>
-      <?php if ($r['is_verified']): ?><span style="background:#dcfce7;color:#166534;border-radius:99px;padding:1px 8px;font-size:11.5px;font-weight:700">✓ Verified purchase</span><?php endif; ?>
-      <span class="muted" style="font-size:12px;margin-left:auto"><?= dmy($r['created_at']) ?></span>
-    </div>
-    <div style="color:#f59e0b;font-size:15px;margin-top:2px"><?= str_repeat('★', (int)$r['rating']) . str_repeat('☆', 5 - (int)$r['rating']) ?></div>
-    <?php if ($r['comment']): ?><p style="margin-top:4px;font-size:14px;line-height:1.5"><?= nl2br(e($r['comment'])) ?></p><?php endif; ?>
-  </div>
-  <?php endforeach; ?>
-  <?php if (!$revs): ?><p class="muted" style="margin-bottom:10px">No reviews yet — be the first!</p><?php endif; ?>
-  <details style="background:var(--card);border-radius:12px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,.08)">
-    <summary style="cursor:pointer;font-weight:700;font-size:14.5px">✍️ Write a review</summary>
-    <form method="post" action="<?= e(base_url('product.php?id=' . $it['id'])) ?>" style="margin-top:10px;display:grid;gap:10px">
-      <?= csrf_field() ?>
-      <input type="hidden" name="do" value="review">
-      <input type="text" name="website" value="" style="display:none" tabindex="-1" autocomplete="off">
-      <div>
-        <div id="rvStars" style="font-size:34px;letter-spacing:5px;cursor:pointer;color:#f59e0b">☆☆☆☆☆</div>
-        <input type="hidden" name="rating" id="rvRating" value="0">
-      </div>
-      <input type="text" name="name" placeholder="Your name *" required maxlength="120" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)">
-      <input type="tel" name="mobile" placeholder="Mobile (the number you bought on = ✓ Verified badge)" maxlength="15" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)">
-      <textarea name="comment" rows="3" maxlength="1000" placeholder="How was the product?" style="padding:10px;border-radius:10px;border:1px solid var(--border,#ddd);background:var(--bg);color:var(--text)"></textarea>
-      <button class="btn" type="submit" style="background:linear-gradient(100deg,#4f46e5,#2563eb);border:0">Send the review</button>
-    </form>
-    <script>
-      (function () {
-        var s = document.getElementById('rvStars');
-        s.addEventListener('click', function (e) {
-          var rect = s.getBoundingClientRect();
-          var n = Math.min(5, Math.max(1, Math.ceil((e.clientX - rect.left) / (rect.width / 5))));
-          document.getElementById('rvRating').value = n;
-          s.textContent = '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(n);
-        });
-      })();
-    </script>
-  </details>
-</div>
-
-<?php if ($related): ?>
-<div class="rel">
-  <h2>Other products like this</h2>
-  <div class="grid">
-    <?php foreach ($related as $r): $rp = dealer_price($r['selling_price'], $waPct); ?>
-    <a class="rcard" href="<?= e(seo_product_url($r)) ?>">
-      <?php if ($r['photo']): ?><img src="<?= e(base_url($r['photo'])) ?>" alt="<?= e($r['name']) ?>" loading="lazy">
-      <?php else: ?><div class="ph"><?= e(cat_icon($it['cat_name'] ?? '')) ?></div><?php endif; ?>
-      <div class="rb"><div class="rn"><?= e($r['name']) ?></div><div class="rp">₹<?= money($rp) ?></div></div>
-    </a>
-    <?php endforeach; ?>
-  </div>
-</div>
+<?php if ($together): ?>
+<section class="sec"><div class="sec-h"><h2><?= store_icon('bag') ?>Frequently bought together</h2></div><p class="sec-sub">From our own bills — customers who took this also took</p>
+  <div class="row"><?php foreach ($together as $x) store_card($x); ?></div></section>
 <?php endif; ?>
-<?= seo_footer() ?>
-<?= ak_earn_tag() /* AK Earn: ?ref= partner cookie + page view (public key only) */ ?>
-</body>
-</html>
+<?php if ($related): ?>
+<section class="sec"><div class="sec-h"><h2>Similar products</h2><?php if ($it['cat_name']): ?><a class="more" href="<?= e(seo_cat_url($it['cat_name'])) ?>">View all<?= store_icon('next') ?></a><?php endif; ?></div>
+  <div class="row"><?php foreach ($related as $x) store_card($x); ?></div></section>
+<?php endif; ?>
+
+<section class="sec" id="reviews" style="max-width:820px">
+  <div class="sec-h"><h2><?= store_icon('star') ?>Reviews<?= $rvN ? " · $rvAvg★ ($rvN)" : '' ?></h2></div>
+  <?php foreach (get_flashes() as $f): ?><p class="note <?= $f['type'] === 'error' ? 'bad' : 'ok' ?>" style="margin-bottom:10px"><?= e($f['msg']) ?></p><?php endforeach; ?>
+  <div style="display:grid;gap:8px">
+  <?php foreach ($revs as $r): ?>
+    <div class="rv"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b style="font-size:14px"><?= e($r['customer_name'] ?: 'Customer') ?></b>
+      <?php if ($r['is_verified']): ?><span class="vbadge">✓ Verified purchase</span><?php endif; ?><span class="muted" style="font-size:12px;margin-left:auto"><?= dmy($r['created_at']) ?></span></div>
+      <div class="stars"><?= str_repeat('★', (int)$r['rating']) . str_repeat('☆', 5 - (int)$r['rating']) ?></div>
+      <?php if ($r['comment']): ?><p style="font-size:14px;margin-top:4px"><?= nl2br(e($r['comment'])) ?></p><?php endif; ?></div>
+  <?php endforeach; ?>
+  </div>
+  <?php if (!$revs): ?><p class="muted" style="margin-bottom:10px">No reviews yet — bought it from us? Be the first.</p><?php endif; ?>
+  <details class="panel" style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">Write a review</summary>
+    <form method="post" action="<?= e(base_url('product.php?id=' . $it['id'])) ?>" style="margin-top:12px">
+      <?= csrf_field() ?><input type="hidden" name="do" value="review"><input type="text" name="website" value="" style="display:none" tabindex="-1" autocomplete="off">
+      <div id="rvStars" role="radiogroup" aria-label="Rating" style="font-size:34px;letter-spacing:6px;cursor:pointer;color:#f5a300;margin-bottom:8px">☆☆☆☆☆</div>
+      <input type="hidden" name="rating" id="rvRating" value="0">
+      <div class="field"><label for="rv1">Your name *</label><input id="rv1" name="name" required maxlength="120"></div>
+      <div class="field"><label for="rv2">Mobile (the number you bought with gets the ✓ Verified badge)</label><input id="rv2" type="tel" name="mobile" maxlength="15"></div>
+      <div class="field"><label for="rv3">Your review</label><textarea id="rv3" name="comment" rows="3" maxlength="1000"></textarea></div>
+      <button class="btn" type="submit">Send review</button>
+    </form>
+    <script>document.getElementById('rvStars').addEventListener('click',function(e){var r=this.getBoundingClientRect(),n=Math.min(5,Math.max(1,Math.ceil((e.clientX-r.left)/(r.width/5))));document.getElementById('rvRating').value=n;this.textContent='★★★★★'.slice(0,n)+'☆☆☆☆☆'.slice(n);});</script>
+  </details>
+</section>
+<section class="sec" data-hide-empty hidden><div class="sec-h"><h2><?= store_icon('clock') ?>Recently viewed</h2></div><div class="row" data-recent></div></section>
+</main>
+<div class="sticky-buy" data-card data-id="<?= (int)$it['id'] ?>" data-n="<?= e($it['name']) ?>" data-p="<?= e($dp) ?>" data-f="<?= e($it['photo'] ? base_url($it['photo']) : '') ?>" data-m="<?= e($it['model']) ?>">
+  <span class="price">₹<?= money($dp) ?></span>
+  <button class="btn" type="button" data-padd><?= store_icon('cart') ?>Add</button>
+  <button class="btn alt" type="button" data-buy>Buy Now</button>
+</div>
+<?php store_footer(); store_end('home');

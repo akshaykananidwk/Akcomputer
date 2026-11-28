@@ -1,7 +1,8 @@
 <?php
-// Public website: proper e-commerce storefront.
-// - category SIDEBAR (drawer on mobile), colourful hero, product cards that
-//   link to per-product SEO pages (product.php)
+// Public website - the online store's home, all-products / search, categories,
+// wishlist and dealer account pages (the look lives in includes/store_ui.php,
+// assets/store.css and assets/store.js).
+// - products in a smart order (real sales, repeat buyers, stock, admin pin)
 // - dealer login: shows each dealer THEIR price directly (no % and no
 //   struck-through MRP - the dealer never learns their discount rate)
 // - dealer self-registration (pending until the shop approves)
@@ -9,6 +10,33 @@
 // Orders land in web_orders (admin: web_orders.php) + WhatsApp alert to shop.
 require_once __DIR__ . '/includes/init.php';
 require_once __DIR__ . '/includes/seo.php';
+require_once __DIR__ . '/includes/store_ui.php';
+
+// ---------- instant-search index (public card data only, same as the pages show) ----------
+if (get('index') === '1') {
+    // a simple brake per visitor: the page itself needs it once
+    $_SESSION['akc_idx'] = array_values(array_filter($_SESSION['akc_idx'] ?? [], fn($t) => $t > time() - 600));
+    if (count($_SESSION['akc_idx']) >= 60) { http_response_code(429); header('Retry-After: 600'); exit('[]'); }
+    $_SESSION['akc_idx'][] = time();
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: private, max-age=300');
+    echo json_encode(store_index(store_sort(store_items())), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+// ---------- admin: pin / unpin a product to the front of the store ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'pin') {
+    header('Content-Type: application/json');
+    if (!current_user() || !can('items.edit')) { echo json_encode(['ok' => false, 'error' => 'Only staff who can edit items can pin.']); exit; }
+    try {
+        $pid = (int)post('id');
+        q('UPDATE items SET web_priority = IF(web_priority > 0, 0, 1) WHERE id = ?', [$pid]);
+        $on = (int)val('SELECT web_priority FROM items WHERE id = ?', [$pid]) > 0;
+        log_activity('store_pin', "#$pid " . ($on ? 'pinned' : 'unpinned'));
+        echo json_encode(['ok' => true, 'on' => $on]);
+    } catch (Exception $e) { echo json_encode(['ok' => false, 'error' => 'Run Settings > Update > Migrate first.']); }
+    exit;
+}
 
 $app_name = setting('app_name', 'AK Computer');
 $waShop = wa_normalize_number(setting('wa_shop_number'));
@@ -64,6 +92,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'wregister') {
     }
 }
 
+// ---------- customer: track an order with its number + the mobile it was placed with ----------
+$trackRes = null; $trackErr = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'track') {
+    $_SESSION['akc_track'] = array_values(array_filter($_SESSION['akc_track'] ?? [], fn($t) => $t > time() - 600));
+    if (count($_SESSION['akc_track']) >= 8) $trackErr = 'Too many tries — please wait 10 minutes, or ask us on WhatsApp.';
+    else {
+        $_SESSION['akc_track'][] = time();
+        $m10 = substr(preg_replace('/\D/', '', post('tmobile')), -10);
+        $ono = strtoupper(trim(post('torder')));
+        $trackRes = strlen($m10) === 10 && $ono !== '' ? row("SELECT order_no, status, total, created_at, items_json, address FROM web_orders WHERE order_no = ? AND RIGHT(REPLACE(REPLACE(mobile, ' ', ''), '+', ''), 10) = ?", [$ono, $m10]) : null;
+        if (!$trackRes) $trackErr = 'No order found with that number and mobile. Check both and try again.';
+    }
+}
+
 $webAcct = null;
 if (!empty($_SESSION['web_account_id'])) {
     $webAcct = row('SELECT * FROM web_accounts WHERE id = ? AND is_active = 1', [(int)$_SESSION['web_account_id']]);
@@ -94,8 +136,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'order') {
         if ($clean) {
             $refCode = strtoupper(trim($_COOKIE['akc_ref'] ?? ''));
             $referrer = $refCode !== '' ? row('SELECT * FROM referrers WHERE code = ? AND is_active = 1', [$refCode]) : null;
+            $fulfil = post('fulfil') === 'Shop pickup' ? 'Shop pickup' : 'Home delivery';
+            $addr = $fulfil === 'Shop pickup' ? 'Shop pickup' : implode(', ', array_filter(array_map('trim', [post('address'), post('area'), post('pincode')])));
+            $pay = in_array(post('pay_method'), ['UPI', 'Cash on delivery / at shop', 'Bank transfer'], true) ? post('pay_method') : '';
+            $notes = trim($fulfil . ($pay !== '' ? ' · Pay: ' . $pay : '') . (trim(post('order_notes')) !== '' ? ' · ' . trim(post('order_notes')) : ''));
             q('INSERT INTO web_orders (customer_name, mobile, address, notes, items_json, total, ref_code, web_account_id) VALUES (?,?,?,?,?,?,?,?)',
-              [$name, $mobile, post('address'), post('order_notes'), json_encode($clean, JSON_UNESCAPED_UNICODE), $total, $referrer ? $referrer['code'] : null,
+              [$name, $mobile, $addr, $notes, json_encode($clean, JSON_UNESCAPED_UNICODE), $total, $referrer ? $referrer['code'] : null,
                $webAcct ? (int)$webAcct['id'] : null]);
             $oid = insert_id();
             q('UPDATE web_orders SET order_no = ? WHERE id = ?', [doc_no('WEB', $oid), $oid]);
@@ -115,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'order') {
             if ($waShop) {
                 send_whatsapp($waShop, wa_template('weborder', [
                     'order_no' => doc_no('WEB', $oid), 'customer' => $name, 'mobile' => $mobile,
-                    'address' => post('address'), 'items' => trim($itemsTxt), 'total' => money($total),
+                    'address' => $addr . ($notes !== '' ? ' (' . $notes . ')' : ''), 'items' => trim($itemsTxt), 'total' => money($total),
                 ]));
             }
             $orderOk = doc_no('WEB', $oid);
@@ -123,926 +169,451 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && post('do') === 'order') {
     }
 }
 
-$items = all('SELECT i.*, c.name cat_name FROM items i
-              LEFT JOIN categories c ON c.id = i.category_id
-              WHERE i.is_active = 1 AND i.show_on_website = 1 ORDER BY c.name, i.name');
+// ===========================================================================
+//  What to show. Everything below reads the shop's own data.
+// ===========================================================================
+$c = store_ctx();
+$items = store_items();
+$groups = store_groups($items);
+$ownShop = $c['own'];
+$view = get('view');
+if (!in_array($view, ['all', 'cats', 'wish', 'account'], true)) $view = '';
+$authView = !$webAcct && ($view === 'account' || get('dlogin') === '1' || get('dregister') === '1' || !empty($wloginError) || !empty($wregError) || $wregDone || $trackRes || $trackErr !== '');
+$authTab = (get('dlogin') === '1' || get('dregister') === '1' || !empty($wloginError) || !empty($wregError) || $wregDone || get('tab') === 'dealer') ? 'dealer' : 'track';
+$ranked = store_sort($items);
+$stats = store_sales_stats();
+$rows = [];   // home page collections
 
-// Real stock for every listed product, in ONE query.
-//
-// Until now every card said "✔ In stock" whatever the shelf actually held -
-// including items that ran out months ago. A customer who came in for one of
-// those was told something untrue by our own website, so this is a correction
-// as much as a new feature.
-//
-// Quantities on a PUBLIC page are the owner's call: anyone, competitors
-// included, can read exactly how many pieces are lying here. He asked for it,
-// so it is on - and store_show_qty turns it off again without touching code,
-// leaving the honest in-stock / out-of-stock line behind.
-$webStock = web_stock_map();
-$showQty = web_show_qty();
+/** The top few promotable products matching a test, each product at most twice on the page. */
+$used = [];
+$pick = function (callable $ok, $n = 12, $sortKey = null) use ($ranked, $stats, &$used) {
+    $list = array_values(array_filter($ranked, fn($it) => store_promotable($it) && $ok($it) && ($used[(int)$it['id']] ?? 0) < 2));
+    if ($sortKey) usort($list, fn($a, $b) => $sortKey($b) <=> $sortKey($a));
+    $list = array_slice($list, 0, $n);
+    foreach ($list as $it) $used[(int)$it['id']] = ($used[(int)$it['id']] ?? 0) + 1;
+    return $list;
+};
+$has = fn($re) => fn($it) => (bool)preg_match($re, $it['name'] . ' ' . ($it['cat_name'] ?? '') . ' ' . store_group($it));
+$inStock = fn($it) => (float)($c['stock'][(int)$it['id']] ?? 0) > 0;
 
-$cats = [];
-foreach ($items as $it) { $cn = $it['cat_name'] ?: ''; if ($cn !== '') $cats[$cn] = ($cats[$cn] ?? 0) + 1; }
-ksort($cats);
-// The owner's own computer shop keeps its words; another shop on this
-// software gets its own trade and town - and NEVER the owner's sample
-// testimonials, which would be other people's words passed off as its own.
-$ownShop = !tenant_active();
-$metaDesc = $ownShop
-    ? $app_name . ' - the trusted computer and CCTV store in Dwarka, Gujarat. Computers, Laptops, CCTV Cameras, Printers, Accessories & Repairs in Dwarka, Gujarat. ' . count($items) . '+ products online - order on WhatsApp.'
-    : $app_name . ' - ' . ucfirst(shop_trade()) . (shop_place() !== '' ? ' in ' . shop_place() : '') . '. ' . count($items) . '+ products online - order on WhatsApp.';
+if ($view === '' && !$authView && !$orderOk) {
+    $best = $pick(fn($it) => ($stats[(int)$it['id']]['q90'] ?? 0) > 0, 12, fn($it) => $stats[(int)$it['id']]['q90'] ?? 0);
+    if ($best) $rows[] = ['fire', 'Best Sellers', 'Most sold in the last 90 days', $best, 'catalog.php?view=all&sort=best', ''];
+    $daily = $pick(fn($it) => store_daily_use($it) && $inStock($it), 12);
+    if (count($daily) >= 3) $rows[] = ['bag', 'Daily Essentials', 'Cables, mouse, toner and everyday parts — in stock', $daily, 'catalog.php?view=all&stock=1', ''];
+    $now = $pick($inStock, 12);
+    if (count($now) >= 3) $rows[] = ['truck', 'Ready for Delivery Today', 'On our shelf right now', $now, 'catalog.php?view=all&stock=1', ''];
+    $cctv = $pick($has('/cctv|camera|dvr|nvr|security|bnc|junction|3\+1|poe/i'), 12);
+    $newest = $pick(fn($it) => true, 12, fn($it) => (int)$it['id']);
+    $up = $pick($has('/ssd|\bram\b|hdd|hard disk|smps|power supply|cabinet|graphic|processor|motherboard|storage/i'), 12);
+    $net = $pick($has('/router|switch|poe|lan|cat ?6|access point|network|wifi|wi-fi/i'), 12);
+    $print = $pick($has('/toner|ink|cartridge|printer/i'), 12);
+}
+$secGroup = '';
+foreach ($groups as $g) if (preg_match('/security|cctv|camera/i', $g['name'])) { $secGroup = $g['name']; break; }
 
-// ---------- premium homepage sections ----------
-// All computed from data the shop already has - nothing extra to maintain.
-// The owner-editable bits (announcement, banners, deal of the day, FAQs,
-// testimonials) live in Settings > Online Store as simple one-line-per-entry
-// text, so the storefront is managed without touching code.
-$homeView = !$webAcct && get('dlogin') !== '1' && get('dregister') !== '1' && !$wregDone && empty($wloginError) && empty($wregError) && !$orderOk;
-$byId = [];
-foreach ($items as $x) $byId[(int)$x['id']] = $x;
-$tmpN = $items;
-usort($tmpN, fn($a, $b) => $b['id'] <=> $a['id']);
-$newList = array_slice($tmpN, 0, 10);
-$bestList = [];
-try {
-    foreach (all("SELECT si.item_id, SUM(si.qty) q FROM sale_items si JOIN sales s ON s.id = si.sale_id
-                  WHERE s.is_cancelled = 0 AND s.sale_date >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
-                  GROUP BY si.item_id ORDER BY q DESC LIMIT 14") as $bs) {
-        if (isset($byId[(int)$bs['item_id']])) $bestList[] = $byId[(int)$bs['item_id']];
-        if (count($bestList) >= 10) break;
-    }
-} catch (Exception $e) {}
-$deal = null;
-$dealEnds = trim(setting('store_deal_ends', ''));
-$dId = (int)setting('store_deal_item');
-if ($dId && isset($byId[$dId]) && ($dealEnds === '' || strtotime($dealEnds) > time())) $deal = $byId[$dId];
+// category tiles: each main group with the photo of its most-wanted product
+$tiles = [];
+foreach ($groups as $g) {
+    $img = '';
+    foreach ($ranked as $it) if (store_group($it) === $g['name'] && store_promotable($it)) { $img = base_url($it['photo']); break; }
+    $tiles[] = $g + ['img' => $img];
+}
+
+// ---------- hero slides ----------
+$topPhoto = function ($re) use ($ranked) { foreach ($ranked as $it) if (store_promotable($it) && preg_match($re, $it['name'] . ' ' . ($it['cat_name'] ?? '') . ' ' . store_group($it))) return base_url($it['photo']); return ''; };
+$anyPhoto = $topPhoto('/./');
+$slides = [];
 $bannerLines = trim(setting('store_banners', ''));
-if ($bannerLines === '' && !$ownShop) {
-    $bannerLines = e($app_name) . ' 🛍️|Genuine products · Order straight on WhatsApp|🛍️|#4f46e5|#06b6d4|';
-} elseif ($bannerLines === '') {
-    $bannerLines = "Dwarka own computer &amp; CCTV shop 🛍️|Genuine products · Warranty · Order straight on WhatsApp|🖥️|#4f46e5|#06b6d4|\n"
-        . "CCTV camera installation|HD &amp; IP cameras · free site visit — ask today!|📹|#059669|#10b981|" . seo_service_url('cctv-installation') . "\n"
-        . "Laptop &amp; printer repair|Same-day service · genuine parts|🛠️|#d97706|#f59e0b|" . seo_service_url('laptop-repair');
+if ($bannerLines !== '') {
+    foreach (explode("\n", $bannerLines) as $ln) {
+        $pp = array_map(fn($x) => html_entity_decode(trim($x), ENT_QUOTES, 'UTF-8'), explode('|', $ln));
+        if (($pp[0] ?? '') === '') continue;
+        $slides[] = ['k' => $c['app'], 't' => $pp[0], 'em' => '', 'p' => $pp[1] ?? '', 'img' => $topPhoto('/' . preg_quote(strtok($pp[0], ' '), '/') . '/i') ?: $anyPhoto, 'cta' => [[$pp[5] ?? '' ?: 'catalog.php?view=all', 'Shop Now']]];
+    }
+} elseif ($ownShop) {
+    $slides[] = ['k' => $c['app'] . ' · ' . (shop_city() ?: 'Dwarka'), 't' => 'Your Trusted', 'em' => 'Technology Store in ' . (shop_city() ?: 'Dwarka'),
+                 'p' => 'Computer, Laptop, CCTV & Networking products — genuine products, warranty and fast local service.',
+                 'img' => $topPhoto('/dome|bullet|ptz|camera(?!.*card)/i') ?: $anyPhoto, 'cta' => [['catalog.php?view=all', 'Shop Now'], [$secGroup ? store_group_url($secGroup) : 'catalog.php?view=all&q=cctv', 'Explore CCTV']], 'wa' => true];
+    if ($p = $topPhoto('/dome|bullet|ptz|camera(?!.*card)/i')) $slides[] = ['k' => 'CCTV installation', 't' => 'Secure your home & business with', 'em' => 'CCTV Solutions', 'p' => 'HD & IP cameras, DVR / NVR, wiring and phone live-view — set up by our own team.',
+                 'img' => $topPhoto('/bullet|nvr|dvr/i') ?: $p, 'feat' => true, 'cta' => [[$secGroup ? store_group_url($secGroup) : 'catalog.php?view=all&q=cctv', 'Shop CCTV'], [seo_service_url('cctv-installation'), 'Free site visit']]];
+    if ($p = $topPhoto('/laptop|desktop|monitor/i')) $slides[] = ['k' => 'Laptop & Desktop', 't' => 'Laptops, desktops', 'em' => '& upgrades', 'p' => 'SSD, RAM and parts fitted while you wait. Repairs in-house.', 'img' => $p, 'cta' => [['catalog.php?view=all&q=laptop', 'Shop Laptops'], [seo_service_url('laptop-repair'), 'Repair']]];
+    if ($p = $topPhoto('/printer|toner|ink|cartridge/i')) $slides[] = ['k' => 'Printer & Accessories', 't' => 'Printers, ink', 'em' => '& toner', 'p' => 'Ink tank and laser printers, refills and cartridges.', 'img' => $p, 'cta' => [['catalog.php?view=all&q=printer', 'Shop Printers']]];
+    if ($p = $topPhoto('/router|switch|wifi|network|access point/i')) $slides[] = ['k' => 'Networking & WiFi', 't' => 'Fast WiFi for', 'em' => 'home & office', 'p' => 'Routers, PoE switches, LAN cable and installation.', 'img' => $p, 'cta' => [['catalog.php?view=all&q=router', 'Shop Networking'], [seo_service_url('networking'), 'Get it installed']]];
+} else {
+    $slides[] = ['k' => $c['app'], 't' => $c['app'], 'em' => '', 'p' => 'Genuine products · Order straight on WhatsApp', 'img' => $anyPhoto, 'cta' => [['catalog.php?view=all', 'Shop Now']], 'wa' => true];
 }
-$banners = [];
-foreach (explode("\n", $bannerLines) as $ln) {
-    $pp = array_map('trim', explode('|', $ln));
-    if (($pp[0] ?? '') === '') continue;
-    $banners[] = ['t' => $pp[0], 's' => $pp[1] ?? '', 'e' => $pp[2] ?? '🛍️', 'c1' => $pp[3] ?? '#4f46e5', 'c2' => $pp[4] ?? '#06b6d4', 'l' => $pp[5] ?? ''];
-}
-$announce = setting('store_announce', $ownShop ? '🚚 Fast delivery in Dwarka · ✅ Genuine products · 🛡️ With warranty · 📞 Order straight on WhatsApp'
-    : '✅ Genuine products · 📞 Order straight on WhatsApp');
+
+// ---------- FAQ (answers only what the shop really does) ----------
+$hasUpi = (bool)val("SELECT COUNT(*) FROM bank_accounts WHERE is_active = 1 AND COALESCE(upi_id, '') <> ''" );
 $faqLines = trim(setting('store_faqs', ''));
-if ($faqLines === '' && !$ownShop) {
-    $faqLines = "How do I order?|Press Add on a product, then Place Order below — enter your name and mobile and the order reaches us on WhatsApp; we confirm it right away.\n"
-        . (shop_city() !== '' ? "Where do you deliver?|In " . shop_city() . " and nearby. WhatsApp us for anywhere else." : '');
-} elseif ($faqLines === '') {
-    $faqLines = "How do I order?|Press Add on a product, then Place Order below — enter your name and mobile and the order reaches us on WhatsApp; we confirm it right away.\n"
-        . "Where do you deliver?|In Dwarka and nearby. Large orders come with installation.\n"
-        . "Is there a warranty?|Yes — every product is genuine, with the company warranty. The bill and warranty come to you on WhatsApp.\n"
-        . "Do you install CCTV?|Yes, both HD and IP. WhatsApp us for a free site visit.";
-}
 $faqs = [];
-foreach (explode("\n", $faqLines) as $ln) { $pp = explode('|', $ln, 2); if (trim($pp[0] ?? '') !== '' && trim($pp[1] ?? '') !== '') $faqs[] = [trim($pp[0]), trim($pp[1])]; }
-$testiLines = trim(setting('store_testimonials', ''));
-if ($testiLines === '' && $ownShop) {
-    $testiLines = "Ramesh, Dwarka|CCTV cameras fitted in a single day, and the work was spotless. I can watch live on my phone!\n"
-        . "Hiren (hotel)|Had the whole networking and camera setup done for the hotel. Fair price and fast service.\n"
-        . "Kiran|The laptop was repaired the same day. The bill and warranty came on WhatsApp too.";
+if ($faqLines !== '') {
+    foreach (explode("\n", $faqLines) as $ln) { $pp = explode('|', $ln, 2); if (trim($pp[0] ?? '') !== '' && trim($pp[1] ?? '') !== '') $faqs[] = [trim($pp[0]), trim($pp[1])]; }
+} else {
+    $city = shop_city() ?: 'our town';
+    $faqs = [['How do I order?', 'Tap the cart button on a product, open the cart and enter your name and mobile. The order reaches us at once and we confirm it on WhatsApp or a call.'],
+             ['Can I order on WhatsApp?', 'Yes. In the cart, press "Order on WhatsApp" — the products, quantity and total are written for you.'],
+             ["Do you deliver in $city?", "Yes, in $city and nearby. You can also pick the order up at the shop."],
+             ['Can I order a product that is out of stock?', 'Yes. Order it anyway or ask on WhatsApp — we get it for you and tell you the date.'],
+             ['Is there a warranty?', 'Products come with the company warranty; the warranty period is shown on each product.'],
+             ['Can I get a quotation?', 'Yes — for bulk, business or a complete CCTV / networking job, WhatsApp us your list and we send a quotation.']];
+    if ($ownShop) {
+        $faqs[] = ['Do you install CCTV?', 'Yes, HD and IP cameras, DVR / NVR and wiring, with phone live-view set up. Ask for a free site visit.'];
+        $faqs[] = ['Do you repair laptops and printers?', 'Yes — laptops, desktops and printers are repaired at our shop.'];
+    }
+    if ($hasUpi) $faqs[] = ['Do you accept UPI?', 'Yes, UPI is accepted, as well as cash at the shop.'];
 }
-$testis = [];
-foreach (explode("\n", $testiLines) as $ln) { $pp = explode('|', $ln, 2); if (trim($pp[0] ?? '') !== '') $testis[] = [trim($pp[0]), trim($pp[1] ?? '')]; }
-$brandCnt = [];
-foreach ($items as $x) { $b = trim((string)$x['brand']); if ($b !== '') $brandCnt[$b] = ($brandCnt[$b] ?? 0) + 1; }
-arsort($brandCnt);
-$brandTop = array_slice(array_keys($brandCnt), 0, 12);
 
-/** One product card (used by the main grid AND the horizontal section rows,
- *  so every card everywhere has the same buttons and behaviour).
- *
- *  The stock map is passed IN rather than read from an outer variable: this is
- *  a plain function, so a global would simply have been null here and the
- *  availability line would have been wrong on every card. */
-function pcard($it, $waPct, array $stockMap = [], $showQty = true) {
-    $dp = dealer_price($it['selling_price'], $waPct);
-    $purl = seo_product_url($it); ?>
-      <div class="cat-card" data-cat="<?= e($it['cat_name'] ?? '') ?>" data-price="<?= $dp ?>" data-name="<?= e(mb_strtolower($it['name'])) ?>" data-newid="<?= (int)$it['id'] ?>">
-        <button type="button" class="wishbtn" data-wid="<?= (int)$it['id'] ?>" aria-label="Wishlist">♡</button>
-        <a class="imglink" href="<?= e($purl) ?>">
-        <?php if ($it['photo']): ?><img src="<?= e($it['photo']) ?>" alt="<?= e($it['name']) ?>" loading="lazy">
-        <?php else: ?><div class="ph"><?= e(cat_icon($it['cat_name'] ?? '')) ?></div><?php endif; ?>
-        </a>
-        <div class="cbody">
-          <?php if ($it['cat_name']): ?><div class="ctag"><?= e($it['cat_name']) ?></div><?php endif; ?>
-          <div class="cname"><a href="<?= e($purl) ?>"><?= e($it['name']) ?></a></div>
-          <?php if ($it['brand']): ?><div class="muted" style="font-size:12px"><?= e(trim($it['brand'] . ' ' . $it['model'])) ?></div><?php endif; ?>
-          <?php list($stkClass, $stkText, $stkNote) = web_stock_line($it, $stockMap, $showQty); ?>
-          <div class="cprice">₹<?= money($dp) ?> <span class="instk stk-<?= $stkClass ?>"><?= e($stkText) ?></span></div>
-          <?php if ($stkNote): ?><div class="stknote"><?= e($stkNote) ?></div><?php endif; ?>
-          <div class="btnrow">
-            <button type="button" class="btn btn-sm addbtn" data-id="<?= $it['id'] ?>" data-name="<?= e($it['name']) ?>" data-price="<?= $dp ?>">🛒 Add</button>
-            <button type="button" class="btn btn-sm buybtn" data-id="<?= $it['id'] ?>">⚡ Buy Now</button>
-          </div>
-          <div class="qtyrow" style="display:none" data-qid="<?= $it['id'] ?>">
-            <button type="button" class="q-minus">−</button><span class="q-num">1</span><button type="button" class="q-plus">＋</button>
-          </div>
-        </div>
-      </div>
-<?php }
-?><!DOCTYPE html>
-<html lang="gu">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= $ownShop ? e($app_name) . ' — Computer &amp; CCTV Store, Dwarka Gujarat | Computers · CCTV cameras · Laptops' : e($app_name . ' — ' . ucfirst(shop_trade()) . (shop_place() !== '' ? ', ' . shop_place() : '')) ?></title>
-<meta name="description" content="<?= e($metaDesc) ?>">
-<meta name="keywords" content="<?= $ownShop ? 'computer shop dwarka, cctv camera dwarka, laptop dwarka gujarat, કમ્પ્યુટર દ્વારકા, સીસીટીવી કેમેરા, લેપટોપ, printer, computer repair dwarka, ' : e(shop_trade() . ' ' . shop_city() . ', ') ?><?= e(implode(', ', array_keys($cats))) ?>">
-<link rel="canonical" href="<?= e(base_url('') . '/') ?>">
-<meta property="og:type" content="website">
-<meta property="og:title" content="<?= e($app_name) ?> — Online Store<?= shop_city() !== '' ? ', ' . e(shop_city()) : '' ?>">
-<meta property="og:description" content="<?= e($metaDesc) ?>">
-<meta property="og:url" content="<?= e(base_url('catalog.php')) ?>">
-<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="assets/style.css?v=<?= asset_v('style.css') ?>">
-<?= seo_localbusiness_jsonld() ?>
-<?= seo_jsonld(['@context' => 'https://schema.org', '@type' => 'WebSite',
-    'name' => $app_name, 'url' => base_url('catalog.php')]) ?>
-<?= seo_public_css() ?>
-<style>
-:root { --acc1: #6D28D9; --acc2: #8b5cf6; --acc3: #f59e0b; }
-body { padding-bottom: 90px; background: var(--bg); }
-.shead { position: sticky; top: 0; z-index: 50; background: linear-gradient(100deg, #4c1d95, var(--acc1) 55%, #7c3aed); color: #fff;
-  padding: 10px 14px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; box-shadow: 0 2px 12px rgba(37,99,235,.35); }
-.shead .logo { font-size: 18px; font-weight: 800; white-space: nowrap; display: flex; align-items: center; gap: 7px; }
-.shead .search { flex: 1; min-width: 160px; display: flex; }
-.shead .search input { width: 100%; border: 0; border-radius: 10px; padding: 10px 13px; font-size: 14px; }
-.shead select { border: 0; border-radius: 10px; padding: 10px 8px; font-size: 13px; max-width: 130px; }
-.shead .hbtn { background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.45); color: #fff; border-radius: 10px;
-  padding: 8px 12px; font-size: 13px; font-weight: 700; cursor: pointer; text-decoration: none; white-space: nowrap; }
-.hero { background: linear-gradient(120deg, #eef2ff, #ecfeff); text-align: center; padding: 22px 14px 18px; }
-[data-theme="dark"] .hero { background: linear-gradient(120deg, #1e1b4b, #164e63); }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .hero { background: linear-gradient(120deg, #1e1b4b, #164e63); } }
-.hero h1 { font-size: 22px; color: var(--text); }
-.hero p { color: var(--muted); margin-top: 4px; font-size: 13.5px; }
-@media (min-width: 900px) { .hero { padding: 34px 14px 26px; } .hero h1 { font-size: 30px; } .hero p { font-size: 15px; } }
-.hero .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
-.hero .badges span { background: var(--card); color: var(--text); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-.dealer-bar { max-width: 1200px; margin: 10px auto 0; padding: 10px 14px; border-radius: 12px; background: linear-gradient(100deg, #059669, #10b981); color: #fff;
-  display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; }
-.dlg-card { max-width: 460px; margin: 14px auto 0; background: var(--card); color: var(--text); border-radius: 14px; padding: 18px 16px; box-shadow: 0 2px 10px rgba(0,0,0,.1); }
-.shop-layout { max-width: 1240px; margin: 0 auto; padding: 14px 12px; display: grid; grid-template-columns: 1fr; gap: 16px; }
-@media (min-width: 900px) { .shop-layout { grid-template-columns: 240px 1fr; align-items: start; padding: 20px 16px; } }
-.side { background: var(--card); color: var(--text); border-radius: 14px; padding: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-@media (min-width: 900px) { .side { position: sticky; top: 68px; } .catsBtn { display: none; } }
-@media (max-width: 899px) {
-  .side { display: none; position: fixed; inset: 0 auto 0 0; width: 260px; z-index: 80; border-radius: 0 14px 14px 0; overflow-y: auto; }
-  .side.open { display: block; }
+// ---------- genuine reviews only (approved customer reviews of our products) ----------
+$reviews = [];
+try { $reviews = all("SELECT r.*, i.name item_name, i.id item_id, i.brand, i.model FROM product_reviews r JOIN items i ON i.id = r.item_id
+                      WHERE r.status = 'approved' AND i.show_on_website = 1 AND i.is_active = 1 ORDER BY r.is_verified DESC, r.id DESC LIMIT 6"); } catch (Exception $e) {}
+
+// ---------- all-products view: filters ----------
+$fG = trim((string)get('g')); $fCat = trim((string)get('cat')); $fBrand = trim((string)get('brand')); $fQ = trim((string)get('q'));
+$fStock = get('stock') === '1'; $fSort = in_array(get('sort'), ['popular', 'best', 'price_asc', 'price_desc', 'new'], true) ? get('sort') : 'popular';
+$fMin = (float)get('min'); $fMax = (float)get('max');
+$list = []; $pages = 1; $page = max(1, (int)get('page')); $per = 24; $nList = 0; $brandsHere = []; $catsHere = [];
+if ($view === 'all') {
+    $list = $fQ !== '' ? store_search($items, $fQ) : $items;
+    if ($fG !== '') $list = array_values(array_filter($list, fn($it) => store_group($it) === $fG));
+    foreach ($list as $it) { if ($it['cat_name']) $catsHere[$it['cat_name']] = ($catsHere[$it['cat_name']] ?? 0) + 1; }
+    if ($fCat !== '') $list = array_values(array_filter($list, fn($it) => $it['cat_name'] === $fCat));
+    foreach ($list as $it) { $b = trim((string)$it['brand']); if ($b !== '') $brandsHere[$b] = ($brandsHere[$b] ?? 0) + 1; }
+    arsort($brandsHere); ksort($catsHere);
+    if ($fBrand !== '') $list = array_values(array_filter($list, fn($it) => strcasecmp(trim((string)$it['brand']), $fBrand) === 0));
+    if ($fStock) $list = array_values(array_filter($list, $inStock));
+    if ($fMin > 0) $list = array_values(array_filter($list, fn($it) => dealer_price($it['selling_price'], $c['pct']) >= $fMin));
+    if ($fMax > 0) $list = array_values(array_filter($list, fn($it) => dealer_price($it['selling_price'], $c['pct']) <= $fMax));
+    $list = store_sort($list, $fSort);
+    $nList = count($list);
+    $pages = max(1, (int)ceil($nList / $per)); $page = min($page, $pages);
+    $list = array_slice($list, ($page - 1) * $per, $per);
 }
-.side-ovl { display: none; position: fixed; inset: 0; z-index: 75; background: rgba(0,0,0,.45); }
-.side-ovl.show { display: block; }
-.side h3 { font-size: 14px; margin-bottom: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
-.side .cat-link { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0;
-  background: none; color: var(--text); padding: 9px 10px; border-radius: 10px; font-size: 14px; cursor: pointer; }
-.side .cat-link:hover { background: var(--bg); }
-.side .cat-link.on { background: var(--acc1); color: #fff; font-weight: 700; }
-.side .cat-link .cnt { font-size: 11.5px; background: var(--bg); color: var(--muted); border-radius: 999px; padding: 2px 8px; }
-.side .cat-link.on .cnt { background: rgba(255,255,255,.25); color: #fff; }
-.catsBtn { margin-bottom: 4px; }
-.cat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px; }
-@media (min-width: 900px) { .cat-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; } }
-.cat-card { background: var(--card); color: var(--text); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08);
-  display: flex; flex-direction: column; transition: transform .15s, box-shadow .15s; }
-.cat-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.14); }
-.cat-card a.imglink { display: block; }
-.cat-card img { width: 100%; height: 150px; object-fit: contain; background: #fff; padding: 8px; }
-.cat-card .ph { width: 100%; height: 150px; display: flex; align-items: center; justify-content: center; font-size: 46px; background: var(--bg); }
-.cat-card .cbody { padding: 10px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
-.cat-card .cname { font-weight: 600; font-size: 14px; }
-.cat-card .cname a { color: inherit; text-decoration: none; }
-.cat-card .cdesc { font-size: 12px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.cat-card .ctag { font-size: 11px; color: var(--acc1); font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
-.cat-card .cprice { color: var(--primary); font-weight: 800; font-size: 16.5px; margin-top: auto; }
-.addbtn { width: 100%; margin-top: 8px; background: linear-gradient(100deg, var(--acc1), #2563eb); border: 0; }
-.qtyrow { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.qtyrow button { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--primary); background: var(--card); color: var(--primary); font-size: 17px; font-weight: 700; cursor: pointer; }
-.qtyrow span { flex: 1; text-align: center; font-weight: 700; }
-.cartbar { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 60; background: linear-gradient(100deg, #059669, #10b981); color: #fff;
-  border-radius: 14px; padding: 13px 18px; display: none; justify-content: space-between; align-items: center;
-  box-shadow: 0 6px 20px rgba(5,150,105,.4); cursor: pointer; font-weight: 700; }
-.cartbar.show { display: flex; }
-.order-modal { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.5); display: none; align-items: flex-end; justify-content: center; }
-.order-modal.show { display: flex; }
-.order-box { background: var(--card); color: var(--text); width: 100%; max-width: 520px; border-radius: 18px 18px 0 0; padding: 20px 16px; max-height: 88vh; overflow-y: auto; }
-@media (min-width: 700px) { .order-modal { align-items: center; } .order-box { border-radius: 18px; } }
-.oline { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 14px; }
-.ok-box { text-align: center; padding: 40px 16px; }
-.ok-box .big { font-size: 54px; }
-.sfoot { background: var(--card); color: var(--text); margin-top: 26px; padding: 24px 14px 90px; text-align: center; font-size: 13.5px; }
-.sfoot .muted { font-size: 12.5px; }
+$qsKeep = fn(array $set) => 'catalog.php?' . http_build_query(array_filter(array_merge(['view' => 'all', 'g' => $fG, 'cat' => $fCat, 'brand' => $fBrand, 'q' => $fQ, 'stock' => $fStock ? 1 : '', 'sort' => $fSort === 'popular' ? '' : $fSort, 'min' => $fMin ?: '', 'max' => $fMax ?: ''], $set), fn($v) => $v !== '' && $v !== null));
 
-/* ---------- premium storefront additions ---------- */
-.announce { background: #16233b; color: #fff; text-align: center; font-size: 12.5px; padding: 7px 12px; letter-spacing: .2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.heroSlider { position: relative; max-width: 1240px; margin: 12px auto 0; padding: 0 12px; }
-.heroSlider .slides { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 12px; scrollbar-width: none; border-radius: 20px; scroll-behavior: smooth; }
-.heroSlider .slides::-webkit-scrollbar { display: none; }
-.heroSlider .slide { position: relative; min-width: 100%; scroll-snap-align: start; border-radius: 20px; color: #fff; text-decoration: none;
-  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 26px 22px; min-height: 170px; overflow: hidden; }
-.heroSlider .slide::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at 85% 15%, rgba(255,255,255,.25), transparent 45%); }
-.heroSlider h1, .heroSlider h2 { font-size: 22px; font-weight: 800; line-height: 1.25; text-shadow: 0 2px 8px rgba(0,0,0,.18); }
-.heroSlider p { margin-top: 6px; font-size: 13.5px; opacity: .95; max-width: 520px; }
-.s-cta { display: inline-block; margin-top: 12px; background: rgba(255,255,255,.92); color: #16233b; font-weight: 800; font-size: 13px; border-radius: 999px; padding: 8px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.2); }
-.s-emoji { font-size: 64px; filter: drop-shadow(0 6px 12px rgba(0,0,0,.25)); z-index: 1; }
-@media (min-width: 900px) { .heroSlider .slide { min-height: 230px; padding: 38px 40px; } .heroSlider h1, .heroSlider h2 { font-size: 32px; } .heroSlider p { font-size: 15.5px; } .s-emoji { font-size: 96px; } }
-.dots { display: flex; justify-content: center; gap: 6px; margin-top: 8px; }
-.dots button { width: 8px; height: 8px; border-radius: 999px; border: 0; background: var(--border); cursor: pointer; padding: 0; transition: all .25s; }
-.dots button.on { width: 22px; background: var(--acc1); }
-.chipStrip { display: flex; gap: 8px; overflow-x: auto; padding: 12px; max-width: 1240px; margin: 0 auto; scrollbar-width: none; }
-.chipStrip::-webkit-scrollbar { display: none; }
-.chip { display: flex; align-items: center; gap: 6px; white-space: nowrap; background: var(--card); color: var(--text); border: 1px solid var(--border);
-  border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-.chip:hover, .chip.on { background: var(--acc1); color: #fff; border-color: var(--acc1); transform: translateY(-1px); }
-.chip span { font-size: 16px; }
-.dealBand { max-width: 1240px; margin: 6px auto; padding: 0 12px; }
-.dealIn { border-radius: 20px; background: linear-gradient(115deg, #7c3aed, #db2777); color: #fff; padding: 20px 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; box-shadow: 0 10px 30px rgba(124,58,237,.35); }
-.dealIn img { width: 130px; height: 130px; object-fit: contain; background: #fff; border-radius: 16px; padding: 8px; }
-.dealEmoji { font-size: 80px; }
-.dealTag { display: inline-block; background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.5); border-radius: 999px; padding: 4px 12px; font-size: 11.5px; font-weight: 800; letter-spacing: 1px; }
-.dealIn h2 { font-size: 19px; margin-top: 8px; }
-.dealPrice { font-size: 26px; font-weight: 900; margin-top: 4px; }
-.countdown { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 15px; margin-top: 6px; background: rgba(0,0,0,.25); display: inline-block; border-radius: 10px; padding: 5px 12px; }
-.dealBtn { background: #fff !important; color: #7c3aed !important; font-weight: 800; margin-top: 10px; border: 0; }
-.secWrap { max-width: 1240px; margin: 10px auto 0; padding: 0 12px; }
-.sec-h { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 800; color: var(--text); margin: 14px 0 10px; }
-.sec-h span { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(120deg, var(--acc1), var(--acc2)); font-size: 16px; box-shadow: 0 3px 10px rgba(79,70,229,.35); }
-@media (min-width: 900px) { .sec-h { font-size: 21px; } }
-.hrow { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 12px; scrollbar-width: thin; scroll-snap-type: x proximity; }
-.hrow .cat-card { min-width: 175px; max-width: 175px; scroll-snap-align: start; }
-@media (min-width: 900px) { .hrow .cat-card { min-width: 210px; max-width: 210px; } }
-.cat-card { position: relative; border: 1px solid transparent; }
-.cat-card:hover { border-color: var(--acc1); }
-.wishbtn { position: absolute; top: 8px; right: 8px; z-index: 2; width: 32px; height: 32px; border-radius: 999px; border: 0; background: rgba(255,255,255,.92); color: #e11d48; font-size: 16px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.18); transition: transform .15s; }
-.wishbtn:hover { transform: scale(1.12); }
-.wishbtn.on { background: #e11d48; color: #fff; }
-.instk { font-size: 11px; color: #059669; font-weight: 700; margin-left: 6px; }
-.instk.stk-out { color: #dc2626; }
-.instk.stk-svc { color: #2563eb; }
-.stknote { font-size: 11px; color: #6b7280; margin-top: 2px; }
-.btnrow { display: flex; gap: 6px; margin-top: 8px; }
-.btnrow .addbtn { flex: 1; margin-top: 0; }
-.btnrow .buybtn { flex: 1; background: linear-gradient(100deg, #059669, #10b981); border: 0; color: #fff; }
-.brandStrip { max-width: 1240px; margin: 14px auto 4px; padding: 0 12px; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
-.brandStrip::-webkit-scrollbar { display: none; }
-.brandPill { white-space: nowrap; background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700; text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-.brandPill:hover { border-color: var(--acc1); color: var(--acc1); }
-.testiGrid { display: grid; grid-template-columns: 1fr; gap: 12px; }
-@media (min-width: 800px) { .testiGrid { grid-template-columns: repeat(3, 1fr); } }
-.testi { background: var(--card); border-radius: 16px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.07); font-size: 13.5px; color: var(--text); }
-.testi .stars { color: #f59e0b; letter-spacing: 2px; margin-bottom: 6px; }
-.testi .tname { margin-top: 8px; font-weight: 700; color: var(--muted); font-size: 12.5px; }
-.faqWrap { display: flex; flex-direction: column; gap: 8px; }
-.faq { background: var(--card); border-radius: 12px; padding: 12px 14px; color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-.faq summary { font-weight: 700; font-size: 14px; cursor: pointer; }
-.faq p { margin-top: 8px; font-size: 13.5px; color: var(--muted); }
-.ctaBand { max-width: 1240px; margin: 18px auto 0; padding: 26px 16px; border-radius: 20px; text-align: center; color: #fff;
-  background: linear-gradient(115deg, #059669, #0d9488); box-shadow: 0 10px 30px rgba(5,150,105,.3); }
-.ctaBand h2 { font-size: 19px; }
-.ctaBand p { margin-top: 6px; font-size: 13.5px; opacity: .95; }
-.ctaBtn { background: #fff !important; color: #059669 !important; font-weight: 800; margin-top: 12px; border: 0; }
-.bnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 65; background: var(--card); border-top: 1px solid var(--border);
-  display: flex; justify-content: space-around; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
-.bnav button, .bnav a { display: flex; flex-direction: column; align-items: center; gap: 2px; border: 0; background: none; color: var(--text); font-size: 18px; cursor: pointer; text-decoration: none; min-width: 56px; }
-.bnav span { font-size: 10.5px; font-weight: 600; color: var(--muted); }
-@media (min-width: 900px) { .bnav { display: none; } body { padding-bottom: 40px; } .cartbar { left: auto; right: 24px; min-width: 320px; } }
+// ---------- titles, canonical, robots ----------
+$city = shop_city() ?: 'Dwarka';
+$metaDesc = $ownShop
+    ? $c['app'] . ' — trusted computer and CCTV store in ' . shop_place() . '. Laptops, CCTV cameras, printers, networking, accessories & repairs. ' . count($items) . '+ products with price and stock — order online or on WhatsApp.'
+    : $c['app'] . ' — ' . ucfirst(shop_trade()) . (shop_place() !== '' ? ' in ' . shop_place() : '') . '. ' . count($items) . '+ products online — order on WhatsApp.';
+$title = $ownShop ? $c['app'] . ' — Computer & CCTV Store in ' . $city . ' | Laptops, CCTV Cameras, Printers' : $c['app'] . ' — ' . ucfirst(shop_trade()) . (shop_place() !== '' ? ', ' . shop_place() : '');
+$canon = base_url('') . '/'; $robots = '';
+$hdrMode = 'home'; $hdrTitle = '';
+if ($view === 'all') {
+    $hdrMode = 'back';
+    $hdrTitle = $fQ !== '' ? '“' . $fQ . '”' : ($fCat ?: ($fG ?: 'All Products'));
+    $catHead = $fCat ?: $fG; $catImg = '';
+    if ($catHead !== '') foreach ($ranked as $it) if (($it['cat_name'] === $catHead || store_group($it) === $catHead) && store_promotable($it)) { $catImg = base_url($it['photo']); break; }
+    $title = ($fQ !== '' ? 'Search: ' . $fQ : ($fCat ?: ($fG ?: 'All Products'))) . ' in ' . $city . ' | ' . $c['app'];
+    $canon = base_url('catalog.php?view=all') . ($fG !== '' && $fCat === '' && $fBrand === '' && $fQ === '' ? '&g=' . rawurlencode($fG) : '');
+    if ($fQ !== '' || $fBrand !== '' || $fStock || $fSort !== 'popular' || $fMin || $fMax || $page > 1 || $fCat !== '') $robots = 'noindex, follow';
+} elseif ($view === 'cats') { $hdrMode = 'back'; $hdrTitle = 'All Categories'; $title = 'All Categories | ' . $c['app'] . ' ' . $city; $canon = base_url('catalog.php?view=cats'); }
+elseif ($view === 'wish') { $hdrMode = 'back'; $hdrTitle = 'Wishlist'; $title = 'My Wishlist | ' . $c['app']; $robots = 'noindex'; $canon = ''; }
+elseif ($view === 'account') { $hdrMode = 'back'; $hdrTitle = 'My Account'; $title = 'My Account | ' . $c['app']; $robots = 'noindex'; $canon = ''; }
+if ($authView || $orderOk) { $robots = 'noindex'; $hdrMode = 'back'; $hdrTitle = $orderOk ? 'Order placed' : 'Account'; }
 
-/* ---------- premium full-screen mobile menu (megajaipur-style) ---------- */
-.mdrawer { position: fixed; inset: 0; z-index: 95; background: var(--bg); display: none; flex-direction: column; overflow-y: auto; }
-.mdrawer.open { display: flex; }
-@media (min-width: 900px) { .mdrawer.open { display: none; } }
-.md-head { background: linear-gradient(115deg, #4c1d95, #6D28D9); color: #fff; padding: 16px 14px; display: flex; align-items: center; gap: 10px; }
-.md-head .mlogo { width: 42px; height: 42px; border-radius: 12px; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; }
-.md-head strong { font-size: 17px; flex: 1; }
-.md-close { background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.4); color: #fff; width: 38px; height: 38px; border-radius: 10px; font-size: 17px; cursor: pointer; }
-.md-login { display: flex; align-items: center; gap: 12px; margin: 0 14px; transform: translateY(-2px); background: rgba(255,255,255,.14); backdrop-filter: blur(6px);
-  border: 1px solid rgba(255,255,255,.3); color: #fff; border-radius: 14px; padding: 13px 14px; text-decoration: none; font-weight: 700; font-size: 14.5px; }
-.md-loginwrap { background: linear-gradient(115deg, #4c1d95, #6D28D9); padding: 0 0 16px; border-radius: 0 0 18px 18px; }
-.md-login small { display: block; font-weight: 400; opacity: .85; font-size: 12px; margin-top: 2px; }
-.md-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px; }
-.md-tile { background: #f3e8ff; color: #4c1d95; border: 0; border-radius: 14px; padding: 14px 8px; text-align: center; font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: none; }
-[data-theme="dark"] .md-tile { background: #312e81; color: #e9d5ff; }
-.md-tile div { font-size: 22px; margin-bottom: 4px; }
-.md-label { color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: 1.5px; padding: 4px 18px 8px; }
-.md-parent { display: flex; align-items: center; gap: 12px; width: calc(100% - 28px); margin: 0 14px 8px; background: var(--card); color: var(--text);
-  border: 1px solid var(--border); border-radius: 14px; padding: 13px 14px; font-size: 14.5px; font-weight: 700; cursor: pointer; }
-.md-parent .mic { width: 34px; height: 34px; border-radius: 10px; background: #f3e8ff; display: flex; align-items: center; justify-content: center; font-size: 17px; }
-[data-theme="dark"] .md-parent .mic { background: #312e81; }
-.md-parent .arr { margin-left: auto; color: var(--muted); transition: transform .2s; }
-.md-parent.open .arr { transform: rotate(180deg); }
-.md-kids { display: none; padding: 0 22px 8px; }
-.md-kids.open { display: block; }
-.md-kid { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--text); padding: 10px 12px; font-size: 14px; cursor: pointer; border-left: 2px solid var(--border); }
-.md-kid:active { color: var(--acc1); }
-.md-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 12px 14px; border-top: 1px solid var(--border); margin-top: 10px; }
-.md-quick a, .md-quick button { background: none; border: 0; color: var(--text); text-align: center; font-size: 20px; cursor: pointer; text-decoration: none; }
-.md-quick span { display: block; font-size: 11px; color: var(--muted); font-weight: 600; margin-top: 2px; }
-.md-call { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 14px 24px; }
-.md-call a { text-align: center; border-radius: 12px; padding: 12px; font-weight: 800; font-size: 14px; text-decoration: none; }
-.md-call .c1 { background: #ede9fe; color: #6D28D9; }
-.md-call .c2 { background: #dcfce7; color: #059669; }
-
-/* skeleton shimmer while product images load */
-.cat-card img { background: linear-gradient(100deg, var(--bg) 40%, var(--card) 50%, var(--bg) 60%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
-@keyframes shimmer { to { background-position: -200% 0; } }
-</style>
-</head>
-<body>
-
-<header class="shead">
-  <a class="logo" href="catalog.php" style="color:#fff;text-decoration:none">🖥️ <?= e($app_name) ?></a>
-  <div class="search"><input type="text" id="cFilter" placeholder="🔍 Search products… (camera, laptop, mouse…)"></div>
-  <select id="cSort">
-    <option value="">↕️ Sort</option>
-    <option value="price_asc">₹ Low → High</option>
-    <option value="price_desc">₹ High → Low</option>
-    <option value="name">Name A–Z</option>
-    <option value="new">Newest</option>
-  </select>
-  <?php if ($webAcct): ?>
-    <a class="hbtn" href="catalog.php?wlogout=1" title="Logout">👷 <?= e(mb_substr($webAcct['name'], 0, 14)) ?> ✕</a>
-  <?php else: ?>
-    <a class="hbtn" href="catalog.php?dlogin=1">🔑 Dealer</a>
-  <?php endif; ?>
-  <button type="button" class="hbtn" id="wishBtnH" title="Wishlist">♡ <span id="wishCount">0</span></button>
-  <button type="button" class="hbtn" id="cartBtnH" title="Cart">🛒 <span id="cartCount">0</span></button>
-  <button type="button" class="hbtn" id="themeBtn" title="Dark / Light">🌓</button>
-  <?php if (!current_user()): ?>
-    <a class="hbtn" href="<?= e(base_url('login.php')) ?>" title="Staff Login">👤 Staff</a>
-  <?php else: ?>
-    <a class="hbtn" href="<?= e(base_url('index.php')) ?>" title="Dashboard">📊 Dashboard</a>
-  <?php endif; ?>
-</header>
-<div class="announce"><?= e($announce) ?></div>
-
-<?php if ($webAcct): ?>
-<div class="dealer-bar">
-  <span>👷 <strong><?= e($webAcct['name']) ?></strong> — your special prices are ON ✔</span>
-  <a class="hbtn" href="catalog.php?wlogout=1">Logout</a>
-</div>
-<?php endif; ?>
-
-<?php if (!$webAcct && (get('dlogin') === '1' || !empty($wloginError) || get('dregister') === '1' || !empty($wregError) || $wregDone)): ?>
-<div class="dlg-card">
-  <?php if ($wregDone): ?>
-    <h3>✅ Registration received!</h3>
-    <p class="muted mt">You will get a WhatsApp once the shop approves your account. Log in after that and your special price will show.</p>
-    <a class="btn btn-block mt" href="catalog.php">← Back to the store</a>
-  <?php elseif (get('dregister') === '1' || !empty($wregError)): ?>
-    <h3>📝 Dealer Registration</h3>
-    <p class="muted" style="font-size:12.5px;margin-top:4px">An electrician or reseller? Register — once the shop approves you, your special price starts showing.</p>
-    <?php if (!empty($wregError)): ?><p style="color:#dc2626;margin-top:6px"><?= e($wregError) ?></p><?php endif; ?>
-    <form method="post" class="mt">
-      <?= csrf_field() ?>
-      <input type="hidden" name="do" value="wregister">
-      <div class="field"><label>Name / Firm *</label><input type="text" name="rname" required placeholder="e.g. Ramesh Electricals, Dwarka"></div>
-      <div class="field"><label>Mobile (WhatsApp) *</label><input type="tel" name="rmobile" required pattern="[0-9]{10,12}"></div>
-      <div class="field"><label>Password *</label><input type="password" name="rpassword" required minlength="4"></div>
-      <button class="btn btn-block" type="submit">Register</button>
-      <p class="muted mt" style="text-align:center;font-size:12.5px">Already approved? <a href="catalog.php?dlogin=1">Login here</a></p>
-    </form>
-  <?php else: ?>
-    <h3>🔑 Dealer Login</h3>
-    <?php if (!empty($wloginError)): ?><p style="color:#dc2626;margin-top:6px"><?= e($wloginError) ?></p><?php endif; ?>
-    <form method="post" class="mt">
-      <?= csrf_field() ?>
-      <input type="hidden" name="do" value="wlogin">
-      <div class="field"><label>Mobile</label><input type="tel" name="wmobile" required></div>
-      <div class="field"><label>Password</label><input type="password" name="wpassword" required></div>
-      <button class="btn btn-block" type="submit">Login</button>
-      <p class="muted mt" style="text-align:center;font-size:12.5px">New dealer? <a href="catalog.php?dregister=1">Register</a> · <a href="catalog.php">Cancel</a></p>
-    </form>
-  <?php endif; ?>
-</div>
-<?php endif; ?>
-
-<?php if ($homeView): ?>
-<!-- the front page's promotions; hidden while the customer is searching -->
-<div id="homePromo">
-<!-- rotating hero banners (owner-editable in Settings > Online Store) -->
-<div class="heroSlider" id="heroSlider">
-  <div class="slides" id="heroSlides">
-    <?php foreach ($banners as $i => $bn): ?>
-    <a class="slide" href="<?= e($bn['l'] ?: '#allProducts') ?>" style="background:linear-gradient(115deg, <?= e($bn['c1']) ?>, <?= e($bn['c2']) ?>)">
-      <div class="s-txt"><h<?= $i === 0 ? '1' : '2' ?>><?= e($bn['t']) ?></h<?= $i === 0 ? '1' : '2' ?>><p><?= e($bn['s']) ?></p>
-        <span class="s-cta">Shop Now →</span></div>
-      <div class="s-emoji"><?= e($bn['e']) ?></div>
-    </a>
-    <?php endforeach; ?>
-  </div>
-  <?php if (count($banners) > 1): ?><div class="dots" id="heroDots"><?php foreach ($banners as $i => $bn): ?><button class="<?= $i ? '' : 'on' ?>" data-slide="<?= $i ?>"></button><?php endforeach; ?></div><?php endif; ?>
-</div>
-
-<!-- category quick chips -->
-<div class="chipStrip" id="chipStrip">
-  <?php foreach (array_slice(array_keys($cats), 0, 14) as $cn): ?>
-  <button type="button" class="chip" data-chipcat="<?= e($cn) ?>"><span><?= e(cat_icon($cn)) ?></span><?= e($cn) ?></button>
-  <?php endforeach; ?>
-</div>
-
-<?php if ($deal): $ddp = dealer_price($deal['selling_price'], $waPct); ?>
-<!-- deal of the day -->
-<section class="dealBand">
-  <div class="dealIn">
-    <div class="dealL">
-      <div class="dealTag">⚡ DEAL OF THE DAY</div>
-      <h2><?= e($deal['name']) ?></h2>
-      <div class="dealPrice">₹<?= money($ddp) ?></div>
-      <?php if ($dealEnds !== ''): ?><div class="countdown" data-ends="<?= e(date('c', strtotime($dealEnds))) ?>" id="dealCd"></div><?php endif; ?>
-      <button type="button" class="btn dealBtn buybtn" data-id="<?= (int)$deal['id'] ?>">⚡ Get it now</button>
-    </div>
-    <?php if ($deal['photo']): ?><img src="<?= e($deal['photo']) ?>" alt="<?= e($deal['name']) ?>" loading="lazy"><?php else: ?><div class="dealEmoji"><?= e(cat_icon($deal['cat_name'] ?? '')) ?></div><?php endif; ?>
-  </div>
-</section>
-<?php endif; ?>
-
-<?php if ($bestList): ?>
-<section class="secWrap"><h2 class="sec-h"><span>🔥</span> Best Sellers</h2>
-  <div class="hrow"><?php foreach ($bestList as $it) pcard($it, $waPct, $webStock, $showQty); ?></div>
-</section>
-<?php endif; ?>
-
-<section class="secWrap"><h2 class="sec-h"><span>🆕</span> New Arrivals</h2>
-  <div class="hrow"><?php foreach ($newList as $it) pcard($it, $waPct, $webStock, $showQty); ?></div>
-</section>
-
-<?php if ($brandTop): ?>
-<div class="brandStrip">
-  <?php foreach ($brandTop as $bn): ?><a class="brandPill" href="<?= e(seo_brand_url($bn)) ?>"><?= e($bn) ?></a><?php endforeach; ?>
-</div>
-<?php endif; ?>
-</div>
-<?php endif; ?>
-
+$ld = seo_localbusiness_jsonld() . seo_jsonld(['@context' => 'https://schema.org', '@type' => 'WebSite', 'name' => $c['app'], 'url' => base_url('') . '/',
+      'potentialAction' => ['@type' => 'SearchAction', 'target' => base_url('catalog.php?view=all&q={search_term_string}'), 'query-input' => 'required name=search_term_string']]);
+if ($view === '' && $faqs) $ld .= seo_faq_jsonld(array_combine(array_column($faqs, 0), array_column($faqs, 1)));
+store_head($title, $metaDesc, $canon, $ld, $robots);
+if ($orderOk) echo '<script>document.body.dataset.ordered="1"</script>';
+store_header($hdrMode, $hdrTitle, $fQ);
+store_nav($groups, $fG);
+$tileHtml = function ($t) { ?>
+  <a class="tile" href="<?= e(store_group_url($t['name'])) ?>"><span class="ti"><?php if ($t['img']): ?><img src="<?= e($t['img']) ?>" alt="" loading="lazy"><?php else: ?><?= store_icon(store_cat_icon($t['name'])) ?><?php endif; ?></span><span><?= e($t['name']) ?></span></a>
+<?php };
+?>
+<main>
 <?php if ($orderOk): ?>
-<div style="max-width:560px;margin:24px auto;padding:0 12px">
-  <div class="card ok-box">
-    <div class="big">✅</div>
-    <h2>Order received! (<?= e($orderOk) ?>)</h2>
-    <p class="muted mt">We'll WhatsApp/call you soon. Thank you! 🙏</p>
-    <a class="btn mt" href="catalog.php">← Back to Store</a>
-  </div>
-</div>
-<?php else: ?>
-<!-- premium full-screen mobile menu -->
-<?php
-$coM = row('SELECT phone, name FROM companies ORDER BY id LIMIT 1') ?: [];
-$mdGroups = [];
-if (!isset($catGroups)) {
-    $catParent = [];
-    try { foreach (all('SELECT c.name child, p.name parent FROM categories c JOIN categories p ON p.id = c.parent_id') as $cp) $catParent[$cp['child']] = $cp['parent']; } catch (Exception $e) {}
-    foreach ($cats as $cn => $cnt) $mdGroups[$catParent[$cn] ?? ''][$cn] = $cnt;
-} ?>
-<div class="mdrawer" id="mDrawer">
-  <div class="md-loginwrap">
-    <div class="md-head">
-      <div class="mlogo">🖥️</div><strong><?= e($app_name) ?></strong>
-      <button type="button" class="md-close" id="mdClose">✕</button>
+  <section class="sec" style="max-width:560px">
+    <div class="panel empty">
+      <?= store_icon('check') ?>
+      <h3>Order received — <?= e($orderOk) ?></h3>
+      <p>Thank you! We will confirm it on WhatsApp or a call shortly.</p>
+      <a class="btn" href="catalog.php">Continue shopping</a>
+      <?php if ($c['wa']): ?><a class="btn wa" style="margin-top:8px" href="https://wa.me/<?= e($c['wa']) ?>?text=<?= rawurlencode('Hello! I just placed order ' . $orderOk . ' on the website.') ?>" target="_blank" rel="noopener"><?= store_icon('wa') ?>Message us about it</a><?php endif; ?>
     </div>
-    <?php if ($webAcct): ?>
-    <a class="md-login" href="catalog.php?wlogout=1">👷 <?= e($webAcct['name']) ?><small>Special prices on · tap to log out</small></a>
+  </section>
+
+<?php elseif ($authView): ?>
+  <div class="auth-top"><div class="wrap" style="max-width:480px;padding:0">
+    <div class="logo"><span class="mark"><?= e(mb_strtoupper(mb_substr(preg_replace('/[^\p{L}]/u', '', $c['app']), 0, 2))) ?></span><span class="nm"><?= e($c['app']) ?></span></div>
+    <p><?= $ownShop ? 'IT Products · Security · Networking · Service' : e(ucfirst(shop_trade())) ?><?= shop_place() !== '' ? ' — ' . e(shop_place()) : '' ?></p>
+  </div></div>
+  <div class="auth-card">
+    <?php if ($wregDone): ?>
+      <div class="empty"><?= store_icon('check') ?><h3>Registration received</h3><p>You get a WhatsApp once the shop approves your account. Log in after that to see your dealer prices.</p><a class="btn" href="catalog.php">Back to the store</a></div>
     <?php else: ?>
-    <a class="md-login" href="catalog.php?dlogin=1">👤 Login / Register<small>For dealer prices, orders and more</small></a>
+    <h1><span><?= get('dregister') === '1' || !empty($wregError) ? 'Register' : ($authTab === 'dealer' ? 'Login' : 'Track') ?></span> <?= get('dregister') === '1' || !empty($wregError) ? 'as a Dealer' : ($authTab === 'dealer' ? 'to Your Account' : 'Your Order') ?></h1>
+    <p class="sub"><?= $authTab === 'dealer' ? 'Dealer prices, your orders and quotations' : 'No account needed — use your order number and mobile' ?></p>
+    <div class="tabs" role="tablist">
+      <a href="catalog.php?view=account" class="<?= $authTab === 'track' ? 'on' : '' ?>" role="tab"><?= store_icon('receipt') ?>Track Order</a>
+      <a href="catalog.php?view=account&amp;tab=dealer" class="<?= $authTab === 'dealer' ? 'on' : '' ?>" role="tab"><?= store_icon('store') ?>Dealer Login (B2B)</a>
+    </div>
+
+    <?php if ($authTab === 'track'): ?>
+      <?php if ($trackErr !== ''): ?><p class="note bad" style="margin-bottom:12px"><?= e($trackErr) ?></p><?php endif; ?>
+      <?php if ($trackRes): $tItems = json_decode((string)$trackRes['items_json'], true) ?: []; ?>
+      <div class="panel" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><b><?= e($trackRes['order_no']) ?></b><span class="stkbox <?= in_array($trackRes['status'], ['completed', 'delivered'], true) ? 'in' : ($trackRes['status'] === 'cancelled' ? 'out' : 'ord') ?>"><?= e(ucfirst((string)$trackRes['status'] ?: 'Received')) ?></span></div>
+        <p class="muted" style="font-size:13px;margin-top:4px">Placed <?= dmy($trackRes['created_at']) ?> · <?= e($trackRes['address']) ?></p>
+        <?php foreach ($tItems as $ti): ?><div class="cl" style="grid-template-columns:1fr auto;padding:8px 0"><span class="n"><?= e($ti['name'] ?? '') ?> × <?= (int)($ti['qty'] ?? 1) ?></span><b>₹<?= money($ti['total'] ?? 0) ?></b></div><?php endforeach; ?>
+        <div class="tot"><span>Total</span><span>₹<?= money($trackRes['total']) ?></span></div>
+      </div>
+      <?php endif; ?>
+      <form method="post" action="catalog.php?view=account"><?= csrf_field() ?><input type="hidden" name="do" value="track">
+        <div class="ifield"><?= store_icon('receipt') ?><input name="torder" required placeholder="Order number, e.g. WEB-00012" autocapitalize="characters" aria-label="Order number" value="<?= e(post('torder')) ?>"></div>
+        <div class="ifield"><?= store_icon('phone') ?><input name="tmobile" type="tel" inputmode="numeric" required placeholder="Mobile used for the order" aria-label="Mobile" value="<?= e(post('tmobile')) ?>"></div>
+        <button class="btn block" type="submit"><?= store_icon('search') ?>Track order</button>
+      </form>
+      <?php if ($c['wa']): ?><a class="btn ghost block" style="margin-top:8px" href="https://wa.me/<?= e($c['wa']) ?>?text=<?= rawurlencode('Hello! I want to know the status of my order.') ?>" target="_blank" rel="noopener"><?= store_icon('wa') ?>Ask on WhatsApp</a><?php endif; ?>
+
+    <?php elseif (get('dregister') === '1' || !empty($wregError)): ?>
+      <?php if (!empty($wregError)): ?><p class="note bad" style="margin-bottom:12px"><?= e($wregError) ?></p><?php endif; ?>
+      <form method="post"><?= csrf_field() ?><input type="hidden" name="do" value="wregister">
+        <div class="ifield"><?= store_icon('store') ?><input name="rname" required placeholder="Name / firm, e.g. Ramesh Electricals" aria-label="Name or firm"></div>
+        <div class="ifield"><?= store_icon('phone') ?><input type="tel" inputmode="numeric" name="rmobile" required pattern="[0-9]{10,12}" placeholder="Mobile (WhatsApp)" aria-label="Mobile"></div>
+        <div class="ifield"><?= store_icon('lock') ?><input type="password" name="rpassword" required minlength="4" autocomplete="new-password" placeholder="Choose a password" aria-label="Password" data-pw>
+          <button class="hbtn eye" type="button" data-eye aria-label="Show password"><?= store_icon('eye') ?></button></div>
+        <button class="btn block" type="submit">Register</button>
+        <p class="muted" style="font-size:12.5px;text-align:center;margin-top:10px">The shop checks every dealer request and confirms on WhatsApp.</p>
+      </form>
+      <div class="newbox"><span><b>Already approved?</b><p>Log in to see your prices.</p></span><a class="btn ghost" href="catalog.php?dlogin=1">Log in</a></div>
+
+    <?php else: ?>
+      <?php if (!empty($wloginError)): ?><p class="note bad" style="margin-bottom:12px"><?= e($wloginError) ?></p><?php endif; ?>
+      <form method="post"><?= csrf_field() ?><input type="hidden" name="do" value="wlogin">
+        <div class="ifield"><?= store_icon('phone') ?><input type="tel" inputmode="numeric" name="wmobile" required autocomplete="username" placeholder="Mobile number" aria-label="Mobile"></div>
+        <div class="ifield"><?= store_icon('lock') ?><input type="password" name="wpassword" required autocomplete="current-password" placeholder="Password" aria-label="Password" data-pw>
+          <button class="hbtn eye" type="button" data-eye aria-label="Show password"><?= store_icon('eye') ?></button></div>
+        <button class="btn block" type="submit"><?= store_icon('next') ?>Login</button>
+        <?php if ($c['wa']): ?><p class="muted" style="font-size:12.5px;text-align:center;margin-top:10px">Forgot your password? <a style="color:var(--brand);font-weight:700" href="https://wa.me/<?= e($c['wa']) ?>?text=<?= rawurlencode('Hello! I forgot my dealer login password.') ?>" target="_blank" rel="noopener">Ask the shop on WhatsApp</a></p><?php endif; ?>
+      </form>
+      <div class="newbox"><span><b>New dealer?</b><p>Register to get wholesale prices, orders and quotations.</p></span><a class="btn ghost" href="catalog.php?dregister=1"><?= store_icon('user') ?>Register</a></div>
+    <?php endif; ?>
+    <div class="trust4" style="margin-top:16px;border:0;background:var(--bg)">
+      <div><?= store_icon('truck') ?>Fast<br>delivery</div><div><?= store_icon('shield') ?>Genuine<br>products</div><div><?= store_icon('tool') ?>Expert<br>support</div><div><?= store_icon('check') ?>Warranty<br>&amp; service</div>
+    </div>
     <?php endif; ?>
   </div>
-  <div class="md-tiles">
-    <button type="button" class="md-tile" data-md="home"><div>🏠</div>Home</button>
-    <button type="button" class="md-tile" data-md="brands"><div>🏷️</div>Brands</button>
-  </div>
-  <div class="md-label">— SHOP BY CATEGORY</div>
-  <?php $gi = 0;
-  $mdSrc = $mdGroups ?: ($catGroups ?? []);
-  ksort($mdSrc);
-  foreach ($mdSrc as $parent => $kids): ksort($kids); $gi++;
-      if ($parent === ''):
-          foreach ($kids as $cn => $cnt): ?>
-  <button type="button" class="md-parent md-kidbtn" data-mdcat="<?= e($cn) ?>"><span class="mic"><?= e(cat_icon($cn)) ?></span><?= e($cn) ?><span class="arr">›</span></button>
-  <?php endforeach; else: ?>
-  <button type="button" class="md-parent" data-mdg="<?= $gi ?>"><span class="mic"><?= e(cat_icon($parent)) ?></span><?= e($parent) ?><span class="arr">▾</span></button>
-  <div class="md-kids" data-mdk="<?= $gi ?>">
-    <button type="button" class="md-kid md-kidbtn" data-mdcats="<?= e(json_encode(array_keys($kids), JSON_UNESCAPED_UNICODE)) ?>">🗂️ Everything (<?= array_sum($kids) ?>)</button>
-    <?php foreach ($kids as $cn => $cnt): ?>
-    <button type="button" class="md-kid md-kidbtn" data-mdcat="<?= e($cn) ?>"><?= e(cat_icon($cn)) ?> <?= e($cn) ?> (<?= $cnt ?>)</button>
+
+<?php elseif ($view === 'account'): $myOrders = all('SELECT order_no, created_at, total, status FROM web_orders WHERE web_account_id = ? ORDER BY id DESC LIMIT 20', [(int)$webAcct['id']]); ?>
+  <section class="sec" style="max-width:720px">
+    <div class="panel" style="display:flex;align-items:center;gap:12px">
+      <span class="mark" style="width:48px;height:48px;border-radius:50%;background:var(--brand-soft);color:var(--brand);display:grid;place-items:center"><?= store_icon('user') ?></span>
+      <div style="flex:1"><b style="font-size:16px"><?= e($webAcct['name']) ?></b><div class="muted" style="font-size:13px"><?= e($webAcct['mobile']) ?> · dealer prices on</div></div>
+      <a class="btn ghost" style="height:40px" href="catalog.php?wlogout=1">Log out</a>
+    </div>
+    <div class="sec-h" style="margin-top:18px"><h2>My orders</h2></div>
+    <?php if ($myOrders): ?><div class="panel" style="padding:4px 16px">
+      <?php foreach ($myOrders as $o): ?><div class="cl" style="grid-template-columns:1fr auto"><div><div class="n"><?= e($o['order_no']) ?></div><div class="p"><?= dmy($o['created_at']) ?> · <?= e(ucfirst((string)$o['status'])) ?></div></div><b>₹<?= money($o['total']) ?></b></div><?php endforeach; ?>
+    </div><?php else: ?><div class="panel empty"><?= store_icon('bag') ?><h3>No orders yet</h3><p>Your website orders will show here.</p><a class="btn" href="catalog.php?view=all">Shop now</a></div><?php endif; ?>
+    <?php if ($c['wa']): ?><div class="band" style="margin-top:16px"><div><h2>Need a <em>wholesale quotation</em>?</h2><p>Send your list — we reply with your best prices.</p></div><div class="cta"><a class="btn-w" href="https://wa.me/<?= e($c['wa']) ?>?text=<?= rawurlencode('Hello! Dealer ' . $webAcct['name'] . ' here — I need a quotation for:') ?>" target="_blank" rel="noopener"><?= store_icon('wa') ?>Ask on WhatsApp</a></div></div><?php endif; ?>
+  </section>
+
+<?php elseif ($view === 'cats'): $byG = []; foreach (seo_cats() as $cc) { $g = store_parents()[$cc['name']] ?? $cc['name']; $byG[$g][] = $cc['name']; } ?>
+  <section class="sec">
+    <div class="sec-h"><h2>All Categories</h2></div>
+    <div class="crows">
+    <?php foreach ($tiles as $t): $kids = array_filter($byG[$t['name']] ?? [], fn($k) => $k !== $t['name']); ?>
+      <a class="crow" href="<?= e(store_group_url($t['name'])) ?>"><span class="ti"><?php if ($t['img']): ?><img src="<?= e($t['img']) ?>" alt="" loading="lazy"><?php else: ?><?= store_icon(store_cat_icon($t['name'])) ?><?php endif; ?></span>
+        <span><b><?= e($t['name']) ?></b><small><?= e($kids ? implode(', ', $kids) : $t['n'] . ' products') ?></small></span><?= store_icon('next') ?></a>
     <?php endforeach; ?>
-  </div>
-  <?php endif; endforeach; ?>
-  <div class="md-quick">
-    <?php if ($waShop): ?><a href="https://wa.me/<?= e($waShop) ?>?text=account" target="_blank" rel="noopener">📦<span>Orders</span></a><?php endif; ?>
-    <button type="button" data-md="wish">❤️<span>Wishlist</span></button>
-    <button type="button" data-md="faq">🎧<span>Help</span></button>
-    <button type="button" data-md="store">📍<span>Store</span></button>
-  </div>
-  <div class="md-call">
-    <?php if (!empty($coM['phone'])): ?><a class="c1" href="tel:<?= e(preg_replace('/\s/', '', $coM['phone'])) ?>">📞 Call Us</a><?php endif; ?>
-    <?php if ($waShop): ?><a class="c2" href="https://wa.me/<?= e($waShop) ?>" target="_blank" rel="noopener">💬 WhatsApp</a><?php endif; ?>
-  </div>
-</div>
-
-<div class="side-ovl" id="sideOvl"></div>
-<div class="shop-layout">
-  <aside class="side" id="sideBar">
-    <h3>Categories</h3>
-    <button type="button" class="cat-link on" data-cat="">🏪 All Products <span class="cnt"><?= count($items) ?></span></button>
-    <?php
-    // group sub-categories under their parent (v47 tree); a pre-migrate DB
-    // (no parent_id yet) simply renders the flat list as before
-    $catParent = [];
-    try { foreach (all('SELECT c.name child, p.name parent FROM categories c JOIN categories p ON p.id = c.parent_id') as $cp) $catParent[$cp['child']] = $cp['parent']; } catch (Exception $e) {}
-    $catGroups = [];
-    foreach ($cats as $cn => $cnt) $catGroups[$catParent[$cn] ?? ''][$cn] = $cnt;
-    ksort($catGroups);
-    foreach ($catGroups as $parent => $kids): ksort($kids);
-        if ($parent !== ''): ?>
-    <button type="button" class="cat-link" data-cats="<?= e(json_encode(array_keys($kids), JSON_UNESCAPED_UNICODE)) ?>"
-            style="font-weight:800;text-transform:uppercase;font-size:12.5px;letter-spacing:.4px;margin-top:8px"><?= e(cat_icon($parent)) ?> <?= e($parent) ?> <span class="cnt"><?= array_sum($kids) ?></span></button>
-    <?php endif;
-        foreach ($kids as $cn => $cnt): ?>
-    <button type="button" class="cat-link" data-cat="<?= e($cn) ?>" <?= $parent !== '' ? 'style="padding-left:24px"' : '' ?>><?= e(cat_icon($cn)) ?> <?= e($cn) ?> <span class="cnt"><?= $cnt ?></span></button>
-    <?php endforeach; endforeach; ?>
-  </aside>
-
-  <main>
-    <button type="button" class="btn btn-sm btn-outline catsBtn" id="catsBtn">☰ Categories</button>
-    <h2 class="sec-h" id="allProducts"><span>🏪</span> All Products</h2>
-    <div class="cat-grid" id="cGrid">
-    <?php foreach ($items as $it) pcard($it, $waPct, $webStock, $showQty); ?>
-    <?php if (!$items): ?><p class="muted">No products listed yet.</p><?php endif; ?>
-    </div>
-  </main>
-</div>
-
-  <?php if ($homeView): ?>
-  <div id="homeExtras">
-  <?php if ($testis): ?>
-  <section class="secWrap"><h2 class="sec-h"><span>💬</span> What customers say</h2>
-    <div class="testiGrid">
-      <?php foreach ($testis as $ts): ?>
-      <div class="testi"><div class="stars">★★★★★</div><p>"<?= e($ts[1]) ?>"</p><div class="tname">— <?= e($ts[0]) ?></div></div>
-      <?php endforeach; ?>
     </div>
   </section>
-  <?php endif; ?>
-  <?php if ($faqs): ?>
-  <section class="secWrap"><h2 class="sec-h"><span>❓</span> FAQ — frequently asked questions</h2>
-    <div class="faqWrap">
-      <?php foreach ($faqs as $fq): ?>
-      <details class="faq"><summary><?= e($fq[0]) ?></summary><p><?= e($fq[1]) ?></p></details>
-      <?php endforeach; ?>
+
+<?php elseif ($view === 'wish'): ?>
+  <section class="sec">
+    <div class="grid" data-wish-grid></div>
+    <div class="panel empty" data-wish-empty hidden><?= store_icon('heart') ?><h3>Your wishlist is empty</h3><p>Tap the heart on any product to keep it here.</p><a class="btn" href="catalog.php?view=all">Browse products</a></div>
+  </section>
+
+<?php elseif ($view === 'all'): ?>
+  <section class="sec" style="margin-top:4px">
+    <div class="cathead"><span class="ti"><?php if ($catImg): ?><img src="<?= e($catImg) ?>" alt=""><?php else: ?><?= store_icon($fQ !== '' ? 'search' : store_cat_icon($catHead ?: 'box')) ?><?php endif; ?></span>
+      <h1><?= e($fQ !== '' ? 'Results for “' . $fQ . '”' : ($catHead ?: 'All Products')) ?><small><?= $nList ?> product<?= $nList === 1 ? '' : 's' ?><?= $fBrand !== '' ? ' · ' . e($fBrand) : '' ?></small></h1>
+      <button class="hbtn" type="button" data-open="filters" aria-label="Filters"><?= store_icon('filter') ?></button></div>
+    <?php if ($catsHere && count($catsHere) > 1): ?>
+    <div class="chips" style="margin-bottom:8px">
+      <a class="chip <?= $fCat === '' ? 'on' : '' ?>" href="<?= e($qsKeep(['cat' => '', 'brand' => '', 'page' => ''])) ?>">All</a>
+      <?php foreach ($catsHere as $cn => $n): ?><a class="chip <?= $fCat === $cn ? 'on' : '' ?>" href="<?= e($qsKeep(['cat' => $cn, 'brand' => '', 'page' => ''])) ?>"><?= e($cn) ?> <span class="n"><?= $n ?></span></a><?php endforeach; ?>
     </div>
-  </section>
-  <?= seo_faq_jsonld(array_combine(array_column($faqs, 0), array_column($faqs, 1))) ?>
-  <?php endif; ?>
-  <?php if ($waShop): ?>
-  <section class="ctaBand">
-    <h2>📲 Want a price? On WhatsApp "catalog" Send it!</h2>
-    <p>The whole catalogue, prices, orders and your account — all inside WhatsApp.</p>
-    <a class="btn ctaBtn" href="https://wa.me/<?= e($waShop) ?>?text=catalog" target="_blank" rel="noopener">💬 Open WhatsApp</a>
-  </section>
-  <?php endif; ?>
-  </div>
-  <?php endif; ?>
-
-  <div class="cartbar" id="cartBar"><span id="cartInfo"></span><span>Place Order →</span></div>
-
-  <!-- mobile bottom navigation -->
-  <nav class="bnav no-print" id="bNav">
-    <button type="button" data-bn="top">🏠<span>Home</span></button>
-    <button type="button" data-bn="cats">🗂️<span>Categories</span></button>
-    <button type="button" data-bn="wish">❤️<span id="bnWish">Wishlist</span></button>
-    <?php if ($waShop): ?><a href="https://wa.me/<?= e($waShop) ?>" target="_blank" rel="noopener">💬<span>WhatsApp</span></a><?php endif; ?>
-    <button type="button" data-bn="cart">🛒<span id="bnCart">Cart</span></button>
-  </nav>
-
-  <div class="order-modal" id="orderModal">
-    <div class="order-box">
-      <h2>🛒 Your Order</h2>
-      <div id="orderLines" class="mb mt"></div>
-      <form method="post">
-        <?= csrf_field() ?>
-        <input type="hidden" name="do" value="order">
-        <input type="hidden" name="cart_json" id="cartJson">
-        <div class="field"><label>Your Name *</label><input type="text" name="customer_name" required value="<?= e($webAcct['name'] ?? '') ?>"></div>
-        <div class="field"><label>Mobile (WhatsApp) *</label><input type="tel" name="mobile" required pattern="[0-9]{10,12}" value="<?= e($webAcct['mobile'] ?? '') ?>"></div>
-        <div class="field"><label>Address / Area</label><input type="text" name="address"></div>
-        <div class="field"><label>Anything specific to mention?</label><input type="text" name="order_notes"></div>
-        <button class="btn btn-success btn-block" type="submit">✅ Send Order</button>
-        <button class="btn btn-muted btn-block mt" type="button" onclick="document.getElementById('orderModal').classList.remove('show')">Close</button>
+    <?php endif; ?>
+    <?php if (count($brandsHere) > 1): ?>
+    <div class="chips" style="margin-bottom:8px">
+      <a class="chip <?= $fBrand === '' ? 'on' : '' ?>" href="<?= e($qsKeep(['brand' => '', 'page' => ''])) ?>">All brands</a>
+      <?php foreach (array_slice($brandsHere, 0, 20, true) as $bn => $n): ?><a class="chip <?= strcasecmp($fBrand, $bn) === 0 ? 'on' : '' ?>" href="<?= e($qsKeep(['brand' => strcasecmp($fBrand, $bn) === 0 ? '' : $bn, 'page' => ''])) ?>"><?= e($bn) ?></a><?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+    <div style="display:flex;align-items:center;gap:8px;margin:6px 0 12px">
+      <span class="muted" style="font-size:13px;margin-right:auto">Sort by</span>
+      <form method="get" data-autosubmit style="display:contents">
+        <?php foreach (['view' => 'all', 'g' => $fG, 'cat' => $fCat, 'brand' => $fBrand, 'q' => $fQ, 'stock' => $fStock ? '1' : '', 'min' => $fMin ?: '', 'max' => $fMax ?: ''] as $k => $v) if ($v !== '') echo '<input type="hidden" name="' . $k . '" value="' . e($v) . '">'; ?>
+        <select name="sort" class="chip" aria-label="Sort" style="padding-right:8px">
+          <?php foreach (['popular' => 'Popular', 'best' => 'Best selling', 'price_asc' => 'Price: low to high', 'price_desc' => 'Price: high to low', 'new' => 'Newest'] as $k => $lab): ?><option value="<?= $k ?>" <?= $fSort === $k ? 'selected' : '' ?>><?= $lab ?></option><?php endforeach; ?>
+        </select>
       </form>
     </div>
-  </div>
-<?php endif; ?>
+    <?php if ($list): ?>
+    <div class="list"><?php foreach ($list as $it) store_card($it, 'list'); ?></div>
+    <?php if ($pages > 1): ?>
+    <nav class="chips" style="justify-content:center;margin-top:16px" aria-label="Pages">
+      <?php if ($page > 1): ?><a class="chip" rel="prev" href="<?= e($qsKeep(['page' => $page - 1])) ?>">‹ Previous</a><?php endif; ?>
+      <span class="chip on"><?= $page ?> / <?= $pages ?></span>
+      <?php if ($page < $pages): ?><a class="chip" rel="next" href="<?= e($qsKeep(['page' => $page + 1])) ?>">Next ›</a><?php endif; ?>
+    </nav>
+    <?php endif; ?>
+    <?php else: ?>
+    <div class="panel empty"><?= store_icon('search') ?><h3>No products found<?= $fQ !== '' ? ' for “' . e($fQ) . '”' : '' ?></h3>
+      <p>Try another word or fewer filters<?= $c['wa'] ? ' — or ask us, we can get it for you' : '' ?>.</p>
+      <a class="btn ghost" href="catalog.php?view=all">Show all products</a>
+      <?php if ($c['wa']): ?><a class="btn wa" style="margin-top:8px" href="https://wa.me/<?= e($c['wa']) ?>?text=<?= rawurlencode('Hello! Do you have: ' . ($fQ ?: $fCat ?: $fG)) ?>" target="_blank" rel="noopener"><?= store_icon('wa') ?>Ask on WhatsApp</a><?php endif; ?>
+    </div>
+    <?php endif; ?>
+  </section>
+  <section class="sheet" id="filters" aria-label="Filters" role="dialog">
+    <div class="sheet-h"><h2>Filters</h2><button class="hbtn" type="button" data-close aria-label="Close"><?= store_icon('x') ?></button></div>
+    <form method="get">
+      <input type="hidden" name="view" value="all"><?php foreach (['q' => $fQ, 'sort' => $fSort === 'popular' ? '' : $fSort] as $k => $v) if ($v !== '') echo '<input type="hidden" name="' . $k . '" value="' . e($v) . '">'; ?>
+      <div class="field"><label for="fg">Category</label><select id="fg" name="g"><option value="">All categories</option><?php foreach ($groups as $g): ?><option <?= $fG === $g['name'] ? 'selected' : '' ?>><?= e($g['name']) ?></option><?php endforeach; ?></select></div>
+      <?php if ($brandsHere): ?><div class="field"><label for="fb">Brand</label><select id="fb" name="brand"><option value="">All brands</option><?php foreach (array_keys($brandsHere) as $bn): ?><option <?= strcasecmp($fBrand, $bn) === 0 ? 'selected' : '' ?>><?= e($bn) ?></option><?php endforeach; ?></select></div><?php endif; ?>
+      <div class="seg" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+        <div class="field" style="margin:0"><label for="fmin">Min price ₹</label><input id="fmin" name="min" inputmode="numeric" value="<?= $fMin ?: '' ?>"></div>
+        <div class="field" style="margin:0"><label for="fmax">Max price ₹</label><input id="fmax" name="max" inputmode="numeric" value="<?= $fMax ?: '' ?>"></div>
+      </div>
+      <label class="chip" style="width:100%;justify-content:flex-start;height:46px;margin-bottom:14px"><input type="checkbox" name="stock" value="1" <?= $fStock ? 'checked' : '' ?>> In stock only</label>
+      <button class="btn block" type="submit">Show products</button>
+      <a class="btn ghost block" style="margin-top:8px" href="catalog.php?view=all">Clear all</a>
+    </form>
+  </section>
+  <div class="sheet-bg" data-close></div>
 
-<footer class="sfoot">
+<?php else: /* ---------------- home ---------------- */ ?>
+  <?php if ($webAcct): ?><div class="sec"><p class="note ok">Welcome, <?= e($webAcct['name']) ?> — your dealer prices are on.</p></div><?php endif; ?>
+  <div class="sec" style="margin-top:10px"><div class="install" data-install><?= store_icon('store') ?><span><b>Install the <?= e($c['app']) ?> app</b><br><span class="muted">Opens like an app, right from your home screen.</span></span>
+    <button class="btn" type="button" data-install-go>Install</button><button class="hbtn" type="button" data-install-no aria-label="Not now"><?= store_icon('x') ?></button></div></div>
+
+  <section class="hero" aria-label="Offers">
+    <div class="slides">
+      <?php foreach ($slides as $i => $s): $h = $i === 0 ? 'h1' : 'h2'; ?>
+      <div class="slide">
+        <div>
+          <div class="k"><?= e($s['k']) ?></div>
+          <<?= $h ?>><?= e($s['t']) ?><?php if ($s['em'] !== ''): ?> <em><?= e($s['em']) ?></em><?php endif; ?></<?= $h ?>>
+          <p><?= e($s['p']) ?></p>
+          <?php if (!empty($s['feat'])): ?><div class="feat"><span><?= store_icon('camera') ?>HD quality</span><span><?= store_icon('moon') ?>Night vision</span><span><?= store_icon('phone') ?>Phone view</span></div><?php endif; ?>
+          <div class="cta">
+            <?php foreach ($s['cta'] as $k => [$href, $lab]): ?><a class="<?= $k ? 'btn-g' : 'btn-w' ?>" href="<?= e($href) ?>"><?= e($lab) ?><?= $k ? '' : ' →' ?></a><?php endforeach; ?>
+            <?php if (!empty($s['wa']) && $c['wa']): ?><a class="btn-g" href="https://wa.me/<?= e($c['wa']) ?>" target="_blank" rel="noopener"><?= store_icon('wa') ?>WhatsApp</a><?php endif; ?>
+          </div>
+        </div>
+        <div class="pic"><?php if ($s['img']): ?><img src="<?= e($s['img']) ?>" alt="" <?= $i ? 'loading="lazy"' : 'fetchpriority="high"' ?>><?php endif; ?></div>
+      </div>
+      <?php endforeach; ?>
+    </div>
+    <?php if (count($slides) > 1): ?><div class="dots"><?php foreach ($slides as $i => $s): ?><button type="button" class="<?= $i ? '' : 'on' ?>" aria-label="Slide <?= $i + 1 ?>"></button><?php endforeach; ?></div><?php endif; ?>
+  </section>
+
   <?php if ($ownShop): ?>
-  <p><strong>🖥️ <?= e($app_name) ?></strong> — Devbhoomi Dwarka, Gujarat</p>
-  <p class="muted mt">Computer shop · CCTV camera installation · Laptop · Printer · Repairs — service in Dwarka and nearby</p>
-  <?php else: ?>
-  <p><strong>🛍️ <?= e($app_name) ?></strong><?= shop_place() !== '' ? ' — ' . e(shop_place()) : '' ?></p>
-  <?php if (powered_by_line() !== ''): ?><p class="muted mt" style="font-size:12px"><?= e(powered_by_line()) ?></p><?php endif; ?>
+  <section class="sec" style="margin-top:12px"><div class="trust4">
+    <div><?= store_icon('truck') ?>Fast delivery<br>in <?= e($city) ?></div>
+    <div><?= store_icon('shield') ?>100% genuine<br>products</div>
+    <div><?= store_icon('tool') ?>Expert support<br>&amp; installation</div>
+    <div><?= store_icon('check') ?>Warranty<br>&amp; service</div>
+  </div></section>
   <?php endif; ?>
-  <p class="mt">
-    <?php if ($waShop): ?><a class="btn btn-sm btn-wa" href="https://wa.me/<?= e($waShop) ?>" target="_blank" rel="noopener">📲 WhatsApp us</a><?php endif; ?>
-    <a class="btn btn-sm btn-outline" href="referral.php">💰 Refer &amp; Earn</a>
-    <?php if (!$webAcct): ?><a class="btn btn-sm btn-outline" href="catalog.php?dregister=1">📝 Become a dealer</a><?php endif; ?>
-  </p>
-  <?php if (!current_user()): ?><p class="muted mt" style="font-size:12px"><a href="login.php" style="color:inherit">Staff Login</a></p><?php endif; ?>
-  <?php if (current_user() && can('items.edit')): $hidden = (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 0'); ?>
-    <?php if ($hidden): ?><p class="muted mt">ℹ️ (Admin: <?= $hidden ?> items are OFF on the website — turn them ON via 🌐 on the Items page.)</p><?php endif; ?>
-    <?php $noPhoto = count(array_filter($items, fn($x) => ($x['photo'] ?? '') === '')); if ($noPhoto): ?><p class="muted mt">📷 (Admin: <?= $noPhoto ?> items on the website have no photo — <a href="items.php?f_web=on&amp;f_photo=none">upload photos</a>.)</p><?php endif; ?>
+
+  <?php if ($tiles): ?>
+  <section class="sec">
+    <div class="sec-h"><h2>Shop by Category</h2><a class="more" href="catalog.php?view=cats">View all<?= store_icon('next') ?></a></div>
+    <div class="tiles"><?php foreach (array_slice($tiles, 0, 8) as $t) $tileHtml($t); ?></div>
+  </section>
   <?php endif; ?>
-</footer>
 
-<script>
-var cart = {};   // id -> qty
-var meta = {};   // id -> {name, price}
 
-// The same product renders in several places (grid + Best Sellers + New
-// Arrivals rows), so every cart action updates ALL copies of that card.
-function cardsOf(id, sel) { return document.querySelectorAll(sel + '[data-' + (sel === '.qtyrow' ? 'qid' : 'id') + '="' + id + '"]'); }
-function syncCard(id) {
-  var q = cart[id] || 0;
-  cardsOf(id, '.addbtn').forEach(function (b) { b.style.display = q ? 'none' : ''; });
-  document.querySelectorAll('.qtyrow[data-qid="' + id + '"]').forEach(function (r) {
-    r.style.display = q ? 'flex' : 'none';
-    r.querySelector('.q-num').textContent = q;
-  });
-}
-function refreshCart() {
-  var count = 0, total = 0;
-  Object.keys(cart).forEach(function (id) {
-    count += cart[id];
-    total += cart[id] * meta[id].price;
-  });
-  var bar = document.getElementById('cartBar');
-  var cc = document.getElementById('cartCount'); if (cc) cc.textContent = count;
-  var bc = document.getElementById('bnCart'); if (bc) bc.textContent = count ? 'Cart (' + count + ')' : 'Cart';
-  if (!bar) return;
-  if (count > 0) {
-    bar.classList.add('show');
-    document.getElementById('cartInfo').textContent = count + ' item · ₹' + total.toFixed(2);
-  } else {
-    bar.classList.remove('show');
-  }
-}
-function addToCart(id) {
-  var b = document.querySelector('.addbtn[data-id="' + id + '"]');
-  if (!b) return;
-  meta[id] = { name: b.dataset.name, price: parseFloat(b.dataset.price) };
-  cart[id] = (cart[id] || 0) + 1;
-  syncCard(id); refreshCart();
-}
-function openOrder() {
-  if (!Object.keys(cart).length) return;
-  var lines = '', total = 0;
-  Object.keys(cart).forEach(function (id) {
-    var line = cart[id] * meta[id].price;
-    total += line;
-    lines += '<div class="oline"><span>' + meta[id].name + ' × ' + cart[id] + '</span><span>₹' + line.toFixed(2) + '</span></div>';
-  });
-  lines += '<div class="oline" style="font-weight:800"><span>Total</span><span>₹' + total.toFixed(2) + '</span></div>';
-  document.getElementById('orderLines').innerHTML = lines;
-  document.getElementById('cartJson').value = JSON.stringify(cart);
-  document.getElementById('orderModal').classList.add('show');
-}
-document.addEventListener('click', function (ev) {
-  var add = ev.target.closest('.addbtn');
-  if (add) { addToCart(add.dataset.id); return; }
-  var buy = ev.target.closest('.buybtn');
-  if (buy) { if (!cart[buy.dataset.id]) addToCart(buy.dataset.id); openOrder(); return; }
-  var plus = ev.target.closest('.q-plus'), minus = ev.target.closest('.q-minus');
-  if (plus || minus) {
-    var id = (plus || minus).closest('.qtyrow').dataset.qid;
-    cart[id] = (cart[id] || 0) + (plus ? 1 : -1);
-    if (cart[id] <= 0) delete cart[id];
-    syncCard(id); refreshCart();
-    return;
-  }
-  var w = ev.target.closest('.wishbtn');
-  if (w) { toggleWish(w.dataset.wid); }
-});
-document.getElementById('cartBar') && document.getElementById('cartBar').addEventListener('click', openOrder);
-document.getElementById('cartBtnH') && document.getElementById('cartBtnH').addEventListener('click', openOrder);
-// "Add to cart" arriving from a product page (product.php?...&add=ID)
-(function () {
-  var addId = new URLSearchParams(location.search).get('add');
-  if (addId) { addToCart(addId); history.replaceState(null, '', location.pathname); }
-})();
+  <?php $dId = (int)setting('store_deal_item'); $dE = trim(setting('store_deal_ends', ''));
+  $deal = $dId && ($dE === '' || strtotime($dE) > time()) ? (array_values(array_filter($items, fn($x) => (int)$x['id'] === $dId))[0] ?? null) : null;
+  if ($deal): ?>
+  <section class="sec"><div class="sec-h"><h2><?= store_icon('tag') ?>Deal of the Day</h2></div><div class="row" style="grid-auto-columns:min(100%,360px)"><?php store_card($deal, 'list', 'DEAL'); ?></div></section>
+  <?php endif; ?>
 
-// ----- wishlist (localStorage; header ♥ filters the grid to loved items) -----
-var wish = [];
-try { wish = JSON.parse(localStorage.getItem('akcWish') || '[]'); } catch (e) {}
-function paintWish() {
-  document.querySelectorAll('.wishbtn').forEach(function (b) {
-    var on = wish.indexOf(String(b.dataset.wid)) > -1;
-    b.classList.toggle('on', on);
-    b.textContent = on ? '♥' : '♡';
-  });
-  var c = document.getElementById('wishCount'); if (c) c.textContent = wish.length;
-}
-function toggleWish(id) {
-  id = String(id);
-  var i = wish.indexOf(id);
-  if (i > -1) wish.splice(i, 1); else wish.push(id);
-  try { localStorage.setItem('akcWish', JSON.stringify(wish)); } catch (e) {}
-  paintWish();
-}
-var wishOnly = false;
-function applyWishFilter() {
-  document.querySelectorAll('#cGrid .cat-card').forEach(function (c) {
-    if (!wishOnly) return;
-    var id = c.querySelector('.wishbtn') ? c.querySelector('.wishbtn').dataset.wid : '';
-    if (wish.indexOf(String(id)) === -1) c.style.display = 'none';
-  });
-}
-function gotoWishlist() {
-  wishOnly = !wishOnly;
-  applyFilter(); applyWishFilter();
-  document.getElementById('allProducts') && document.getElementById('allProducts').scrollIntoView({ behavior: 'smooth' });
-}
-document.getElementById('wishBtnH') && document.getElementById('wishBtnH').addEventListener('click', gotoWishlist);
-paintWish();
+  <?php $rowHtml = function ($icon, $t, $sub, $list, $more, $tag = '') { ?>
+  <section class="sec">
+    <div class="sec-h"><h2><?= store_icon($icon) ?><?= e($t) ?></h2><?php if ($more): ?><a class="more" href="<?= e($more) ?>">View all<?= store_icon('next') ?></a><?php endif; ?></div>
+    <?php if ($sub): ?><p class="sec-sub"><?= e($sub) ?></p><?php endif; ?>
+    <div class="row"><?php foreach ($list as $it) store_card($it, 'grid', $tag === 'NEW' && strtotime((string)$it['created_at']) > time() - 45 * 86400 ? 'NEW' : ((int)($it['web_priority'] ?? 0) ? 'TOP' : '')); ?></div>
+  </section>
+  <?php };
+  foreach ($rows as $i => $r) {
+      $rowHtml(...$r);
+      if ($i === 0 && ($topBrands = array_slice(array_filter(seo_brands(), fn($b) => seo_slug($b['name']) !== ''), 0, 12))) { ?>
+  <section class="sec"><div class="sec-h"><h2>Top Brands</h2></div>
+    <div class="brands"><?php foreach ($topBrands as $b): ?><a href="<?= e(seo_brand_url($b['name'])) ?>"><?= e($b['name']) ?></a><?php endforeach; ?></div></section>
+  <?php }
+  } ?>
 
-// ----- hero slider: auto-rotate + dots -----
-(function () {
-  var s = document.getElementById('heroSlides');
-  if (!s) return;
-  var dots = document.querySelectorAll('#heroDots button');
-  var n = s.children.length, cur = 0, timer;
-  function go(i) {
-    cur = (i + n) % n;
-    s.scrollTo({ left: s.children[cur].offsetLeft - s.children[0].offsetLeft, behavior: 'smooth' });
-    dots.forEach(function (d, j) { d.classList.toggle('on', j === cur); });
-  }
-  dots.forEach(function (d) { d.addEventListener('click', function () { go(parseInt(d.dataset.slide)); restart(); }); });
-  function restart() { clearInterval(timer); if (n > 1) timer = setInterval(function () { go(cur + 1); }, 4500); }
-  s.addEventListener('touchstart', function () { clearInterval(timer); }, { passive: true });
-  s.addEventListener('touchend', restart, { passive: true });
-  restart();
-})();
+  <?php if ($ownShop && $cctv): ?>
+  <section class="sec">
+    <div class="band">
+      <div><h2>Complete <em>CCTV Solutions</em></h2><p>HD &amp; IP cameras, 4G / WiFi cameras, DVR / NVR, hard disks, PoE switches, cable and power — planned, installed and serviced by us.</p></div>
+      <div class="cta">
+        <a class="btn-w" href="<?= e(seo_service_url('cctv-installation')) ?>">Request free site visit</a>
+        <?php if ($c['wa']): ?><a class="btn-g" href="https://wa.me/<?= e($c['wa']) ?>?text=<?= rawurlencode('Hello! I need a CCTV installation quote for my place.') ?>" target="_blank" rel="noopener"><?= store_icon('wa') ?>Get CCTV quote</a><?php endif; ?>
+      </div>
+    </div>
+  </section>
+  <?php $rowHtml('camera', 'CCTV Installation Essentials', 'Cameras, recorders, cable and power — everything for one job', $cctv, $secGroup ? store_group_url($secGroup) : ''); endif; ?>
 
-// ----- deal countdown -----
-(function () {
-  var cd = document.getElementById('dealCd');
-  if (!cd) return;
-  var ends = new Date(cd.dataset.ends).getTime();
-  function tick() {
-    var left = Math.max(0, Math.floor((ends - Date.now()) / 1000));
-    var h = Math.floor(left / 3600), m = Math.floor(left % 3600 / 60), sec = left % 60;
-    cd.textContent = '⏰ ' + h + 'h ' + ('0' + m).slice(-2) + 'm ' + ('0' + sec).slice(-2) + 's left';
-    if (left <= 0) cd.textContent = '⏰ Deal over!';
-  }
-  tick(); setInterval(tick, 1000);
-})();
+  <?php if ($newest) $rowHtml('spark', 'New Arrivals', '', $newest, 'catalog.php?view=all&sort=new', 'NEW'); ?>
+  <?php if (count($up) >= 3) $rowHtml('chip', 'Computer Upgrade Products', 'SSD, RAM, power supply and more — fitted at the shop', $up, 'catalog.php?view=all&q=ssd'); ?>
+  <?php if (count($net) >= 3) $rowHtml('wifi', 'Networking Essentials', '', $net, 'catalog.php?view=all&q=router'); ?>
+  <?php if (count($print) >= 3) $rowHtml('printer', 'Printer & Consumables', '', $print, 'catalog.php?view=all&q=printer'); ?>
 
-// ----- category chips: click = filter the grid via the matching sidebar entry -----
-document.querySelectorAll('.chip').forEach(function (ch) {
-  ch.addEventListener('click', function () {
-    document.querySelectorAll('.chip').forEach(function (x) { x.classList.remove('on'); });
-    ch.classList.add('on');
-    var target = document.querySelector('.cat-link[data-cat="' + ch.dataset.chipcat.replace(/"/g, '\\"') + '"]');
-    if (target) target.click();
-    document.getElementById('allProducts') && document.getElementById('allProducts').scrollIntoView({ behavior: 'smooth' });
-  });
-});
+  <section class="sec" data-hide-empty hidden><div class="sec-h"><h2><?= store_icon('clock') ?>Recently Viewed</h2></div><div class="row" data-recent></div></section>
 
-// ----- dark / light toggle (remembered on this device) -----
-(function () {
-  var saved = null;
-  try { saved = localStorage.getItem('akcTheme'); } catch (e) {}
-  if (saved) document.documentElement.setAttribute('data-theme', saved);
-  var b = document.getElementById('themeBtn');
-  if (b) b.addEventListener('click', function () {
-    var cur = document.documentElement.getAttribute('data-theme');
-    var nx = cur === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', nx);
-    try { localStorage.setItem('akcTheme', nx); } catch (e) {}
-  });
-})();
+  <?php if ($ownShop): ?>
+  <section class="sec">
+    <div class="sec-h"><h2><?= store_icon('tool') ?>Services</h2><a class="more" href="<?= e(base_url('s/')) ?>">All services<?= store_icon('next') ?></a></div>
+    <div class="svc">
+      <?php foreach (seo_services() as $slug => $sv): ?><a href="<?= e(seo_service_url($slug)) ?>"><span class="si"><?= store_icon(store_cat_icon($slug . ' ' . $sv['name']) === 'box' ? 'tool' : store_cat_icon($slug . ' ' . $sv['name'])) ?></span><b><?= e($sv['name']) ?></b><small><?= e(mb_substr(strtok($sv['desc'], '.'), 0, 70)) ?></small></a><?php endforeach; ?>
+    </div>
+  </section>
+  <?php endif; ?>
 
-// ----- premium mobile menu (megajaipur-style full-screen drawer) -----
-var mD = document.getElementById('mDrawer');
-function mdOpen() { if (mD) { mD.classList.add('open'); document.body.style.overflow = 'hidden'; } }
-function mdClose() { if (mD) { mD.classList.remove('open'); document.body.style.overflow = ''; } }
-document.getElementById('mdClose') && document.getElementById('mdClose').addEventListener('click', mdClose);
-mD && mD.addEventListener('click', function (ev) {
-  var p = ev.target.closest('.md-parent[data-mdg]');
-  if (p) {
-    var k = document.querySelector('.md-kids[data-mdk="' + p.dataset.mdg + '"]');
-    p.classList.toggle('open');
-    if (k) k.classList.toggle('open');
-    return;
-  }
-  var kid = ev.target.closest('.md-kidbtn');
-  if (kid) {
-    var t = kid.dataset.mdcat
-      ? document.querySelector('.cat-link[data-cat="' + kid.dataset.mdcat.replace(/"/g, '\\"') + '"]')
-      : document.querySelector('.cat-link[data-cats="' + (kid.dataset.mdcats || '').replace(/"/g, '&quot;') + '"]');
-    if (!t && kid.dataset.mdcats) { // match parent button by first child name
-      try { var first = JSON.parse(kid.dataset.mdcats)[0]; } catch (e) {}
-      document.querySelectorAll('.cat-link[data-cats]').forEach(function (x) { if (!t && x.dataset.cats.indexOf(first) > -1) t = x; });
-    }
-    if (t) t.click();
-    mdClose();
-    document.getElementById('allProducts') && document.getElementById('allProducts').scrollIntoView({ behavior: 'smooth' });
-    return;
-  }
-  var act = ev.target.closest('[data-md]');
-  if (act) {
-    var a = act.dataset.md;
-    mdClose();
-    if (a === 'home') window.scrollTo({ top: 0, behavior: 'smooth' });
-    if (a === 'brands') { var bs = document.querySelector('.brandStrip'); bs && bs.scrollIntoView({ behavior: 'smooth' }); }
-    if (a === 'wish') gotoWishlist();
-    if (a === 'faq') { var f = document.querySelector('.faqWrap'); f && f.scrollIntoView({ behavior: 'smooth' }); }
-    if (a === 'store') { var s2 = document.querySelector('.sfoot'); s2 && s2.scrollIntoView({ behavior: 'smooth' }); }
-  }
-});
-var isMobile = function () { return window.innerWidth < 900; };
+  <?php if ($reviews): ?>
+  <section class="sec">
+    <div class="sec-h"><h2><?= store_icon('star') ?>Customer Reviews</h2></div>
+    <div class="row" style="grid-auto-columns:min(86%,340px)">
+      <?php foreach ($reviews as $rv): ?>
+      <div class="rv"><div class="stars" aria-label="<?= (int)$rv['rating'] ?> out of 5"><?= str_repeat('★', (int)$rv['rating']) . str_repeat('☆', 5 - (int)$rv['rating']) ?></div>
+        <?php if ($rv['comment']): ?><p style="font-size:14px;margin-top:6px">“<?= e(mb_substr($rv['comment'], 0, 220)) ?>”</p><?php endif; ?>
+        <p class="muted" style="font-size:12.5px;margin-top:8px"><b><?= e($rv['customer_name'] ?: 'Customer') ?></b> · <?= dmy($rv['created_at']) ?><?php if ($rv['is_verified']): ?> · <span class="vbadge">Verified purchase</span><?php endif; ?></p>
+        <a class="muted" style="font-size:12px;display:block;margin-top:4px;text-decoration:underline" href="<?= e(seo_product_url(['id' => $rv['item_id'], 'name' => $rv['item_name'], 'brand' => $rv['brand'], 'model' => $rv['model']])) ?>"><?= e($rv['item_name']) ?></a></div>
+      <?php endforeach; ?>
+    </div>
+  </section>
+  <?php endif; ?>
 
-// ----- mobile bottom navigation -----
-document.querySelectorAll('#bNav [data-bn]').forEach(function (b) {
-  b.addEventListener('click', function () {
-    var a = b.dataset.bn;
-    if (a === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
-    if (a === 'cats') mdOpen();
-    if (a === 'wish') gotoWishlist();
-    if (a === 'cart') openOrder();
-  });
-});
-// search + category filter
-var filterInp = document.getElementById('cFilter');
-function applyFilter() {
-  var q = (filterInp.value || '').toLowerCase();
-  var onBtn = document.querySelector('.cat-link.on');
-  var cat = onBtn && onBtn.dataset.cat ? onBtn.dataset.cat : '';
-  // a parent-category button carries data-cats = its sub-category names, so
-  // clicking it shows every product of all its sub-categories together
-  var cats = null;
-  if (onBtn && onBtn.dataset.cats) { try { cats = JSON.parse(onBtn.dataset.cats); } catch (e) {} }
-  document.querySelectorAll('#cGrid .cat-card').forEach(function (c) {
-    var okQ = c.textContent.toLowerCase().indexOf(q) > -1;
-    var okC = cats ? cats.indexOf(c.dataset.cat) > -1 : (!cat || c.dataset.cat === cat);
-    c.style.display = okQ && okC ? '' : 'none';
-  });
-  applyWishFilter(); // ♥ filter stacks on top of search + category
-  // while searching, only the results: no banners, deals, best sellers, new
-  // arrivals, reviews or FAQ in the way. An empty box brings the front page back.
-  var searching = q.trim() !== '';
-  ['homePromo', 'homeExtras'].forEach(function (id) { var el = document.getElementById(id); if (el) el.hidden = searching; });
-  var h = document.getElementById('allProducts');
-  if (h) h.innerHTML = searching ? '<span>🔍</span> Results for “' + q.trim().replace(/[<>&"]/g, '') + '” · ' + document.querySelectorAll('#cGrid .cat-card:not([style*="none"])').length : '<span>🏪</span> All Products';
-}
-if (filterInp) {
-  filterInp.addEventListener('input', applyFilter);
-  // on the first letters, jump to the results so they are what the customer sees
-  var jumped = false;
-  filterInp.addEventListener('input', function () {
-    if (filterInp.value.trim() === '') { jumped = false; return; }
-    if (jumped) return; jumped = true;
-    var h = document.getElementById('allProducts');
-    if (h) window.scrollTo({ top: h.getBoundingClientRect().top + window.pageYOffset - 140, behavior: 'smooth' });
-  });
-}
-// sort: reorder the cards inside the grid (works together with search + category)
-var sortSel = document.getElementById('cSort');
-if (sortSel) sortSel.addEventListener('change', function () {
-  var grid = document.getElementById('cGrid');
-  if (!grid) return;
-  var cards = Array.prototype.slice.call(grid.querySelectorAll('.cat-card'));
-  var v = sortSel.value;
-  cards.sort(function (a, b) {
-    if (v === 'price_asc') return parseFloat(a.dataset.price) - parseFloat(b.dataset.price);
-    if (v === 'price_desc') return parseFloat(b.dataset.price) - parseFloat(a.dataset.price);
-    if (v === 'name') return a.dataset.name < b.dataset.name ? -1 : 1;
-    if (v === 'new') return parseInt(b.dataset.newid) - parseInt(a.dataset.newid);
-    return 0;
-  });
-  cards.forEach(function (c) { grid.appendChild(c); });
-});
-// category sidebar (drawer on mobile)
-var sideBar = document.getElementById('sideBar'), sideOvl = document.getElementById('sideOvl');
-var catsBtn = document.getElementById('catsBtn');
-if (catsBtn) catsBtn.addEventListener('click', mdOpen); // mobile: premium full-screen menu
-if (sideOvl) sideOvl.addEventListener('click', function () { sideBar.classList.remove('open'); sideOvl.classList.remove('show'); });
-document.querySelectorAll('.cat-link').forEach(function (ch) {
-  ch.addEventListener('click', function () {
-    document.querySelectorAll('.cat-link').forEach(function (x) { x.classList.remove('on'); });
-    ch.classList.add('on');
-    applyFilter();
-    if (sideBar) sideBar.classList.remove('open');
-    if (sideOvl) sideOvl.classList.remove('show');
-  });
-});
-</script>
-<?= seo_footer() ?>
-<script src="assets/searchselect.js?v=<?= asset_v('searchselect.js') ?>"></script>
-<?= ak_earn_tag() /* AK Earn: ?ref= partner cookie + page view (public key only) */ ?>
-</body>
-</html>
+  <?php if ($faqs): ?>
+  <section class="sec faq">
+    <div class="sec-h"><h2>Questions customers ask</h2></div>
+    <?php foreach ($faqs as $fq): ?><details><summary><?= e($fq[0]) ?></summary><p><?= e($fq[1]) ?></p></details><?php endforeach; ?>
+  </section>
+  <?php endif; ?>
+
+  <?php if ($c['wa']): ?>
+  <section class="sec"><div class="band"><div><h2>Can't find it? <em>Ask us.</em></h2><p>Send a photo or model number on WhatsApp — we tell you the price and when we can deliver.</p></div>
+    <div class="cta"><a class="btn-w" href="https://wa.me/<?= e($c['wa']) ?>?text=<?= rawurlencode('Hello! I am looking for:') ?>" target="_blank" rel="noopener"><?= store_icon('wa') ?>Chat on WhatsApp</a></div></div></section>
+  <?php endif; ?>
+
+  <?php if ($c['admin']): $hidden = (int)val('SELECT COUNT(*) FROM items WHERE is_active = 1 AND show_on_website = 0'); $noPhoto = count(array_filter($items, fn($x) => trim((string)$x['photo']) === '')); ?>
+  <section class="sec"><div class="note info">Admin: <?= $noPhoto ?> product(s) on the website have no photo (they show lower down) — <a style="text-decoration:underline" href="items.php?f_web=on&amp;f_photo=none">add photos</a>.
+    <?php if ($hidden): ?> <?= $hidden ?> active item(s) are switched OFF for the website.<?php endif; ?> Tap 📌 on a card to show it first.</div></section>
+  <?php endif; ?>
+<?php endif; ?>
+</main>
+<?php store_footer();
+// the search index is fetched only when the search box / wishlist needs it, keeping the page light
+store_end($view === 'cats' ? 'cats' : ($view === 'wish' ? 'wish' : 'home'));

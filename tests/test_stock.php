@@ -227,15 +227,14 @@ t_ok('an item the map has never heard of is out, not in', $unknown[0] === 'out')
 t_group('both public pages use the one rule');
 $cat = file_get_contents(dirname(__DIR__) . '/catalog.php');
 $prd = file_get_contents(dirname(__DIR__) . '/product.php');
-t_ok('the catalogue asks web_stock_line()', strpos($cat, 'web_stock_line(') !== false);
-t_ok('the product page asks it too', strpos($prd, 'web_stock_line(') !== false);
-t_ok('neither still hard-codes "In stock" on every card', strpos($cat, ">✔ In stock<") === false);
-t_ok('the catalogue fetches stock in one sweep, not per card',
-     strpos($cat, 'web_stock_map()') !== false);
-t_ok('...and passes it INTO the card function rather than relying on a global',
-     strpos($cat, 'array $stockMap = []') !== false);
-t_ok('the switch is one setting, read in one place',
-     substr_count($cat, 'web_show_qty()') + substr_count($prd, 'web_show_qty()') === 2);
+// since the 28-11-2026 store redesign every public page draws its cards and
+// its stock line through includes/store_ui.php
+$sui = file_get_contents(dirname(__DIR__) . '/includes/store_ui.php');
+t_ok('every store card and the product page use the one stock rule (store_stock)', strpos($sui, 'function store_stock(') !== false && strpos($sui, '[$sk, $st] = store_stock($it);') !== false && strpos($prd, '= store_stock($it);') !== false);
+t_ok('neither still hard-codes "In stock" on every card', strpos($cat, ">✔ In stock<") === false && strpos($sui, ">✔ In stock<") === false);
+t_ok('the store fetches stock in one sweep, not per card', strpos($sui, "'stock' => web_stock_map()") !== false);
+t_ok('the switch is one setting, read in one place', substr_count($sui . $cat . $prd, 'web_show_qty()') === 1);
+t_ok('an empty shelf is never shown as in stock', strpos($sui, "if (\$q <= 0) return ['out', 'Out of stock'") !== false);
 $set = file_get_contents(dirname(__DIR__) . '/settings.php');
 t_ok('the owner can turn quantities off in Settings', strpos($set, "name=\"store_show_qty\"") !== false);
 t_ok('...and is warned it is a public page', strpos($set, 'a competitor can see') !== false);
