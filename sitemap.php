@@ -8,6 +8,7 @@
 //   /sitemap-brands.xml      brand pages
 //   /sitemap-products.xml    one URL per product
 //   /sitemap-prices.xml      the "price" SEO page per product
+//   /sitemap-blog.xml        the buying guide (blog post) per product
 // (all rewritten to sitemap.php?part=... in .htaccess)
 //
 // Hardened for finicky crawlers: any buffered output (a stray BOM, a PHP
@@ -28,7 +29,7 @@ function sm_url($loc, $freq, $prio, $lastmod = '') {
 }
 
 $part = get('part');
-$parts = ['main', 'categories', 'brands', 'products', 'prices'];
+$parts = ['main', 'categories', 'brands', 'products', 'prices', 'blog'];
 
 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 
@@ -59,6 +60,12 @@ if ($part === 'categories') {
 
 if ($part === 'brands') {
     foreach (seo_brands() as $b) if (seo_slug($b['name']) !== '') sm_url(seo_brand_url($b['name']), 'weekly', '0.8');
+}
+
+if ($part === 'blog') {
+    require_once __DIR__ . '/includes/blog.php';
+    sm_url(blog_index_url(), 'weekly', '0.6', today());
+    foreach (all("SELECT id, name, updated_at FROM items WHERE is_active = 1 AND show_on_website = 1 AND item_type <> 'service' ORDER BY id") as $it) sm_url(blog_url($it), 'monthly', '0.6', $it['updated_at']);
 }
 
 if ($part === 'products' || $part === 'prices') {

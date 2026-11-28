@@ -140,7 +140,7 @@ $specRows = array_filter([['Brand', $it['brand']], ['Model', $it['model']], ['SK
     ['Warranty', (int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' months' : ''], ['Unit', $it['unit']], ['Condition', ['NewCondition' => 'New', 'UsedCondition' => 'Used / old stock', 'RefurbishedCondition' => 'Refurbished'][$cond]]],
     fn($r) => trim((string)$r[1]) !== '');
 $specRows = array_merge(array_slice($specRows, 0, 2), $factRows, array_slice($specRows, 2));
-$kwShow = array_slice(array_filter(array_map('trim', explode(',', (string)($it['search_keywords'] ?? ''))) ?: ic_keywords($it, 40), fn($k) => mb_strlen($k) < 40), 8, 10);
+$kwShow = array_slice(array_filter(array_map('trim', explode(',', (string)($it['search_keywords'] ?? ''))) ?: ic_keywords($it, 40), fn($k) => mb_strlen($k) < 40 && preg_match('/^[\x20-\x7e]+$/', $k)), 8, 10);
 ?>
 <main data-viewed="<?= (int)$it['id'] ?>">
 <div class="pd" data-card data-id="<?= (int)$it['id'] ?>" data-n="<?= e($it['name']) ?>" data-p="<?= e($dp) ?>" data-f="<?= e($it['photo'] ? base_url($it['photo']) : '') ?>" data-m="<?= e($it['model']) ?>">
@@ -189,7 +189,8 @@ $kwShow = array_slice(array_filter(array_map('trim', explode(',', (string)($it['
 
     <?php // the shop's own description, or one written from the product's name (Items -> Product Descriptions & SEO saves it)
       $about = trim((string)$it['description']) !== '' ? (string)$it['description'] : ic_description($it); ?>
-    <div class="panel ic"><h2 style="font-size:16px;margin-bottom:6px">About this product</h2><?= ic_render($about) ?></div>
+    <div class="panel ic"><h2 style="font-size:16px;margin-bottom:6px">About this product</h2><?= ic_render($about) ?>
+      <?php if ($it['item_type'] !== 'service'): require_once __DIR__ . '/includes/blog.php'; ?><p><a class="more" style="color:var(--brand);font-weight:700" href="<?= e(blog_url($it)) ?>">Read the full buying guide →</a></p><?php endif; ?></div>
     <div class="panel"><h2 style="font-size:16px;margin-bottom:4px">Specifications</h2>
       <table class="spec"><tbody><?php foreach ($specRows as [$k, $v]): ?><tr><th scope="row"><?= e($k) ?></th><td><?= e($v) ?></td></tr><?php endforeach; ?></tbody></table></div>
     <?php if ($kwShow): ?><div class="panel"><h2 style="font-size:16px;margin-bottom:8px">Related searches</h2>

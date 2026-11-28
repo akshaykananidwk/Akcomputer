@@ -29,8 +29,8 @@ $d = ic_description(['name' => $cam, 'brand' => 'CP Plus', 'model' => '', 'warra
 t_ok('the description has features, uses, how it works and what else is needed', strpos($d, 'Key features:') && strpos($d, 'Where it is used:') && strpos($d, 'How it works:') && strpos($d, 'You may also need:') && strpos($d, 'HD DVR'));
 t_ok('...and says only what the name says (no "4K", no "WiFi" for this camera)', stripos($d, '4K') === false && stripos($d, 'wifi') === false);
 $kw = ic_keywords(['name' => $cam, 'brand' => 'CP Plus', 'model' => 'CP-URC-TC24PL3C', 'cat_name' => 'HD Camera']);
-t_ok('100+ search words: model, brand + specs, Gujarati, price, towns', count($kw) >= 100 && in_array('cp-urc-tc24pl3c', $kw, true) && in_array('cp plus 2.4mp cctv camera', $kw, true)
-     && in_array('સીસીટીવી કેમેરા', $kw, true) && in_array('cctv camera price in dwarka', $kw, true) && in_array('audio cctv camera', $kw, true), count($kw) . '');
+t_ok('100+ search words, all in English: model, brand + specs, price, towns', count($kw) >= 100 && in_array('cp-urc-tc24pl3c', $kw, true) && in_array('cp plus 2.4mp cctv camera', $kw, true)
+     && !preg_grep('/[\x{0A80}-\x{0AFF}]/u', $kw) && in_array('cctv camera price in dwarka', $kw, true) && in_array('audio cctv camera', $kw, true), count($kw) . '');
 t_eq('no word is repeated', count($kw), count(array_unique($kw)));
 
 t_group('Product content: Apply / Undo, never over the owner\'s words');

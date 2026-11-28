@@ -485,6 +485,7 @@ function store_footer() {
     <div><h3>Services</h3><?php foreach (seo_services() as $slug => $sv): ?><a href="<?= e(seo_service_url($slug)) ?>"><?= e($sv['name']) ?></a><?php endforeach; ?></div>
     <div><h3>Help</h3>
       <a href="<?= e(base_url('catalog.php?dregister=1')) ?>">Dealer Registration</a><a href="<?= e(base_url('referral.php')) ?>">Refer &amp; Earn</a>
+      <a href="<?= e(base_url('blog')) ?>">Buying Guides &amp; Blog</a>
       <a href="<?= e(base_url('privacy.php')) ?>">Privacy Policy</a><a href="<?= e(base_url('terms.php')) ?>">Terms &amp; Conditions</a>
       <?php if (!current_user()): ?><a href="<?= e(base_url('catalog.php?view=account&tab=staff')) ?>">Staff Login</a><?php endif; ?></div>
   </div>

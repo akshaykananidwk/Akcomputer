@@ -99,6 +99,7 @@ foreach (glob(dirname(__DIR__) . '/*.php') as $f) {
         'register.php',   // a customer writes their own name and number; rate-limited, adds nothing else
         'reset_password.php',   // the e-mailed reset link: a 256-bit one-time token, 30 minutes, rate-limited
         'manifest.php',   // the app's name and icon for "Install app" - nothing private
+        'blog.php',             // buying guides for the website's products - public by design
         'store_manifest.php',   // the online store's install name and icon - nothing private
         'feeds.php',      // Sheets / Calendar feeds: a long secret key in the link (feeds_token), no phone numbers
         'upi_hook.php',   // the shop phone's SMS forwarder: secret key in the link, only writes to the UPI inbox
