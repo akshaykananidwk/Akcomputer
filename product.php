@@ -109,6 +109,7 @@ $metaDesc = 'Buy ' . $label . ' from ' . $c['app'] . ', ' . shop_place() . '.'
     . '. ' . ($c['own'] ? 'Installation support and ' : '') . 'WhatsApp ordering.';
 if ($it['description']) $metaDesc = mb_substr(trim(preg_replace('/\s+/', ' ', $it['description'])), 0, 160) . ' — ₹' . money($dp) . ' at ' . $c['app'] . ', ' . $city . '.';
 
+if (trim((string)$it['description']) === '') $desc = strtok(ic_description($it), "\n");   // first paragraph of the written description
 // structured data: real values only - price, stock, brand, model, SKU; ratings only from approved reviews
 $ld = ['@context' => 'https://schema.org', '@type' => 'Product', 'name' => $it['name'], 'description' => mb_substr($desc, 0, 400),
        'image' => $it['photo'] ? [base_url($it['photo'])] : [], 'sku' => (string)($it['barcode'] ?: 'AKC-' . $it['id']), 'category' => $it['cat_name'],
@@ -133,9 +134,12 @@ store_head($seoTitle, $metaDesc, $purl, $head);
 store_header('back', $it['cat_name'] ?: 'Product');
 store_nav(store_groups(store_items()), $grp);
 $waMsg = "Hello! I would like this product:\n" . $label . ($it['model'] ? ' (' . $it['model'] . ')' : '') . "\nPrice: ₹" . money($dp) . "\n" . $purl;
+$factRows = array_map(fn($f) => [$f[0], $f[1]], array_filter(ic_facts($it), fn($f) => !in_array($f[0], ['Brand', 'Model', 'Warranty'], true)));
 $specRows = array_filter([['Brand', $it['brand']], ['Model', $it['model']], ['SKU', $it['barcode']], ['Category', $it['cat_name']], ['Variant', $it['variant'] ?? ''],
     ['Warranty', (int)$it['warranty_months'] > 0 ? (int)$it['warranty_months'] . ' months' : ''], ['Unit', $it['unit']], ['Condition', ['NewCondition' => 'New', 'UsedCondition' => 'Used / old stock', 'RefurbishedCondition' => 'Refurbished'][$cond]]],
     fn($r) => trim((string)$r[1]) !== '');
+$specRows = array_merge(array_slice($specRows, 0, 2), $factRows, array_slice($specRows, 2));
+$kwShow = array_slice(array_filter(array_map('trim', explode(',', (string)($it['search_keywords'] ?? ''))) ?: ic_keywords($it, 40), fn($k) => mb_strlen($k) < 40), 8, 10);
 ?>
 <main data-viewed="<?= (int)$it['id'] ?>">
 <div class="pd" data-card data-id="<?= (int)$it['id'] ?>" data-n="<?= e($it['name']) ?>" data-p="<?= e($dp) ?>" data-f="<?= e($it['photo'] ? base_url($it['photo']) : '') ?>" data-m="<?= e($it['model']) ?>">
@@ -182,9 +186,13 @@ $specRows = array_filter([['Brand', $it['brand']], ['Model', $it['model']], ['SK
       <div><?= store_icon('wa') ?>Order confirmed on WhatsApp</div>
     </div>
 
-    <?php if ($it['description']): ?><div class="panel"><h2 style="font-size:16px;margin-bottom:6px">About this product</h2><p style="font-size:14.5px;line-height:1.6"><?= nl2br(e($it['description'])) ?></p></div><?php endif; ?>
+    <?php // the shop's own description, or one written from the product's name (Items -> Product Descriptions & SEO saves it)
+      $about = trim((string)$it['description']) !== '' ? (string)$it['description'] : ic_description($it); ?>
+    <div class="panel ic"><h2 style="font-size:16px;margin-bottom:6px">About this product</h2><?= ic_render($about) ?></div>
     <div class="panel"><h2 style="font-size:16px;margin-bottom:4px">Specifications</h2>
       <table class="spec"><tbody><?php foreach ($specRows as [$k, $v]): ?><tr><th scope="row"><?= e($k) ?></th><td><?= e($v) ?></td></tr><?php endforeach; ?></tbody></table></div>
+    <?php if ($kwShow): ?><div class="panel"><h2 style="font-size:16px;margin-bottom:8px">Related searches</h2>
+      <div class="chips" style="flex-wrap:wrap"><?php foreach ($kwShow as $k): ?><a class="chip" href="<?= e(base_url('catalog.php?view=all&q=' . rawurlencode($k))) ?>"><?= e($k) ?></a><?php endforeach; ?></div></div><?php endif; ?>
     <details class="panel faq" style="padding:0 16px"><summary>Delivery, returns &amp; warranty</summary>
       <p>We deliver in <?= e($city) ?> and nearby, or keep it ready for pickup at the shop. Every order is confirmed on WhatsApp or a call first.<?= (int)$it['warranty_months'] > 0 ? ' Warranty: ' . (int)$it['warranty_months'] . ' months as per the company.' : '' ?> For a return or a warranty claim, bring the product with its bill.</p></details>
   </div>

@@ -66,6 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                photo=?, barcode=?, is_active=?, description=? WHERE id=?', array_merge($data, [$id]));
             // the printed MRP - the website shows "% OFF" only from a real one
             try { q('UPDATE items SET mrp = ? WHERE id = ?', [$mrpIn > 0 ? $mrpIn : null, $id]); } catch (Exception $e) { /* before v101 */ }
+            try { q('UPDATE items SET search_keywords = ? WHERE id = ?', [mb_substr(trim((string)post('search_keywords')), 0, 8000), $id]); } catch (Exception $e) { /* before v103 */ }
             flash('Item updated.');
         } else {
             q('INSERT INTO items (name, category_id, brand, model, unit, hsn, tax_rate, purchase_price, selling_price,
@@ -73,6 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', $data);
             $id = insert_id();
             try { q('UPDATE items SET mrp = ? WHERE id = ?', [$mrpIn > 0 ? $mrpIn : null, $id]); } catch (Exception $e) { /* before v101 */ }
+            try { q('UPDATE items SET search_keywords = ? WHERE id = ?', [mb_substr(trim((string)post('search_keywords')), 0, 8000), $id]); } catch (Exception $e) { /* before v103 */ }
             flash('Item added.');
             // no category picked -> AI files the new product right away (one
             // tiny call); any failure just leaves it uncategorized as before
@@ -211,6 +213,8 @@ if ($action === 'new' || $action === 'edit') {
         <?php endif; ?>
         <div class="field"><label>Description (shows on the website; AI Auto-Fill can write this)</label>
           <textarea name="description" rows="3"><?= e($it['description'] ?? '') ?></textarea></div>
+        <div class="field"><label>Search words (customers' words for this product, comma separated — used by the website search)</label>
+          <textarea name="search_keywords" rows="2" placeholder="e.g. cctv camera, cc camera, 2mp camera, સીસીટીવી કેમેરા"><?= e($it['search_keywords'] ?? '') ?></textarea></div>
         <div class="form-row cols-3">
           <label class="check-inline"><input type="checkbox" name="serial_tracked" value="1" <?= !empty($it['serial_tracked']) ? 'checked' : '' ?>> Serial number tracked</label>
           <label class="check-inline"><input type="checkbox" name="show_on_website" value="1" <?= !empty($it['show_on_website']) ? 'checked' : '' ?>> Show on website</label>
@@ -411,7 +415,7 @@ include __DIR__ . '/includes/header.php';
 ?>
 <div class="page-actions">
   <?php if (can('items.add')): ?><a class="btn" href="items.php?action=new">+ New Item</a><?php endif; ?>
-  <?php if (can('items.edit')): ?><a class="btn btn-outline" href="categories_arrange.php">🗂 Arrange Categories</a><a class="btn btn-outline" href="ai_categorize.php">🤖 AI Categories</a><?php endif; ?>
+  <?php if (can('items.edit')): ?><a class="btn btn-outline" href="categories_arrange.php">🗂 Arrange Categories</a><a class="btn btn-outline" href="ai_categorize.php">🤖 AI Categories</a><a class="btn btn-outline" href="products_content.php">📝 Descriptions &amp; SEO</a><?php endif; ?>
   <a class="btn btn-outline" href="items.php<?= $showAll ? '' : '?show=all' ?>"><?= $showAll ? 'Show Active only' : 'Show Inactive too' ?></a>
 </div>
 <form method="get" class="filterbar no-print">

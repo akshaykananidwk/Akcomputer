@@ -61,6 +61,7 @@ function run_all_migrations() {
     // one-time data tidy-ups the owner asked for, after the tables exist
     try { require_once __DIR__ . '/expense_ai.php'; expense_fix_once(); } catch (Throwable $e) { log_activity('expense_fix_once_failed', $e->getMessage()); }
     try { require_once __DIR__ . '/item_photo_pack.php'; item_photo_pack_once(); } catch (Throwable $e) { log_activity('item_photo_pack_failed', $e->getMessage()); }
+    try { require_once __DIR__ . '/item_content.php'; item_content_once(); } catch (Throwable $e) { log_activity('item_content_once_failed', $e->getMessage()); }
     // encrypt any API keys still sitting in the settings table as plaintext
     $enc = function_exists('secrets_encrypt_existing') ? secrets_encrypt_existing() : 0;
     log_activity('db_migrate', "applied={$totals['applied']} already={$totals['already']} failed={$totals['failed']} secrets_encrypted=$enc");

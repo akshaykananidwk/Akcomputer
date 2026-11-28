@@ -6,6 +6,7 @@
 // stock that is not on the shelf.
 require_once __DIR__ . '/seo.php';
 require_once __DIR__ . '/store_account.php';
+require_once __DIR__ . '/item_content.php';
 
 /** Everything a store page needs about the shop and the visitor, read once. */
 function store_ctx() {
@@ -181,7 +182,7 @@ function store_synonyms() {
     ];
 }
 function store_hay($it) {
-    return mb_strtolower(implode(' ', [$it['name'], $it['brand'], $it['model'], $it['barcode'], $it['cat_name'] ?? '', store_group($it), $it['variant'] ?? '']));
+    return mb_strtolower(implode(' ', [$it['name'], $it['brand'], $it['model'], $it['barcode'], $it['cat_name'] ?? '', store_group($it), $it['variant'] ?? '', $it['search_keywords'] ?? '']));
 }
 function store_search(array $items, $q) {
     $words = array_slice(preg_split('/\s+/u', mb_strtolower(trim($q)), -1, PREG_SPLIT_NO_EMPTY), 0, 8);

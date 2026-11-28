@@ -14,11 +14,17 @@ function category_plan_rules() {
     $cam = '(camera|\bcam\b|\bdome\b|\bbullet\b|eyeball)';
     return [
         // --- things whose names also contain a "bigger" word: settle them first
+        ['/motherboard|mother board/', 'Desktop > Motherboard'],   // "... M.2 NVMe SSD Support", "... HDMI, VGA"
+        ['/hologram/', 'Mobility > Utility'],
+        ['/(cctv|camera).*(power supply|smps)|(power supply|smps).*cctv/', 'Security > Power Supply | Adapter'],
+        ['/(mobile|wall|fast) charger|charger with/', 'Mobility > Chargers'],
+        ['/data (&|and) charging cable|charging cable|data cable/', 'Mobility > Data Cable'],   // "UBON Bullet Series ... cable" is no camera
         ['/video door|door ?bell|\bvdp\b/', 'Security > Video Door Phones (VDP)'],
         ['/web ?cam|web camera|usb.*camera.*plug/', 'Peripherals > Webcam'],
         ['/junction box|mounting rack|rack cabinet|\bdvr rack|\brack\b/', 'Security > Rack & Accessories'],
         ['/keyboard.*mouse|mouse.*keyboard|\bcombo\b/', 'Peripherals > Keyboard | Combo'],
         ['/\bmouse\b/', 'Peripherals > Mouse | Mousepad'],
+        ['/(?<!laptop )keyboard(?!.*laptop)/', 'Peripherals > Keyboard | Combo'],   // "... 1.2m Cable" stays a keyboard
         ['/laptop.*(adapter|adaptor|charger)|(adapter|adaptor|charger).*laptop/', 'Laptop > Laptop Adaptor'],
         ['/laptop.*keyboard|keyboard.*laptop/', 'Laptop > Laptop Keyboard'],
         ['/laptop.*(cooling|cooler)|cooling (pad|stand)/', 'Laptop > Laptop Cooling Pad'],
@@ -30,7 +36,7 @@ function category_plan_rules() {
         ['/nfc|smart card|biometric|fingerprint|attendance/', 'Security > Biometrics'],
 
         // --- CCTV
-        ['/surveillance|skyhawk|\bpurple\b|cctv.*(hdd|hard)/', 'Storage > Surveillance Hard Disk'],
+        ['/surveillance|skyhawk|\bpurple\b|cctv.*(hdd|hard)/', 'Security > Surveillance Hard Disk'],
         ['/monitor(?!.*cable)|\bled display\b/', 'Display > LED | Monitor'],
         ['/(ink tank|multifunction|laser|receipt|thermal).*printer|printer \((?!.*cable)|all-in-one.*printer/', 'Printers & Scanners > Printer | Scanner'],
         ['/\bnvr\b|network video recorder/', 'Security > IP NVR'],
@@ -38,8 +44,8 @@ function category_plan_rules() {
         ["/$cam.*(\\b4g\\b|wi-?fi|\\bpt\\b|ptz|pan ?(&|and) ?tilt|solar|robot)|(\\b4g\\b|wi-?fi|ptz|solar).*$cam/", 'Security > PTZ | PT | 4G | WIFI Camera'],
         ["/$cam.*(\\bip\\b|network|\\bipc|\\bpoe\\b|ss-nc|-unc-|\\bnc\\d)|(\\bip\\b|network).*$cam/", 'Security > IP Camera'],
         ["/$cam/", 'Security > HD Camera'],
-        ['/3\s*\+\s*1|cctv.*cable|copper cable/', 'Cables > 3+1 CCTV Cables'],
-        ['/\bbnc\b|dc pin|waterproof cap|cable (nail )?clip|cab(le|el) tie|tie closer|tag tie|cable nail/', 'Accessories CCTV & Networking'],
+        ['/3\s*\+\s*1|cctv.*cable|copper cable/', 'Security > 3+1 CCTV Cables'],
+        ['/\bbnc\b|dc pin|waterproof cap|cable (nail )?clip|cab(le|el) tie|tie closer|tag tie|cable nail/', 'Security > CCTV Accessories'],
 
         // --- networking
         ['/router|access point|range extender|\beap\d|oc200|controller|\bcpe\d/', 'Networking > Router | Access Point | Range Extender'],
@@ -133,9 +139,10 @@ function category_plan_by_old() {
         'WiFi Camera' => 'Security > PTZ | PT | 4G | WIFI Camera', '4G Sim Camera' => 'Security > PTZ | PT | 4G | WIFI Camera',
         'DVR' => 'Security > HD DVR', 'NVR' => 'Security > IP NVR', 'Video Door Phone' => 'Security > Video Door Phones (VDP)',
         'Biometric & Access Control' => 'Security > Biometrics', 'Rack & Junction Box' => 'Security > Rack & Accessories',
-        'SMPS & Power Supply' => 'Security > Power Supply | Adapter', 'CCTV Cable' => 'Cables > 3+1 CCTV Cables',
-        'BNC & Connector' => 'Accessories CCTV & Networking', 'CCTV Accessories' => 'Accessories CCTV & Networking',
-        'Patch Cord & Accessories' => 'Accessories CCTV & Networking',
+        'SMPS & Power Supply' => 'Security > Power Supply | Adapter', 'CCTV Cable' => 'Security > 3+1 CCTV Cables',
+        'BNC & Connector' => 'Security > CCTV Accessories', 'CCTV Accessories' => 'Security > CCTV Accessories',
+        'Accessories CCTV & Networking' => 'Security > CCTV Accessories', 'Patch Cord & Accessories' => 'Security > CCTV Accessories',
+        'Surveillance Hard Disk' => 'Security > Surveillance Hard Disk', '3+1 CCTV Cables' => 'Security > 3+1 CCTV Cables',
         'Network Switch' => 'Networking > Desktop Switch', 'POE Switch' => 'Networking > POE Switch',
         'WiFi Router' => 'Networking > Router | Access Point | Range Extender', 'Fiber & ONU' => 'Networking > Fiber Accessories',
         'Network Cable (Cat6)' => 'Cables > LAN Cables (CAT6)', 'Power Strip & Extension' => 'Peripherals > Spike',

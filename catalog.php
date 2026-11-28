@@ -299,6 +299,9 @@ try { $reviews = all("SELECT r.*, i.name item_name, i.id item_id, i.brand, i.mod
 $fG = trim((string)get('g')); $fCat = trim((string)get('cat')); $fBrand = trim((string)get('brand')); $fQ = trim((string)get('q'));
 $fStock = get('stock') === '1'; $fSort = in_array(get('sort'), ['popular', 'best', 'price_asc', 'price_desc', 'new'], true) ? get('sort') : 'popular';
 $fMin = (float)get('min'); $fMax = (float)get('max');
+// product filters read from the product names ("Audio", "4MP", "DDR4" ...)
+$fx = array_filter(array_map(fn($v) => trim((string)$v), is_array($_GET['fx'] ?? null) ? $_GET['fx'] : []), fn($v, $k) => $v !== '' && isset(ic_facet_labels()[$k]), ARRAY_FILTER_USE_BOTH);
+$facets = [];
 $list = []; $pages = 1; $page = max(1, (int)get('page')); $per = 24; $nList = 0; $brandsHere = []; $catsHere = [];
 if ($view === 'all') {
     $list = $fQ !== '' ? store_search($items, $fQ) : $items;
@@ -308,6 +311,14 @@ if ($view === 'all') {
     foreach ($list as $it) { $b = trim((string)$it['brand']); if ($b !== '') $brandsHere[$b] = ($brandsHere[$b] ?? 0) + 1; }
     arsort($brandsHere); ksort($catsHere);
     if ($fBrand !== '') $list = array_values(array_filter($list, fn($it) => strcasecmp(trim((string)$it['brand']), $fBrand) === 0));
+    // filters offered = what the products in view actually have (2+ different values, or a yes that not all have)
+    $fmap = ic_facet_map($list);
+    foreach (ic_facet_labels() as $k => $lab) {
+        $vals = [];
+        foreach ($fmap as $m) if (isset($m[$k])) $vals[$m[$k]] = ($vals[$m[$k]] ?? 0) + 1;
+        if (count($vals) >= 2 || ($vals && array_sum($vals) < count($list)) || isset($fx[$k])) { ksort($vals, SORT_NATURAL); $facets[$k] = $vals; }
+    }
+    foreach ($fx as $k => $v) $list = array_values(array_filter($list, fn($it) => ($fmap[(int)$it['id']][$k] ?? null) === $v));
     if ($fStock) $list = array_values(array_filter($list, $inStock));
     if ($fMin > 0) $list = array_values(array_filter($list, fn($it) => dealer_price($it['selling_price'], $c['pct']) >= $fMin));
     if ($fMax > 0) $list = array_values(array_filter($list, fn($it) => dealer_price($it['selling_price'], $c['pct']) <= $fMax));
@@ -316,7 +327,7 @@ if ($view === 'all') {
     $pages = max(1, (int)ceil($nList / $per)); $page = min($page, $pages);
     $list = array_slice($list, ($page - 1) * $per, $per);
 }
-$qsKeep = fn(array $set) => 'catalog.php?' . http_build_query(array_filter(array_merge(['view' => 'all', 'g' => $fG, 'cat' => $fCat, 'brand' => $fBrand, 'q' => $fQ, 'stock' => $fStock ? 1 : '', 'sort' => $fSort === 'popular' ? '' : $fSort, 'min' => $fMin ?: '', 'max' => $fMax ?: ''], $set), fn($v) => $v !== '' && $v !== null));
+$qsKeep = fn(array $set) => 'catalog.php?' . http_build_query(array_filter(array_merge(['view' => 'all', 'g' => $fG, 'cat' => $fCat, 'brand' => $fBrand, 'q' => $fQ, 'stock' => $fStock ? 1 : '', 'sort' => $fSort === 'popular' ? '' : $fSort, 'min' => $fMin ?: '', 'max' => $fMax ?: '', 'fx' => $fx ?: ''], $set), fn($v) => $v !== '' && $v !== null && $v !== []));
 
 // ---------- titles, canonical, robots ----------
 $city = shop_city() ?: 'Dwarka';
@@ -333,7 +344,7 @@ if ($view === 'all') {
     if ($catHead !== '') foreach ($ranked as $it) if (($it['cat_name'] === $catHead || store_group($it) === $catHead) && store_promotable($it)) { $catImg = base_url($it['photo']); break; }
     $title = ($fQ !== '' ? 'Search: ' . $fQ : ($fCat ?: ($fG ?: 'All Products'))) . ' in ' . $city . ' | ' . $c['app'];
     $canon = base_url('catalog.php?view=all') . ($fG !== '' && $fCat === '' && $fBrand === '' && $fQ === '' ? '&g=' . rawurlencode($fG) : '');
-    if ($fQ !== '' || $fBrand !== '' || $fStock || $fSort !== 'popular' || $fMin || $fMax || $page > 1 || $fCat !== '') $robots = 'noindex, follow';
+    if ($fQ !== '' || $fBrand !== '' || $fStock || $fSort !== 'popular' || $fMin || $fMax || $page > 1 || $fCat !== '' || $fx) $robots = 'noindex, follow';
 } elseif ($view === 'cats') { $hdrMode = 'back'; $hdrTitle = 'All Categories'; $title = 'All Categories | ' . $c['app'] . ' ' . $city; $canon = base_url('catalog.php?view=cats'); }
 elseif ($view === 'wish') { $hdrMode = 'back'; $hdrTitle = 'Wishlist'; $title = 'My Wishlist | ' . $c['app']; $robots = 'noindex'; $canon = ''; }
 elseif ($view === 'account') { $hdrMode = 'back'; $hdrTitle = 'My Account'; $title = 'My Account | ' . $c['app']; $robots = 'noindex'; $canon = ''; }
@@ -496,6 +507,15 @@ $tileHtml = function ($t) { ?>
       <?php foreach ($catsHere as $cn => $n): ?><a class="chip <?= $fCat === $cn ? 'on' : '' ?>" href="<?= e($qsKeep(['cat' => $cn, 'brand' => '', 'page' => ''])) ?>"><?= e($cn) ?> <span class="n"><?= $n ?></span></a><?php endforeach; ?>
     </div>
     <?php endif; ?>
+    <?php $fxChip = function ($k, $v) use ($fx, $qsKeep) { $on = ($fx[$k] ?? '') === $v; $nfx = $fx; if ($on) unset($nfx[$k]); else $nfx[$k] = $v;
+        return '<a class="chip ' . ($on ? 'on' : '') . '" href="' . e($qsKeep(['fx' => $nfx, 'page' => ''])) . '">' . e($v) . '</a>'; };
+    $quick = [];   // the few filters people use most, in this order: megapixels, audio, night vision ...
+    foreach (['res', 'audio', 'night', 'ctype', 'cap', 'ddr', 'for', 'ptype', 'wired', 'screen', 'tech'] as $qk) if (isset($facets[$qk]) && count($quick) < 3) $quick[$qk] = $facets[$qk];
+    if ($quick): ?>
+    <div class="chips" style="margin-bottom:8px">
+      <?php foreach ($quick as $k => $vals) foreach ($vals as $v => $n) echo $fxChip($k, (string)$v); ?>
+    </div>
+    <?php endif; ?>
     <?php if (count($brandsHere) > 1): ?>
     <div class="chips" style="margin-bottom:8px">
       <a class="chip <?= $fBrand === '' ? 'on' : '' ?>" href="<?= e($qsKeep(['brand' => '', 'page' => ''])) ?>">All brands</a>
@@ -538,6 +558,14 @@ $tileHtml = function ($t) { ?>
         <div class="field" style="margin:0"><label for="fmin">Min price ₹</label><input id="fmin" name="min" inputmode="numeric" value="<?= $fMin ?: '' ?>"></div>
         <div class="field" style="margin:0"><label for="fmax">Max price ₹</label><input id="fmax" name="max" inputmode="numeric" value="<?= $fMax ?: '' ?>"></div>
       </div>
+      <?php foreach ($facets as $k => $vals): ?>
+      <div class="field"><label><?= e(ic_facet_labels()[$k]) ?></label>
+        <div class="chips" style="flex-wrap:wrap">
+          <label class="chip"><input type="radio" name="fx[<?= e($k) ?>]" value="" <?= !isset($fx[$k]) ? 'checked' : '' ?>> Any</label>
+          <?php foreach ($vals as $v => $n): ?><label class="chip"><input type="radio" name="fx[<?= e($k) ?>]" value="<?= e($v) ?>" <?= ($fx[$k] ?? '') === (string)$v ? 'checked' : '' ?>> <?= e($v) ?> <span class="n"><?= (int)$n ?></span></label><?php endforeach; ?>
+        </div></div>
+      <?php endforeach; ?>
+      <?php if ($fCat !== ''): ?><input type="hidden" name="cat" value="<?= e($fCat) ?>"><?php endif; ?>
       <label class="chip" style="width:100%;justify-content:flex-start;height:46px;margin-bottom:14px"><input type="checkbox" name="stock" value="1" <?= $fStock ? 'checked' : '' ?>> In stock only</label>
       <button class="btn block" type="submit">Show products</button>
       <a class="btn ghost block" style="margin-top:8px" href="catalog.php?view=all">Clear all</a>

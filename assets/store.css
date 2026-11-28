@@ -507,3 +507,6 @@ details.panel > summary::-webkit-details-marker { display: none; }
 .pl .pin-btn { right: 46px; }
 .pl .pin-btn { top: 98px; left: 16px; right: auto; height: 26px; font-size: 10.5px; }
 @media (min-width: 960px) { .pl .pin-btn { top: 132px; } }
+.ic p { font-size: 14.5px; line-height: 1.6; margin-top: 6px; }
+.ic .ic-h { font-size: 14.5px; margin: 14px 0 4px; }
+.ic .ic-ul { margin: 4px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.65; }
