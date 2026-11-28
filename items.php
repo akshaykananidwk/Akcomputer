@@ -199,7 +199,28 @@ if ($action === 'new' || $action === 'edit') {
         </div>
         <div class="form-row cols-2">
           <div><label>Barcode</label><input type="text" name="barcode" maxlength="64" value="<?= e($it['barcode'] ?? '') ?>"></div>
-          <div><label>Photo (for website)</label><input type="file" name="photo" accept="image/*"></div>
+          <div><label>Photo (for website)</label><input type="file" name="photo" accept="image/*" id="itPhoto">
+            <div id="itPaste" tabindex="0" style="margin-top:6px;border:2px dashed var(--border,#ccd);border-radius:10px;padding:10px;text-align:center;cursor:pointer;font-size:13px;color:#667">
+              <span id="itMsg">📋 Copy a photo, then press <b>Ctrl+V</b> here (or drag it in)</span><img id="itPrev" alt="" style="display:none;max-height:120px;margin:8px auto 0"></div>
+            <script>
+            (function () {   // pasted / dropped picture -> the Photo file box, so the normal Save uploads it
+              var inp = document.getElementById('itPhoto'), box = document.getElementById('itPaste'), prev = document.getElementById('itPrev'), msg = document.getElementById('itMsg');
+              var ext = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'};
+              function take(f) {
+                if (!f || !ext[f.type]) { if (f) alert('Use a JPG, PNG or WEBP picture.'); return false; }
+                var dt = new DataTransfer(); dt.items.add(new File([f], 'pasted_' + Date.now() + '.' + ext[f.type], {type: f.type}));
+                inp.files = dt.files; prev.src = URL.createObjectURL(f); prev.style.display = 'block';
+                msg.textContent = '✅ Photo ready — press Save'; return true;
+              }
+              function img(list) { for (var i = 0; i < (list || []).length; i++) if (list[i].kind === 'file' && list[i].type.indexOf('image/') === 0) return list[i].getAsFile(); return null; }
+              // Ctrl+V anywhere on the item form (not while typing in a text box with plain text)
+              document.addEventListener('paste', function (e) { var f = img(e.clipboardData && e.clipboardData.items); if (f && take(f)) e.preventDefault(); });
+              box.addEventListener('click', function () { box.focus(); });
+              box.addEventListener('dragover', function (e) { e.preventDefault(); });
+              box.addEventListener('drop', function (e) { e.preventDefault(); take(e.dataTransfer.files[0]); });
+              inp.addEventListener('change', function () { if (inp.files[0]) { prev.src = URL.createObjectURL(inp.files[0]); prev.style.display = 'block'; } });
+            })();
+            </script></div>
         </div>
         <?php if (biz_on('biz_box_units') || biz_on('biz_slabs')): ?>
         <div class="form-row cols-2">
