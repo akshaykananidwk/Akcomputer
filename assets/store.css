@@ -502,3 +502,8 @@ details.panel > summary::-webkit-details-marker { display: none; }
 .btn-block { width: 100%; }
 .btn-outline { background: var(--card); color: var(--text); border: 1.5px solid var(--line); }
 .scard a.btn { color: #fff; } .scard a.btn.btn-outline { color: var(--text); }
+/* admin pin sits at the top beside the heart, never over the price */
+.pc .pin-btn, .pl .pin-btn { top: 8px; right: 44px; left: auto; bottom: auto; height: 32px; padding: 0 8px; border-radius: 99px; background: color-mix(in srgb, var(--card) 92%, transparent); }
+.pl .pin-btn { right: 46px; }
+.pl .pin-btn { top: 98px; left: 16px; right: auto; height: 26px; font-size: 10.5px; }
+@media (min-width: 960px) { .pl .pin-btn { top: 132px; } }
